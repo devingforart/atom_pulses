@@ -1,0 +1,99 @@
+# PULSO
+
+PULSO es un instrumento MIDI generativo que escucha las notas que recibe, entiende
+el contexto armónico y produce patrones sincronizados de bajo, percusión o
+contramelodía. La salida es MIDI editable; el sintetizador interno existe únicamente
+como preescucha inmediata.
+
+Este repositorio contiene un MVP funcional para Ableton Live en Windows:
+
+- Plugin VST3 y aplicación standalone construidos con JUCE.
+- Generador musical C++20 desacoplado y cubierto por pruebas.
+- Tres roles: `Bass`, `Percussion` y `Countermelody`.
+- Controles `Follow`, `Risk`, `Space`, tonalidad, escala y volumen.
+- Variaciones reproducibles y estado persistente en el proyecto del DAW.
+- Salida MIDI para grabar o alimentar cualquier instrumento.
+- Puente experimental Max for Live para disparar variaciones.
+- Scripts de compilación, validación e instalación.
+
+## Inicio rápido en Windows
+
+Requisitos:
+
+- Windows 10/11 de 64 bits.
+- CMake 3.25 o superior.
+- Visual Studio 2022 Build Tools con la carga de trabajo C++.
+- Git.
+- Conexión a Internet durante la primera configuración para descargar JUCE 9.0.0.
+
+Desde PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build.ps1 -Configuration Release
+```
+
+El script configura el proyecto, compila el plugin y ejecuta las pruebas. El artefacto
+queda normalmente en:
+
+```text
+build/windows-release/Pulso_artefacts/Release/VST3/PULSO.vst3
+```
+
+Para instalarlo en la ubicación VST3 del usuario —no requiere administrador—:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-vst3.ps1
+```
+
+El destino predeterminado es `%LOCALAPPDATA%\Programs\Common\VST3`, una ubicación
+VST3 oficial orientada a desarrollo. Para una instalación global, ejecuta una consola
+elevada y usa `-Destination 'C:\Program Files\Common Files\VST3'`.
+
+Después abre Ableton Live, entra en `Settings > Plug-Ins` y pulsa `Rescan`.
+
+## Primera prueba sin Ableton
+
+El ejecutable `pulso_cli` permite comprobar el motor sin cargar un DAW:
+
+```powershell
+./build/windows-release/Release/pulso_cli.exe bass 42 0
+./build/windows-release/Release/pulso_cli.exe drums 42 0
+./build/windows-release/Release/pulso_cli.exe counter 42 0
+```
+
+La aplicación standalone permite probar la interfaz y el sintetizador de preescucha.
+Consulta [docs/ABLETON.md](docs/ABLETON.md) para el enrutamiento MIDI completo.
+
+## Controles
+
+- **Role:** tipo de interpretación generada.
+- **Root / Scale:** marco tonal.
+- **Follow:** cuánto se adapta el ritmo a las notas recibidas.
+- **Risk:** probabilidad de usar movimientos menos previsibles.
+- **Space:** cantidad de silencio y respiración del patrón.
+- **Preview:** activa el sintetizador interno.
+- **MIDI Thru:** conserva también el MIDI de entrada.
+- **New Variation:** genera un patrón nuevo conservando el contexto.
+- **Output:** volumen exclusivo de la preescucha; no altera la velocidad MIDI.
+
+## Estructura
+
+```text
+src/core/       Motor musical puro, sin dependencias de JUCE
+src/plugin/     Adaptador VST3, transporte, interfaz y preescucha
+tests/          Pruebas unitarias del comportamiento musical
+tools/          Utilidades de diagnóstico
+ableton/        Puente experimental Max for Live
+scripts/        Construcción, validación e instalación
+docs/           Producto, arquitectura, Ableton y desarrollo
+```
+
+## Estado del producto
+
+Esta es la primera versión profesionalmente estructurada, no el producto neuronal
+final. La generación actual es algorítmica y local: no descarga modelos, no requiere
+cuenta y no envía audio. Esto permite validar la experiencia musical y la integración
+antes de añadir inferencia neuronal, sidechain y escritura directa de clips.
+
+Lee [docs/ROADMAP.md](docs/ROADMAP.md) para las siguientes etapas y
+[docs/LICENSING.md](docs/LICENSING.md) antes de distribuir binarios.

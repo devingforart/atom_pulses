@@ -1,0 +1,103 @@
+cmake_minimum_required(VERSION 3.25)
+
+project(Pulso VERSION 0.1.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+option(PULSO_BUILD_PLUGIN "Build the JUCE plug-in" ON)
+option(PULSO_BUILD_TESTS "Build unit tests" ON)
+option(PULSO_BUILD_CLI "Build the pattern demo CLI" ON)
+
+include(FetchContent)
+
+add_library(pulso_core STATIC
+    src/core/Generator.cpp
+    src/core/Generator.h
+    src/core/MusicTypes.h
+    src/core/Random.h
+    src/core/Scale.cpp
+    src/core/Scale.h
+)
+target_include_directories(pulso_core PUBLIC src)
+target_compile_features(pulso_core PUBLIC cxx_std_20)
+set_target_properties(pulso_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+if(MSVC)
+    target_compile_options(pulso_core PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(pulso_core PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if(PULSO_BUILD_CLI)
+    add_executable(pulso_cli tools/pulso_cli.cpp)
+    target_link_libraries(pulso_cli PRIVATE pulso_core)
+endif()
+
+if(PULSO_BUILD_TESTS)
+    enable_testing()
+    add_executable(pulso_tests
+        tests/TestMain.cpp
+        tests/GeneratorTests.cpp
+        tests/ScaleTests.cpp
+    )
+    target_link_libraries(pulso_tests PRIVATE pulso_core)
+    add_test(NAME pulso_core_tests COMMAND pulso_tests)
+endif()
+
+if(PULSO_BUILD_PLUGIN)
+    FetchContent_Declare(
+        JUCE
+        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+        GIT_TAG 9.0.0
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(JUCE)
+
+    juce_add_plugin(Pulso
+        COMPANY_NAME "Pulso Audio"
+        BUNDLE_ID "audio.pulso.instrument"
+        PLUGIN_MANUFACTURER_CODE Plso
+        PLUGIN_CODE Puls
+        PRODUCT_NAME "PULSO"
+        DESCRIPTION "Context-aware generative MIDI instrument"
+        FORMATS VST3 Standalone
+        IS_SYNTH TRUE
+        NEEDS_MIDI_INPUT TRUE
+        NEEDS_MIDI_OUTPUT TRUE
+        IS_MIDI_EFFECT FALSE
+        EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+        COPY_PLUGIN_AFTER_BUILD FALSE
+        VST3_CATEGORIES Instrument Generator
+    )
+
+    target_sources(Pulso PRIVATE
+        src/plugin/LookAndFeel.cpp
+        src/plugin/LookAndFeel.h
+        src/plugin/PatternView.cpp
+        src/plugin/PatternView.h
+        src/plugin/PluginEditor.cpp
+        src/plugin/PluginEditor.h
+        src/plugin/PluginProcessor.cpp
+        src/plugin/PluginProcessor.h
+        src/plugin/PreviewSynth.cpp
+        src/plugin/PreviewSynth.h
+    )
+
+    target_link_libraries(Pulso PRIVATE
+        pulso_core
+        juce::juce_audio_utils
+        juce::juce_dsp
+        PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags
+    )
+
+    target_compile_definitions(Pulso PUBLIC
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+    )
+endif()

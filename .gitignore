@@ -1,0 +1,16 @@
+/build/
+/.vs/
+/.vscode/
+/out/
+/dist/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.vst3
+*.component
+*.app
+*.exe
+*.dll
+*.pdb
+.DS_Store

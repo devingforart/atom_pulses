@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure core
+        run: cmake -S . -B build/core -DPULSO_BUILD_PLUGIN=OFF
+      - name: Build core
+        run: cmake --build build/core --config Release --parallel
+      - name: Test core
+        run: ctest --test-dir build/core -C Release --output-on-failure
+
+  plugin:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure plugin
+        run: cmake --preset windows-release
+      - name: Build plugin
+        run: cmake --build --preset windows-release --parallel
+      - name: Test
+        run: ctest --preset windows-release
+

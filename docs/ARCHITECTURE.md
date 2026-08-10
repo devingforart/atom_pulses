@@ -19,7 +19,8 @@ pulso_core
 ├── MusicTypes
 ├── Scale
 ├── Random determinista
-└── CompositionPlan + intérpretes por rol
+├── CompositionPlan + intérpretes por rol
+└── SongPlan + catálogo de orquestación
 ```
 
 `pulso_core` no depende de JUCE ni del sistema operativo. Puede reutilizarse en un
@@ -88,10 +89,34 @@ entrante durante la reproducción.
 ## Composición con GPT
 
 `AiComposer` llama a Responses API exclusivamente desde el worker. Structured Outputs
-produce título, tonalidad, intención y eventos para armonía, melodía, bajo y batería.
+produce un plan jerárquico con título, tonalidad, intención, voces, funciones, registros,
+interacciones y presencia por sección. No se aceptan identificadores de voz libres: el
+esquema limita la respuesta al catálogo conocido por el renderer.
 El parser rechaza longitud incorrecta, capas vacías, valores no finitos, pitches,
 velocidades o tiempos inválidos. Los locks se aplican nuevamente después de validar,
 por lo que una capa bloqueada nunca depende de que el modelo obedezca la instrucción.
 
 Ante ausencia de credencial, error HTTP, timeout o composición inválida se ejecuta el
 motor local. El callback continúa reproduciendo la última idea durante toda la llamada.
+
+## Canciones completas
+
+`AiComposer::planSong` solicita una arquitectura compacta: motivo global, progresión,
+tonalidad y secciones con función, energía, tensión y tratamiento temático. Nunca pide a
+GPT miles de eventos MIDI en una sola respuesta. `SongComposer` normaliza la duración,
+garantiza cobertura continua y desarrolla el plan en bloques de hasta 16 compases que
+comparten el mismo ADN. Los snapshots largos se transfieren al audio mediante referencias
+ligeras; su memoria se retira en el worker y no en el callback.
+
+## Orquestación dinámica
+
+El catálogo tiene doce voces agrupadas en cinco familias: ritmo (`Core Drums`, `Low
+Percussion`, `High Percussion`), bajo (`Sub Bass`, `Movement Bass`), armonía (`Harmonic
+Foundation`, `Harmonic Pulse`, `Harmonic Upper`), melodía (`Lead`, `Countermelody`) y
+textura (`Atmosphere`, `Transitions`). Cada sección contiene un conjunto explícito de
+voces activas. `SongComposer` normaliza ese conjunto, mantiene registros musicales,
+evita colisiones principales y genera CC 11/1/74 para dinámica, tensión y transición.
+
+Los locks y filtros de exportación operan sobre identidad y familia de voz, no sólo
+sobre canal MIDI. Por eso dos capas que comparten canal siguen siendo pistas separadas
+en el archivo multitrack y pueden conservarse o arrastrarse de forma independiente.

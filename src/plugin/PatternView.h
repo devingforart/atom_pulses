@@ -20,11 +20,17 @@ private:
     [[nodiscard]] int channelAt(juce::Point<int>) const noexcept;
     [[nodiscard]] bool hasNotesForChannel(int channel) const;
     [[nodiscard]] juce::Rectangle<int> dragStripBounds() const noexcept;
+    [[nodiscard]] juce::Rectangle<int> sectionStripBounds() const noexcept;
+    [[nodiscard]] int sectionAt(juce::Point<int>) const noexcept;
+    [[nodiscard]] int voiceAt(juce::Point<int>) const noexcept;
+    [[nodiscard]] juce::Rectangle<int> voiceTimelineBounds() const noexcept;
+    [[nodiscard]] static bool noteMatchesTarget(const NoteEvent&, int) noexcept;
     [[nodiscard]] juce::File createExportFile(int channel) const;
 
     PulsoAudioProcessor& processor;
-    int armedChannel{-1};
-    int hoverChannel{-1};
+    int armedChannel{-999};
+    int hoverChannel{-999};
+    int selectedSection{};
     bool dragAttempted{};
     bool dragInProgress{};
     juce::String feedback;

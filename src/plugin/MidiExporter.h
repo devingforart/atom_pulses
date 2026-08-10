@@ -12,6 +12,8 @@ struct MidiExportOptions {
     int timeSignatureNumerator{4};
     int timeSignatureDenominator{4};
     int channelFilter{}; // 0 exports every channel.
+    int voiceFilter{-1}; // -1 exports every voice.
+    int familyFilter{-1}; // -1 exports every family.
     juce::String clipName{"PULSO"};
 };
 

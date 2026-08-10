@@ -1,8 +1,11 @@
 #pragma once
 
+#include "Orchestration.h"
+
 #include <array>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -17,9 +20,27 @@ struct NoteEvent {
     int pitch{60};
     int velocity{100};
     int channel{1};
+    VoiceId voice{VoiceId::Unspecified};
 
     [[nodiscard]] double endBeat() const noexcept { return startBeat + durationBeats; }
     friend bool operator==(const NoteEvent&, const NoteEvent&) = default;
+};
+
+struct ControlEvent {
+    double beat{};
+    int controller{11};
+    int value{100};
+    int channel{1};
+    VoiceId voice{VoiceId::Unspecified};
+
+    friend bool operator==(const ControlEvent&, const ControlEvent&) = default;
+};
+
+struct MarkerEvent {
+    double beat{};
+    std::string name;
+
+    friend bool operator==(const MarkerEvent&, const MarkerEvent&) = default;
 };
 
 struct SourceNote {
@@ -49,11 +70,14 @@ struct GenerationContext {
     std::uint64_t evolutionStep{};
     std::vector<int> chordPitchClasses{0, 3, 7};
     std::vector<std::vector<int>> harmonyByBar;
+    std::vector<int> thematicIntervals;
     std::vector<SourceNote> sourceNotes;
 };
 
 struct Pattern {
     std::vector<NoteEvent> notes;
+    std::vector<ControlEvent> controls;
+    std::vector<MarkerEvent> markers;
     double lengthBeats{4.0};
     std::uint64_t seed{1};
 };

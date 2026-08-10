@@ -28,16 +28,18 @@ el flujo de la sesión.
 7. Mantener resultados reproducibles dentro de una sesión.
 8. Explicar cada decisión en contexto: ningún control depende de consultar un manual externo.
 
-## Alcance de 0.4
+## Alcance de 0.6
 
 Incluye composición simbólica mediante GPT, salida estructurada validada, fallback
 local, armonía exportable, locks exactos por capa, regeneración selectiva, Undo,
-persistencia de la partitura completa, arrastre MIDI, transporte y preescucha segura.
+persistencia de la partitura completa, canciones de hasta 30 minutos, forma jerárquica,
+orquestación dinámica de doce voces, automatización expresiva, timeline de secciones,
+arrastre MIDI por voz o familia, transporte y preescucha segura.
 No incluye todavía sidechain de audio ni conocimiento general de otras pistas.
 
 ## Contrato de coherencia
 
-Una salida no se considera frase solo porque dura varios compases. PULSO aplica siete
+Una salida no se considera canción sólo porque dura muchos compases. PULSO aplica ocho
 reglas observables:
 
 1. **Identidad:** un motivo base reconocible reaparece durante la frase.
@@ -45,8 +47,12 @@ reglas observables:
 3. **Conducción:** el registro se mantiene estable y evita saltos arbitrarios.
 4. **Desarrollo:** la densidad y las alteraciones crecen de forma acotada hacia el final.
 5. **Resolución:** bajo y contramelodía preparan el retorno; batería construye un fill.
-6. **Interacción:** bajo, batería y melodía derivan del mismo plan y ocupan funciones distintas.
+6. **Interacción:** cada voz declara una función, registro e interacción; bajo, ritmo,
+   armonía y melodía derivan del mismo plan sin duplicarse mecánicamente.
 7. **Linaje:** las capas bloqueadas permanecen exactas; únicamente las desbloqueadas cambian.
+8. **Forma:** cada sección presenta, contrasta, desarrolla, culmina o resuelve el mismo ADN.
+9. **Orquestación:** las voces entran y salen según la función de la sección; densidad no
+   significa que las doce deban sonar simultáneamente.
 
 La reproducción repite el resultado de manera exacta hasta que el usuario solicita
 otra idea o regenera las capas desbloqueadas.

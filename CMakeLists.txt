@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.4.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.6.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,9 +16,13 @@ add_library(pulso_core STATIC
     src/core/Generator.cpp
     src/core/Generator.h
     src/core/MusicTypes.h
+    src/core/Orchestration.cpp
+    src/core/Orchestration.h
     src/core/Random.h
     src/core/Scale.cpp
     src/core/Scale.h
+    src/core/SongComposer.cpp
+    src/core/SongComposer.h
 )
 target_include_directories(pulso_core PUBLIC src)
 target_compile_features(pulso_core PUBLIC cxx_std_20)
@@ -75,6 +79,8 @@ if(PULSO_BUILD_PLUGIN)
     target_sources(Pulso PRIVATE
         src/plugin/AiComposer.cpp
         src/plugin/AiComposer.h
+        src/plugin/CompositionProgress.cpp
+        src/plugin/CompositionProgress.h
         src/plugin/LookAndFeel.cpp
         src/plugin/LookAndFeel.h
         src/plugin/MidiExporter.cpp

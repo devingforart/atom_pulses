@@ -57,8 +57,21 @@ void advance(TestPlayHead& playHead, int samples, double sampleRate) {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI initialiseJuce;
+    if (argc > 1 && juce::String(argv[1]) == "--live-ai") {
+        juce::String error;
+        std::stop_source stopSource;
+        const auto plan = pulso::plugin::AiComposer::planSong(
+            "An evolving instrumental journey with restraint, thematic recall and a decisive resolution",
+            60, 30, 120.0, 4.0, 424242, stopSource.get_token(), error);
+        require(error.isEmpty(), "Live OpenAI song-plan request failed: " + error.toStdString());
+        require(plan.sections.size() >= 3 && plan.voices.size() >= 7 && plan.totalBars == 30,
+                "Live OpenAI response did not satisfy the dynamic-orchestration contract");
+        std::cout << "[PASS] Live structured song plan | voices=" << plan.voices.size()
+                  << " sections=" << plan.sections.size() << '\n';
+        return 0;
+    }
     constexpr auto sampleRate = 48000.0;
     constexpr auto blockSize = 256;
 
@@ -125,6 +138,54 @@ int main() {
             "Structured GPT output must validate into a playable composition");
     require(parsedComposition.pattern.notes.size() == 4 && parsedComposition.title == "Afterglow",
             "Structured composition metadata and all four layers must survive parsing");
+
+    const auto songPlanExample = juce::String(R"json({
+      "title":"The Long Return","key":"D minor","summary":"A complete dramatic arc",
+      "root_pitch_class":2,"mode":"minor","motif_intervals":[0,3,7,5],
+      "chord_degrees":[0,5,3,6],"voices":[
+        {"id":"core_drums","function":"Pulse anchor","interaction":"Leaves space at cadences","activity":0.8,"syncopation":0.4,"minimum_pitch":35,"maximum_pitch":81},
+        {"id":"sub_bass","function":"Tonal gravity","interaction":"Supports harmonic rhythm","activity":0.7,"syncopation":0.2,"minimum_pitch":28,"maximum_pitch":48},
+        {"id":"movement_bass","function":"Forward motion","interaction":"Answers the sub bass","activity":0.5,"syncopation":0.5,"minimum_pitch":36,"maximum_pitch":62},
+        {"id":"harmonic_foundation","function":"Voice-led foundation","interaction":"Frames the lead","activity":0.6,"syncopation":0.1,"minimum_pitch":45,"maximum_pitch":76},
+        {"id":"harmonic_pulse","function":"Rhythmic harmony","interaction":"Answers percussion","activity":0.5,"syncopation":0.6,"minimum_pitch":50,"maximum_pitch":84},
+        {"id":"lead","function":"Carries the motif","interaction":"Alternates with countermelody","activity":0.6,"syncopation":0.4,"minimum_pitch":55,"maximum_pitch":92},
+        {"id":"atmosphere","function":"Long-range depth","interaction":"Bridges sparse sections","activity":0.4,"syncopation":0.0,"minimum_pitch":42,"maximum_pitch":92}
+      ],"sections":[
+        {"name":"Prologue","function":"Introduce motif fragments","harmonic_direction":"Tonic ambiguity","motif_treatment":"Fragment","bars":8,"energy":0.2,"tension":0.2,"density":0.3,"motif_variant":0,"active_voices":["harmonic_foundation","lead","atmosphere"]},
+        {"name":"Development","function":"Transform the theme","harmonic_direction":"Move away from tonic","motif_treatment":"Sequence","bars":16,"energy":0.7,"tension":0.8,"density":0.7,"motif_variant":2,"active_voices":["core_drums","sub_bass","harmonic_foundation","harmonic_pulse","lead"]},
+        {"name":"Coda","function":"Resolve the argument","harmonic_direction":"Final tonic","motif_treatment":"Cadential recall","bars":8,"energy":0.3,"tension":0.1,"density":0.3,"motif_variant":0,"active_voices":["sub_bass","harmonic_foundation","lead","atmosphere"]}
+      ]
+    })json");
+    pulso::SongPlan parsedSongPlan;
+    require(pulso::plugin::AiComposer::songPlanSchemaIsValid() &&
+                pulso::plugin::AiComposer::parseSongPlanJson(songPlanExample, 64, 32, 120.0,
+                                                              4.0, 77, parsedSongPlan, parseError),
+            "Structured GPT song architecture must validate independently from MIDI rendering");
+    require(parsedSongPlan.sections.size() == 3 && parsedSongPlan.voices.size() == 7 &&
+                parsedSongPlan.sections[1].activeVoices.size() == 5 && parsedSongPlan.totalBars == 32 &&
+                parsedSongPlan.sections.back().startBar == 24,
+            "Validated song architecture must preserve voices and contiguous section metadata");
+
+    const auto orchestrationPlan = pulso::SongComposer::createLocalPlan(
+        "Deep progressive long-form test", 120, 120.0, 4.0, 8841, 2, pulso::ScaleKind::Minor);
+    pulso::GenerationContext orchestrationFoundation;
+    orchestrationFoundation.role = pulso::Role::Ensemble;
+    orchestrationFoundation.seed = orchestrationPlan.seed;
+    const auto orchestration = pulso::SongComposer{}.render(orchestrationPlan,
+                                                             orchestrationFoundation);
+    const auto orchestrationFile = exportFolder.getNonexistentChildFile("orchestration", ".mid", false);
+    exportOptions.channelFilter = 0;
+    exportOptions.clipName = "PULSO Orchestration Test";
+    require(pulso::plugin::writePatternToMidiFile(orchestration, orchestrationFile, exportOptions),
+            "A dynamically orchestrated song must export as standard multitrack MIDI");
+    juce::FileInputStream orchestrationInput(orchestrationFile);
+    juce::MidiFile orchestrationMidi;
+    require(orchestrationInput.openedOk() && orchestrationMidi.readFrom(orchestrationInput) &&
+                orchestrationMidi.getNumTracks() == 13,
+            "Full-song export must contain a conductor plus twelve independently named voice tracks");
+    require(!orchestration.controls.empty() &&
+                orchestration.markers.size() == orchestrationPlan.sections.size(),
+            "Long-form export must retain expressive CC data and structural section markers");
 
     const auto bassFile = exportFolder.getNonexistentChildFile("bass", ".mid", false);
     exportOptions.channelFilter = 1;
@@ -274,7 +335,7 @@ int main() {
             ++tooltipCount;
         }
     }
-    require(tooltipCount >= 19, "The complete visible interface must be covered by tooltips");
+    require(tooltipCount >= 21, "The complete visible interface must be covered by tooltips");
     editor.reset();
 
     juce::MemoryBlock savedState;
@@ -295,6 +356,7 @@ int main() {
 
     ensembleFile.deleteFile();
     bassFile.deleteFile();
+    orchestrationFile.deleteFile();
 
     processor.releaseResources();
     processor.setPlayHead(nullptr);

@@ -1,6 +1,31 @@
 #include "PluginEditor.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace pulso::plugin {
+namespace {
+
+int durationFromText(juce::String text) {
+    text = text.trim().toLowerCase();
+    if (text.isEmpty() || text == "idea" || text == "loop") return 0;
+    if (text.containsChar(':')) {
+        const auto parts = juce::StringArray::fromTokens(text, ":", "");
+        if (parts.size() == 2)
+            return std::clamp(parts[0].getIntValue() * 60 + parts[1].getIntValue(), 30, 1800);
+    }
+    const auto value = text.retainCharacters("0123456789.").getDoubleValue();
+    if (value <= 0.0) return 0;
+    const auto seconds = text.contains("sec") ? value : value * 60.0;
+    return std::clamp(static_cast<int>(std::lround(seconds)), 30, 1800);
+}
+
+juce::String durationText(int seconds) {
+    if (seconds <= 0) return "IDEA";
+    return juce::String(seconds / 60) + ":" + juce::String(seconds % 60).paddedLeft('0', 2);
+}
+
+} // namespace
 
 PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     : AudioProcessorEditor(&owner), processor(owner), patternView(owner), tooltipWindow(this, 350) {
@@ -27,6 +52,10 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     promptLabel.setText("DESCRIBE THE IDEA (OPTIONAL)", juce::dontSendNotification);
     promptLabel.setFont(juce::FontOptions(10.5f, juce::Font::bold));
     promptLabel.setColour(juce::Label::textColourId, colours::muted);
+    durationLabel.setText("SONG LENGTH", juce::dontSendNotification);
+    durationLabel.setJustificationType(juce::Justification::centredRight);
+    durationLabel.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+    durationLabel.setColour(juce::Label::textColourId, colours::muted);
     prompt.setText(processor.currentCreativeDirection(), false);
     prompt.setTextToShowWhenEmpty("e.g. intimate nocturnal soul, memorable hook, tension that blooms in bar 7…",
                                   colours::muted);
@@ -34,6 +63,19 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     prompt.setReturnKeyStartsNewLine(false);
     prompt.onTextChange = [this] { processor.setCreativeDirection(prompt.getText()); };
     prompt.onReturnKey = [this] { processor.requestGenerateIdea(); };
+
+    const auto initialDuration = processor.targetSongDurationSeconds() > 0
+        ? processor.targetSongDurationSeconds() : 210;
+    duration.setText(durationText(initialDuration), false);
+    duration.setJustification(juce::Justification::centred);
+    duration.setInputRestrictions(8, "0123456789:.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ ");
+    duration.onTextChange = [this] {
+        const auto seconds = durationFromText(duration.getText());
+        processor.setTargetSongDurationSeconds(seconds);
+        generateButton.setButtonText(seconds > 0 ? "COMPOSE SONG" : "GENERATE IDEA");
+    };
+    processor.setTargetSongDurationSeconds(initialDuration);
+    generateButton.setButtonText("COMPOSE SONG");
 
     ideaTitle.setFont(juce::FontOptions(20.0f, juce::Font::bold));
     ideaTitle.setColour(juce::Label::textColourId, colours::text);
@@ -46,13 +88,13 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     undoButton.onClick = [this] { processor.requestUndo(); };
 
     configureLock(lockButtons[0], PulsoAudioProcessor::Layer::Harmony,
-                  "HARMONY · Preserve the complete chord progression and voicings while other layers change.");
+                  "HARMONY + FX · Preserve foundation, pulses, upper harmony, atmosphere and transitions while other families change.");
     configureLock(lockButtons[1], PulsoAudioProcessor::Layer::Melody,
-                  "MELODY · Keep every melodic note exactly while regenerating harmony, bass or drums.");
+                  "MELODIC · Keep lead and countermelody exactly while regenerating other voice families.");
     configureLock(lockButtons[2], PulsoAudioProcessor::Layer::Bass,
-                  "BASS · Keep the current bass performance and regenerate only unlocked layers.");
+                  "BASS · Keep sub bass and movement bass exactly while regenerating unlocked voices.");
     configureLock(lockButtons[3], PulsoAudioProcessor::Layer::Drums,
-                  "DRUMS · Keep the current drum performance and regenerate only unlocked layers.");
+                  "RHYTHM · Keep core drums plus low and high percussion exactly while other families change.");
 
     generateButton.setTooltip("Ask GPT to compose a complete coherent idea. If no API key is available, PULSO uses its local engine honestly.");
     nextButton.setTooltip("Create the next idea. Locked layers remain note-for-note identical; unlocked layers are recomposed.");
@@ -62,20 +104,24 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     thruButton.setTooltip("Also pass incoming MIDI to the output alongside PULSO's composition.");
     prompt.setTooltip("Describe mood, movement, instrumentation or narrative in natural language. Leave empty for an autonomous idea.");
     promptLabel.setTooltip(prompt.getTooltip());
+    duration.setTooltip("Target duration. Use 9:00 or '9 min' for a full song; type IDEA for a short compositional sketch.");
+    durationLabel.setTooltip(duration.getTooltip());
     title.setTooltip("PULSO turns compositional intent into editable multi-track MIDI.");
     subtitle.setTooltip("The installed version and current product mode.");
     status.setTooltip("Host tempo, phrase length, idea lineage and transport state.");
     aiBadge.setTooltip("GPT status is explicit. PULSO never labels local fallback output as AI-generated.");
     ideaTitle.setTooltip("Title and tonal centre proposed for the current composition.");
     ideaDescription.setTooltip("The compositional intention behind the current idea.");
-    patternView.setTooltip("Four musical layers. Drag ALL or an individual layer directly into Ableton as editable MIDI.");
+    patternView.setTooltip("Twelve dynamically orchestrated voices. Drag a voice lane, a family, the selected SECTION or the FULL SONG into Ableton as separated MIDI tracks.");
 
-    for (auto* component : std::array<juce::Component*, 19>{
-             &title, &subtitle, &status, &aiBadge, &promptLabel, &prompt, &ideaTitle,
+    for (auto* component : std::array<juce::Component*, 21>{
+             &title, &subtitle, &status, &aiBadge, &promptLabel, &durationLabel, &prompt, &duration, &ideaTitle,
              &ideaDescription, &generateButton, &nextButton, &regenerateButton, &undoButton,
              &previewButton, &thruButton, &lockButtons[0], &lockButtons[1], &lockButtons[2],
              &lockButtons[3], &patternView})
         addAndMakeVisible(component);
+
+    addChildComponent(compositionProgress);
 
     previewAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "preview", previewButton);
     thruAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "thru", thruButton);
@@ -87,7 +133,7 @@ PulsoAudioProcessorEditor::~PulsoAudioProcessorEditor() { setLookAndFeel(nullptr
 void PulsoAudioProcessorEditor::configureLock(juce::ToggleButton& button,
                                                PulsoAudioProcessor::Layer layer,
                                                const juce::String& tooltip) {
-    constexpr std::array names{"LOCK HARMONY", "LOCK MELODY", "LOCK BASS", "LOCK DRUMS"};
+    constexpr std::array names{"LOCK HARMONY + FX", "LOCK MELODIC", "LOCK BASS", "LOCK RHYTHM"};
     button.setButtonText(names[static_cast<std::size_t>(layer)]);
     button.setToggleState(processor.isLayerLocked(layer), juce::dontSendNotification);
     button.setTooltip(tooltip);
@@ -109,9 +155,13 @@ void PulsoAudioProcessorEditor::resized() {
     status.setBounds(header);
     area.removeFromTop(18);
 
-    promptLabel.setBounds(area.removeFromTop(18));
+    auto promptLabels = area.removeFromTop(18);
+    durationLabel.setBounds(promptLabels.removeFromRight(100));
+    promptLabel.setBounds(promptLabels);
     auto promptRow = area.removeFromTop(46);
     generateButton.setBounds(promptRow.removeFromRight(180));
+    promptRow.removeFromRight(10);
+    duration.setBounds(promptRow.removeFromRight(90));
     promptRow.removeFromRight(10);
     prompt.setBounds(promptRow);
     area.removeFromTop(12);
@@ -128,6 +178,7 @@ void PulsoAudioProcessorEditor::resized() {
     }
     area.removeFromTop(8);
     patternView.setBounds(area.removeFromTop(std::max(260, area.getHeight() - 62)));
+    compositionProgress.setBounds(patternView.getBounds());
     area.removeFromTop(10);
 
     auto actions = area;
@@ -142,6 +193,18 @@ void PulsoAudioProcessorEditor::resized() {
 }
 
 void PulsoAudioProcessorEditor::timerCallback() {
+    const auto composing = processor.isComposing();
+    compositionProgress.setComposing(composing, processor.aiAvailable(),
+                                     processor.currentAiStatus(),
+                                     processor.currentGenerationProgress());
+    generateButton.setEnabled(!composing);
+    nextButton.setEnabled(!composing);
+    regenerateButton.setEnabled(!composing);
+    undoButton.setEnabled(!composing);
+    prompt.setEnabled(!composing);
+    duration.setEnabled(!composing);
+    for (auto& button : lockButtons) button.setEnabled(!composing);
+
     aiBadge.setText(processor.currentAiStatus(), juce::dontSendNotification);
     ideaTitle.setText(processor.currentIdeaTitle(), juce::dontSendNotification);
     ideaDescription.setText(processor.currentIdeaDescription(), juce::dontSendNotification);

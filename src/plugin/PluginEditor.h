@@ -3,6 +3,7 @@
 #include "LookAndFeel.h"
 #include "PatternView.h"
 #include "PluginProcessor.h"
+#include "CompositionProgress.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -25,6 +26,7 @@ private:
     PulsoAudioProcessor& processor;
     PulsoLookAndFeel pulsoLookAndFeel;
     PatternView patternView;
+    CompositionProgress compositionProgress;
     juce::TooltipWindow tooltipWindow;
     juce::Label title;
     juce::Label subtitle;
@@ -33,7 +35,9 @@ private:
     juce::Label ideaTitle;
     juce::Label ideaDescription;
     juce::Label promptLabel;
+    juce::Label durationLabel;
     juce::TextEditor prompt;
+    juce::TextEditor duration;
     juce::TextButton generateButton{"GENERATE IDEA"};
     juce::TextButton nextButton{"NEXT IDEA"};
     juce::TextButton regenerateButton{"REGENERATE UNLOCKED"};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Generator.h"
+#include "core/SongComposer.h"
 #include "AiComposer.h"
 #include "PreviewSynth.h"
 
@@ -49,6 +50,7 @@ public:
 
     enum class Layer : std::uint8_t { Harmony = 0, Melody, Bass, Drums };
     void setCreativeDirection(const juce::String&);
+    void setTargetSongDurationSeconds(int) noexcept;
     void requestGenerateIdea() noexcept;
     void requestRegenerateUnlocked() noexcept;
     void requestNextIdea() noexcept;
@@ -61,7 +63,19 @@ public:
     [[nodiscard]] juce::String currentIdeaTitle() const;
     [[nodiscard]] juce::String currentIdeaDescription() const;
     [[nodiscard]] juce::String currentCreativeDirection() const;
+    [[nodiscard]] int targetSongDurationSeconds() const noexcept {
+        return songDurationSeconds.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] std::shared_ptr<const SongPlan> currentSongPlan() const noexcept {
+        return songPlanSnapshot.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] float currentGenerationProgress() const noexcept {
+        return generationProgress.load(std::memory_order_relaxed);
+    }
     [[nodiscard]] bool aiAvailable() const { return AiComposer::hasApiKey(); }
+    [[nodiscard]] bool isComposing() const noexcept {
+        return generationInProgress.load(std::memory_order_acquire);
+    }
     [[nodiscard]] std::shared_ptr<const Pattern> currentPattern() const noexcept {
         return uiPatternSnapshot.load(std::memory_order_acquire);
     }
@@ -89,7 +103,7 @@ private:
     static constexpr std::size_t maxPhraseBars = 16;
     static constexpr std::size_t maxHarmonyNotes = 12;
     static constexpr std::size_t maxSourceNotes = 128;
-    static constexpr std::size_t maxPatternNotes = 2048;
+    static constexpr std::size_t maxPatternNotes = 32768;
     static constexpr std::size_t requestQueueSize = 8;
     static constexpr std::size_t resultQueueSize = 4;
 
@@ -134,11 +148,11 @@ private:
         std::uint16_t sourceNoteCount{};
         std::uint8_t action{};
         std::uint8_t lockedLayers{};
+        int targetSongSeconds{};
     };
 
     struct RealtimePattern {
-        std::array<NoteEvent, maxPatternNotes> notes{};
-        std::uint16_t noteCount{};
+        std::shared_ptr<const Pattern> pattern;
         double lengthBeats{4.0};
         std::uint64_t seed{1};
         std::uint64_t serial{};
@@ -170,6 +184,7 @@ private:
     void parameterChanged(const juce::String&, float) override;
 
     Generator generator;
+    SongComposer songComposer;
     PreviewSynth previewSynth;
     juce::dsp::Limiter<float> previewLimiter;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> previewGain;
@@ -193,8 +208,10 @@ private:
     std::jthread generationThread;
 
     RealtimePattern activePattern{};
+    std::atomic<std::shared_ptr<const Pattern>> retiredRealtimeSnapshot;
     std::atomic<std::shared_ptr<const Pattern>> uiPatternSnapshot;
     std::atomic<std::shared_ptr<const Pattern>> previousPatternSnapshot;
+    std::atomic<std::shared_ptr<const SongPlan>> songPlanSnapshot;
     struct IdeaMetadata {
         juce::String title{"Local Idea"};
         juce::String key{"C minor"};
@@ -206,6 +223,9 @@ private:
     juce::String creativeDirection;
     enum class IdeaAction : std::uint8_t { None, Generate, Regenerate, Next, Undo, Restore };
     std::atomic<IdeaAction> pendingIdeaAction{IdeaAction::None};
+    std::atomic<bool> generationInProgress{};
+    std::atomic<float> generationProgress{};
+    std::atomic<int> songDurationSeconds{};
     std::atomic<std::uint8_t> lockedLayers{};
     std::atomic<std::uint64_t> compositionSeed{1};
     std::atomic<std::uint64_t> variationIndex{};

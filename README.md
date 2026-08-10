@@ -1,6 +1,6 @@
 # PULSO
 
-PULSO es un navegador de ideas musicales MIDI. GPT propone una composición completa
+PULSO es una suite de composición MIDI. GPT propone una obra completa
 con armonía, melodía, bajo y batería; un motor local valida y reproduce el resultado
 sin bloquear el audio. Sin credencial o red, PULSO continúa con un compositor local
 y lo identifica explícitamente como fallback.
@@ -9,9 +9,11 @@ Este repositorio contiene un MVP funcional para Ableton Live en Windows:
 
 - Plugin VST3 y aplicación standalone construidos con JUCE.
 - Generador musical C++20 desacoplado y cubierto por pruebas.
-- Cuatro capas editables: `Harmony`, `Melody`, `Bass` y `Drums`.
+- Orquestación dinámica de hasta doce voces: batería central, dos percusiones, dos bajos,
+  tres capas armónicas, lead, contramelodía, atmósfera y transiciones.
 - Un `CompositionPlan` global con motivo, contorno, secciones, función armónica y tensión.
-- Frases de 1, 2, 4, 8 o 16 compases con memoria motívica y recorrido armónico.
+- Modo `IDEA` para frases y modo canción de 30 segundos a 30 minutos.
+- Arquitectura jerárquica con secciones, ADN temático, curva dramática y cadencia final.
 - Modos `Loop` y `Evolve`, con evolución gradual en cada vuelta de la frase.
 - Flujo sin perillas: describir, generar, bloquear capas, regenerar, avanzar y deshacer.
 - Variaciones reproducibles y estado persistente en el proyecto del DAW.
@@ -19,7 +21,7 @@ Este repositorio contiene un MVP funcional para Ableton Live en Windows:
 - Preescucha con ganancia suavizada y limitador a -0.5 dBFS.
 - Ayuda contextual en toda la interfaz: deja el cursor sobre cualquier elemento durante 0.35 s.
 - Salida MIDI para grabar o alimentar cualquier instrumento.
-- Arrastre directo de clips `.mid`: ensemble completo o armonía, melodía, bajo y batería.
+- Arrastre directo de la canción, una sección, una familia o una voz individual como `.mid`.
 - Puente experimental Max for Live para disparar variaciones.
 - Scripts de compilación, validación e instalación.
 
@@ -75,8 +77,9 @@ Cierra Ableton por completo y vuelve a abrirlo. El indicador mostrará
 falla o la respuesta no supera la validación, mostrará `LOCAL ENGINE` o
 `LOCAL FALLBACK`; nunca presenta el fallback como IA.
 
-La dirección creativa y las capas MIDI bloqueadas se envían a OpenAI al pedir una
-idea. PULSO no envía audio. El uso de la API puede tener coste según tu cuenta.
+La dirección creativa y la duración se envían a OpenAI. Para canciones largas GPT
+diseña una partitura estructural compacta; el motor local la desarrolla y valida sin
+enviar audio. El uso de la API puede tener coste según tu cuenta.
 
 ## Primera prueba sin Ableton
 
@@ -96,20 +99,28 @@ abrir el plugin.
 La aplicación standalone permite probar la interfaz y el sintetizador de preescucha.
 Consulta [docs/ABLETON.md](docs/ABLETON.md) para el enrutamiento MIDI completo.
 
-También puedes arrastrar desde la franja inferior de la partitura: `ALL MIDI` crea el
-archivo multitrack completo; `HARMONY`, `BASS`, `MELODY` y `DRUMS` crean clips independientes.
-PULSO escribe tempo, compás, longitud, nombres, canales y velocidades en el archivo.
+También puedes arrastrar desde la franja inferior de la partitura: `FULL SONG` crea el
+archivo multitrack completo; `RHYTHM`, `BASS`, `HARMONY` y `LEADS+FX` crean familias independientes.
+Selecciona un bloque de la forma y arrastra `SECTION` para exportar sólo esa parte.
+También puedes arrastrar directamente cualquiera de las doce filas. PULSO escribe una
+pista MIDI por voz, tempo, compás, marcadores de sección, CC expresivos, nombres,
+canales y velocidades en el archivo.
 
 ## Flujo de composición
 
 - **Creative direction:** una instrucción opcional en lenguaje natural.
-- **Generate Idea:** crea la primera composición completa.
-- **Lock Harmony/Melody/Bass/Drums:** conserva exactamente esa capa.
+- **Song Length:** acepta `9:00`, `9 min` o `IDEA`; el valor predeterminado es `3:30`.
+- **Compose Song:** diseña y renderiza la obra completa a la duración indicada.
+- **Lock Harmony + FX/Melodic/Bass/Rhythm:** conserva exactamente esa familia de voces.
 - **Regenerate Unlocked:** reemplaza únicamente lo que no está bloqueado.
 - **Next Idea:** avanza a otra propuesta respetando locks.
 - **Undo:** recupera la composición completa anterior.
 - **Preview Audio:** activa el sintetizador interno.
 - **MIDI Thru:** conserva también el MIDI de entrada.
+
+Durante cada solicitud aparece un indicador animado con el tiempo transcurrido. Los
+controles de composición se bloquean temporalmente para impedir peticiones duplicadas,
+mientras la idea anterior continúa reproduciéndose sin bloquear el hilo de audio.
 
 ## Estructura
 
@@ -125,9 +136,10 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 
 ## Estado del producto
 
-La versión 0.4 integra GPT como director de composición simbólica, Structured Outputs,
-validación MIDI local, armonía exportable, locks por capa, historial de una idea y
-fallback algorítmico. La red nunca se usa desde el callback de audio.
+La versión 0.6 integra un arquitecto GPT de forma larga, Structured Outputs, renderizado
+jerárquico de hasta 512 compases, doce voces con entrada y salida dinámica, expresión
+CC, timeline de secciones, exportación por voz y fallback algorítmico. La red nunca se
+usa desde el callback de audio.
 
 Lee [docs/ROADMAP.md](docs/ROADMAP.md) para las siguientes etapas y
 [docs/LICENSING.md](docs/LICENSING.md) antes de distribuir binarios.

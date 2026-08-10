@@ -220,6 +220,27 @@ CompositionPlan buildCompositionPlan(const GenerationContext& context) {
         plan.motif.push_back({step, duration, degree, dna.range(-7, 7), essential});
     }
 
+    if (!context.thematicIntervals.empty()) {
+        const auto scaleIntervals = intervalsFor(context.scale);
+        const auto scaleSize = static_cast<int>(scaleIntervals.size());
+        for (std::size_t index = 0; index < plan.motif.size(); ++index) {
+            const auto semitones = context.thematicIntervals[index % context.thematicIntervals.size()];
+            const auto octave = static_cast<int>(std::floor(static_cast<double>(semitones) / 12.0));
+            const auto pitchClass = positiveModulo(semitones, 12);
+            auto closestDegree = 0;
+            auto closestDistance = 99;
+            for (auto candidate = 0; candidate < scaleSize; ++candidate) {
+                const auto distance = std::min(positiveModulo(scaleIntervals[static_cast<std::size_t>(candidate)] - pitchClass, 12),
+                                               positiveModulo(pitchClass - scaleIntervals[static_cast<std::size_t>(candidate)], 12));
+                if (distance < closestDistance) {
+                    closestDegree = candidate;
+                    closestDistance = distance;
+                }
+            }
+            plan.motif[index].degree = octave * scaleSize + closestDegree;
+        }
+    }
+
     const auto bars = std::clamp(context.bars, 1, 16);
     plan.bars.reserve(static_cast<std::size_t>(bars));
     for (auto bar = 0; bar < bars; ++bar) {
@@ -293,7 +314,9 @@ void normalizePattern(Pattern& pattern) {
 
 Pattern renderBass(const GenerationContext& context, const CompositionPlan& plan) {
     const auto bars = std::clamp(context.bars, 1, 16);
-    Pattern result{{}, std::max(1.0, context.beatsPerBar) * bars, context.seed};
+    Pattern result;
+    result.lengthBeats = std::max(1.0, context.beatsPerBar) * bars;
+    result.seed = context.seed;
     auto previousPitch = pitchClassToMidi(harmonyForBar(context, 0).front(), 2, 28, 52);
     const auto cohesion = unit(context.cohesion);
 
@@ -349,7 +372,9 @@ Pattern renderBass(const GenerationContext& context, const CompositionPlan& plan
 
 Pattern renderDrums(const GenerationContext& context, const CompositionPlan& plan) {
     const auto bars = std::clamp(context.bars, 1, 16);
-    Pattern result{{}, std::max(1.0, context.beatsPerBar) * bars, context.seed};
+    Pattern result;
+    result.lengthBeats = std::max(1.0, context.beatsPerBar) * bars;
+    result.seed = context.seed;
     const auto complexity = unit(context.complexity);
     const auto energy = unit(context.energy);
 
@@ -410,7 +435,9 @@ Pattern renderDrums(const GenerationContext& context, const CompositionPlan& pla
 
 Pattern renderCountermelody(const GenerationContext& context, const CompositionPlan& plan) {
     const auto bars = std::clamp(context.bars, 1, 16);
-    Pattern result{{}, std::max(1.0, context.beatsPerBar) * bars, context.seed};
+    Pattern result;
+    result.lengthBeats = std::max(1.0, context.beatsPerBar) * bars;
+    result.seed = context.seed;
     auto previousPitch = scaleDegreePitch(context, plan.motif.front().degree + 2, 67);
     previousPitch = std::clamp(previousPitch, 55, 88);
 
@@ -483,7 +510,9 @@ Pattern Generator::generate(const GenerationContext& context) const {
     Pattern result;
     switch (context.role) {
     case Role::Ensemble:
-        result = {{}, std::max(1.0, context.beatsPerBar) * std::clamp(context.bars, 1, 16), context.seed};
+        result = {};
+        result.lengthBeats = std::max(1.0, context.beatsPerBar) * std::clamp(context.bars, 1, 16);
+        result.seed = context.seed;
         appendPattern(result, renderBass(context, plan));
         appendPattern(result, renderDrums(context, plan));
         appendPattern(result, renderCountermelody(context, plan));

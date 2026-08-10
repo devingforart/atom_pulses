@@ -18,11 +18,15 @@ antes de tocar la instalación anterior.
 1. Crea una pista MIDI.
 2. Inserta PULSO.
 3. Escribe opcionalmente una dirección creativa.
-4. Pulsa `GENERATE IDEA`.
-5. Inicia el transporte.
+4. Indica `9:00`, `3:30` u otra duración en `SONG LENGTH`.
+5. Pulsa `COMPOSE SONG`.
+6. Inicia el transporte.
 
 El sintetizador de `Preview` permite escuchar el patrón sin cargar otro instrumento.
 El indicador distingue una composición GPT validada del motor local.
+La franja superior muestra la forma completa. Pulsa una sección para seleccionarla;
+después arrastra `SECTION` para convertirla en un clip MIDI independiente. `FULL SONG`
+exporta la obra completa con una pista por voz activa, hasta doce.
 
 ## 3. Conservar y regenerar capas
 
@@ -32,7 +36,8 @@ El indicador distingue una composición GPT validada del motor local.
 4. Pulsa `REGENERATE UNLOCKED`: las capas bloqueadas quedan idénticas nota por nota.
 5. Usa `UNDO` para volver al resultado completo anterior.
 
-Armonía usa canal 3, melodía canal 2, bajo canal 1 y batería GM canal 10.
+Los locks actúan por familias: `Harmony + FX`, `Melodic`, `Bass` y `Rhythm`. Las doce
+voces conservan identidad propia aunque varias compartan el mismo canal MIDI.
 
 ## 4. Enviar el MIDI a otro instrumento
 
@@ -51,14 +56,17 @@ notas y velocidades como MIDI normal.
 Cuando la partitura ya contiene notas, mantén pulsada una de las asas inferiores y
 arrástrala a una pista o espacio vacío del Arrangement de Live:
 
-- `ALL MIDI`: archivo MIDI multitrack con bajo, contramelodía y batería.
-- `HARMONY`: acordes y voicings del canal 3.
-- `BASS`: clip del canal 1.
-- `MELODY`: clip del canal 2.
-- `DRUMS`: clip GM del canal 10.
+- `FULL SONG`: archivo multitrack con conductor, marcadores y una pista por voz.
+- `RHYTHM`: batería central y dos percusiones independientes.
+- `BASS`: subgrave y bajo de movimiento.
+- `HARMONY`: fundamento, pulso y capa superior armónica.
+- `LEADS+FX`: lead, contramelodía, atmósfera y transiciones.
+- `SECTION`: solamente el bloque seleccionado de la forma.
 
-El clip conserva la longitud completa de la frase, tempo, compás, velocidades y
-microtiming. Si un rol no existe en el patrón actual, su asa aparece desactivada.
+Las filas de la partitura son también asas: arrastra una fila para exportar esa voz sola.
+
+El clip conserva longitud, tempo, compás, velocidades, microtiming, marcadores y CC
+expresivos. Si una voz no existe en el patrón actual, su fila aparece atenuada.
 
 ## 6. Variaciones desde Max for Live
 

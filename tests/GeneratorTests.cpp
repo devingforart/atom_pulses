@@ -2,6 +2,7 @@
 
 #include "core/Generator.h"
 #include "core/Scale.h"
+#include "core/SongComposer.h"
 
 #include <algorithm>
 #include <array>
@@ -252,4 +253,50 @@ void runGeneratorTests() {
     for (std::size_t index = 0; index < chromatic.notes.size(); ++index)
         require(positiveModulo(transposedChromatic.notes[index].pitch - chromatic.notes[index].pitch, 12) == 2,
                 "Chromatic scale degrees must transpose with the selected root");
+
+    const auto longPlan = SongComposer::createLocalPlan(
+        "A nine minute cinematic suite", 540, 120.0, 4.0, 99173, 0, ScaleKind::Minor);
+    require(longPlan.totalBars == 270 && longPlan.sections.size() >= 8,
+            "A requested nine-minute song must become a complete multi-section form");
+    require(longPlan.sections.front().startBar == 0 &&
+                longPlan.sections.back().startBar + longPlan.sections.back().bars == longPlan.totalBars,
+            "Song sections must cover the entire target duration without gaps");
+    GenerationContext songFoundation = phraseContext();
+    songFoundation.role = Role::Ensemble;
+    SongComposer longFormComposer;
+    const auto longSong = longFormComposer.render(longPlan, songFoundation);
+    requireNear(longSong.lengthBeats, 1080.0, 0.001,
+                "Nine minutes at 120 BPM must render exactly 1080 beats");
+    require(!longSong.notes.empty() && longSong.notes.size() < 32768,
+            "Long-form rendering must remain populated and safe for realtime publication");
+    for (const auto channel : {1, 2, 3, 10})
+        require(std::any_of(longSong.notes.begin(), longSong.notes.end(), [channel](const auto& note) {
+                    return note.channel == channel;
+                }), "A full song must retain every coordinated musical layer");
+    std::set<VoiceId> renderedVoices;
+    for (const auto& note : longSong.notes) renderedVoices.insert(note.voice);
+    require(renderedVoices.size() == voiceDefinitions.size(),
+            "The long-form orchestrator must use all twelve available voices across the complete arc");
+    require(longSong.markers.size() == longPlan.sections.size() && !longSong.controls.empty(),
+            "A complete song must include section markers and expressive MIDI automation");
+    require(std::all_of(longPlan.sections.begin(), longPlan.sections.end(), [](const auto& section) {
+                return !section.activeVoices.empty();
+            }) && std::count_if(longPlan.sections.begin(), longPlan.sections.end(), [](const auto& section) {
+                return section.activeVoices.size() < voiceDefinitions.size();
+            }) > static_cast<int>(longPlan.sections.size() / 2),
+            "Dynamic orchestration must use intentional subsets rather than every voice everywhere");
+    require(std::all_of(longSong.notes.begin(), longSong.notes.end(), [&](const auto& note) {
+                if (note.voice == VoiceId::CoreDrums || note.voice == VoiceId::LowPercussion ||
+                    note.voice == VoiceId::HighPercussion || note.voice == VoiceId::Transitions)
+                    return note.pitch >= 0 && note.pitch <= 127;
+                const auto& definition = voiceDefinition(note.voice);
+                return note.pitch >= definition.minimumPitch && note.pitch <= definition.maximumPitch;
+            }), "Every pitched orchestration voice must remain inside its designed register");
+    require(longFormComposer.render(longPlan, songFoundation).notes == longSong.notes,
+            "The same long-form plan and DNA must render deterministically");
+    const auto compactPlan = SongComposer::createLocalPlan(
+        "A slow compact song", 30, 30.0, 4.0, 31, 5, ScaleKind::Dorian);
+    require(compactPlan.totalBars == 8 && !compactPlan.sections.empty() &&
+                compactPlan.sections.back().startBar + compactPlan.sections.back().bars == 8,
+            "Even the shortest slow song must form a valid contiguous dramatic arc");
 }

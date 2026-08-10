@@ -3,7 +3,7 @@
 namespace pulso::plugin {
 
 PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
-    : AudioProcessorEditor(&owner), processor(owner), patternView(owner) {
+    : AudioProcessorEditor(&owner), processor(owner), patternView(owner), tooltipWindow(this, 350) {
     setLookAndFeel(&pulsoLookAndFeel);
     setResizable(true, true);
     setResizeLimits(900, 560, 1400, 900);
@@ -18,6 +18,10 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     subtitle.setColour(juce::Label::textColourId, colours::muted);
     status.setJustificationType(juce::Justification::centredRight);
     status.setColour(juce::Label::textColourId, colours::muted);
+    helpHint.setText("?  HOVER FOR HELP", juce::dontSendNotification);
+    helpHint.setJustificationType(juce::Justification::centredRight);
+    helpHint.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+    helpHint.setColour(juce::Label::textColourId, colours::accent);
 
     roleBox.addItemList({"Bass", "Percussion", "Countermelody"}, 1);
     rootBox.addItemList({"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}, 1);
@@ -25,23 +29,44 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     phraseBox.addItemList({"1 bar", "2 bars", "4 bars", "8 bars", "16 bars"}, 1);
     modeBox.addItemList({"Loop", "Evolve"}, 1);
 
-    for (auto* component : std::array<juce::Component*, 26>{
-             &title, &subtitle, &status, &roleBox, &rootBox, &scaleBox, &phraseBox, &modeBox,
+    for (auto* component : std::array<juce::Component*, 27>{
+             &title, &subtitle, &status, &helpHint, &roleBox, &rootBox, &scaleBox, &phraseBox, &modeBox,
              &followSlider, &riskSlider, &spaceSlider, &repetitionSlider, &complexitySlider,
              &developmentSlider, &gainSlider, &followLabel, &riskLabel, &spaceLabel,
              &repetitionLabel, &complexityLabel, &developmentLabel, &gainLabel, &variationButton,
              &previewButton, &thruButton, &patternView})
         addAndMakeVisible(component);
 
-    configureKnob(followSlider, followLabel, "FOLLOW");
-    configureKnob(riskSlider, riskLabel, "RISK");
-    configureKnob(spaceSlider, spaceLabel, "SPACE");
-    configureKnob(repetitionSlider, repetitionLabel, "REPEAT");
-    configureKnob(complexitySlider, complexityLabel, "COMPLEXITY");
-    configureKnob(developmentSlider, developmentLabel, "DEVELOP");
-    configureKnob(gainSlider, gainLabel, "OUTPUT");
+    configureKnob(followSlider, followLabel, "FOLLOW",
+                  "FOLLOW · Seguimiento rítmico\nDetermina cuánto usa PULSO los ataques del MIDI de entrada como referencia.\nAlto: acompaña tu interpretación. Bajo: conserva un pulso más independiente.");
+    configureKnob(riskSlider, riskLabel, "RISK",
+                  "RISK · Riesgo armónico\nControla la probabilidad de movimientos menos previsibles sin abandonar la escala.\nEmpieza bajo; súbelo cuando quieras tensión o sorpresa.");
+    configureKnob(spaceSlider, spaceLabel, "SPACE",
+                  "SPACE · Respiración\nIntroduce silencios y reduce la densidad de notas.\nAlto: frase abierta y minimalista. Bajo: interpretación más continua.");
+    configureKnob(repetitionSlider, repetitionLabel, "REPEAT",
+                  "REPEAT · Identidad del motivo\nControla cuánto se repite la figura reconocible entre compases.\nAlto: hook estable. Bajo: mayor contraste interno.");
+    configureKnob(complexitySlider, complexityLabel, "COMPLEXITY",
+                  "COMPLEXITY · Detalle local\nAñade síncopas, subdivisiones y notas auxiliares.\nNo cambia la longitud de la frase; cambia cuánta actividad contiene.");
+    configureKnob(developmentSlider, developmentLabel, "DEVELOP",
+                  "DEVELOP · Arco de la frase\nDefine cuánto evoluciona la idea desde su presentación hasta el último compás.\nAlto: cierre, fill o cadencia más marcados.");
+    configureKnob(gainSlider, gainLabel, "OUTPUT",
+                  "OUTPUT · Volumen de preescucha\nAjusta únicamente el sintetizador interno. No modifica velocidades ni el MIDI enviado.\nLa salida está protegida por un limitador a -0.5 dBFS.");
     gainSlider.setTextValueSuffix(" dB");
     variationButton.onClick = [this] { processor.requestVariation(); };
+
+    title.setTooltip("PULSO genera interpretaciones MIDI coherentes a partir de armonía, escala y ritmo de entrada.");
+    subtitle.setTooltip("Versión instalada y propósito del dispositivo. PULSO trabaja localmente y genera MIDI editable.");
+    status.setTooltip("Estado del host: tempo recibido, longitud de frase y reproducción. PREVIEW CLOCK indica que se usa el reloj interno de 120 BPM.");
+    helpHint.setTooltip("Deja el cursor 0.35 segundos sobre cualquier control para ver qué hace y cómo afecta la música.");
+    roleBox.setTooltip("ROLE · Función musical\nBass: línea grave que afirma las fundamentales.\nPercussion: groove General MIDI por canal 10.\nCountermelody: respuesta melódica en registro medio/agudo.");
+    rootBox.setTooltip("ROOT · Centro tonal\nSelecciona la nota que funciona como hogar de la escala.\nSe usa como fallback cuando todavía no llegó un acorde MIDI.");
+    scaleBox.setTooltip("SCALE · Vocabulario de notas\nMajor: luminoso. Minor: menor natural. Dorian: menor con sexta mayor.\nMixolydian: mayor con séptima menor. Chromatic: permite los 12 sonidos.");
+    phraseBox.setTooltip("PHRASE · Longitud estructural\nElige 1, 2, 4, 8 o 16 compases. El patrón completo vuelve a comenzar después de esa longitud.");
+    modeBox.setTooltip("MODE · Comportamiento entre vueltas\nLoop repite exactamente la frase.\nEvolve cambia detalles al completar cada vuelta, conservando motivo y función armónica.");
+    previewButton.setTooltip("PREVIEW · Audio interno\nActiva el sintetizador de referencia para escuchar PULSO sin otro instrumento.\nDesactívalo cuando uses la salida MIDI con tu propio sintetizador.");
+    thruButton.setTooltip("MIDI THRU · Paso de entrada\nActivado: reenvía también las notas que tocas.\nDesactivado: la salida contiene solo la interpretación generada por PULSO.");
+    variationButton.setTooltip("NEW VARIATION · Nueva identidad\nCrea otro motivo usando el mismo contexto, tonalidad y controles.\nEn Loop, la nueva frase queda estable hasta volver a pulsar.");
+    patternView.setTooltip("PATTERN VIEW · Frase generada\nHorizontal: tiempo y compases. Vertical: altura MIDI.\nBrillo: velocidad. Verde: notas melódicas; naranja: percusión por canal 10.");
 
     roleAttachment = std::make_unique<ComboAttachment>(processor.parameters, "role", roleBox);
     rootAttachment = std::make_unique<ComboAttachment>(processor.parameters, "root", rootBox);
@@ -63,13 +88,16 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
 PulsoAudioProcessorEditor::~PulsoAudioProcessorEditor() { setLookAndFeel(nullptr); }
 
 void PulsoAudioProcessorEditor::configureKnob(juce::Slider& slider, juce::Label& label,
-                                               const juce::String& text) {
+                                               const juce::String& text,
+                                               const juce::String& tooltip) {
     slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 64, 20);
     label.setText(text, juce::dontSendNotification);
     label.setJustificationType(juce::Justification::centred);
     label.setFont(juce::FontOptions(10.5f, juce::Font::bold));
     label.setColour(juce::Label::textColourId, colours::muted);
+    slider.setTooltip(tooltip);
+    label.setTooltip(tooltip);
 }
 
 void PulsoAudioProcessorEditor::paint(juce::Graphics& graphics) {
@@ -83,6 +111,7 @@ void PulsoAudioProcessorEditor::resized() {
     auto header = area.removeFromTop(52);
     title.setBounds(header.removeFromLeft(130));
     subtitle.setBounds(header.removeFromLeft(310).translated(0, 3));
+    helpHint.setBounds(header.removeFromRight(142));
     status.setBounds(header);
     area.removeFromTop(18);
 

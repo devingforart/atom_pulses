@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <memory>
 #include <thread>
 
 namespace {
@@ -151,6 +152,18 @@ int main() {
     }
     require(longestCallback < std::chrono::milliseconds(50),
             "The audio callback must not wait for asynchronous generation");
+
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    auto tooltipCount = 0;
+    for (auto index = 0; index < editor->getNumChildComponents(); ++index) {
+        if (auto* tooltip = dynamic_cast<juce::TooltipClient*>(editor->getChildComponent(index))) {
+            require(tooltip->getTooltip().isNotEmpty(),
+                    "Every direct UX control must provide contextual help");
+            ++tooltipCount;
+        }
+    }
+    require(tooltipCount >= 27, "The complete visible interface must be covered by tooltips");
+    editor.reset();
 
     processor.releaseResources();
     processor.setPlayHead(nullptr);

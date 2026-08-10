@@ -20,14 +20,17 @@ public:
 
 private:
     void timerCallback() override;
-    void configureKnob(juce::Slider&, juce::Label&, const juce::String&);
+    void configureKnob(juce::Slider&, juce::Label&, const juce::String&,
+                       const juce::String& tooltip);
 
     PulsoAudioProcessor& processor;
     PulsoLookAndFeel pulsoLookAndFeel;
     PatternView patternView;
+    juce::TooltipWindow tooltipWindow;
     juce::Label title;
     juce::Label subtitle;
     juce::Label status;
+    juce::Label helpHint;
     juce::ComboBox roleBox;
     juce::ComboBox rootBox;
     juce::ComboBox scaleBox;

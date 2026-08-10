@@ -6,7 +6,7 @@
 
 namespace pulso::plugin {
 
-class PatternView final : public juce::Component {
+class PatternView final : public juce::Component, public juce::SettableTooltipClient {
 public:
     explicit PatternView(PulsoAudioProcessor& owner) : processor(owner) {}
     void paint(juce::Graphics&) override;
@@ -16,4 +16,3 @@ private:
 };
 
 } // namespace pulso::plugin
-

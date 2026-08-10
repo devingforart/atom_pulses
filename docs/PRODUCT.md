@@ -26,6 +26,7 @@ el flujo de la sesión.
 5. Ser seguro para directo: ningún trabajo bloqueante en el hilo de audio.
 6. Funcionar localmente por defecto.
 7. Mantener resultados reproducibles dentro de una sesión.
+8. Explicar cada decisión en contexto: ningún control depende de consultar un manual externo.
 
 ## Alcance de 0.2
 

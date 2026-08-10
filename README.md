@@ -16,6 +16,7 @@ Este repositorio contiene un MVP funcional para Ableton Live en Windows:
 - Variaciones reproducibles y estado persistente en el proyecto del DAW.
 - Motor de tiempo real 0.2.1: generación en worker, panic MIDI y recuperación de seek/loop.
 - Preescucha con ganancia suavizada y limitador a -0.5 dBFS.
+- Ayuda contextual en toda la interfaz: deja el cursor sobre cualquier elemento durante 0.35 s.
 - Salida MIDI para grabar o alimentar cualquier instrumento.
 - Puente experimental Max for Live para disparar variaciones.
 - Scripts de compilación, validación e instalación.

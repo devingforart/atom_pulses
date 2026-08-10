@@ -13,6 +13,9 @@ PulsoLookAndFeel::PulsoLookAndFeel() {
     setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     setColour(juce::TextButton::textColourOffId, colours::text);
     setColour(juce::TextButton::textColourOnId, colours::background);
+    setColour(juce::TooltipWindow::backgroundColourId, colours::panelRaised);
+    setColour(juce::TooltipWindow::textColourId, colours::text);
+    setColour(juce::TooltipWindow::outlineColourId, colours::accent.withAlpha(0.75f));
 }
 
 void PulsoLookAndFeel::drawRotarySlider(juce::Graphics& graphics, int x, int y, int width, int height,
@@ -50,4 +53,3 @@ void PulsoLookAndFeel::drawButtonBackground(juce::Graphics& graphics, juce::Butt
 }
 
 } // namespace pulso::plugin
-

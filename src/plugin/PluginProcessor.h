@@ -55,10 +55,16 @@ public:
     void requestRegenerateUnlocked() noexcept;
     void requestNextIdea() noexcept;
     void requestUndo() noexcept;
+    void cancelGeneration() noexcept;
     void requestVariation() noexcept { requestRegenerateUnlocked(); }
     void requestNewComposition() noexcept { requestNextIdea(); }
     void setLayerLocked(Layer, bool) noexcept;
     [[nodiscard]] bool isLayerLocked(Layer) const noexcept;
+    void toggleVoiceSolo(VoiceId) noexcept;
+    void toggleVoiceMute(VoiceId) noexcept;
+    [[nodiscard]] bool isVoiceSolo(VoiceId) const noexcept;
+    [[nodiscard]] bool isVoiceMuted(VoiceId) const noexcept;
+    [[nodiscard]] bool isVoiceAudible(VoiceId) const noexcept;
     [[nodiscard]] juce::String currentAiStatus() const;
     [[nodiscard]] juce::String currentIdeaTitle() const;
     [[nodiscard]] juce::String currentIdeaDescription() const;
@@ -225,15 +231,23 @@ private:
     enum class IdeaAction : std::uint8_t { None, Generate, Regenerate, Next, Undo, Restore };
     std::atomic<IdeaAction> pendingIdeaAction{IdeaAction::None};
     std::atomic<bool> generationInProgress{};
+    std::atomic<bool> generationCancelRequested{};
+    std::atomic<std::shared_ptr<std::stop_source>> activeGenerationCancellation;
     std::atomic<float> generationProgress{};
     std::atomic<int> songDurationSeconds{};
     std::atomic<int> automaticPreviewWorld{};
     std::atomic<std::uint8_t> lockedLayers{};
+    std::atomic<std::uint32_t> soloVoices{};
+    std::atomic<std::uint32_t> mutedVoices{};
+    std::atomic<std::uint64_t> auditionRevision{1};
     std::atomic<std::uint64_t> compositionSeed{1};
     std::atomic<std::uint64_t> variationIndex{};
+    std::atomic<std::uint64_t> generationPreviousSeed{1};
+    std::atomic<std::uint64_t> generationPreviousVariation{};
     std::atomic<std::uint64_t> generationRevision{1};
     std::atomic<std::uint64_t> processingEpoch{1};
     std::uint64_t submittedGenerationRevision{};
+    std::uint64_t submittedAuditionRevision{};
     std::uint64_t nextRequestSerial{};
     std::uint64_t evolutionStep{};
     std::int64_t observedBar{std::numeric_limits<std::int64_t>::min()};

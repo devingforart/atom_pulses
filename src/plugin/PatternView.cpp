@@ -62,6 +62,21 @@ int PatternView::voiceAt(juce::Point<int> point) const noexcept {
     return voiceTargetBase + lane;
 }
 
+int PatternView::auditionAt(juce::Point<int> point) const noexcept {
+    constexpr auto labelWidth = 126;
+    constexpr auto buttonWidth = 20;
+    const auto area = voiceTimelineBounds();
+    if (!area.contains(point)) return 0;
+    const auto voiceTarget = voiceAt(point);
+    if (voiceTarget < voiceTargetBase) return 0;
+    const auto relativeX = point.x - area.getX();
+    if (relativeX >= labelWidth - buttonWidth * 2 && relativeX < labelWidth - buttonWidth)
+        return voiceTarget - voiceTargetBase + 1;
+    if (relativeX >= labelWidth - buttonWidth && relativeX < labelWidth)
+        return -(voiceTarget - voiceTargetBase + 1);
+    return 0;
+}
+
 bool PatternView::noteMatchesTarget(const NoteEvent& note, int target) noexcept {
     if (target == fullSongTarget || target == sectionTarget) return true;
     const auto voice = resolvedVoice(note);
@@ -177,9 +192,25 @@ juce::File PatternView::createExportFile(int channel) const {
 }
 
 void PatternView::mouseDown(const juce::MouseEvent& event) {
+    if (const auto audition = auditionAt(event.getPosition()); audition != 0) {
+        const auto voice = static_cast<VoiceId>(std::abs(audition) - 1);
+        if (audition > 0) processor.toggleVoiceSolo(voice);
+        else processor.toggleVoiceMute(voice);
+        feedback = juce::String(voiceDefinition(voice).name.data()).toUpperCase() +
+            (audition > 0 ? (processor.isVoiceSolo(voice) ? " · SOLO" : " · SOLO OFF")
+                          : (processor.isVoiceMuted(voice) ? " · MUTED" : " · MUTE OFF"));
+        armedChannel = noTarget;
+        repaint();
+        return;
+    }
     if (const auto section = sectionAt(event.getPosition()); section >= 0) {
         selectedSection = section;
-        feedback = "SECTION " + juce::String(section + 1) + " SELECTED";
+        const auto plan = processor.currentSongPlan();
+        const auto rhythm = plan && section < static_cast<int>(plan->sections.size())
+            ? juce::String(kickStateKey(plan->sections[static_cast<std::size_t>(section)].rhythm.kickState).data())
+                  .replaceCharacter('_', ' ').toUpperCase()
+            : juce::String{};
+        feedback = "SECTION " + juce::String(section + 1) + " · " + rhythm;
         armedChannel = noTarget;
         repaint();
         return;
@@ -279,7 +310,11 @@ void PatternView::paint(juce::Graphics& graphics) {
             if (sectionBounds.getWidth() > 42.0f) {
                 graphics.setColour(colours::background);
                 graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-                graphics.drawFittedText(juce::String::fromUTF8(section.name.c_str()).toUpperCase(),
+                auto label = juce::String::fromUTF8(section.name.c_str()).toUpperCase();
+                if (sectionBounds.getWidth() > 78.0f)
+                    label += " · " + juce::String(kickStateKey(section.rhythm.kickState).data())
+                                         .replaceCharacter('_', ' ').toUpperCase();
+                graphics.drawFittedText(label,
                                         sectionBounds.toNearestInt().reduced(4, 0),
                                         juce::Justification::centred, 1);
             }
@@ -321,8 +356,20 @@ void PatternView::paint(juce::Graphics& graphics) {
                                .withAlpha(activeInSelection ? 1.0f : 0.32f));
         graphics.setFont(juce::FontOptions(hasSongPlan ? 8.6f : 9.5f, juce::Font::bold));
         graphics.drawText(juce::String("::  ") + juce::String(voiceDefinition(voice).name.data()).toUpperCase(),
-                          laneBounds.withWidth(labelWidth - 5.0f).toNearestInt(),
+                          laneBounds.withWidth(labelWidth - 45.0f).toNearestInt(),
                           juce::Justification::centredLeft);
+        auto soloButton = laneBounds.withX(laneBounds.getX() + labelWidth - 40.0f).withWidth(19.0f).reduced(1.0f);
+        auto muteButton = laneBounds.withX(laneBounds.getX() + labelWidth - 20.0f).withWidth(19.0f).reduced(1.0f);
+        const auto solo = processor.isVoiceSolo(voice);
+        const auto muted = processor.isVoiceMuted(voice);
+        graphics.setColour((solo ? colours::accent : colours::panelRaised).withAlpha(solo ? 0.95f : 0.62f));
+        graphics.fillRoundedRectangle(soloButton, 3.0f);
+        graphics.setColour(solo ? colours::background : colours::muted);
+        graphics.drawText("S", soloButton.toNearestInt(), juce::Justification::centred);
+        graphics.setColour((muted ? colours::accentHot : colours::panelRaised).withAlpha(muted ? 0.95f : 0.62f));
+        graphics.fillRoundedRectangle(muteButton, 3.0f);
+        graphics.setColour(muted ? colours::background : colours::muted);
+        graphics.drawText("M", muteButton.toNearestInt(), juce::Justification::centred);
         graphics.setColour(colours::panelRaised);
         graphics.drawHorizontalLine(juce::roundToInt(laneBounds.getBottom()),
                                     timeline.getX(), timeline.getRight());

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.8.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.12.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,11 +18,21 @@ add_library(pulso_core STATIC
     src/core/MusicTypes.h
     src/core/Orchestration.cpp
     src/core/Orchestration.h
+    src/core/PerformanceTiming.cpp
+    src/core/PerformanceTiming.h
+    src/core/PhraseDirector.cpp
+    src/core/PhraseDirector.h
     src/core/Random.h
+    src/core/RhythmPlan.cpp
+    src/core/RhythmPlan.h
+    src/core/RhythmEngine.cpp
+    src/core/RhythmEngine.h
     src/core/Scale.cpp
     src/core/Scale.h
     src/core/SongComposer.cpp
     src/core/SongComposer.h
+    src/core/TonalContract.cpp
+    src/core/TonalContract.h
 )
 target_include_directories(pulso_core PUBLIC src)
 target_compile_features(pulso_core PUBLIC cxx_std_20)
@@ -60,6 +70,7 @@ if(PULSO_BUILD_PLUGIN)
     FetchContent_MakeAvailable(JUCE)
 
     juce_add_plugin(Pulso
+        VERSION ${PROJECT_VERSION}
         COMPANY_NAME "Pulso Audio"
         BUNDLE_ID "audio.pulso.instrument"
         PLUGIN_MANUFACTURER_CODE Plso

@@ -28,19 +28,21 @@ el flujo de la sesión.
 7. Mantener resultados reproducibles dentro de una sesión.
 8. Explicar cada decisión en contexto: ningún control depende de consultar un manual externo.
 
-## Alcance de 0.8
+## Alcance de 0.12
 
 Incluye composición simbólica mediante GPT, salida estructurada validada, fallback
 local, armonía exportable, locks exactos por capa, regeneración selectiva, Undo,
 persistencia de la partitura completa, canciones de hasta 30 minutos, forma jerárquica,
-orquestación dinámica de doce voces, preview multitimbral con ocho mundos sonoros,
+orquestación dinámica de quince voces, preview multitimbral con ocho mundos sonoros,
 automatización expresiva, timeline de secciones,
-arrastre MIDI por voz o familia, transporte y preescucha segura.
+arrastre MIDI por voz o familia, SOLO/MUTE no destructivo, transporte y preescucha segura.
+La tonalidad declarada es un contrato: metadatos, motivo, armonía, bajos y melodías se
+reconcilian antes de publicar o exportar cualquier composición.
 No incluye todavía sidechain de audio ni conocimiento general de otras pistas.
 
 ## Contrato de coherencia
 
-Una salida no se considera canción sólo porque dura muchos compases. PULSO aplica ocho
+Una salida no se considera canción sólo porque dura muchos compases. PULSO aplica
 reglas observables:
 
 1. **Identidad:** un motivo base reconocible reaparece durante la frase.
@@ -53,9 +55,19 @@ reglas observables:
 7. **Linaje:** las capas bloqueadas permanecen exactas; únicamente las desbloqueadas cambian.
 8. **Forma:** cada sección presenta, contrasta, desarrolla, culmina o resuelve el mismo ADN.
 9. **Orquestación:** las voces entran y salen según la función de la sección; densidad no
-   significa que las doce deban sonar simultáneamente.
+   significa que las quince deban sonar simultáneamente.
 10. **Respiración:** lead, acompañamiento, bajo y ritmo contienen ausencias coordinadas;
     cada frase reserva espacio antes de volver a afirmar el motivo.
+11. **Contrato tonal:** los apoyos estructurales pertenecen al acorde y a la escala; sólo
+    sobrevive el cromatismo breve, débil, preparado y resuelto por semitono.
+12. **Compatibilidad vertical:** se corrigen choques no intencionales y las notas de soporte
+    incompatibles terminan antes del siguiente cambio armónico.
+13. **Identidad rítmica:** cada sección declara un estado del kick y las excepciones son
+    gestos con posición y propósito, nunca bajas accidentales producidas por aleatoriedad.
+14. **MIDI productivo:** kick, clap/snare, closed hats, open hats/shaker y ambas percusiones
+    conservan identidades independientes para edición y arrastre en Ableton.
+15. **Desarrollo rítmico:** las secciones heredan celdas reconocibles y las transforman
+    con cambios escasos y motivados, en vez de sustituirlas por patrones inconexos.
 
 La reproducción repite el resultado de manera exacta hasta que el usuario solicita
 otra idea o regenera las capas desbloqueadas.

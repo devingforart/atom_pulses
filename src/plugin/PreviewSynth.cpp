@@ -79,6 +79,9 @@ void PreviewSynth::reset() noexcept {
     std::fill(roomRight.begin(), roomRight.end(), 0.0f);
     delayWrite = 0;
     roomWrite = 0;
+    channelExpression.fill(1.0f);
+    channelModulation.fill(0.0f);
+    channelBrightness.fill(0.5f);
     ageCounter = 0;
 }
 
@@ -90,7 +93,10 @@ void PreviewSynth::allNotesOff(int midiChannel, bool allowTailOff) noexcept {
     const auto release = [midiChannel, allowTailOff](auto& voices) {
         for (auto& voice : voices) {
             if (!voice.active || (midiChannel > 0 && voice.channel != midiChannel)) continue;
-            if (allowTailOff) voice.releasing = true;
+            if (allowTailOff) {
+                voice.releasing = true;
+                voice.releaseSeconds = std::min(voice.releaseSeconds, 0.18f);
+            }
             else voice = {};
         }
     };
@@ -268,6 +274,13 @@ void PreviewSynth::handleMessage(const juce::MidiMessage& message) noexcept {
     else if (message.isNoteOff()) noteOff(message.getChannel(), message.getNoteNumber(), true);
     else if (message.isAllNotesOff()) allNotesOff(message.getChannel(), true);
     else if (message.isAllSoundOff()) allNotesOff(message.getChannel(), false);
+    else if (message.isController()) {
+        const auto channel = static_cast<std::size_t>(std::clamp(message.getChannel(), 1, 16) - 1);
+        const auto value = static_cast<float>(message.getControllerValue()) / 127.0f;
+        if (message.getControllerNumber() == 11) channelExpression[channel] = value;
+        else if (message.getControllerNumber() == 1) channelModulation[channel] = value;
+        else if (message.getControllerNumber() == 74) channelBrightness[channel] = value;
+    }
 }
 
 float PreviewSynth::nextNoise(Voice& voice) noexcept {
@@ -380,7 +393,10 @@ float PreviewSynth::renderVoiceSample(Voice& voice) noexcept {
         default: return renderDrumSample(voice);
     }
 
-    voice.filterLeft += voice.filterAlpha * (raw - voice.filterLeft);
+    const auto channelIndex = static_cast<std::size_t>(std::clamp(voice.channel, 1, 16) - 1);
+    const auto expressiveAlpha = std::clamp(voice.filterAlpha *
+        (0.48f + channelBrightness[channelIndex] * 1.04f), 0.001f, 1.0f);
+    voice.filterLeft += expressiveAlpha * (raw - voice.filterLeft);
     raw = voice.filterLeft;
     const auto drive = 1.0f + world.drive * 3.5f;
     raw = std::tanh(raw * drive) / std::tanh(drive);
@@ -388,7 +404,9 @@ float PreviewSynth::renderVoiceSample(Voice& voice) noexcept {
     if (soundWorld == SoundWorld::OrganicMotion) driftAmount = 0.00055;
     else if (soundWorld == SoundWorld::AnalogWarmth) driftAmount = 0.00115;
     else if (soundWorld == SoundWorld::CinematicArc) driftAmount = 0.00072;
-    const auto drift = 1.0 + driftAmount * std::sin(voice.ageSeconds * 1.7 + voice.note * 0.37);
+    const auto modulation = channelModulation[channelIndex] * 0.0018;
+    const auto drift = 1.0 + driftAmount * std::sin(voice.ageSeconds * 1.7 + voice.note * 0.37) +
+                       modulation * std::sin(voice.ageSeconds * 5.1);
     voice.phase += voice.phaseDelta * drift;
     const auto detune = voice.kind == VoiceKind::Foundation || voice.kind == VoiceKind::Atmosphere ?
         1.0035 + world.stereo * 0.003 : 2.002;
@@ -423,7 +441,9 @@ void PreviewSynth::renderVoices(juce::AudioBuffer<float>& output, int startSampl
 
                 const auto raw = voice.oneShot ? renderDrumSample(voice) : renderVoiceSample(voice);
                 const auto level = voice.oneShot ? 0.30f : 1.0f;
-                const auto value = raw * voice.level * voice.envelope * level;
+                const auto expression = channelExpression[static_cast<std::size_t>(
+                    std::clamp(voice.channel, 1, 16) - 1)];
+                const auto value = raw * voice.level * voice.envelope * level * expression;
                 const auto left = value * (voice.pan > 0.0f ? 1.0f - voice.pan * 0.62f : 1.0f);
                 const auto right = value * (voice.pan < 0.0f ? 1.0f + voice.pan * 0.62f : 1.0f);
                 if (output.getNumChannels() > 0) output.addSample(0, sample, left);

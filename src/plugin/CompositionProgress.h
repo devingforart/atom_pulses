@@ -3,6 +3,7 @@
 #include "LookAndFeel.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <functional>
 
 namespace pulso::plugin {
 
@@ -15,6 +16,8 @@ public:
     void setComposing(bool shouldBeActive, bool isUsingAi,
                       const juce::String& stage, float progress);
     void paint(juce::Graphics&) override;
+    void resized() override;
+    std::function<void()> onCancel;
 
 private:
     void timerCallback() override;
@@ -25,6 +28,7 @@ private:
     float phase{};
     float progress{};
     juce::String stage;
+    juce::TextButton cancelButton{"CANCEL"};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompositionProgress)
 };

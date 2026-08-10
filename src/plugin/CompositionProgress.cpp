@@ -6,9 +6,22 @@
 namespace pulso::plugin {
 
 CompositionProgress::CompositionProgress() {
-    setInterceptsMouseClicks(false, false);
+    setInterceptsMouseClicks(true, true);
     setVisible(false);
     setTooltip("PULSO is composing in the background. The current idea remains available until the new one is ready.");
+    cancelButton.setTooltip("Stop the current request immediately and keep the composition already playing.");
+    cancelButton.onClick = [this] {
+        cancelButton.setEnabled(false);
+        cancelButton.setButtonText("CANCELLING...");
+        if (onCancel) onCancel();
+    };
+    addAndMakeVisible(cancelButton);
+}
+
+void CompositionProgress::resized() {
+    auto card = getLocalBounds().toFloat().withSizeKeepingCentre(
+        juce::jmin(440.0f, static_cast<float>(getWidth()) - 32.0f), 144.0f).toNearestInt();
+    cancelButton.setBounds(card.removeFromBottom(34).removeFromRight(118).reduced(4, 2));
 }
 
 void CompositionProgress::setComposing(bool shouldBeActive, bool isUsingAi,
@@ -25,6 +38,8 @@ void CompositionProgress::setComposing(bool shouldBeActive, bool isUsingAi,
     if (active) {
         phase = 0.0f;
         startedAtMs = juce::Time::getMillisecondCounterHiRes();
+        cancelButton.setEnabled(true);
+        cancelButton.setButtonText("CANCEL");
         setVisible(true);
         toFront(false);
         startTimerHz(30);
@@ -46,7 +61,7 @@ void CompositionProgress::paint(juce::Graphics& graphics) {
     graphics.fillAll(colours::background.withAlpha(0.78f));
 
     auto card = getLocalBounds().toFloat().withSizeKeepingCentre(
-        juce::jmin(440.0f, static_cast<float>(getWidth()) - 32.0f), 126.0f);
+        juce::jmin(440.0f, static_cast<float>(getWidth()) - 32.0f), 144.0f);
     graphics.setColour(colours::panelRaised.withAlpha(0.98f));
     graphics.fillRoundedRectangle(card, 14.0f);
     graphics.setColour(colours::accent.withAlpha(0.34f));
@@ -65,7 +80,8 @@ void CompositionProgress::paint(juce::Graphics& graphics) {
         graphics.fillEllipse(juce::Rectangle<float>(diameter, diameter).withCentre(dotCentre));
     }
 
-    auto copy = card.reduced(4.0f, 18.0f);
+    auto copy = card.reduced(4.0f, 14.0f);
+    copy.removeFromBottom(30.0f);
     const auto elapsedSeconds = static_cast<int>(
         (juce::Time::getMillisecondCounterHiRes() - startedAtMs) / 1000.0);
 

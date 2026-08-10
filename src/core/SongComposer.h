@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Generator.h"
+#include "RhythmPlan.h"
 
 #include <functional>
 #include <string>
@@ -30,6 +31,7 @@ struct SongSection {
     double density{0.5};
     int motifVariant{};
     std::vector<VoiceId> activeVoices;
+    SectionRhythmPlan rhythm;
 };
 
 struct SongPlan {
@@ -42,9 +44,11 @@ struct SongPlan {
     double beatsPerBar{4.0};
     int rootPitchClass{};
     ScaleKind scale{ScaleKind::Minor};
+    GrooveFamily grooveFamily{GrooveFamily::DeepProgressiveHouse};
     std::uint64_t seed{1};
     std::vector<int> motifIntervals{0, 3, 5, 7, 3};
     std::vector<int> chordDegrees{0, 5, 3, 6};
+    std::vector<RhythmMotif> rhythmMotifs;
     std::vector<PlannedVoice> voices;
     std::vector<SongSection> sections;
 };

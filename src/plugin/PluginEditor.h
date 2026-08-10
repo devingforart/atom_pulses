@@ -43,6 +43,7 @@ private:
     juce::TextButton regenerateButton{"REGENERATE UNLOCKED"};
     juce::TextButton undoButton{"UNDO"};
     juce::ToggleButton previewButton{"PREVIEW AUDIO"};
+    juce::ToggleButton performanceButton{"HUMAN PERFORMANCE"};
     juce::ComboBox soundWorld;
     juce::ToggleButton thruButton{"MIDI THRU"};
     std::array<juce::ToggleButton, 4> lockButtons;
@@ -50,6 +51,7 @@ private:
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
     using ChoiceAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     std::unique_ptr<ButtonAttachment> previewAttachment;
+    std::unique_ptr<ButtonAttachment> performanceAttachment;
     std::unique_ptr<ChoiceAttachment> soundWorldAttachment;
     std::unique_ptr<ButtonAttachment> thruAttachment;
 

@@ -1,8 +1,11 @@
 #include "TestSupport.h"
 
 #include "core/Generator.h"
+#include "core/PhraseDirector.h"
+#include "core/PerformanceTiming.h"
 #include "core/Scale.h"
 #include "core/SongComposer.h"
+#include "core/TonalContract.h"
 
 #include <algorithm>
 #include <array>
@@ -82,6 +85,23 @@ GenerationContext phraseContext() {
 } // namespace
 
 void runGeneratorTests() {
+    Pattern timingPattern;
+    timingPattern.lengthBeats = 4.0;
+    timingPattern.notes = {{0.13, 0.41, 36, 100, 10, VoiceId::CoreDrums},
+                           {1.46, 0.69, 67, 88, 2, VoiceId::Lead}};
+    timingPattern.controls = {{2.87, 11, 90, 2, VoiceId::Lead}};
+    quantizePatternTiming(timingPattern, 4);
+    require(std::all_of(timingPattern.notes.begin(), timingPattern.notes.end(), [](const auto& note) {
+                return std::abs(note.startBeat * 4.0 - std::round(note.startBeat * 4.0)) < 0.000001 &&
+                       std::abs(note.endBeat() * 4.0 - std::round(note.endBeat() * 4.0)) < 0.000001;
+            }) && std::abs(timingPattern.controls.front().beat * 4.0 -
+                           std::round(timingPattern.controls.front().beat * 4.0)) < 0.000001,
+            "Stored notes, note-offs and controls must land on the exact sixteenth-note grid");
+    require(performanceOffsetBeats(timingPattern.notes.front(), 42, 0, 120.0) == 0.0 &&
+                std::abs(performanceOffsetBeats(timingPattern.notes.back(), 42, 1, 120.0)) <= 0.008 &&
+                performanceOffsetBeats(timingPattern.notes.back(), 42, 1, 120.0) ==
+                    performanceOffsetBeats(timingPattern.notes.back(), 42, 1, 120.0),
+            "Performance timing must keep kick exact and remain deterministic and tightly bounded");
     Generator generator;
     auto context = phraseContext();
 
@@ -130,6 +150,9 @@ void runGeneratorTests() {
         require(noteAt(drums, bar * 4.0 + 3.0, 38) != nullptr,
                 "Each 4/4 bar must preserve the snare backbeat on beat four");
     }
+    require(std::all_of(drums.notes.begin(), drums.notes.end(), [](const auto& note) {
+                return note.pitch != 36 || std::abs(note.startBeat - std::round(note.startBeat)) < 0.035;
+            }), "The local house foundation must not invent unrequested breakbeat kicks between quarter notes");
     require(noteAt(drums, 15.0, 45) != nullptr && noteAt(drums, 15.75, 38) != nullptr,
             "The final bar must contain a directed fill into the loop point");
 
@@ -258,9 +281,33 @@ void runGeneratorTests() {
         "A nine minute cinematic suite", 540, 120.0, 4.0, 99173, 0, ScaleKind::Minor);
     require(longPlan.totalBars == 270 && longPlan.sections.size() >= 8,
             "A requested nine-minute song must become a complete multi-section form");
+    require(!longPlan.rhythmMotifs.empty() &&
+                std::all_of(longPlan.sections.begin(), longPlan.sections.end(), [](const auto& section) {
+                    return !section.rhythm.motifId.empty();
+                }),
+            "Every local long-form score must carry reusable rhythmic DNA across its sections");
     require(longPlan.sections.front().startBar == 0 &&
                 longPlan.sections.back().startBar + longPlan.sections.back().bars == longPlan.totalBars,
             "Song sections must cover the entire target duration without gaps");
+    auto directedBreaths = 0;
+    auto extendedHarmonyBars = 0;
+    for (const auto& section : longPlan.sections) {
+        const auto directions = PhraseDirector::create(longPlan, section);
+        require(directions.size() == static_cast<std::size_t>(section.bars),
+                "PhraseDirector must publish one complete attention contract per bar");
+        for (const auto& direction : directions) {
+            const auto leadForeground = direction.forVoice(VoiceId::Lead).participation ==
+                                        Participation::Foreground;
+            const auto counterForeground = direction.forVoice(VoiceId::Countermelody).participation ==
+                                           Participation::Foreground;
+            require(!(leadForeground && counterForeground),
+                    "Only one melodic voice may own foreground attention in a bar");
+            if (direction.fullBreath) ++directedBreaths;
+            if (direction.harmonicHoldBars > 1) ++extendedHarmonyBars;
+        }
+    }
+    require(directedBreaths > 0 && extendedHarmonyBars > 0,
+            "The formal score must include genuine breaths and variable harmonic rhythm");
     GenerationContext songFoundation = phraseContext();
     songFoundation.role = Role::Ensemble;
     SongComposer longFormComposer;
@@ -292,17 +339,38 @@ void runGeneratorTests() {
                 const auto& definition = voiceDefinition(note.voice);
                 return note.pitch >= definition.minimumPitch && note.pitch <= definition.maximumPitch;
             }), "Every pitched orchestration voice must remain inside its designed register");
+    require(std::all_of(longSong.notes.begin(), longSong.notes.end(), [&](const auto& note) {
+                if (isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
+                    note.voice == VoiceId::Transitions) return true;
+                if (isPitchClassInScale(note.pitch, longPlan.rootPitchClass, longPlan.scale)) return true;
+                if (note.voice != VoiceId::Lead && note.voice != VoiceId::Countermelody) return false;
+                return note.durationBeats <= 0.36;
+            }), "A rendered song may only leave its scale through brief melodic passing motion");
 
     std::vector<std::set<VoiceId>> voicesByBar(static_cast<std::size_t>(longPlan.totalBars));
     std::vector<bool> leadByBar(static_cast<std::size_t>(longPlan.totalBars));
-    std::vector<bool> onsetByBar(static_cast<std::size_t>(longPlan.totalBars));
+    std::vector<bool> counterByBar(static_cast<std::size_t>(longPlan.totalBars));
+    std::vector<bool> kickByBar(static_cast<std::size_t>(longPlan.totalBars));
     std::vector<bool> breathAtEnd(static_cast<std::size_t>(longPlan.totalBars), true);
+    std::vector<int> leadOnsets(static_cast<std::size_t>(longPlan.totalBars));
+    std::vector<int> counterOnsets(static_cast<std::size_t>(longPlan.totalBars));
+    std::vector<bool> foundationByBar(static_cast<std::size_t>(longPlan.totalBars));
     for (const auto& note : longSong.notes) {
         const auto bar = std::clamp(static_cast<int>(note.startBeat / longPlan.beatsPerBar),
                                     0, longPlan.totalBars - 1);
         voicesByBar[static_cast<std::size_t>(bar)].insert(note.voice);
-        onsetByBar[static_cast<std::size_t>(bar)] = true;
-        if (note.voice == VoiceId::Lead) leadByBar[static_cast<std::size_t>(bar)] = true;
+        if (note.voice == VoiceId::CoreDrums && note.pitch == 36)
+            kickByBar[static_cast<std::size_t>(bar)] = true;
+        if (note.voice == VoiceId::Lead) {
+            leadByBar[static_cast<std::size_t>(bar)] = true;
+            ++leadOnsets[static_cast<std::size_t>(bar)];
+        }
+        if (note.voice == VoiceId::Countermelody) {
+            counterByBar[static_cast<std::size_t>(bar)] = true;
+            ++counterOnsets[static_cast<std::size_t>(bar)];
+        }
+        if (note.voice == VoiceId::HarmonicFoundation)
+            foundationByBar[static_cast<std::size_t>(bar)] = true;
         const auto beatInBar = note.startBeat - bar * longPlan.beatsPerBar;
         if (beatInBar >= longPlan.beatsPerBar - 0.38 &&
             (isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
@@ -315,12 +383,129 @@ void runGeneratorTests() {
             "A long-form song must breathe through several clearly different orchestration densities");
     require(std::count(leadByBar.begin(), leadByBar.end(), false) > longPlan.totalBars / 3,
             "The lead must leave substantial negative space instead of becoming an eternal arpeggio");
-    require(std::count(onsetByBar.begin(), onsetByBar.end(), false) >= longPlan.totalBars / 24,
-            "The dramatic arc must contain genuine bars of breath without new attacks");
+    auto simultaneousForegroundBars = 0;
+    for (std::size_t bar = 0; bar < leadByBar.size(); ++bar)
+        if (leadByBar[bar] && counterByBar[bar]) ++simultaneousForegroundBars;
+    require(simultaneousForegroundBars == 0,
+            "Lead and countermelody must exchange foreground ownership instead of piling up");
+    require(*std::max_element(leadOnsets.begin(), leadOnsets.end()) <= 4 &&
+                *std::max_element(counterOnsets.begin(), counterOnsets.end()) <= 3,
+            "Melodic phrases must obey explicit onset budgets per bar");
+    require(std::count(foundationByBar.begin(), foundationByBar.end(), true) < longPlan.totalBars * 3 / 4,
+            "Harmonic foundation must sustain across variable harmonic rhythm instead of retriggering every bar");
+    require(std::count(kickByBar.begin(), kickByBar.end(), false) >= longPlan.totalBars / 24,
+            "The dramatic arc must contain deliberate kick withdrawals without losing its other motion");
+    auto observedDrop = false;
+    auto observedDouble = false;
+    auto observedMutedSection = false;
+    const auto hasKickNear = [&](double beat) {
+        return std::any_of(longSong.notes.begin(), longSong.notes.end(), [beat](const auto& note) {
+            return note.voice == VoiceId::CoreDrums && note.pitch == 36 &&
+                   std::abs(note.startBeat - beat) < 0.04;
+        });
+    };
+    for (const auto& section : longPlan.sections) {
+        if (section.rhythm.kickState == KickState::Muted) {
+            observedMutedSection = true;
+            for (auto localBar = 0; localBar < section.bars; ++localBar) {
+                const auto barStart = (section.startBar + localBar) * longPlan.beatsPerBar;
+                const auto pickup = std::any_of(section.rhythm.gestures.begin(), section.rhythm.gestures.end(),
+                    [localBar](const auto& gesture) {
+                        return gesture.barOffset == localBar && gesture.kind == RhythmGestureKind::PickupFill;
+                    });
+                if (pickup)
+                    require(hasKickNear(barStart + 3.50 * longPlan.beatsPerBar / 4.0) &&
+                                hasKickNear(barStart + 3.75 * longPlan.beatsPerBar / 4.0),
+                            "An explicit pickup must bring the kick back before the next section");
+                for (const auto& note : longSong.notes)
+                    if (note.voice == VoiceId::CoreDrums && note.pitch == 36 &&
+                        note.startBeat >= barStart && note.startBeat < barStart + longPlan.beatsPerBar)
+                        require(pickup && note.startBeat >= barStart + longPlan.beatsPerBar * 0.75,
+                                "Muted kick sections may contain only an explicitly authored pickup");
+            }
+        }
+        for (const auto& gesture : section.rhythm.gestures) {
+            const auto barStart = (section.startBar + gesture.barOffset) * longPlan.beatsPerBar;
+            if (gesture.kind == RhythmGestureKind::DropLastKick) {
+                observedDrop = true;
+                require(!hasKickNear(barStart + longPlan.beatsPerBar * 0.75),
+                        "A drop-last-kick gesture must create the requested structural vacuum");
+            } else if (gesture.kind == RhythmGestureKind::DoubleKick) {
+                observedDouble = true;
+                require(hasKickNear(barStart + gesture.beat * longPlan.beatsPerBar / 4.0),
+                        "An authored double-kick gesture must survive rendering and validation");
+            }
+        }
+    }
+    require(observedDrop && observedDouble && observedMutedSection,
+            "The local score must demonstrate drop, double-kick and breakdown states");
     require(std::count(breathAtEnd.begin(), breathAtEnd.end(), true) > longPlan.totalBars / 3,
             "Rhythm and bass must create frequent phrase-end breathing windows");
     require(longFormComposer.render(longPlan, songFoundation).notes == longSong.notes,
             "The same long-form plan and DNA must render deterministically");
+
+    const auto strictHousePlan = SongComposer::createLocalPlan(
+        "Progressive house con bombo en negras constante", 64, 120.0, 4.0, 7781, 0, ScaleKind::Minor);
+    const auto strictHouse = longFormComposer.render(strictHousePlan, songFoundation);
+    for (auto bar = 0; bar < strictHousePlan.totalBars; ++bar)
+        for (auto quarter = 0; quarter < 4; ++quarter) {
+            const auto beat = bar * 4.0 + quarter;
+            require(std::any_of(strictHouse.notes.begin(), strictHouse.notes.end(), [beat](const auto& note) {
+                return note.voice == VoiceId::CoreDrums && note.pitch == 36 &&
+                       std::abs(note.startBeat - beat) < 0.04;
+            }), "A requested constant four-on-the-floor kick must survive every downstream stage");
+        }
+    for (const auto voice : {VoiceId::CoreDrums, VoiceId::SnareClap, VoiceId::ClosedHats,
+                             VoiceId::OpenHatsShaker, VoiceId::LowPercussion, VoiceId::HighPercussion})
+        require(std::any_of(strictHouse.notes.begin(), strictHouse.notes.end(), [voice](const auto& note) {
+            return note.voice == voice;
+        }), "Each rhythm instrument must retain an independently exportable identity");
+
+    auto mutatedPlan = strictHousePlan;
+    auto& mutatedSection = mutatedPlan.sections.front();
+    mutatedSection.activeVoices.push_back(VoiceId::HighPercussion);
+    mutatedSection.activeVoices.push_back(VoiceId::ClosedHats);
+    mutatedSection.rhythm.mutations = {
+        {0, RhythmLane::HighPercussion, RhythmMutationKind::Add, 6, 1, 111, "A distinct reply"},
+        {0, RhythmLane::ClosedHats, RhythmMutationKind::Ratchet, 2, 3, 90, "Accelerate the answer"}};
+    SongComposer::normalizePlan(mutatedPlan);
+    const auto mutatedSong = longFormComposer.render(mutatedPlan, songFoundation);
+    require(std::any_of(mutatedSong.notes.begin(), mutatedSong.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::HighPercussion && note.velocity > 85 &&
+                       std::abs(note.startBeat - 1.5) < 0.04;
+            }) && std::count_if(mutatedSong.notes.begin(), mutatedSong.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::ClosedHats && note.startBeat >= 0.5 && note.startBeat < 0.75;
+            }) >= 2,
+            "Open rhythm mutations must produce audible, deterministic development of the shared cell");
+
+    SongPlan contradictoryPlan = longPlan;
+    contradictoryPlan.key = "F# major";
+    contradictoryPlan.motifIntervals = {0, 1, 6, 11};
+    SongComposer::normalizePlan(contradictoryPlan);
+    require(contradictoryPlan.key == "C minor" &&
+                std::all_of(contradictoryPlan.motifIntervals.begin(),
+                            contradictoryPlan.motifIntervals.end(), [](int interval) {
+                    return isPitchClassInScale(interval, 0, ScaleKind::Minor);
+                }), "Key metadata and thematic DNA must obey one canonical tonal contract");
+
+    Pattern brokenHarmony;
+    brokenHarmony.lengthBeats = 8.0;
+    brokenHarmony.notes = {
+        {0.0, 0.5, 61, 90, 2, VoiceId::Lead},
+        {0.5, 0.2, 61, 78, 2, VoiceId::Lead},
+        {0.75, 0.5, 62, 86, 2, VoiceId::Lead},
+        {0.0, 8.0, 64, 68, 3, VoiceId::HarmonicFoundation},
+        {0.0, 1.0, 72, 45, 8, VoiceId::Atmosphere},
+        {0.0, 1.0, 71, 82, 2, VoiceId::Lead}
+    };
+    const std::vector<std::vector<int>> changingHarmony{{0, 4, 7, 11}, {5, 9, 0}};
+    const auto repair = repairTonalContract(brokenHarmony, 0, ScaleKind::Major, 4.0,
+                                            changingHarmony, 0.20);
+    require(repair.outOfScaleRepaired >= 1 && repair.intentionalChromaticNotes == 1 &&
+                repair.harmonicOverlapsTrimmed == 1 && repair.verticalCollisionsRepaired >= 1,
+            "Tonal validation must repair structural errors while preserving prepared passing notes");
+    require(isPitchClassInScale(brokenHarmony.notes.front().pitch, 0, ScaleKind::Major),
+            "An unsupported chromatic note on a strong beat must be repaired into the declared key");
     const auto compactPlan = SongComposer::createLocalPlan(
         "A slow compact song", 30, 30.0, 4.0, 31, 5, ScaleKind::Dorian);
     require(compactPlan.totalBars == 8 && !compactPlan.sections.empty() &&

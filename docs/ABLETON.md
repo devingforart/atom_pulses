@@ -34,7 +34,7 @@ que esas decisiones forman parte del MIDI y no del preset de escucha.
 El indicador distingue una composición GPT validada del motor local.
 La franja superior muestra la forma completa. Pulsa una sección para seleccionarla;
 después arrastra `SECTION` para convertirla en un clip MIDI independiente. `FULL SONG`
-exporta la obra completa con una pista por voz activa, hasta doce.
+exporta la obra completa con una pista por voz activa, hasta quince.
 
 ## 3. Conservar y regenerar capas
 
@@ -44,7 +44,7 @@ exporta la obra completa con una pista por voz activa, hasta doce.
 4. Pulsa `REGENERATE UNLOCKED`: las capas bloqueadas quedan idénticas nota por nota.
 5. Usa `UNDO` para volver al resultado completo anterior.
 
-Los locks actúan por familias: `Harmony + FX`, `Melodic`, `Bass` y `Rhythm`. Las doce
+Los locks actúan por familias: `Harmony + FX`, `Melodic`, `Bass` y `Rhythm`. Las quince
 voces conservan identidad propia aunque varias compartan el mismo canal MIDI.
 
 ## 4. Enviar el MIDI a otro instrumento
@@ -72,6 +72,15 @@ arrástrala a una pista o espacio vacío del Arrangement de Live:
 - `SECTION`: solamente el bloque seleccionado de la forma.
 
 Las filas de la partitura son también asas: arrastra una fila para exportar esa voz sola.
+Los botones `S` y `M` junto a cada fila permiten escucharla en SOLO o MUTE. Son controles
+de audición: afectan el MIDI enviado y el preview interno, pero nunca eliminan notas del
+archivo que arrastras. Si cambias uno durante playback, PULSO corta con seguridad las notas
+anteriores y recupera las notas largas que todavía deban estar sonando.
+
+`HUMAN PERFORMANCE` está apagado por defecto: así la escucha y los archivos arrastrados
+quedan exactamente en semicorcheas. Al activarlo, PULSO desplaza sólo la salida reproducida
+unos pocos milisegundos según la función de cada voz. Graba esa salida en otra pista si
+quieres capturar la interpretación; arrastra desde la partitura si quieres el MIDI limpio.
 
 El clip conserva longitud, tempo, compás, velocidades, microtiming, marcadores y CC
 expresivos. Si una voz no existe en el patrón actual, su fila aparece atenuada.

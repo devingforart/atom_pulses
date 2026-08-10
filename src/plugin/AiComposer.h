@@ -6,6 +6,7 @@
 #include <juce_core/juce_core.h>
 
 #include <stop_token>
+#include <functional>
 
 namespace pulso::plugin {
 
@@ -15,6 +16,9 @@ struct AiComposition {
     juce::String key;
     juce::String summary;
 };
+
+enum class AiSongStage : std::uint8_t { Architecture = 0, Critique };
+using AiSongProgress = std::function<void(AiSongStage)>;
 
 class AiComposer final {
 public:
@@ -32,7 +36,8 @@ public:
     [[nodiscard]] static SongPlan planSong(const juce::String& creativeDirection,
                                            int targetSeconds, int totalBars, double bpm,
                                            double beatsPerBar, std::uint64_t seed,
-                                           std::stop_token, juce::String& error);
+                                           std::stop_token, juce::String& error,
+                                           const AiSongProgress& progress = {});
     [[nodiscard]] static bool parseSongPlanJson(const juce::String&, int targetSeconds,
                                                 int requestedBars, double bpm,
                                                 double beatsPerBar, std::uint64_t seed,

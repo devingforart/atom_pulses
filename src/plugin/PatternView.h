@@ -23,6 +23,7 @@ private:
     [[nodiscard]] juce::Rectangle<int> sectionStripBounds() const noexcept;
     [[nodiscard]] int sectionAt(juce::Point<int>) const noexcept;
     [[nodiscard]] int voiceAt(juce::Point<int>) const noexcept;
+    [[nodiscard]] int auditionAt(juce::Point<int>) const noexcept;
     [[nodiscard]] juce::Rectangle<int> voiceTimelineBounds() const noexcept;
     [[nodiscard]] static bool noteMatchesTarget(const NoteEvent&, int) noexcept;
     [[nodiscard]] juce::File createExportFile(int channel) const;

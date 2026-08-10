@@ -50,7 +50,7 @@
 - Onsets, densidad, centroid y energía por bandas.
 - Regla de espacio negativo frente al kick y la voz.
 
-## 0.8 — Interpretación y respiración (actual)
+## 0.8 — Interpretación y respiración
 
 - [x] Doce voces con presencia variable por frase y sección.
 - [x] Diálogo entre lead y contrapunto, alternancia de bajos y drops coordinados.
@@ -59,7 +59,42 @@
 - Evaluaciones ciegas con productores y ajuste de vocabularios por familia musical.
 - Biblioteca factory opcional de samples propios con velocity layers y round-robin.
 
-## 0.9 — Motor neuronal
+## 0.9 — Dirección de frase
+
+- [x] Partitura previa de atención: foreground, response, support, texture y accent.
+- [x] Presupuestos máximos de ataques y ventanas de entrada/salida por voz y compás.
+- [x] Melodías con ritmo y silencios explícitos; lead y contrapunto nunca compiten.
+- [x] Ritmo armónico variable, CC expresivos interpretados y evaluaciones de naturalidad.
+
+## 0.10 — Integridad tonal
+
+- [x] Tonalidad canónica derivada de `root_pitch_class` y modo, incluso si GPT contradice su etiqueta.
+- [x] ADN temático reconciliado con la escala antes del desarrollo de la obra.
+- [x] Validación horizontal de escala, apoyos fuertes, cromatismo preparado y resolución.
+- [x] Validación vertical de choques ásperos y solapamientos sobre cambios armónicos.
+- [x] El mismo contrato se aplica a GPT, compositor local, preview y MIDI exportado.
+
+## 0.11 — Dirección rítmica
+
+- [x] `RhythmPlan` por sección con estados `muted`, `reduced`, `sparse` y `four_on_floor`.
+- [x] Gestos GPT explícitos: drop del último kick, doble kick, pickup, mute y fill.
+- [x] Invariantes posteriores al render para que los anchors requeridos nunca desaparezcan.
+- [x] Presupuestos independientes y pistas MIDI separadas para kick, clap, hats y percusiones.
+- [x] Microtiming por instrumento, ciclos de velocity y coordinación de transientes kick–bass.
+- [x] Interpretación estricta de pedidos como «bombo en negras constante» en GPT y fallback local.
+
+## 0.12 — Lenguaje generativo abierto (actual)
+
+- [x] Celdas rítmicas GPT de 1–4 compases en seis instrumentos independientes.
+- [x] Desarrollo seccional mediante add/remove/shift/ratchet/velocity con propósito musical.
+- [x] Segunda pasada GPT de crítica y revisión con fallback seguro a la primera propuesta.
+- [x] Contrato elástico: la IA escribe contenido; el motor sólo protege invariantes explícitos.
+- [x] SOLO/MUTE persistente por voz para MIDI enviado y preview, sin afectar exportación.
+- [x] Cliente OpenAI cancelable con watchdog, deadlines por etapa y cierre seguro del host.
+- [x] UI por etapas con `CANCEL` y rollback transaccional de patrón y linaje.
+- [x] Rejilla compositiva exacta y `HUMAN PERFORMANCE` no destructivo con una única pasada.
+
+## Futuro — Motor neuronal
 
 - `PatternProvider` intercambiable.
 - Modelo MIDI pequeño exportado a ONNX.

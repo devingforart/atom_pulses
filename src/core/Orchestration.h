@@ -22,6 +22,9 @@ enum class VoiceId : std::uint8_t {
     Countermelody,
     Atmosphere,
     Transitions,
+    SnareClap,
+    ClosedHats,
+    OpenHatsShaker,
     Count,
     Unspecified = 255
 };
@@ -37,7 +40,7 @@ struct VoiceDefinition {
 };
 
 inline constexpr std::array voiceDefinitions{
-    VoiceDefinition{VoiceId::CoreDrums, "core_drums", "Core Drums", VoiceFamily::Rhythm, 10, 35, 81},
+    VoiceDefinition{VoiceId::CoreDrums, "core_drums", "Kick", VoiceFamily::Rhythm, 10, 35, 36},
     VoiceDefinition{VoiceId::LowPercussion, "low_percussion", "Low Percussion", VoiceFamily::Rhythm, 10, 35, 60},
     VoiceDefinition{VoiceId::HighPercussion, "high_percussion", "High Percussion", VoiceFamily::Rhythm, 10, 42, 81},
     VoiceDefinition{VoiceId::SubBass, "sub_bass", "Sub Bass", VoiceFamily::Bass, 1, 28, 48},
@@ -48,7 +51,10 @@ inline constexpr std::array voiceDefinitions{
     VoiceDefinition{VoiceId::Lead, "lead", "Lead", VoiceFamily::Melodic, 2, 55, 92},
     VoiceDefinition{VoiceId::Countermelody, "countermelody", "Countermelody", VoiceFamily::Melodic, 7, 48, 86},
     VoiceDefinition{VoiceId::Atmosphere, "atmosphere", "Atmosphere", VoiceFamily::Texture, 8, 42, 92},
-    VoiceDefinition{VoiceId::Transitions, "transitions", "Transitions / FX", VoiceFamily::Texture, 9, 36, 108}
+    VoiceDefinition{VoiceId::Transitions, "transitions", "Transitions / FX", VoiceFamily::Texture, 9, 36, 108},
+    VoiceDefinition{VoiceId::SnareClap, "snare_clap", "Snare / Clap", VoiceFamily::Rhythm, 10, 37, 40},
+    VoiceDefinition{VoiceId::ClosedHats, "closed_hats", "Closed Hats", VoiceFamily::Rhythm, 10, 42, 44},
+    VoiceDefinition{VoiceId::OpenHatsShaker, "open_hats_shaker", "Open Hats / Shaker", VoiceFamily::Rhythm, 10, 46, 82}
 };
 
 [[nodiscard]] constexpr const VoiceDefinition& voiceDefinition(VoiceId id) noexcept {

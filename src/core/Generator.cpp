@@ -388,10 +388,7 @@ Pattern renderDrums(const GenerationContext& context, const CompositionPlan& pla
         const auto barSteps = stepsPerBar(context);
         for (auto step = 0; step < barSteps; ++step) {
             Random choice(eventSeed(context, bar, step, 0x4452554D53ULL));
-            const auto midpointKick = ((barSteps / 2 + 2) / 4) * 4;
-            const auto kick = step == 0 || step == midpointKick ||
-                              (motifSteps[static_cast<std::size_t>(step)] &&
-                               step != 4 && step != 12 && choice.chance(0.28 + energy * 0.34));
+            const auto kick = step % 4 == 0;
             const auto backbeat = step == 4 || (barSteps >= 16 && step == 12);
             const auto ghostSnare = !backbeat && step % 2 == 1 &&
                                     motifSteps[static_cast<std::size_t>(step)] &&

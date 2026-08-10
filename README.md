@@ -9,11 +9,15 @@ Este repositorio contiene un MVP funcional para Ableton Live en Windows:
 
 - Plugin VST3 y aplicación standalone construidos con JUCE.
 - Generador musical C++20 desacoplado y cubierto por pruebas.
-- Orquestación dinámica de hasta doce voces: batería central, dos percusiones, dos bajos,
-  tres capas armónicas, lead, contramelodía, atmósfera y transiciones.
+- Orquestación dinámica de quince voces: kick, clap/snare, closed hats, open hats/shaker,
+  dos percusiones, dos bajos, tres capas armónicas, lead, contramelodía, atmósfera y transiciones.
+- `RhythmPlan` dirigido por GPT con estados de kick, continuidad, swing y gestos estructurales
+  como drops, dobles golpes, pickups, silencios y fills.
 - Un `CompositionPlan` global con motivo, contorno, secciones, función armónica y tensión.
 - Modo `IDEA` para frases y modo canción de 30 segundos a 30 minutos.
 - Arquitectura jerárquica con secciones, ADN temático, curva dramática y cadencia final.
+- Contrato tonal E2E: tonalidad canónica, ADN diatónico, apoyos de acorde, resolución del
+  cromatismo, control de colisiones verticales y recorte de notas sobre cambios armónicos.
 - Dramaturgia de presencia por frase: entradas tardías, diálogo, compases de respiración,
   drops antes de fronteras y densidades que cambian sin perder el hilo temático.
 - Modos `Loop` y `Evolve`, con evolución gradual en cada vuelta de la frase.
@@ -104,7 +108,7 @@ Consulta [docs/ABLETON.md](docs/ABLETON.md) para el enrutamiento MIDI completo.
 
 El selector inferior ofrece `AUTO` y ocho mundos: `DEEP PROGRESSIVE`, `ORGANIC MOTION`,
 `ANALOG WARMTH`, `DUB SPACE`, `MINIMAL PULSE`, `HYPNOTIC NIGHT`, `CINEMATIC ARC` y
-`DARK CLUB`. Cada mundo cambia coordinadamente los instrumentos de las doce voces,
+`DARK CLUB`. Cada mundo cambia coordinadamente los instrumentos de las quince voces,
 drums, filtros, envolventes, estéreo, delay y espacio. `AUTO` interpreta la dirección
 creativa. La monitorización nunca altera las notas ni el MIDI exportado.
 
@@ -115,7 +119,7 @@ osciladores PolyBLEP reducen el aliasing áspero asociado a previews tipo chiptu
 También puedes arrastrar desde la franja inferior de la partitura: `FULL SONG` crea el
 archivo multitrack completo; `RHYTHM`, `BASS`, `HARMONY` y `LEADS+FX` crean familias independientes.
 Selecciona un bloque de la forma y arrastra `SECTION` para exportar sólo esa parte.
-También puedes arrastrar directamente cualquiera de las doce filas. PULSO escribe una
+También puedes arrastrar directamente cualquiera de las quince filas. PULSO escribe una
 pista MIDI por voz, tempo, compás, marcadores de sección, CC expresivos, nombres,
 canales y velocidades en el archivo.
 
@@ -149,11 +153,17 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 
 ## Estado del producto
 
-La versión 0.8 integra un arquitecto GPT de forma larga, Structured Outputs, renderizado
-jerárquico de hasta 512 compases, doce voces con entrada y salida dinámica, expresión
-CC, respiración coordinada por frase, preview multitimbral band-limited por mundos
-sonoros, timeline de secciones, exportación por voz y fallback algorítmico. La red nunca
-se usa desde el callback de audio.
+La versión 0.12.2 integra un arquitecto GPT de forma larga con una segunda pasada crítica,
+Structured Outputs, motivos rítmicos abiertos y mutaciones con propósito, renderizado
+jerárquico de hasta 512 compases, quince voces con entrada y salida dinámica, expresión
+CC interpretada, dirección previa de foreground/response/support, presupuestos de ataques,
+respiración coordinada por frase, contrato tonal E2E, dirección rítmica por estados y gestos,
+SOLO/MUTE persistente por voz sin modificar el MIDI fuente,
+generación cancelable, deadlines de red y fallback automático al primer borrador válido,
+MIDI base cuantizado y una interpretación humana opcional no destructiva,
+preview multitimbral band-limited por mundos sonoros,
+timeline de secciones, exportación por voz y fallback algorítmico. La red nunca se usa
+desde el callback de audio.
 
 Lee [docs/ROADMAP.md](docs/ROADMAP.md) para las siguientes etapas y
 [docs/LICENSING.md](docs/LICENSING.md) antes de distribuir binarios.

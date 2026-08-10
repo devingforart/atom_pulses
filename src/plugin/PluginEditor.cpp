@@ -86,6 +86,7 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     nextButton.onClick = [this] { processor.requestNextIdea(); };
     regenerateButton.onClick = [this] { processor.requestRegenerateUnlocked(); };
     undoButton.onClick = [this] { processor.requestUndo(); };
+    compositionProgress.onCancel = [this] { processor.cancelGeneration(); };
 
     soundWorld.addItemList({"AUTO · DEEP PROGRESSIVE", "DEEP PROGRESSIVE", "ORGANIC MOTION",
                             "ANALOG WARMTH", "DUB SPACE", "MINIMAL PULSE", "HYPNOTIC NIGHT",
@@ -106,7 +107,8 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     regenerateButton.setTooltip("Recompose only unlocked layers around everything you decided to keep.");
     undoButton.setTooltip("Restore the complete previous idea. Press again to toggle back.");
     previewButton.setTooltip("Enable the multitimbral reference ensemble and selected sound world. MIDI export and output are unaffected.");
-    soundWorld.setTooltip("Choose a complete preview sound world for all twelve voices. AUTO reads the creative direction; manual choices audition the same MIDI through different instruments, drums, space and colour. Monitoring changes, composition does not.");
+    performanceButton.setTooltip("OFF keeps every onset on the exact sixteenth-note grid. ON adds one deterministic performance pass: stable backbeat, coherent hat lift and tiny voice-specific offsets. Dragged MIDI remains perfectly quantized; recording PULSO's MIDI output captures the performed timing.");
+    soundWorld.setTooltip("Choose a complete preview sound world for all fifteen voices. AUTO reads the creative direction; manual choices audition the same MIDI through different instruments, drums, space and colour. Monitoring changes, composition does not.");
     thruButton.setTooltip("Also pass incoming MIDI to the output alongside PULSO's composition.");
     prompt.setTooltip("Describe mood, movement, instrumentation or narrative in natural language. Leave empty for an autonomous idea.");
     promptLabel.setTooltip(prompt.getTooltip());
@@ -118,18 +120,19 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     aiBadge.setTooltip("GPT status is explicit. PULSO never labels local fallback output as AI-generated.");
     ideaTitle.setTooltip("Title and tonal centre proposed for the current composition.");
     ideaDescription.setTooltip("The compositional intention behind the current idea.");
-    patternView.setTooltip("Twelve dynamically orchestrated voices. Drag a voice lane, a family, the selected SECTION or the FULL SONG into Ableton as separated MIDI tracks.");
+    patternView.setTooltip("Fifteen dynamically orchestrated voices. Click S or M beside any lane to solo or mute it during MIDI output and preview; this never changes exports. Drag a lane, family, SECTION or FULL SONG into Ableton.");
 
-    for (auto* component : std::array<juce::Component*, 22>{
+    for (auto* component : std::array<juce::Component*, 23>{
              &title, &subtitle, &status, &aiBadge, &promptLabel, &durationLabel, &prompt, &duration, &ideaTitle,
              &ideaDescription, &generateButton, &nextButton, &regenerateButton, &undoButton,
-             &previewButton, &soundWorld, &thruButton, &lockButtons[0], &lockButtons[1], &lockButtons[2],
+             &previewButton, &performanceButton, &soundWorld, &thruButton, &lockButtons[0], &lockButtons[1], &lockButtons[2],
              &lockButtons[3], &patternView})
         addAndMakeVisible(component);
 
     addChildComponent(compositionProgress);
 
     previewAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "preview", previewButton);
+    performanceAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "performance", performanceButton);
     soundWorldAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "previewWorld", soundWorld);
     thruAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "thru", thruButton);
     startTimerHz(20);
@@ -190,6 +193,8 @@ void PulsoAudioProcessorEditor::resized() {
 
     auto actions = area;
     previewButton.setBounds(actions.removeFromLeft(130));
+    actions.removeFromLeft(8);
+    performanceButton.setBounds(actions.removeFromLeft(150));
     actions.removeFromLeft(8);
     soundWorld.setBounds(actions.removeFromLeft(170));
     actions.removeFromLeft(8);

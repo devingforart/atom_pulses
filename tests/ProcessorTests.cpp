@@ -59,7 +59,29 @@ void advance(TestPlayHead& playHead, int samples, double sampleRate) {
 } // namespace
 
 int main(int argc, char** argv) {
+    try {
     juce::ScopedJuceInitialiser_GUI initialiseJuce;
+    if (argc > 1 && juce::String(argv[1]) == "--live-cancel") {
+        juce::String error;
+        pulso::SongPlan plan;
+        std::stop_source stopSource;
+        const auto started = std::chrono::steady_clock::now();
+        std::jthread request([&] {
+            plan = pulso::plugin::AiComposer::planSong(
+                "A long progressive composition used to verify network cancellation",
+                540, 270, 120.0, 4.0, 919191, stopSource.get_token(), error);
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        stopSource.request_stop();
+        request.join();
+        const auto elapsed = std::chrono::steady_clock::now() - started;
+        require(elapsed < std::chrono::seconds(4) && plan.sections.empty() &&
+                    error.containsIgnoreCase("cancel"),
+                "Cancelling a live OpenAI request must interrupt blocking network I/O promptly");
+        std::cout << "[PASS] Live OpenAI cancellation | elapsed_ms="
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() << '\n';
+        return 0;
+    }
     if (argc > 1 && juce::String(argv[1]) == "--live-ai") {
         juce::String error;
         std::stop_source stopSource;
@@ -67,10 +89,15 @@ int main(int argc, char** argv) {
             "An evolving instrumental journey with restraint, thematic recall and a decisive resolution",
             60, 30, 120.0, 4.0, 424242, stopSource.get_token(), error);
         require(error.isEmpty(), "Live OpenAI song-plan request failed: " + error.toStdString());
-        require(plan.sections.size() >= 3 && plan.voices.size() >= 7 && plan.totalBars == 30,
+        require(plan.sections.size() >= 3 && plan.voices.size() >= 7 && plan.totalBars == 30 &&
+                    !plan.rhythmMotifs.empty() &&
+                    std::all_of(plan.sections.begin(), plan.sections.end(), [](const auto& section) {
+                        return !section.rhythm.motifId.empty();
+                    }),
                 "Live OpenAI response did not satisfy the dynamic-orchestration contract");
         std::cout << "[PASS] Live structured song plan | voices=" << plan.voices.size()
-                  << " sections=" << plan.sections.size() << '\n';
+                  << " sections=" << plan.sections.size()
+                  << " rhythm_motifs=" << plan.rhythmMotifs.size() << '\n';
         return 0;
     }
     constexpr auto sampleRate = 48000.0;
@@ -150,6 +177,24 @@ int main(int argc, char** argv) {
     require(liveSwitchDifference / 2048.0f > 0.001f,
             "Changing world must audibly replace the timbre of already sustained preview notes");
 
+    auto renderWithExpression = [&](int expression) {
+        pulso::plugin::PreviewSynth expressiveSynth;
+        expressiveSynth.prepare(sampleRate);
+        juce::AudioBuffer<float> expressiveAudio(2, 4096);
+        expressiveAudio.clear();
+        juce::MidiBuffer expressiveMidi;
+        expressiveMidi.addEvent(juce::MidiMessage::controllerEvent(2, 11, expression), 0);
+        expressiveMidi.addEvent(juce::MidiMessage::controllerEvent(2, 74, expression), 0);
+        expressiveMidi.addEvent(juce::MidiMessage::noteOn(2, 67, static_cast<juce::uint8>(105)), 1);
+        expressiveSynth.renderNextBlock(expressiveAudio, expressiveMidi, 0, expressiveAudio.getNumSamples());
+        auto energy = 0.0f;
+        for (auto sample = 0; sample < expressiveAudio.getNumSamples(); ++sample)
+            energy += std::abs(expressiveAudio.getSample(0, sample));
+        return energy;
+    };
+    require(renderWithExpression(112) > renderWithExpression(32) * 2.0f,
+            "Preview must interpret CC11/74 dynamics instead of flattening the composed expression");
+
     pulso::plugin::PreviewSynth ensemblePreview;
     ensemblePreview.prepare(sampleRate);
     ensemblePreview.setSoundWorld(0);
@@ -171,6 +216,20 @@ int main(int argc, char** argv) {
             "Retired Space and Groove controls must always default to zero");
     require(processor.parameters.getParameter("previewWorld") != nullptr,
             "The selectable preview sound world must be a persistent host parameter");
+    require(processor.parameters.getParameter("performance") != nullptr &&
+                processor.parameters.getRawParameterValue("performance")->load() < 0.5f,
+            "Human Performance must be a persistent button that defaults to exact timing");
+    processor.toggleVoiceSolo(pulso::VoiceId::Lead);
+    require(processor.isVoiceSolo(pulso::VoiceId::Lead) &&
+                processor.isVoiceAudible(pulso::VoiceId::Lead) &&
+                !processor.isVoiceAudible(pulso::VoiceId::SubBass),
+            "Solo must isolate one voice without modifying the composition");
+    processor.toggleVoiceMute(pulso::VoiceId::Lead);
+    require(processor.isVoiceMuted(pulso::VoiceId::Lead) &&
+                !processor.isVoiceAudible(pulso::VoiceId::Lead),
+            "Mute must take precedence over solo for predictable auditioning");
+    processor.toggleVoiceMute(pulso::VoiceId::Lead);
+    processor.toggleVoiceSolo(pulso::VoiceId::Lead);
     processor.setCreativeDirection("spacious dub echoes with restrained movement");
     require(processor.currentPreviewWorldName() == "DUB SPACE",
             "AUTO preview must translate creative-direction vocabulary into a sound world");
@@ -197,10 +256,37 @@ int main(int argc, char** argv) {
     require(peakMagnitude(audio) <= 1.0f, "Preview output must remain below digital full scale");
     const auto composedPattern = processor.currentPattern();
     require(composedPattern != nullptr, "The processor must expose its composed phrase");
+    require(std::all_of(composedPattern->notes.begin(), composedPattern->notes.end(), [](const auto& note) {
+                return std::abs(note.startBeat * 4.0 - std::round(note.startBeat * 4.0)) < 0.000001 &&
+                       std::abs(note.endBeat() * 4.0 - std::round(note.endBeat() * 4.0)) < 0.000001;
+            }), "The default processor pattern must be perfectly quantized before audition and export");
     for (const auto channel : {1, 2, 3, 10})
         require(std::any_of(composedPattern->notes.begin(), composedPattern->notes.end(),
                             [=](const auto& note) { return note.channel == channel; }),
                 "Every idea must coordinate harmony, bass, melody and drums");
+
+    const auto identityBeforeCancel = processor.currentCompositionSeed();
+    const auto variationBeforeCancel = processor.currentVariationIndex();
+    const auto titleBeforeCancel = processor.currentIdeaTitle();
+    const auto notesBeforeCancel = composedPattern->notes;
+    processor.setTargetSongDurationSeconds(540);
+    processor.requestGenerateIdea();
+    require(processor.isComposing(), "A requested song must enter a cancellable composing state");
+    processor.cancelGeneration();
+    for (auto attempt = 0; attempt < 120 && processor.isComposing(); ++attempt) {
+        midi.clear();
+        processor.processBlock(audio, midi);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    require(!processor.isComposing() &&
+                processor.currentCompositionSeed() == identityBeforeCancel &&
+                processor.currentVariationIndex() == variationBeforeCancel &&
+                processor.currentIdeaTitle() == titleBeforeCancel &&
+                processor.currentPattern()->notes == notesBeforeCancel,
+            "Cancel must be transactional: keep MIDI, metadata and idea lineage");
+    require(processor.currentAiStatus().containsIgnoreCase("cancelled"),
+            "A cancelled operation must finish with an explicit non-blocking status");
+    processor.setTargetSongDurationSeconds(0);
 
     const auto exportFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
                                   .getChildFile("PULSO Test Exports");
@@ -222,7 +308,10 @@ int main(int argc, char** argv) {
       "harmony":[{"start":0,"duration":4,"pitch":60,"velocity":70}],
       "melody":[{"start":0,"duration":1,"pitch":67,"velocity":92}],
       "bass":[{"start":0,"duration":2,"pitch":36,"velocity":88}],
-      "drums":[{"start":0,"duration":0.25,"pitch":36,"velocity":100}]
+      "drums":[{"start":0,"duration":0.25,"pitch":36,"velocity":100},
+               {"start":1,"duration":0.25,"pitch":39,"velocity":92},
+               {"start":1.5,"duration":0.125,"pitch":42,"velocity":72},
+               {"start":2.5,"duration":0.25,"pitch":46,"velocity":76}]
     })json");
     pulso::plugin::AiComposition parsedComposition;
     juce::String parseError;
@@ -231,13 +320,23 @@ int main(int argc, char** argv) {
     require(pulso::plugin::AiComposer::parseCompositionJson(structuredExample, 1,
                                                              parsedComposition, parseError),
             "Structured GPT output must validate into a playable composition");
-    require(parsedComposition.pattern.notes.size() == 4 && parsedComposition.title == "Afterglow",
+    require(parsedComposition.pattern.notes.size() == 7 && parsedComposition.title == "Afterglow" &&
+                std::any_of(parsedComposition.pattern.notes.begin(), parsedComposition.pattern.notes.end(),
+                    [](const auto& note) { return note.voice == pulso::VoiceId::SnareClap; }) &&
+                std::any_of(parsedComposition.pattern.notes.begin(), parsedComposition.pattern.notes.end(),
+                    [](const auto& note) { return note.voice == pulso::VoiceId::ClosedHats; }) &&
+                std::any_of(parsedComposition.pattern.notes.begin(), parsedComposition.pattern.notes.end(),
+                    [](const auto& note) { return note.voice == pulso::VoiceId::OpenHatsShaker; }),
             "Structured composition metadata and all four layers must survive parsing");
 
     const auto songPlanExample = juce::String(R"json({
-      "title":"The Long Return","key":"D minor","summary":"A complete dramatic arc",
-      "root_pitch_class":2,"mode":"minor","motif_intervals":[0,3,7,5],
-      "chord_degrees":[0,5,3,6],"voices":[
+      "title":"The Long Return","key":"F# major","summary":"A complete dramatic arc",
+      "root_pitch_class":2,"mode":"minor","groove_family":"deep_progressive_house","motif_intervals":[0,3,7,5],
+      "chord_degrees":[0,5,3,6],"rhythm_motifs":[{
+        "id":"A","bars":1,"steps_per_bar":16,"kick":"1000100010001000","snare_clap":"0000200000002000",
+        "closed_hats":"0010001000100010","open_hats_shaker":"0000001000000020",
+        "low_percussion":"0000010000010000","high_percussion":"0001000000100000"
+      }],"voices":[
         {"id":"core_drums","function":"Pulse anchor","interaction":"Leaves space at cadences","activity":0.8,"syncopation":0.4,"minimum_pitch":35,"maximum_pitch":81},
         {"id":"sub_bass","function":"Tonal gravity","interaction":"Supports harmonic rhythm","activity":0.7,"syncopation":0.2,"minimum_pitch":28,"maximum_pitch":48},
         {"id":"movement_bass","function":"Forward motion","interaction":"Answers the sub bass","activity":0.5,"syncopation":0.5,"minimum_pitch":36,"maximum_pitch":62},
@@ -246,9 +345,9 @@ int main(int argc, char** argv) {
         {"id":"lead","function":"Carries the motif","interaction":"Alternates with countermelody","activity":0.6,"syncopation":0.4,"minimum_pitch":55,"maximum_pitch":92},
         {"id":"atmosphere","function":"Long-range depth","interaction":"Bridges sparse sections","activity":0.4,"syncopation":0.0,"minimum_pitch":42,"maximum_pitch":92}
       ],"sections":[
-        {"name":"Prologue","function":"Introduce motif fragments","harmonic_direction":"Tonic ambiguity","motif_treatment":"Fragment","bars":8,"energy":0.2,"tension":0.2,"density":0.3,"motif_variant":0,"active_voices":["harmonic_foundation","lead","atmosphere"]},
-        {"name":"Development","function":"Transform the theme","harmonic_direction":"Move away from tonic","motif_treatment":"Sequence","bars":16,"energy":0.7,"tension":0.8,"density":0.7,"motif_variant":2,"active_voices":["core_drums","sub_bass","harmonic_foundation","harmonic_pulse","lead"]},
-        {"name":"Coda","function":"Resolve the argument","harmonic_direction":"Final tonic","motif_treatment":"Cadential recall","bars":8,"energy":0.3,"tension":0.1,"density":0.3,"motif_variant":0,"active_voices":["sub_bass","harmonic_foundation","lead","atmosphere"]}
+        {"name":"Prologue","function":"Introduce motif fragments","harmonic_direction":"Tonic ambiguity","motif_treatment":"Fragment","bars":8,"energy":0.2,"tension":0.2,"density":0.3,"motif_variant":0,"active_voices":["harmonic_foundation","lead","atmosphere"],"kick_state":"reduced","kick_continuity":"sectional","percussion_density":0.2,"rhythmic_syncopation":0.2,"swing":0.08,"rhythm_motif_id":"A","rhythm_mutations":[],"rhythm_gestures":[]},
+        {"name":"Development","function":"Transform the theme","harmonic_direction":"Move away from tonic","motif_treatment":"Sequence","bars":16,"energy":0.7,"tension":0.8,"density":0.7,"motif_variant":2,"active_voices":["core_drums","sub_bass","harmonic_foundation","harmonic_pulse","lead"],"kick_state":"four_on_floor","kick_continuity":"required","percussion_density":0.7,"rhythmic_syncopation":0.5,"swing":0.1,"rhythm_motif_id":"A","rhythm_mutations":[{"bar_offset":6,"lane":"low_percussion","operation":"shift","step":5,"amount":1,"velocity":72,"purpose":"Answer the phrase"}],"rhythm_gestures":[{"bar_offset":7,"type":"drop_last_kick","beat":3,"intensity":0.6},{"bar_offset":15,"type":"double_kick","beat":3.75,"intensity":0.75}]},
+        {"name":"Coda","function":"Resolve the argument","harmonic_direction":"Final tonic","motif_treatment":"Cadential recall","bars":8,"energy":0.3,"tension":0.1,"density":0.3,"motif_variant":0,"active_voices":["sub_bass","harmonic_foundation","lead","atmosphere"],"kick_state":"muted","kick_continuity":"sectional","percussion_density":0.2,"rhythmic_syncopation":0.1,"swing":0.05,"rhythm_motif_id":"A","rhythm_mutations":[],"rhythm_gestures":[]}
       ]
     })json");
     pulso::SongPlan parsedSongPlan;
@@ -256,9 +355,13 @@ int main(int argc, char** argv) {
                 pulso::plugin::AiComposer::parseSongPlanJson(songPlanExample, 64, 32, 120.0,
                                                               4.0, 77, parsedSongPlan, parseError),
             "Structured GPT song architecture must validate independently from MIDI rendering");
-    require(parsedSongPlan.sections.size() == 3 && parsedSongPlan.voices.size() == 7 &&
-                parsedSongPlan.sections[1].activeVoices.size() == 5 && parsedSongPlan.totalBars == 32 &&
-                parsedSongPlan.sections.back().startBar == 24,
+    require(parsedSongPlan.sections.size() == 3 && parsedSongPlan.voices.size() == 10 &&
+                parsedSongPlan.sections[1].activeVoices.size() == 8 && parsedSongPlan.totalBars == 32 &&
+                parsedSongPlan.sections.back().startBar == 24 && parsedSongPlan.key == "D minor" &&
+                parsedSongPlan.sections[1].rhythm.kickState == pulso::KickState::FourOnFloor &&
+                parsedSongPlan.rhythmMotifs.size() == 1 &&
+                parsedSongPlan.sections[1].rhythm.mutations.size() == 1 &&
+                parsedSongPlan.sections[1].rhythm.gestures.size() == 2,
             "Validated song architecture must preserve voices and contiguous section metadata");
 
     const auto orchestrationPlan = pulso::SongComposer::createLocalPlan(
@@ -276,8 +379,8 @@ int main(int argc, char** argv) {
     juce::FileInputStream orchestrationInput(orchestrationFile);
     juce::MidiFile orchestrationMidi;
     require(orchestrationInput.openedOk() && orchestrationMidi.readFrom(orchestrationInput) &&
-                orchestrationMidi.getNumTracks() == 13,
-            "Full-song export must contain a conductor plus twelve independently named voice tracks");
+                orchestrationMidi.getNumTracks() == 16,
+            "Full-song export must contain a conductor plus fifteen independently named voice tracks");
     require(!orchestration.controls.empty() &&
                 orchestration.markers.size() == orchestrationPlan.sections.size(),
             "Long-form export must retain expressive CC data and structural section markers");
@@ -296,7 +399,7 @@ int main(int argc, char** argv) {
     processor.processBlock(audio, midi);
     require(containsPanic(midi), "Stopping transport must emit an explicit MIDI panic");
 
-    for (auto block = 0; block < 700; ++block) {
+    for (auto block = 0; block < 1400; ++block) {
         midi.clear();
         processor.processBlock(audio, midi);
     }
@@ -323,16 +426,21 @@ int main(int argc, char** argv) {
     const auto originalDnaSeed = composedPattern->seed;
     const auto originalComposition = composedPattern->notes;
     auto variationPanic = false;
-    for (auto attempt = 0; attempt < 100 && !variationPanic; ++attempt) {
+    std::shared_ptr<const pulso::Pattern> variedPattern;
+    for (auto attempt = 0; attempt < 180; ++attempt) {
         advance(playHead, blockSize, sampleRate);
         midi.clear();
         processor.processBlock(audio, midi);
-        variationPanic = containsPanic(midi);
+        variationPanic = variationPanic || containsPanic(midi);
+        const auto candidate = processor.currentPattern();
+        if (variationPanic && candidate && candidate->notes != originalComposition) {
+            variedPattern = candidate;
+            break;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     require(variationPanic, "Replacing a live pattern must clean up notes from the previous pattern");
-    const auto variedPattern = processor.currentPattern();
-    require(variedPattern != nullptr && variedPattern->seed == originalDnaSeed,
+    require(variedPattern && variedPattern->seed == originalDnaSeed,
             "Regenerate Unlocked must preserve the composition family seed");
     require(variedPattern->notes != originalComposition,
             "Regenerate Unlocked must create a real transformation rather than a duplicate");
@@ -398,8 +506,10 @@ int main(int argc, char** argv) {
         midi.clear();
         processor.processBlock(audio, midi);
     }
-    require(peakMagnitude(audio) < 0.001f,
-            "Disabling preview must let instruments and spatial effects decay without a stuck voice");
+    const auto disabledPreviewTail = peakMagnitude(audio);
+    require(disabledPreviewTail < 0.001f,
+            "Disabling preview must decay below -60 dB without a stuck voice; observed peak=" +
+                std::to_string(disabledPreviewTail));
 
     preview->setValueNotifyingHost(1.0f);
     auto longestCallback = std::chrono::microseconds::zero();
@@ -436,6 +546,8 @@ int main(int argc, char** argv) {
     editor.reset();
 
     processor.parameters.getParameter("previewWorld")->setValueNotifyingHost(1.0f);
+    processor.toggleVoiceSolo(pulso::VoiceId::HarmonicPulse);
+    processor.toggleVoiceMute(pulso::VoiceId::ClosedHats);
     juce::MemoryBlock savedState;
     processor.getStateInformation(savedState);
     pulso::plugin::PulsoAudioProcessor restored;
@@ -443,6 +555,10 @@ int main(int argc, char** argv) {
     require(restored.currentCompositionSeed() == processor.currentCompositionSeed() &&
                 restored.currentVariationIndex() == processor.currentVariationIndex(),
             "Composition DNA and lineage must survive a DAW project reload");
+    require(restored.isVoiceSolo(pulso::VoiceId::HarmonicPulse) &&
+                restored.isVoiceMuted(pulso::VoiceId::ClosedHats) &&
+                !restored.isVoiceAudible(pulso::VoiceId::ClosedHats),
+            "Per-voice solo and mute choices must survive an Ableton project reload");
     const auto restoredPatternSnapshot = restored.currentPattern();
     const auto originalPatternSnapshot = processor.currentPattern();
     require(restoredPatternSnapshot != nullptr && originalPatternSnapshot != nullptr &&
@@ -463,4 +579,8 @@ int main(int argc, char** argv) {
     std::cout << "[PASS] Processor transport, panic, recovery and preview ceiling"
               << " | stress_max_callback_us=" << longestCallback.count() << '\n';
     return 0;
+    } catch (const std::exception& exception) {
+        std::cerr << "[FAIL] Processor: " << exception.what() << '\n';
+        return 1;
+    }
 }

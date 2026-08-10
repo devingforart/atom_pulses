@@ -90,6 +90,9 @@ private:
     std::vector<float> roomRight;
     std::size_t delayWrite{};
     std::size_t roomWrite{};
+    std::array<float, 16> channelExpression{};
+    std::array<float, 16> channelModulation{};
+    std::array<float, 16> channelBrightness{};
     double sampleRate{44100.0};
     SoundWorld soundWorld{SoundWorld::DeepProgressive};
     std::uint64_t ageCounter{};

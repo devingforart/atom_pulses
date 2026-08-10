@@ -1,8 +1,15 @@
 #include "AiComposer.h"
 
+#include "core/Scale.h"
+#include "core/TonalContract.h"
+
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <initializer_list>
+#include <thread>
 
 namespace pulso::plugin {
 namespace {
@@ -10,6 +17,49 @@ namespace {
 constexpr auto model = "gpt-5.6-terra";
 constexpr std::array layerNames{"harmony", "melody", "bass", "drums"};
 constexpr std::array layerChannels{3, 2, 1, 10};
+constexpr std::array layerVoices{VoiceId::HarmonicFoundation, VoiceId::Lead,
+                                 VoiceId::SubBass, VoiceId::CoreDrums};
+
+VoiceId rhythmVoiceForPitch(int pitch) noexcept {
+    if (pitch == 35 || pitch == 36) return VoiceId::CoreDrums;
+    if (pitch >= 37 && pitch <= 40) return VoiceId::SnareClap;
+    if (pitch == 42 || pitch == 44) return VoiceId::ClosedHats;
+    if (pitch == 46 || pitch >= 69) return VoiceId::OpenHatsShaker;
+    if (pitch >= 41 && pitch <= 50) return VoiceId::LowPercussion;
+    return VoiceId::HighPercussion;
+}
+
+void applyExplicitRhythmRequest(SongPlan& plan, const juce::String& direction) {
+    const auto lower = direction.toLowerCase();
+    const auto containsAny = [&](std::initializer_list<const char*> phrases) {
+        return std::any_of(phrases.begin(), phrases.end(), [&](const char* phrase) {
+            return lower.contains(phrase);
+        });
+    };
+    const auto explicitlyBroken = containsAny({"breakbeat", "broken beat", "ritmo quebrado",
+                                                "base break", "drum and bass", "dnb"});
+    const auto houseFoundation = !explicitlyBroken && containsAny({"progressive house", "deep house",
+        "organic house", "four on the floor", "four-on-the-floor", "4x4", "guy j", "bombo en negras"});
+    const auto constantKick = !explicitlyBroken && containsAny({"constant kick", "kick constante",
+        "bombo constante", "bombo en negras constante", "four on the floor throughout"});
+    if (!houseFoundation && !constantKick) return;
+
+    for (auto& section : plan.sections) {
+        if (constantKick) {
+            section.rhythm.kickState = KickState::FourOnFloor;
+            section.rhythm.continuity = KickContinuity::Required;
+            section.rhythm.gestures.erase(std::remove_if(section.rhythm.gestures.begin(),
+                section.rhythm.gestures.end(), [](const auto& gesture) {
+                    return gesture.kind == RhythmGestureKind::DropLastKick ||
+                           gesture.kind == RhythmGestureKind::HalfBarMute ||
+                           gesture.kind == RhythmGestureKind::FullBarMute;
+                }), section.rhythm.gestures.end());
+        } else if (section.energy >= 0.40 && section.rhythm.kickState != KickState::Muted) {
+            section.rhythm.kickState = KickState::FourOnFloor;
+            section.rhythm.continuity = KickContinuity::Required;
+        }
+    }
+}
 
 const juce::String noteSchema = R"json({
   "type":"object",
@@ -52,12 +102,24 @@ const juce::String songPlanSchema = R"json({
     "summary":{"type":"string"},
     "root_pitch_class":{"type":"integer"},
     "mode":{"type":"string","enum":["major","minor","dorian","mixolydian"]},
+    "groove_family":{"type":"string","enum":["deep_progressive_house","organic_progressive","driving_house","hybrid"]},
     "motif_intervals":{"type":"array","items":{"type":"integer"},"minItems":3,"maxItems":8},
     "chord_degrees":{"type":"array","items":{"type":"integer"},"minItems":2,"maxItems":12},
-    "voices":{"type":"array","minItems":7,"maxItems":12,"items":{
+    "rhythm_motifs":{"type":"array","minItems":1,"maxItems":6,"items":{
+      "type":"object","properties":{
+        "id":{"type":"string"},"bars":{"type":"integer"},
+        "steps_per_bar":{"type":"integer","enum":[8,16]},
+        "kick":{"type":"string"},"snare_clap":{"type":"string"},
+        "closed_hats":{"type":"string"},"open_hats_shaker":{"type":"string"},
+        "low_percussion":{"type":"string"},"high_percussion":{"type":"string"}
+      },
+      "required":["id","bars","steps_per_bar","kick","snare_clap","closed_hats","open_hats_shaker","low_percussion","high_percussion"],
+      "additionalProperties":false
+    }},
+    "voices":{"type":"array","minItems":7,"maxItems":15,"items":{
       "type":"object",
       "properties":{
-        "id":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions"]},
+        "id":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]},
         "function":{"type":"string"},
         "interaction":{"type":"string"},
         "activity":{"type":"number"},
@@ -80,13 +142,38 @@ const juce::String songPlanSchema = R"json({
         "tension":{"type":"number"},
         "density":{"type":"number"},
         "motif_variant":{"type":"integer"},
-        "active_voices":{"type":"array","items":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions"]}}
+        "active_voices":{"type":"array","items":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]}},
+        "kick_state":{"type":"string","enum":["muted","reduced","sparse","four_on_floor"]},
+        "kick_continuity":{"type":"string","enum":["required","sectional","free"]},
+        "percussion_density":{"type":"number"},
+        "rhythmic_syncopation":{"type":"number"},
+        "swing":{"type":"number"},
+        "rhythm_motif_id":{"type":"string"},
+        "rhythm_mutations":{"type":"array","maxItems":32,"items":{
+          "type":"object","properties":{
+            "bar_offset":{"type":"integer"},
+            "lane":{"type":"string","enum":["kick","snare_clap","closed_hats","open_hats_shaker","low_percussion","high_percussion"]},
+            "operation":{"type":"string","enum":["add","remove","shift","ratchet","velocity"]},
+            "step":{"type":"integer"},"amount":{"type":"integer"},
+            "velocity":{"type":"integer"},"purpose":{"type":"string"}
+          },
+          "required":["bar_offset","lane","operation","step","amount","velocity","purpose"],
+          "additionalProperties":false
+        }},
+        "rhythm_gestures":{"type":"array","maxItems":16,"items":{
+          "type":"object","properties":{
+            "bar_offset":{"type":"integer"},
+            "type":{"type":"string","enum":["drop_last_kick","double_kick","pickup_fill","half_bar_mute","full_bar_mute","percussion_fill"]},
+            "beat":{"type":"number"},
+            "intensity":{"type":"number"}
+          },"required":["bar_offset","type","beat","intensity"],"additionalProperties":false
+        }}
       },
-      "required":["name","function","harmonic_direction","motif_treatment","bars","energy","tension","density","motif_variant","active_voices"],
+      "required":["name","function","harmonic_direction","motif_treatment","bars","energy","tension","density","motif_variant","active_voices","kick_state","kick_continuity","percussion_density","rhythmic_syncopation","swing","rhythm_motif_id","rhythm_mutations","rhythm_gestures"],
       "additionalProperties":false
     }}
   },
-  "required":["title","key","summary","root_pitch_class","mode","motif_intervals","chord_degrees","voices","sections"],
+  "required":["title","key","summary","root_pitch_class","mode","groove_family","motif_intervals","chord_degrees","rhythm_motifs","voices","sections"],
   "additionalProperties":false
 })json";
 
@@ -126,6 +213,84 @@ juce::String extractOutputText(const juce::var& root) {
         }
     }
     return {};
+}
+
+struct HttpResponse {
+    juce::String body;
+    int status{};
+    bool connected{};
+    bool cancelled{};
+    bool timedOut{};
+};
+
+HttpResponse performRequest(const juce::String& body, const juce::String& apiKey,
+                            std::stop_token token, std::chrono::milliseconds budget) {
+    HttpResponse result;
+    if (token.stop_requested()) {
+        result.cancelled = true;
+        return result;
+    }
+
+    juce::WebInputStream stream(
+        juce::URL("https://api.openai.com/v1/responses").withPOSTData(body), true);
+    stream.withExtraHeaders("Content-Type: application/json\r\nAuthorization: Bearer " + apiKey + "\r\n")
+          .withConnectionTimeout(static_cast<int>(budget.count()));
+
+    std::atomic<bool> finished{};
+    std::atomic<bool> deadlineReached{};
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    std::jthread watchdog([&](std::stop_token watchdogToken) {
+        while (!watchdogToken.stop_requested() && !finished.load(std::memory_order_acquire)) {
+            if (token.stop_requested()) {
+                stream.cancel();
+                return;
+            }
+            if (std::chrono::steady_clock::now() >= deadline) {
+                deadlineReached.store(true, std::memory_order_release);
+                stream.cancel();
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        }
+    });
+
+    result.connected = stream.connect(nullptr);
+    if (result.connected && !token.stop_requested() &&
+        !deadlineReached.load(std::memory_order_acquire)) {
+        result.status = stream.getStatusCode();
+        result.body = stream.readEntireStreamAsString();
+    }
+    finished.store(true, std::memory_order_release);
+    watchdog.request_stop();
+    result.cancelled = token.stop_requested();
+    result.timedOut = deadlineReached.load(std::memory_order_acquire);
+    return result;
+}
+
+juce::String apiErrorMessage(const HttpResponse& response) {
+    auto error = response.timedOut ? juce::String("OpenAI request reached its time budget")
+               : response.cancelled ? juce::String("Generation cancelled")
+               : !response.connected ? juce::String("Could not connect to OpenAI")
+               : juce::String("OpenAI HTTP ") + juce::String(response.status);
+    if (const auto parsed = juce::JSON::parse(response.body); !parsed.isVoid())
+        if (const auto* object = parsed.getDynamicObject())
+            if (const auto* apiError = object->getProperty("error").getDynamicObject())
+                error += ": " + apiError->getProperty("message").toString();
+    return error;
+}
+
+juce::String requestRevisedSongPlan(const juce::String& prompt, const juce::String& apiKey,
+                                    std::stop_token token, std::chrono::milliseconds budget) {
+    if (token.stop_requested()) return {};
+    const auto body = juce::String("{\"model\":\"") + model +
+        "\",\"reasoning\":{\"effort\":\"low\"},\"max_output_tokens\":9000,\"input\":" +
+        juce::JSON::toString(juce::var(prompt)) +
+        ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_plan_critic\","
+        "\"strict\":true,\"schema\":" + songPlanSchema + "}}}";
+    const auto response = performRequest(body, apiKey, token, budget);
+    if (!response.connected || response.status < 200 || response.status >= 300 ||
+        response.cancelled || response.timedOut) return {};
+    return extractOutputText(juce::JSON::parse(response.body));
 }
 
 void normalizePattern(Pattern& pattern) {
@@ -179,7 +344,8 @@ AiComposition AiComposer::compose(const juce::String& creativeDirection, int bar
         "You are the composition director for PULSO. Compose one coherent symbolic MIDI idea as a complete ensemble. "
         "Harmony is the source of truth: use intentional harmonic rhythm, voice leading, tension and cadence. "
         "Melody must have one recognisable motif with statement, answer, development and cadence. Bass must express "
-        "the chord movement and drums must reinforce the same phrasing. Avoid random scale runs, repetitive grids and "
+        "the chord movement and drums must reinforce the same phrasing. Unless the request explicitly asks for broken "
+        "rhythms, anchor the kick on every quarter note and let hats and percussion create syncopation. Avoid random scale runs, repetitive grids and "
         "meaningless density. Times and durations are quarter-note beats from zero. Use only MIDI pitches 0-127 and "
         "velocities 1-127. Drums use GM pitches. Every layer must be non-empty. The exact length is ") +
         juce::String(bars * 4) + " beats (" + juce::String(bars) + " bars of 4/4) at " +
@@ -193,29 +359,13 @@ AiComposition AiComposer::compose(const juce::String& creativeDirection, int bar
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_composition\","
         "\"strict\":true,\"schema\":" + schema() + "}}}";
 
-    auto url = juce::URL("https://api.openai.com/v1/responses").withPOSTData(body);
-    auto statusCode = 0;
-    auto stream = url.createInputStream(
-        juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-            .withExtraHeaders("Content-Type: application/json\r\nAuthorization: Bearer " + apiKey + "\r\n")
-            .withConnectionTimeoutMs(45000)
-            .withStatusCode(&statusCode));
-    if (stream == nullptr) {
-        error = "Could not connect to OpenAI";
+    const auto http = performRequest(body, apiKey, token, std::chrono::seconds(30));
+    if (!http.connected || http.status < 200 || http.status >= 300 ||
+        http.cancelled || http.timedOut) {
+        error = apiErrorMessage(http);
         return result;
     }
-    const auto responseText = stream->readEntireStreamAsString();
-    if (statusCode < 200 || statusCode >= 300) {
-        error = "OpenAI HTTP " + juce::String(statusCode);
-        if (const auto parsed = juce::JSON::parse(responseText); !parsed.isVoid()) {
-            if (const auto* object = parsed.getDynamicObject()) {
-                if (const auto* apiError = object->getProperty("error").getDynamicObject())
-                    error += ": " + apiError->getProperty("message").toString();
-            }
-        }
-        return result;
-    }
-    const auto response = juce::JSON::parse(responseText);
+    const auto response = juce::JSON::parse(http.body);
     const auto outputText = extractOutputText(response);
     if (outputText.isEmpty()) {
         error = "OpenAI returned no structured composition";
@@ -261,9 +411,11 @@ bool AiComposer::parseCompositionJson(const juce::String& text, int requestedBar
                 start >= result.pattern.lengthBeats || duration <= 0.0 ||
                 pitch < 0 || pitch > 127 || velocity < 1 || velocity > 127)
                 continue;
+            const auto voice = layer == layerNames.size() - 1
+                ? rhythmVoiceForPitch(pitch) : layerVoices[layer];
             result.pattern.notes.push_back({start,
                 std::min(duration, result.pattern.lengthBeats - start), pitch, velocity,
-                layerChannels[layer]});
+                layerChannels[layer], voice});
         }
     }
     normalizePattern(result.pattern);
@@ -274,15 +426,51 @@ bool AiComposer::parseCompositionJson(const juce::String& text, int requestedBar
             return false;
         }
     }
+    if (const auto signature = parseKeyName(result.key.toStdString())) {
+        const auto [root, scale] = *signature;
+        result.key = canonicalKeyName(root, scale);
+        std::vector<std::vector<int>> harmony(static_cast<std::size_t>(bars));
+        for (auto bar = 0; bar < bars; ++bar) {
+            const auto barStart = bar * 4.0;
+            for (const auto& note : result.pattern.notes) {
+                if (note.voice != VoiceId::HarmonicFoundation || note.endBeat() <= barStart ||
+                    note.startBeat >= barStart + 4.0) continue;
+                const auto pitchClass = positiveModulo(note.pitch, 12);
+                if (std::find(harmony[static_cast<std::size_t>(bar)].begin(),
+                              harmony[static_cast<std::size_t>(bar)].end(), pitchClass) ==
+                    harmony[static_cast<std::size_t>(bar)].end())
+                    harmony[static_cast<std::size_t>(bar)].push_back(pitchClass);
+            }
+            if (harmony[static_cast<std::size_t>(bar)].empty()) {
+                const auto intervals = intervalsFor(scale);
+                for (const auto degree : {0, 2, 4})
+                    harmony[static_cast<std::size_t>(bar)].push_back(
+                        positiveModulo(root + intervals[static_cast<std::size_t>(degree)], 12));
+            } else if (harmony[static_cast<std::size_t>(bar)].size() < 3) {
+                const auto intervals = intervalsFor(scale);
+                for (const auto degree : {0, 2, 4}) {
+                    const auto pitchClass = positiveModulo(
+                        root + intervals[static_cast<std::size_t>(degree)], 12);
+                    if (std::find(harmony[static_cast<std::size_t>(bar)].begin(),
+                                  harmony[static_cast<std::size_t>(bar)].end(), pitchClass) ==
+                        harmony[static_cast<std::size_t>(bar)].end())
+                        harmony[static_cast<std::size_t>(bar)].push_back(pitchClass);
+                }
+            }
+        }
+        [[maybe_unused]] const auto tonalReport = repairTonalContract(
+            result.pattern, root, scale, 4.0, harmony);
+    } else {
+        result.key = "Unspecified key";
+    }
     if (result.title.isEmpty()) result.title = "Untitled Idea";
-    if (result.key.isEmpty()) result.key = "Unspecified key";
     return true;
 }
 
 SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetSeconds,
                               int totalBars, double bpm, double beatsPerBar,
                               std::uint64_t seed, std::stop_token token,
-                              juce::String& error) {
+                              juce::String& error, const AiSongProgress& progress) {
     SongPlan result;
     result.sections.clear();
     const auto apiKey = juce::SystemStats::getEnvironmentVariable("OPENAI_API_KEY", {}).trim();
@@ -307,55 +495,91 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "Create a narratively inevitable form with introduction, thematic statements, contrast, development, "
         "a true climax and a conclusive ending. Recurring sections must share a recognisable motif while changing "
         "orchestration, register, harmony or rhythm. Design a variable ensemble rather than four fixed layers. "
-        "Choose 7-12 voices from the supplied IDs; give every voice an independent function, interaction rule, "
+        "Choose 7-15 voices from the supplied IDs; give every voice an independent function, interaction rule, "
         "activity and register. Use core_drums plus low_percussion and high_percussion as distinct rhythmic strata, "
         "multiple complementary harmonic voices, independent bass functions, melodic dialogue, atmosphere and "
         "transitions when musically justified. Do not activate every voice in every section. Complexity must come "
         "from coordinated independence, negative space and long-range development, never indiscriminate density. "
         "Treat active_voices as an available cast, not a command to play continuously: design implied entrances, "
         "responses, withdrawals, breath before arrivals, tension plateaus and genuine low-density descents. "
-        "Harmonic tension must follow the dramatic curve. minimum_pitch and maximum_pitch are MIDI pitches. The section "
-        "bars MUST sum exactly to ") + juce::String(totalBars) + ". Use between 5 and 14 sections. Energy, tension "
+        "Harmonic tension must follow the dramatic curve. minimum_pitch and maximum_pitch are MIDI pitches. "
+        "The key label, root_pitch_class and mode MUST describe exactly the same tonal centre. Chromatic notes are "
+        "reserved for brief prepared passing motion that resolves by semitone; structural notes remain diatonic. "
+        "Write a deliberate rhythm score for every section. kick_state defines its stable identity and "
+        "kick_continuity says whether quarter-note anchors are mandatory. Use four_on_floor as the normal driving "
+        "foundation for house and progressive-house requests. Create contrast through explicit rhythm_gestures: "
+        "mute or remove kicks before transitions, add occasional double kicks or pickups, then restore the established "
+        "groove after breaks. Every exception must have structural purpose and gestures must remain rare. Kick, "
+        "snare/clap, closed hats, open hats/shaker and percussion are independent voices. Never choose a breakbeat "
+        "unless the user explicitly requests one. percussion_density, rhythmic_syncopation and swing are 0 to 1; "
+        "bar_offset is local to its section and beat is zero-based. Invent 1-6 reusable rhythm_motifs as open "
+        "one-to-four-bar rhythmic DNA. Each lane mask has exactly bars * steps_per_bar characters: 0 is silence, "
+        "1 is a normal hit and 2 is an accent. Do not default every motif to a generic grid: internally consider "
+        "at least three rhythm solutions, then choose the one whose kick, clap, hats and two percussion lanes form "
+        "the clearest conversation. Sections develop a shared motif through sparse rhythm_mutations rather than "
+        "replacing it arbitrarily. Every mutation needs an audible dramatic purpose. Preserve silence, asymmetry, "
+        "call-and-response and recognizable lineage across the full song. The macro kick contract still wins when "
+        "the user explicitly requests constant quarter-note kick or when a section deliberately mutes it. "
+        "The section bars MUST sum exactly to ") + juce::String(totalBars) + ". Use between 5 and 14 sections. Energy, tension "
         "and density are values from 0 to 1. Chord degrees use 0-6. Motif intervals are semitones relative to the "
         "tonic and form the immutable thematic DNA. Target duration: " + juce::String(targetSeconds) +
         " seconds; tempo: " + juce::String(bpm, 1) + " BPM; meter: " + juce::String(beatsPerBar, 2) +
         " quarter-note beats per bar. Creative direction: " + direction;
 
     const auto body = juce::String("{\"model\":\"") + model +
-        "\",\"reasoning\":{\"effort\":\"medium\"},\"max_output_tokens\":7000,\"input\":" +
+        "\",\"reasoning\":{\"effort\":\"low\"},\"max_output_tokens\":9000,\"input\":" +
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_plan\","
         "\"strict\":true,\"schema\":" + songPlanSchema + "}}}";
 
-    auto url = juce::URL("https://api.openai.com/v1/responses").withPOSTData(body);
-    auto statusCode = 0;
-    auto stream = url.createInputStream(
-        juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
-            .withExtraHeaders("Content-Type: application/json\r\nAuthorization: Bearer " + apiKey + "\r\n")
-            .withConnectionTimeoutMs(60000)
-            .withStatusCode(&statusCode));
-    if (stream == nullptr) {
-        error = "Could not connect to OpenAI";
+    constexpr auto totalAiBudget = std::chrono::seconds(65);
+    const auto aiStarted = std::chrono::steady_clock::now();
+    if (progress) progress(AiSongStage::Architecture);
+    const auto http = performRequest(body, apiKey, token, totalAiBudget);
+    if (!http.connected || http.status < 200 || http.status >= 300 ||
+        http.cancelled || http.timedOut) {
+        error = apiErrorMessage(http);
         return result;
     }
-    const auto responseText = stream->readEntireStreamAsString();
-    if (statusCode < 200 || statusCode >= 300) {
-        error = "OpenAI HTTP " + juce::String(statusCode);
-        if (const auto parsed = juce::JSON::parse(responseText); !parsed.isVoid()) {
-            if (const auto* object = parsed.getDynamicObject()) {
-                if (const auto* apiError = object->getProperty("error").getDynamicObject())
-                    error += ": " + apiError->getProperty("message").toString();
-            }
-        }
-        return result;
-    }
-    const auto outputText = extractOutputText(juce::JSON::parse(responseText));
+    const auto outputText = extractOutputText(juce::JSON::parse(http.body));
     if (outputText.isEmpty()) {
         error = "OpenAI returned no structured song plan";
         return result;
     }
     if (!parseSongPlanJson(outputText, targetSeconds, totalBars, bpm, beatsPerBar,
                            seed, result, error)) return {};
+    if (token.stop_requested()) {
+        error = "Generation cancelled";
+        return {};
+    }
+    const auto elapsed = std::chrono::steady_clock::now() - aiStarted;
+    const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(totalAiBudget - elapsed);
+    if (remaining < std::chrono::seconds(3)) {
+        applyExplicitRhythmRequest(result, direction);
+        SongComposer::normalizePlan(result);
+        return result;
+    }
+    if (progress) progress(AiSongStage::Critique);
+    const auto criticPrompt = juce::String(
+        "Act as PULSO's independent composer-critic. Return a complete revised plan using the same schema. "
+        "Preserve the exact requested bar count, tempo, meter, tonal centre and all explicit user constraints. "
+        "Before selecting the revision, silently compare at least three plausible rhythmic developments. Audit "
+        "dance-floor foundation, motif lineage, kick-bass interlock, meaningful silence, phrase-level cause and "
+        "effect, orchestral breathing, contrast and climax. Repair generic repetition or arbitrary novelty. Use "
+        "rhythm masks as musical cells and sparse mutations as development; do not merely add density. The final "
+        "JSON must be self-contained. Original creative direction: ") + direction +
+        "\nCandidate plan to critique and revise:\n" + outputText;
+    if (const auto revisedText = requestRevisedSongPlan(criticPrompt, apiKey, token,
+            std::min(remaining, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(10))));
+        revisedText.isNotEmpty()) {
+        SongPlan revised;
+        juce::String criticError;
+        if (parseSongPlanJson(revisedText, targetSeconds, totalBars, bpm, beatsPerBar,
+                              seed, revised, criticError))
+            result = std::move(revised);
+    }
+    applyExplicitRhythmRequest(result, direction);
+    SongComposer::normalizePlan(result);
     return result;
 }
 
@@ -382,10 +606,29 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
     const auto mode = object->getProperty("mode").toString();
     result.scale = mode == "major" ? ScaleKind::Major : mode == "dorian" ? ScaleKind::Dorian
                  : mode == "mixolydian" ? ScaleKind::Mixolydian : ScaleKind::Minor;
+    if (const auto groove = grooveFamilyFromKey(
+            object->getProperty("groove_family").toString().toStdString()))
+        result.grooveFamily = *groove;
     if (const auto* motif = object->getProperty("motif_intervals").getArray())
         for (const auto& value : *motif) result.motifIntervals.push_back(static_cast<int>(value));
     if (const auto* chords = object->getProperty("chord_degrees").getArray())
         for (const auto& value : *chords) result.chordDegrees.push_back(static_cast<int>(value));
+    if (const auto* motifs = object->getProperty("rhythm_motifs").getArray()) {
+        for (const auto& item : *motifs) {
+            const auto* motif = item.getDynamicObject();
+            if (motif == nullptr) continue;
+            result.rhythmMotifs.push_back({
+                motif->getProperty("id").toString().trim().toStdString(),
+                static_cast<int>(motif->getProperty("bars")),
+                static_cast<int>(motif->getProperty("steps_per_bar")),
+                motif->getProperty("kick").toString().toStdString(),
+                motif->getProperty("snare_clap").toString().toStdString(),
+                motif->getProperty("closed_hats").toString().toStdString(),
+                motif->getProperty("open_hats_shaker").toString().toStdString(),
+                motif->getProperty("low_percussion").toString().toStdString(),
+                motif->getProperty("high_percussion").toString().toStdString()});
+        }
+    }
     if (const auto* voices = object->getProperty("voices").getArray()) {
         for (const auto& item : *voices) {
             const auto* voice = item.getDynamicObject();
@@ -421,6 +664,44 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
         parsedSection.tension = static_cast<double>(section->getProperty("tension"));
         parsedSection.density = static_cast<double>(section->getProperty("density"));
         parsedSection.motifVariant = static_cast<int>(section->getProperty("motif_variant"));
+        if (const auto state = kickStateFromKey(
+                section->getProperty("kick_state").toString().toStdString()))
+            parsedSection.rhythm.kickState = *state;
+        if (const auto continuity = kickContinuityFromKey(
+                section->getProperty("kick_continuity").toString().toStdString()))
+            parsedSection.rhythm.continuity = *continuity;
+        parsedSection.rhythm.percussionDensity = static_cast<double>(
+            section->getProperty("percussion_density"));
+        parsedSection.rhythm.syncopation = static_cast<double>(
+            section->getProperty("rhythmic_syncopation"));
+        parsedSection.rhythm.swing = static_cast<double>(section->getProperty("swing"));
+        parsedSection.rhythm.motifId = section->getProperty("rhythm_motif_id").toString().trim().toStdString();
+        parsedSection.rhythm.authored = section->hasProperty("kick_state");
+        if (const auto* mutations = section->getProperty("rhythm_mutations").getArray())
+            for (const auto& mutationItem : *mutations) {
+                const auto* mutation = mutationItem.getDynamicObject();
+                if (mutation == nullptr) continue;
+                const auto lane = rhythmLaneFromKey(mutation->getProperty("lane").toString().toStdString());
+                const auto kind = rhythmMutationFromKey(mutation->getProperty("operation").toString().toStdString());
+                if (!lane || !kind) continue;
+                parsedSection.rhythm.mutations.push_back({
+                    static_cast<int>(mutation->getProperty("bar_offset")), *lane, *kind,
+                    static_cast<int>(mutation->getProperty("step")),
+                    static_cast<int>(mutation->getProperty("amount")),
+                    static_cast<int>(mutation->getProperty("velocity")),
+                    mutation->getProperty("purpose").toString().trim().toStdString()});
+            }
+        if (const auto* gestures = section->getProperty("rhythm_gestures").getArray())
+            for (const auto& gestureItem : *gestures) {
+                const auto* gesture = gestureItem.getDynamicObject();
+                if (gesture == nullptr) continue;
+                if (const auto kind = rhythmGestureFromKey(
+                        gesture->getProperty("type").toString().toStdString()))
+                    parsedSection.rhythm.gestures.push_back({
+                        static_cast<int>(gesture->getProperty("bar_offset")), *kind,
+                        static_cast<double>(gesture->getProperty("beat")),
+                        static_cast<double>(gesture->getProperty("intensity"))});
+            }
         if (const auto* activeVoices = section->getProperty("active_voices").getArray())
             for (const auto& voice : *activeVoices)
                 if (const auto id = voiceIdFromKey(voice.toString().toStdString()))

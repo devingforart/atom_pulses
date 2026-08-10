@@ -23,6 +23,9 @@ antes de tocar la instalación anterior.
 6. Inicia el transporte.
 
 El sintetizador de `Preview` permite escuchar el patrón sin cargar otro instrumento.
+El selector junto a `PREVIEW AUDIO` ofrece cuatro drum racks: `DEEP CIRCUIT`, `ORGANIC
+ROOM`, `ANALOG PULSE` y `CINEMATIC`. Elige el carácter que permita juzgar mejor la idea;
+la selección se guarda en el Set y no modifica el MIDI.
 El indicador distingue una composición GPT validada del motor local.
 La franja superior muestra la forma completa. Pulsa una sección para seleccionarla;
 después arrastra `SECTION` para convertirla en un clip MIDI independiente. `FULL SONG`

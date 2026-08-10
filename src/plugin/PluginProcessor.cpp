@@ -24,6 +24,7 @@ constexpr auto energy = "energy";
 constexpr auto phraseBars = "phraseBars";
 constexpr auto mode = "mode";
 constexpr auto preview = "preview";
+constexpr auto previewKit = "previewKit";
 constexpr auto thru = "thru";
 constexpr auto gain = "gain";
 constexpr std::array generative{role, scale, root, follow, risk, space, repetition,
@@ -215,6 +216,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PulsoAudioProcessor::createP
     result.push_back(std::make_unique<Choice>(ids::mode, "Phrase Mode",
                                               juce::StringArray{"Loop", "Evolve"}, 0));
     result.push_back(std::make_unique<Bool>(ids::preview, "Preview", true));
+    result.push_back(std::make_unique<Choice>(ids::previewKit, "Preview Drum Rack",
+                                              juce::StringArray{"Deep Circuit", "Organic Room", "Analog Pulse", "Cinematic"}, 0));
     result.push_back(std::make_unique<Bool>(ids::thru, "MIDI Thru", false));
     result.push_back(std::make_unique<Float>(ids::gain, "Output",
                                              juce::NormalisableRange<float>(-36.0f, 0.0f, 0.1f), -12.0f));
@@ -883,6 +886,7 @@ void PulsoAudioProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::Mi
     midi.addEvents(generatedMidi, 0, -1, 0);
 
     const auto previewEnabled = parameters.getRawParameterValue(ids::preview)->load() > 0.5f;
+    previewSynth.setDrumKit(static_cast<int>(parameters.getRawParameterValue(ids::previewKit)->load()));
     if (!previewEnabled && previewWasEnabled) silencePreview(true);
     if (previewEnabled) {
         previewMidi.addEvents(generatedMidi, 0, -1, 0);

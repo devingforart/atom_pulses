@@ -18,7 +18,8 @@ Este repositorio contiene un MVP funcional para Ableton Live en Windows:
 - Flujo sin perillas: describir, generar, bloquear capas, regenerar, avanzar y deshacer.
 - Variaciones reproducibles y estado persistente en el proyecto del DAW.
 - Motor de tiempo real: generación en worker, panic MIDI y recuperación de seek/loop.
-- Preescucha con ganancia suavizada y limitador a -0.5 dBFS.
+- Preescucha con cuatro drum racks sintetizados, polifonía rítmica reservada, ganancia
+  suavizada y limitador a -0.5 dBFS.
 - Ayuda contextual en toda la interfaz: deja el cursor sobre cualquier elemento durante 0.35 s.
 - Salida MIDI para grabar o alimentar cualquier instrumento.
 - Arrastre directo de la canción, una sección, una familia o una voz individual como `.mid`.
@@ -99,6 +100,10 @@ abrir el plugin.
 La aplicación standalone permite probar la interfaz y el sintetizador de preescucha.
 Consulta [docs/ABLETON.md](docs/ABLETON.md) para el enrutamiento MIDI completo.
 
+El selector inferior ofrece `DEEP CIRCUIT`, `ORGANIC ROOM`, `ANALOG PULSE` y
+`CINEMATIC`. Son drum racks internos sin samples externos: cambian únicamente la
+monitorización y nunca alteran las notas ni el archivo MIDI exportado.
+
 También puedes arrastrar desde la franja inferior de la partitura: `FULL SONG` crea el
 archivo multitrack completo; `RHYTHM`, `BASS`, `HARMONY` y `LEADS+FX` crean familias independientes.
 Selecciona un bloque de la forma y arrastra `SECTION` para exportar sólo esa parte.
@@ -136,10 +141,10 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 
 ## Estado del producto
 
-La versión 0.6 integra un arquitecto GPT de forma larga, Structured Outputs, renderizado
+La versión 0.6.1 integra un arquitecto GPT de forma larga, Structured Outputs, renderizado
 jerárquico de hasta 512 compases, doce voces con entrada y salida dinámica, expresión
-CC, timeline de secciones, exportación por voz y fallback algorítmico. La red nunca se
-usa desde el callback de audio.
+CC, drum racks de preescucha, timeline de secciones, exportación por voz y fallback
+algorítmico. La red nunca se usa desde el callback de audio.
 
 Lee [docs/ROADMAP.md](docs/ROADMAP.md) para las siguientes etapas y
 [docs/LICENSING.md](docs/LICENSING.md) antes de distribuir binarios.

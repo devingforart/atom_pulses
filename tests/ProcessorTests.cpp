@@ -3,6 +3,7 @@
 #include "plugin/PluginProcessor.h"
 #include "plugin/MidiExporter.h"
 #include "plugin/AiComposer.h"
+#include "plugin/PreviewSynth.h"
 
 #include <juce_events/juce_events.h>
 
@@ -75,10 +76,35 @@ int main(int argc, char** argv) {
     constexpr auto sampleRate = 48000.0;
     constexpr auto blockSize = 256;
 
+    std::array<float, 4> kitEnergy{};
+    for (auto kit = 0; kit < static_cast<int>(kitEnergy.size()); ++kit) {
+        pulso::plugin::PreviewSynth drumPreview;
+        drumPreview.prepare(sampleRate);
+        drumPreview.setDrumKit(kit);
+        juce::AudioBuffer<float> kitAudio(2, 8192);
+        kitAudio.clear();
+        juce::MidiBuffer kitMidi;
+        kitMidi.addEvent(juce::MidiMessage::noteOn(10, 36, static_cast<juce::uint8>(118)), 0);
+        kitMidi.addEvent(juce::MidiMessage::noteOn(10, 42, static_cast<juce::uint8>(92)), 900);
+        kitMidi.addEvent(juce::MidiMessage::noteOn(10, 38, static_cast<juce::uint8>(108)), 1800);
+        kitMidi.addEvent(juce::MidiMessage::noteOn(10, 46, static_cast<juce::uint8>(88)), 3000);
+        drumPreview.renderNextBlock(kitAudio, kitMidi, 0, kitAudio.getNumSamples());
+        for (auto channel = 0; channel < kitAudio.getNumChannels(); ++channel)
+            for (auto sample = 0; sample < kitAudio.getNumSamples(); ++sample)
+                kitEnergy[static_cast<std::size_t>(kit)] += std::abs(kitAudio.getSample(channel, sample));
+        require(kitEnergy[static_cast<std::size_t>(kit)] > 1.0f,
+                "Every preview drum rack must render audible GM percussion");
+    }
+    const auto [quietestKit, loudestKit] = std::minmax_element(kitEnergy.begin(), kitEnergy.end());
+    require(*loudestKit - *quietestKit > 1.0f,
+            "Preview drum racks must have measurably different sonic envelopes");
+
     pulso::plugin::PulsoAudioProcessor processor;
     require(std::abs(processor.parameters.getRawParameterValue("space")->load()) < 0.0001f &&
                 std::abs(processor.parameters.getRawParameterValue("groove")->load()) < 0.0001f,
             "Retired Space and Groove controls must always default to zero");
+    require(processor.parameters.getParameter("previewKit") != nullptr,
+            "The selectable preview drum rack must be a persistent host parameter");
     TestPlayHead playHead;
     processor.setPlayHead(&playHead);
     processor.prepareToPlay(sampleRate, blockSize);
@@ -335,9 +361,10 @@ int main(int argc, char** argv) {
             ++tooltipCount;
         }
     }
-    require(tooltipCount >= 21, "The complete visible interface must be covered by tooltips");
+    require(tooltipCount >= 22, "The complete visible interface must be covered by tooltips");
     editor.reset();
 
+    processor.parameters.getParameter("previewKit")->setValueNotifyingHost(1.0f);
     juce::MemoryBlock savedState;
     processor.getStateInformation(savedState);
     pulso::plugin::PulsoAudioProcessor restored;
@@ -353,6 +380,8 @@ int main(int argc, char** argv) {
     require(std::abs(restored.parameters.getRawParameterValue("space")->load()) < 0.0001f &&
                 std::abs(restored.parameters.getRawParameterValue("groove")->load()) < 0.0001f,
             "Reloading a project must keep retired controls fixed at zero");
+    require(std::abs(restored.parameters.getRawParameterValue("previewKit")->load() - 3.0f) < 0.0001f,
+            "The selected preview drum rack must survive a DAW project reload");
 
     ensembleFile.deleteFile();
     bassFile.deleteFile();

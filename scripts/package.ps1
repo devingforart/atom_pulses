@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $preset = if ($Configuration -eq 'Debug') { 'windows-debug' } else { 'windows-release' }
-$version = '0.6.0'
+$version = '0.6.1'
 $packageName = "PULSO-$version-windows-x64"
 $distRoot = Join-Path $projectRoot 'dist'
 $stage = Join-Path $distRoot $packageName

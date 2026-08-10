@@ -47,8 +47,11 @@ En stop, seek, loop o sustitución de patrón, el scheduler emite note-off para 
 y CC 123 en los canales generativos. Si la reproducción comienza dentro de una nota,
 reconstruye el note-on en la primera muestra y conserva su note-off original.
 
-La preescucha usa ganancia suavizada y un limitador a -0.5 dBFS. Al desactivarla o
-detener el transporte, las voces completan una liberación corta para evitar clics.
+La preescucha reserva 24 voces one-shot para batería y 40 voces tonales, de modo que
+los acordes densos no roben el pulso. El canal GM 10 se sintetiza mediante cuatro drum
+racks seleccionables con kick, snare, clap, hats, toms, percusión y cymbals diferenciados.
+Después usa ganancia suavizada y un limitador a -0.5 dBFS. Al desactivarla o detener el
+transporte, las voces completan una liberación corta para evitar clics.
 
 ## Modelo de sincronización
 

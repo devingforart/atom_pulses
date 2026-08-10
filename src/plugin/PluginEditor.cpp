@@ -87,6 +87,9 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     regenerateButton.onClick = [this] { processor.requestRegenerateUnlocked(); };
     undoButton.onClick = [this] { processor.requestUndo(); };
 
+    drumKit.addItemList({"DEEP CIRCUIT", "ORGANIC ROOM", "ANALOG PULSE", "CINEMATIC"}, 1);
+    drumKit.setJustificationType(juce::Justification::centred);
+
     configureLock(lockButtons[0], PulsoAudioProcessor::Layer::Harmony,
                   "HARMONY + FX · Preserve foundation, pulses, upper harmony, atmosphere and transitions while other families change.");
     configureLock(lockButtons[1], PulsoAudioProcessor::Layer::Melody,
@@ -100,7 +103,8 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     nextButton.setTooltip("Create the next idea. Locked layers remain note-for-note identical; unlocked layers are recomposed.");
     regenerateButton.setTooltip("Recompose only unlocked layers around everything you decided to keep.");
     undoButton.setTooltip("Restore the complete previous idea. Press again to toggle back.");
-    previewButton.setTooltip("Enable the internal reference synthesizer. MIDI export and output are unaffected.");
+    previewButton.setTooltip("Enable the internal reference ensemble and selected drum rack. MIDI export and output are unaffected.");
+    drumKit.setTooltip("Select the preview drum rack. DEEP emphasizes sub weight; ORGANIC uses shorter room-like percussion; ANALOG is tight and electronic; CINEMATIC has longer, darker decays. This changes only monitoring, never the MIDI.");
     thruButton.setTooltip("Also pass incoming MIDI to the output alongside PULSO's composition.");
     prompt.setTooltip("Describe mood, movement, instrumentation or narrative in natural language. Leave empty for an autonomous idea.");
     promptLabel.setTooltip(prompt.getTooltip());
@@ -114,16 +118,17 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     ideaDescription.setTooltip("The compositional intention behind the current idea.");
     patternView.setTooltip("Twelve dynamically orchestrated voices. Drag a voice lane, a family, the selected SECTION or the FULL SONG into Ableton as separated MIDI tracks.");
 
-    for (auto* component : std::array<juce::Component*, 21>{
+    for (auto* component : std::array<juce::Component*, 22>{
              &title, &subtitle, &status, &aiBadge, &promptLabel, &durationLabel, &prompt, &duration, &ideaTitle,
              &ideaDescription, &generateButton, &nextButton, &regenerateButton, &undoButton,
-             &previewButton, &thruButton, &lockButtons[0], &lockButtons[1], &lockButtons[2],
+             &previewButton, &drumKit, &thruButton, &lockButtons[0], &lockButtons[1], &lockButtons[2],
              &lockButtons[3], &patternView})
         addAndMakeVisible(component);
 
     addChildComponent(compositionProgress);
 
     previewAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "preview", previewButton);
+    drumKitAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "previewKit", drumKit);
     thruAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "thru", thruButton);
     startTimerHz(20);
 }
@@ -183,6 +188,8 @@ void PulsoAudioProcessorEditor::resized() {
 
     auto actions = area;
     previewButton.setBounds(actions.removeFromLeft(130));
+    actions.removeFromLeft(8);
+    drumKit.setBounds(actions.removeFromLeft(150));
     actions.removeFromLeft(8);
     thruButton.setBounds(actions.removeFromLeft(110));
     undoButton.setBounds(actions.removeFromRight(90));

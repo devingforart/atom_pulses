@@ -8,11 +8,26 @@ namespace pulso::plugin {
 
 class PatternView final : public juce::Component, public juce::SettableTooltipClient {
 public:
-    explicit PatternView(PulsoAudioProcessor& owner) : processor(owner) {}
+    explicit PatternView(PulsoAudioProcessor& owner);
     void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseExit(const juce::MouseEvent&) override;
 
 private:
+    [[nodiscard]] int channelAt(juce::Point<int>) const noexcept;
+    [[nodiscard]] bool hasNotesForChannel(int channel) const;
+    [[nodiscard]] juce::Rectangle<int> dragStripBounds() const noexcept;
+    [[nodiscard]] juce::File createExportFile(int channel) const;
+
     PulsoAudioProcessor& processor;
+    int armedChannel{-1};
+    int hoverChannel{-1};
+    bool dragAttempted{};
+    bool dragInProgress{};
+    juce::String feedback;
 };
 
 } // namespace pulso::plugin

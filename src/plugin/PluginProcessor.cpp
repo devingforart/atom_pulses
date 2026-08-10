@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 
 #include "PluginEditor.h"
+#include "core/Scale.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -35,6 +36,8 @@ PulsoAudioProcessor::PulsoAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       parameters(*this, nullptr, "PULSO_STATE", createParameterLayout()) {
     uiPatternSnapshot.store(std::make_shared<Pattern>(), std::memory_order_release);
+    previousPatternSnapshot.store(std::make_shared<Pattern>(), std::memory_order_release);
+    ideaMetadata.store(std::make_shared<IdeaMetadata>(), std::memory_order_release);
     for (const auto* parameterId : ids::generative) parameters.addParameterListener(parameterId, this);
     generationThread = std::jthread([this](const std::stop_token token) { generationThreadMain(token); });
 }
@@ -49,6 +52,70 @@ const juce::String PulsoAudioProcessor::getName() const { return "PULSO"; }
 
 void PulsoAudioProcessor::parameterChanged(const juce::String&, float) {
     generationRevision.fetch_add(1, std::memory_order_release);
+}
+
+void PulsoAudioProcessor::setCreativeDirection(const juce::String& direction) {
+    const std::scoped_lock lock(creativeDirectionMutex);
+    creativeDirection = direction.substring(0, 600);
+}
+
+void PulsoAudioProcessor::requestGenerateIdea() noexcept {
+    compositionSeed.fetch_add(1, std::memory_order_relaxed);
+    variationIndex.store(0, std::memory_order_relaxed);
+    pendingIdeaAction.store(IdeaAction::Generate, std::memory_order_release);
+    generationRevision.fetch_add(1, std::memory_order_release);
+}
+
+void PulsoAudioProcessor::requestRegenerateUnlocked() noexcept {
+    variationIndex.fetch_add(1, std::memory_order_relaxed);
+    pendingIdeaAction.store(IdeaAction::Regenerate, std::memory_order_release);
+    generationRevision.fetch_add(1, std::memory_order_release);
+}
+
+void PulsoAudioProcessor::requestNextIdea() noexcept {
+    compositionSeed.fetch_add(1, std::memory_order_relaxed);
+    variationIndex.store(0, std::memory_order_relaxed);
+    pendingIdeaAction.store(IdeaAction::Next, std::memory_order_release);
+    generationRevision.fetch_add(1, std::memory_order_release);
+}
+
+void PulsoAudioProcessor::requestUndo() noexcept {
+    pendingIdeaAction.store(IdeaAction::Undo, std::memory_order_release);
+    generationRevision.fetch_add(1, std::memory_order_release);
+}
+
+void PulsoAudioProcessor::setLayerLocked(Layer layer, bool shouldLock) noexcept {
+    const auto bit = static_cast<std::uint8_t>(1u << static_cast<unsigned>(layer));
+    if (shouldLock)
+        lockedLayers.fetch_or(bit, std::memory_order_relaxed);
+    else
+        lockedLayers.fetch_and(static_cast<std::uint8_t>(~bit), std::memory_order_relaxed);
+}
+
+bool PulsoAudioProcessor::isLayerLocked(Layer layer) const noexcept {
+    const auto bit = static_cast<std::uint8_t>(1u << static_cast<unsigned>(layer));
+    return (lockedLayers.load(std::memory_order_relaxed) & bit) != 0;
+}
+
+juce::String PulsoAudioProcessor::currentAiStatus() const {
+    if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) return metadata->status;
+    return {};
+}
+
+juce::String PulsoAudioProcessor::currentIdeaTitle() const {
+    if (const auto metadata = ideaMetadata.load(std::memory_order_acquire))
+        return metadata->title + "  ·  " + metadata->key;
+    return {};
+}
+
+juce::String PulsoAudioProcessor::currentIdeaDescription() const {
+    if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) return metadata->description;
+    return {};
+}
+
+juce::String PulsoAudioProcessor::currentCreativeDirection() const {
+    const std::scoped_lock lock(creativeDirectionMutex);
+    return creativeDirection;
 }
 
 int PulsoAudioProcessor::currentPhraseBars() const noexcept {
@@ -70,16 +137,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout PulsoAudioProcessor::createP
     result.push_back(std::make_unique<Int>(ids::root, "Root", 0, 11, 0));
     result.push_back(std::make_unique<Float>(ids::follow, "Follow", 0.0f, 1.0f, 0.65f));
     result.push_back(std::make_unique<Float>(ids::risk, "Risk", 0.0f, 1.0f, 0.30f));
-    result.push_back(std::make_unique<Float>(ids::space, "Space", 0.0f, 1.0f, 0.35f));
+    result.push_back(std::make_unique<Float>(ids::space, "Space (Legacy)", 0.0f, 1.0f, 0.0f));
     result.push_back(std::make_unique<Float>(ids::repetition, "Repetition", 0.0f, 1.0f, 0.78f));
     result.push_back(std::make_unique<Float>(ids::complexity, "Complexity", 0.0f, 1.0f, 0.45f));
     result.push_back(std::make_unique<Float>(ids::development, "Development", 0.0f, 1.0f, 0.45f));
-    result.push_back(std::make_unique<Float>(ids::groove, "Groove", 0.0f, 1.0f, 0.48f));
+    result.push_back(std::make_unique<Float>(ids::groove, "Groove (Legacy)", 0.0f, 1.0f, 0.0f));
     result.push_back(std::make_unique<Float>(ids::humanize, "Humanize", 0.0f, 1.0f, 0.32f));
     result.push_back(std::make_unique<Float>(ids::cohesion, "Cohesion", 0.0f, 1.0f, 0.82f));
     result.push_back(std::make_unique<Float>(ids::energy, "Energy", 0.0f, 1.0f, 0.56f));
     result.push_back(std::make_unique<Choice>(ids::phraseBars, "Phrase Length",
-                                              juce::StringArray{"1 bar", "2 bars", "4 bars", "8 bars", "16 bars"}, 2));
+                                               juce::StringArray{"1 bar", "2 bars", "4 bars", "8 bars", "16 bars"}, 3));
     result.push_back(std::make_unique<Choice>(ids::mode, "Phrase Mode",
                                               juce::StringArray{"Loop", "Evolve"}, 0));
     result.push_back(std::make_unique<Bool>(ids::preview, "Preview", true));
@@ -144,9 +211,12 @@ PulsoAudioProcessor::Transport PulsoAudioProcessor::readTransport(int numSamples
             transport.startBeat = position->getPpqPosition().orFallback(standaloneBeat);
             transport.bpm = std::max(1.0, position->getBpm().orFallback(120.0));
             transport.isPlaying = position->getIsPlaying();
-            if (const auto signature = position->getTimeSignature())
+            if (const auto signature = position->getTimeSignature()) {
                 transport.beatsPerBar = std::max(1.0, static_cast<double>(signature->numerator) * 4.0 /
                                                        static_cast<double>(signature->denominator));
+                timeSignatureNumerator.store(signature->numerator, std::memory_order_relaxed);
+                timeSignatureDenominator.store(signature->denominator, std::memory_order_relaxed);
+            }
         }
     }
 
@@ -222,11 +292,11 @@ PulsoAudioProcessor::GenerationRequest PulsoAudioProcessor::makeGenerationReques
     request.rootPitchClass = static_cast<int>(parameters.getRawParameterValue(ids::root)->load());
     request.follow = parameters.getRawParameterValue(ids::follow)->load();
     request.risk = parameters.getRawParameterValue(ids::risk)->load();
-    request.space = parameters.getRawParameterValue(ids::space)->load();
+    request.space = 0.0;
     request.repetition = parameters.getRawParameterValue(ids::repetition)->load();
     request.complexity = parameters.getRawParameterValue(ids::complexity)->load();
     request.development = parameters.getRawParameterValue(ids::development)->load();
-    request.groove = parameters.getRawParameterValue(ids::groove)->load();
+    request.groove = 0.0;
     request.humanize = parameters.getRawParameterValue(ids::humanize)->load();
     request.cohesion = parameters.getRawParameterValue(ids::cohesion)->load();
     request.energy = parameters.getRawParameterValue(ids::energy)->load();
@@ -252,6 +322,8 @@ PulsoAudioProcessor::GenerationRequest PulsoAudioProcessor::makeGenerationReques
     const auto oldest = recentSourceCount == maxSourceNotes ? recentSourceWrite : 0;
     for (std::size_t index = 0; index < recentSourceCount; ++index)
         request.sourceNotes[index] = recentSourceNotes[(oldest + index) % maxSourceNotes];
+    request.action = static_cast<std::uint8_t>(pendingIdeaAction.load(std::memory_order_acquire));
+    request.lockedLayers = lockedLayers.load(std::memory_order_relaxed);
     return request;
 }
 
@@ -293,6 +365,48 @@ GenerationContext PulsoAudioProcessor::expandContext(const GenerationRequest& re
                                      positiveModulo(request.rootPitchClass + 7, 12)};
     }
     return context;
+}
+
+void PulsoAudioProcessor::addHarmonyLayer(Pattern& pattern, const GenerationContext& context) {
+    const auto bars = std::max(1, context.bars);
+    for (auto bar = 0; bar < bars; ++bar) {
+        auto chord = bar < static_cast<int>(context.harmonyByBar.size())
+                       ? context.harmonyByBar[static_cast<std::size_t>(bar)]
+                       : context.chordPitchClasses;
+        if (chord.empty()) chord = {context.rootPitchClass, positiveModulo(context.rootPitchClass + 3, 12),
+                                    positiveModulo(context.rootPitchClass + 7, 12)};
+        const auto start = bar * context.beatsPerBar;
+        auto previous = 47;
+        for (std::size_t index = 0; index < chord.size() && index < 4; ++index) {
+            auto pitch = pitchClassToMidi(positiveModulo(chord[index], 12), 4, 48, 72);
+            while (pitch <= previous && pitch + 12 <= 72) pitch += 12;
+            previous = pitch;
+            pattern.notes.push_back({start, std::max(0.25, context.beatsPerBar - 0.08),
+                                     pitch, 67 + static_cast<int>(index) * 3, 3});
+        }
+    }
+    std::sort(pattern.notes.begin(), pattern.notes.end(), [](const auto& a, const auto& b) {
+        return a.startBeat != b.startBeat ? a.startBeat < b.startBeat : a.channel < b.channel;
+    });
+}
+
+void PulsoAudioProcessor::preserveLockedLayers(Pattern& generated, const Pattern& previous,
+                                                std::uint8_t mask) {
+    constexpr std::array channels{3, 2, 1, 10};
+    for (std::size_t layer = 0; layer < channels.size(); ++layer) {
+        if ((mask & (1u << layer)) == 0) continue;
+        const auto channel = channels[layer];
+        generated.notes.erase(std::remove_if(generated.notes.begin(), generated.notes.end(),
+                                              [channel](const auto& note) { return note.channel == channel; }),
+                              generated.notes.end());
+        for (const auto& note : previous.notes)
+            if (note.channel == channel && note.startBeat < generated.lengthBeats)
+                generated.notes.push_back(note);
+    }
+    std::sort(generated.notes.begin(), generated.notes.end(), [](const auto& a, const auto& b) {
+        if (a.startBeat != b.startBeat) return a.startBeat < b.startBeat;
+        return a.channel < b.channel;
+    });
 }
 
 bool PulsoAudioProcessor::pushGenerationRequest(const GenerationRequest& request) noexcept {
@@ -343,7 +457,67 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             continue;
         }
 
-        auto generated = generator.generate(expandContext(newest));
+        const auto action = static_cast<IdeaAction>(newest.action);
+        const auto current = uiPatternSnapshot.load(std::memory_order_acquire);
+        const auto previous = previousPatternSnapshot.load(std::memory_order_acquire);
+        Pattern generated;
+        auto metadata = std::make_shared<IdeaMetadata>();
+
+        if ((action == IdeaAction::Undo && previous && !previous->notes.empty()) ||
+            (action == IdeaAction::Restore && current && !current->notes.empty())) {
+            generated = action == IdeaAction::Undo ? *previous : *current;
+            if (action == IdeaAction::Undo) {
+                metadata->title = "Previous Idea";
+                metadata->key = "Restored";
+                metadata->description = "Undo restored the complete previous composition.";
+                metadata->status = "UNDO RESTORED";
+            } else if (const auto restoredMetadata = ideaMetadata.load(std::memory_order_acquire)) {
+                *metadata = *restoredMetadata;
+                metadata->status = "PROJECT IDEA RESTORED";
+            }
+        } else {
+            const auto context = expandContext(newest);
+            const auto explicitIdeaRequest = action == IdeaAction::Generate ||
+                                             action == IdeaAction::Regenerate ||
+                                             action == IdeaAction::Next;
+            auto usedAI = false;
+            juce::String aiError;
+            if (explicitIdeaRequest && AiComposer::hasApiKey()) {
+                metadata->status = "GPT COMPOSING…";
+                ideaMetadata.store(metadata, std::memory_order_release);
+                juce::String direction;
+                {
+                    const std::scoped_lock lock(creativeDirectionMutex);
+                    direction = creativeDirection;
+                }
+                auto ai = AiComposer::compose(direction, newest.bars, currentTempo(),
+                                              current.get(), newest.lockedLayers, token, aiError);
+                if (!ai.pattern.notes.empty()) {
+                    generated = std::move(ai.pattern);
+                    generated.seed = newest.seed;
+                    metadata->title = ai.title;
+                    metadata->key = ai.key;
+                    metadata->description = ai.summary;
+                    metadata->status = "GPT-5.6 TERRA · VALIDATED";
+                    usedAI = true;
+                }
+            }
+            if (!usedAI) {
+                generated = generator.generate(context);
+                addHarmonyLayer(generated, context);
+                metadata->title = explicitIdeaRequest ? "New Local Idea" : "Local Idea";
+                metadata->key = juce::StringArray{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
+                                    [std::clamp(context.rootPitchClass, 0, 11)] + " " +
+                                (context.scale == ScaleKind::Major ? "major" : "minor");
+                metadata->description = aiError.isNotEmpty()
+                    ? "GPT unavailable: " + aiError + ". Generated safely with the local composition engine."
+                    : "Coherent deterministic composition generated locally. Add OPENAI_API_KEY and restart the host for GPT.";
+                metadata->status = aiError.isNotEmpty() ? "LOCAL FALLBACK · GPT UNAVAILABLE" : "LOCAL ENGINE";
+            }
+            if (current && !current->notes.empty())
+                preserveLockedLayers(generated, *current, newest.lockedLayers);
+        }
+
         RealtimePattern realtime;
         realtime.noteCount = static_cast<std::uint16_t>(
             std::min(generated.notes.size(), static_cast<std::size_t>(maxPatternNotes)));
@@ -353,7 +527,14 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         realtime.serial = newest.serial;
         realtime.epoch = newest.epoch;
 
+        if (action == IdeaAction::Undo) {
+            previousPatternSnapshot.store(current ? current : std::make_shared<Pattern>(),
+                                          std::memory_order_release);
+        } else if (current && !current->notes.empty()) {
+            previousPatternSnapshot.store(current, std::memory_order_release);
+        }
         uiPatternSnapshot.store(std::make_shared<Pattern>(generated), std::memory_order_release);
+        ideaMetadata.store(metadata, std::memory_order_release);
         while (!token.stop_requested() && !pushGeneratedPattern(realtime))
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -489,6 +670,11 @@ void PulsoAudioProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::Mi
     if (pendingContextChange || revision != submittedGenerationRevision) {
         const auto request = makeGenerationRequest(transport.beatsPerBar);
         if (pushGenerationRequest(request)) {
+            if (request.action != static_cast<std::uint8_t>(IdeaAction::None)) {
+                auto expected = static_cast<IdeaAction>(request.action);
+                pendingIdeaAction.compare_exchange_strong(expected, IdeaAction::None,
+                                                          std::memory_order_acq_rel);
+            }
             submittedGenerationRevision = revision;
             hasSubmittedRequest = true;
             pendingContextChange = false;
@@ -543,8 +729,37 @@ void PulsoAudioProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::Mi
 
 void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     auto state = parameters.copyState();
+    if (const auto existing = state.getChildWithName("COMPOSITION"); existing.isValid())
+        state.removeChild(existing, nullptr);
     state.setProperty("compositionSeed", static_cast<juce::int64>(compositionSeed.load(std::memory_order_relaxed)), nullptr);
     state.setProperty("variationIndex", static_cast<juce::int64>(variationIndex.load(std::memory_order_relaxed)), nullptr);
+    state.setProperty("lockedLayers", static_cast<int>(lockedLayers.load(std::memory_order_relaxed)), nullptr);
+    {
+        const std::scoped_lock lock(creativeDirectionMutex);
+        state.setProperty("creativeDirection", creativeDirection, nullptr);
+    }
+    if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
+        pattern && !pattern->notes.empty()) {
+        juce::MemoryOutputStream composition;
+        composition.writeInt(1); // Binary composition state version.
+        composition.writeDouble(pattern->lengthBeats);
+        composition.writeInt64(static_cast<juce::int64>(pattern->seed));
+        composition.writeInt(static_cast<int>(pattern->notes.size()));
+        for (const auto& note : pattern->notes) {
+            composition.writeDouble(note.startBeat);
+            composition.writeDouble(note.durationBeats);
+            composition.writeInt(note.pitch);
+            composition.writeInt(note.velocity);
+            composition.writeInt(note.channel);
+        }
+        state.setProperty("compositionData", composition.getMemoryBlock().toBase64Encoding(), nullptr);
+        if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) {
+            state.setProperty("ideaTitle", metadata->title, nullptr);
+            state.setProperty("ideaKey", metadata->key, nullptr);
+            state.setProperty("ideaDescription", metadata->description, nullptr);
+            state.setProperty("ideaStatus", metadata->status, nullptr);
+        }
+    }
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, destination);
 }
 
@@ -559,7 +774,61 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
             variationIndex.store(static_cast<std::uint64_t>(static_cast<juce::int64>(
                                      state.getProperty("variationIndex", 0))),
                                  std::memory_order_relaxed);
+            lockedLayers.store(static_cast<std::uint8_t>(static_cast<int>(
+                                   state.getProperty("lockedLayers", 0))),
+                               std::memory_order_relaxed);
+            {
+                const std::scoped_lock lock(creativeDirectionMutex);
+                creativeDirection = state.getProperty("creativeDirection", {}).toString().substring(0, 600);
+            }
+            juce::MemoryBlock compositionData;
+            if (compositionData.fromBase64Encoding(
+                    state.getProperty("compositionData", {}).toString())) {
+                juce::MemoryInputStream composition(compositionData, false);
+                const auto version = composition.readInt();
+                auto restoredPattern = std::make_shared<Pattern>();
+                restoredPattern->lengthBeats = composition.readDouble();
+                restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
+                const auto noteCount = composition.readInt();
+                if (version != 1 || !std::isfinite(restoredPattern->lengthBeats) ||
+                    restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
+                    noteCount > static_cast<int>(maxPatternNotes))
+                    restoredPattern->notes.clear();
+                else for (auto index = 0; index < noteCount; ++index) {
+                    NoteEvent note;
+                    note.startBeat = composition.readDouble();
+                    note.durationBeats = composition.readDouble();
+                    note.pitch = composition.readInt();
+                    note.velocity = composition.readInt();
+                    note.channel = composition.readInt();
+                    if (std::isfinite(note.startBeat) && std::isfinite(note.durationBeats) &&
+                        note.startBeat >= 0.0 && note.startBeat < restoredPattern->lengthBeats &&
+                        note.durationBeats > 0.0 && note.pitch >= 0 && note.pitch <= 127 &&
+                        note.velocity >= 1 && note.velocity <= 127 &&
+                        note.channel >= 1 && note.channel <= 16)
+                        restoredPattern->notes.push_back(note);
+                }
+                if (!restoredPattern->notes.empty()) {
+                    auto metadata = std::make_shared<IdeaMetadata>();
+                    metadata->title = state.getProperty("ideaTitle", "Restored Idea").toString();
+                    metadata->key = state.getProperty("ideaKey", "Restored key").toString();
+                    metadata->description = state.getProperty("ideaDescription", {}).toString();
+                    metadata->status = "PROJECT IDEA RESTORED";
+                    uiPatternSnapshot.store(restoredPattern, std::memory_order_release);
+                    ideaMetadata.store(metadata, std::memory_order_release);
+                    pendingIdeaAction.store(IdeaAction::Restore, std::memory_order_release);
+                }
+            }
+            if (const auto legacyComposition = state.getChildWithName("COMPOSITION");
+                legacyComposition.isValid())
+                state.removeChild(legacyComposition, nullptr);
             parameters.replaceState(state);
+            // These IDs remain only so older Ableton projects load cleanly.
+            // Their values are retired and always normalised to zero.
+            if (auto* retiredSpace = parameters.getParameter(ids::space))
+                retiredSpace->setValueNotifyingHost(0.0f);
+            if (auto* retiredGroove = parameters.getParameter(ids::groove))
+                retiredGroove->setValueNotifyingHost(0.0f);
         }
     }
     generationRevision.fetch_add(1, std::memory_order_release);

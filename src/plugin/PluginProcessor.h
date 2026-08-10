@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Generator.h"
+#include "AiComposer.h"
 #include "PreviewSynth.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -12,6 +13,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <stop_token>
 #include <thread>
 
@@ -45,19 +47,31 @@ public:
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
 
-    void requestVariation() noexcept {
-        variationIndex.fetch_add(1, std::memory_order_relaxed);
-        generationRevision.fetch_add(1, std::memory_order_release);
-    }
-    void requestNewComposition() noexcept {
-        compositionSeed.fetch_add(1, std::memory_order_relaxed);
-        variationIndex.store(0, std::memory_order_relaxed);
-        generationRevision.fetch_add(1, std::memory_order_release);
-    }
+    enum class Layer : std::uint8_t { Harmony = 0, Melody, Bass, Drums };
+    void setCreativeDirection(const juce::String&);
+    void requestGenerateIdea() noexcept;
+    void requestRegenerateUnlocked() noexcept;
+    void requestNextIdea() noexcept;
+    void requestUndo() noexcept;
+    void requestVariation() noexcept { requestRegenerateUnlocked(); }
+    void requestNewComposition() noexcept { requestNextIdea(); }
+    void setLayerLocked(Layer, bool) noexcept;
+    [[nodiscard]] bool isLayerLocked(Layer) const noexcept;
+    [[nodiscard]] juce::String currentAiStatus() const;
+    [[nodiscard]] juce::String currentIdeaTitle() const;
+    [[nodiscard]] juce::String currentIdeaDescription() const;
+    [[nodiscard]] juce::String currentCreativeDirection() const;
+    [[nodiscard]] bool aiAvailable() const { return AiComposer::hasApiKey(); }
     [[nodiscard]] std::shared_ptr<const Pattern> currentPattern() const noexcept {
         return uiPatternSnapshot.load(std::memory_order_acquire);
     }
     [[nodiscard]] double currentTempo() const noexcept { return tempo.load(std::memory_order_relaxed); }
+    [[nodiscard]] int currentTimeSignatureNumerator() const noexcept {
+        return timeSignatureNumerator.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] int currentTimeSignatureDenominator() const noexcept {
+        return timeSignatureDenominator.load(std::memory_order_relaxed);
+    }
     [[nodiscard]] bool hostIsPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
     [[nodiscard]] int currentPhraseBars() const noexcept;
     [[nodiscard]] std::uint64_t currentCompositionSeed() const noexcept {
@@ -100,11 +114,11 @@ private:
         double beatsPerBar{4.0};
         double follow{0.65};
         double risk{0.30};
-        double space{0.35};
+        double space{};
         double repetition{0.75};
         double complexity{0.45};
         double development{0.40};
-        double groove{0.45};
+        double groove{};
         double humanize{0.30};
         double cohesion{0.80};
         double energy{0.55};
@@ -118,6 +132,8 @@ private:
         HarmonySlot heldChord{};
         std::array<SourceNote, maxSourceNotes> sourceNotes{};
         std::uint16_t sourceNoteCount{};
+        std::uint8_t action{};
+        std::uint8_t lockedLayers{};
     };
 
     struct RealtimePattern {
@@ -134,6 +150,8 @@ private:
     bool captureHarmonyForBar(std::int64_t absoluteBar, int phraseBars) noexcept;
     GenerationRequest makeGenerationRequest(double beatsPerBar) noexcept;
     static GenerationContext expandContext(const GenerationRequest&);
+    static void addHarmonyLayer(Pattern&, const GenerationContext&);
+    static void preserveLockedLayers(Pattern&, const Pattern&, std::uint8_t);
 
     bool pushGenerationRequest(const GenerationRequest&) noexcept;
     bool popGenerationRequest(GenerationRequest&) noexcept;
@@ -176,6 +194,19 @@ private:
 
     RealtimePattern activePattern{};
     std::atomic<std::shared_ptr<const Pattern>> uiPatternSnapshot;
+    std::atomic<std::shared_ptr<const Pattern>> previousPatternSnapshot;
+    struct IdeaMetadata {
+        juce::String title{"Local Idea"};
+        juce::String key{"C minor"};
+        juce::String description{"Deterministic local composition"};
+        juce::String status{"LOCAL ENGINE READY"};
+    };
+    std::atomic<std::shared_ptr<const IdeaMetadata>> ideaMetadata;
+    mutable std::mutex creativeDirectionMutex;
+    juce::String creativeDirection;
+    enum class IdeaAction : std::uint8_t { None, Generate, Regenerate, Next, Undo, Restore };
+    std::atomic<IdeaAction> pendingIdeaAction{IdeaAction::None};
+    std::atomic<std::uint8_t> lockedLayers{};
     std::atomic<std::uint64_t> compositionSeed{1};
     std::atomic<std::uint64_t> variationIndex{};
     std::atomic<std::uint64_t> generationRevision{1};
@@ -195,6 +226,8 @@ private:
     bool wasPlaybackActive{};
     bool previewWasEnabled{true};
     std::atomic<double> tempo{120.0};
+    std::atomic<int> timeSignatureNumerator{4};
+    std::atomic<int> timeSignatureDenominator{4};
     std::atomic<bool> playing{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PulsoAudioProcessor)

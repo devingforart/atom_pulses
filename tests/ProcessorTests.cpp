@@ -1,6 +1,8 @@
 #include "TestSupport.h"
 
 #include "plugin/PluginProcessor.h"
+#include "plugin/MidiExporter.h"
+#include "plugin/AiComposer.h"
 
 #include <juce_events/juce_events.h>
 
@@ -61,6 +63,9 @@ int main() {
     constexpr auto blockSize = 256;
 
     pulso::plugin::PulsoAudioProcessor processor;
+    require(std::abs(processor.parameters.getRawParameterValue("space")->load()) < 0.0001f &&
+                std::abs(processor.parameters.getRawParameterValue("groove")->load()) < 0.0001f,
+            "Retired Space and Groove controls must always default to zero");
     TestPlayHead playHead;
     processor.setPlayHead(&playHead);
     processor.prepareToPlay(sampleRate, blockSize);
@@ -84,10 +89,51 @@ int main() {
     require(peakMagnitude(audio) <= 1.0f, "Preview output must remain below digital full scale");
     const auto composedPattern = processor.currentPattern();
     require(composedPattern != nullptr, "The processor must expose its composed phrase");
-    for (const auto channel : {1, 2, 10})
+    for (const auto channel : {1, 2, 3, 10})
         require(std::any_of(composedPattern->notes.begin(), composedPattern->notes.end(),
                             [=](const auto& note) { return note.channel == channel; }),
-                "Default Ensemble mode must coordinate bass, melody and drums");
+                "Every idea must coordinate harmony, bass, melody and drums");
+
+    const auto exportFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                  .getChildFile("PULSO Test Exports");
+    const auto ensembleFile = exportFolder.getNonexistentChildFile("ensemble", ".mid", false);
+    pulso::plugin::MidiExportOptions exportOptions;
+    exportOptions.bpm = 127.5;
+    exportOptions.clipName = "PULSO Export Test";
+    require(pulso::plugin::writePatternToMidiFile(*composedPattern, ensembleFile, exportOptions),
+            "The current composition must export to a standard MIDI file");
+    juce::FileInputStream ensembleInput(ensembleFile);
+    juce::MidiFile ensembleMidi;
+    require(ensembleInput.openedOk() && ensembleMidi.readFrom(ensembleInput),
+            "The exported MIDI file must be readable by a DAW");
+    require(ensembleMidi.getTimeFormat() == 960 && ensembleMidi.getNumTracks() == 5,
+            "Ensemble export must contain conductor, harmony, melody, bass and drums tracks");
+
+    const auto structuredExample = juce::String(R"json({
+      "title":"Afterglow","key":"C minor","summary":"A clear four-layer phrase","bars":1,
+      "harmony":[{"start":0,"duration":4,"pitch":60,"velocity":70}],
+      "melody":[{"start":0,"duration":1,"pitch":67,"velocity":92}],
+      "bass":[{"start":0,"duration":2,"pitch":36,"velocity":88}],
+      "drums":[{"start":0,"duration":0.25,"pitch":36,"velocity":100}]
+    })json");
+    pulso::plugin::AiComposition parsedComposition;
+    juce::String parseError;
+    require(pulso::plugin::AiComposer::structuredOutputSchemaIsValid(),
+            "The schema sent to OpenAI must be valid JSON");
+    require(pulso::plugin::AiComposer::parseCompositionJson(structuredExample, 1,
+                                                             parsedComposition, parseError),
+            "Structured GPT output must validate into a playable composition");
+    require(parsedComposition.pattern.notes.size() == 4 && parsedComposition.title == "Afterglow",
+            "Structured composition metadata and all four layers must survive parsing");
+
+    const auto bassFile = exportFolder.getNonexistentChildFile("bass", ".mid", false);
+    exportOptions.channelFilter = 1;
+    require(pulso::plugin::writePatternToMidiFile(*composedPattern, bassFile, exportOptions),
+            "A role-specific MIDI clip must export independently");
+    juce::FileInputStream bassInput(bassFile);
+    juce::MidiFile bassMidi;
+    require(bassInput.openedOk() && bassMidi.readFrom(bassInput) && bassMidi.getNumTracks() == 2,
+            "A filtered clip must contain only conductor and selected role tracks");
 
     playHead.playing = false;
     midi.clear();
@@ -130,9 +176,9 @@ int main() {
     require(variationPanic, "Replacing a live pattern must clean up notes from the previous pattern");
     const auto variedPattern = processor.currentPattern();
     require(variedPattern != nullptr && variedPattern->seed == originalDnaSeed,
-            "Evolve Idea must preserve the composition DNA seed");
+            "Regenerate Unlocked must preserve the composition family seed");
     require(variedPattern->notes != originalComposition,
-            "Evolve Idea must create a real transformation rather than a duplicate");
+            "Regenerate Unlocked must create a real transformation rather than a duplicate");
 
     processor.requestNewComposition();
     auto receivedNewDna = false;
@@ -144,7 +190,48 @@ int main() {
             receivedNewDna = candidate->seed != originalDnaSeed;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    require(receivedNewDna, "New DNA must replace the persistent composition identity");
+    require(receivedNewDna, "Next Idea must replace the persistent composition identity");
+
+    const auto beforeSelective = processor.currentPattern();
+    require(beforeSelective != nullptr, "Selective regeneration needs a current idea");
+    processor.setLayerLocked(pulso::plugin::PulsoAudioProcessor::Layer::Melody, true);
+    processor.requestRegenerateUnlocked();
+    std::shared_ptr<const pulso::Pattern> afterSelective;
+    for (auto attempt = 0; attempt < 120; ++attempt) {
+        advance(playHead, blockSize, sampleRate);
+        midi.clear();
+        processor.processBlock(audio, midi);
+        const auto candidate = processor.currentPattern();
+        if (candidate && candidate->notes != beforeSelective->notes) {
+            afterSelective = candidate;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    require(afterSelective != nullptr, "Regenerate Unlocked must publish a transformed idea");
+    const auto notesForChannel = [](const pulso::Pattern& pattern, int channel) {
+        std::vector<pulso::NoteEvent> notes;
+        std::copy_if(pattern.notes.begin(), pattern.notes.end(), std::back_inserter(notes),
+                     [channel](const auto& note) { return note.channel == channel; });
+        return notes;
+    };
+    require(notesForChannel(*beforeSelective, 2) == notesForChannel(*afterSelective, 2),
+            "A locked melody must remain note-for-note identical");
+    require(notesForChannel(*beforeSelective, 1) != notesForChannel(*afterSelective, 1) ||
+                notesForChannel(*beforeSelective, 10) != notesForChannel(*afterSelective, 10),
+            "At least one unlocked accompaniment layer must be recomposed");
+
+    processor.requestUndo();
+    auto undoRestored = false;
+    for (auto attempt = 0; attempt < 120 && !undoRestored; ++attempt) {
+        advance(playHead, blockSize, sampleRate);
+        midi.clear();
+        processor.processBlock(audio, midi);
+        if (const auto candidate = processor.currentPattern())
+            undoRestored = candidate->notes == beforeSelective->notes;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    require(undoRestored, "Undo must restore the complete previous composition");
 
     auto* preview = processor.parameters.getParameter("preview");
     require(preview != nullptr, "Preview parameter must exist");
@@ -187,7 +274,7 @@ int main() {
             ++tooltipCount;
         }
     }
-    require(tooltipCount >= 36, "The complete visible interface must be covered by tooltips");
+    require(tooltipCount >= 19, "The complete visible interface must be covered by tooltips");
     editor.reset();
 
     juce::MemoryBlock savedState;
@@ -197,6 +284,17 @@ int main() {
     require(restored.currentCompositionSeed() == processor.currentCompositionSeed() &&
                 restored.currentVariationIndex() == processor.currentVariationIndex(),
             "Composition DNA and lineage must survive a DAW project reload");
+    const auto restoredPatternSnapshot = restored.currentPattern();
+    const auto originalPatternSnapshot = processor.currentPattern();
+    require(restoredPatternSnapshot != nullptr && originalPatternSnapshot != nullptr &&
+                restoredPatternSnapshot->notes == originalPatternSnapshot->notes,
+            "The complete approved AI composition must survive a DAW project reload exactly");
+    require(std::abs(restored.parameters.getRawParameterValue("space")->load()) < 0.0001f &&
+                std::abs(restored.parameters.getRawParameterValue("groove")->load()) < 0.0001f,
+            "Reloading a project must keep retired controls fixed at zero");
+
+    ensembleFile.deleteFile();
+    bassFile.deleteFile();
 
     processor.releaseResources();
     processor.setPlayHead(nullptr);

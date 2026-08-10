@@ -17,7 +17,7 @@
 - Semilla de identidad persistente.
 - Pruebas de invariantes musicales y retención de identidad.
 
-## 0.3 — Compositor jerárquico (actual)
+## 0.3 — Compositor jerárquico
 
 - `CompositionPlan` común con ADN rítmico y contorno interválico.
 - Ensemble coordinado en canales MIDI 1, 2 y 10.
@@ -26,17 +26,21 @@
 - Swing, microtiming, dinámica, energía y cohesión reproducibles.
 - Worker de tiempo real, recuperación de transporte y pruebas simuladas del processor.
 
-## 0.4 — Validación con músicos
+## 0.4 — AI Composition Browser (actual)
 
-- Bloqueos separados para ritmo, armonía y dinámica.
-- Botones A/B/C y historial de variaciones.
+- [x] GPT mediante Responses API y Structured Outputs.
+- [x] Armonía, melodía, bajo y batería como capas MIDI independientes.
+- [x] Locks exactos por capa, regeneración selectiva y Undo.
+- [x] Interfaz sin perillas basada en ideas y lenguaje natural.
+- [x] Fallback local explícito y seguro.
+- Evaluaciones de musicalidad con productores y comparación de modelos.
 - Instalador firmado y matriz de compatibilidad de Live.
 
 ## 0.5 — Contexto Ableton
 
 - Dispositivo `.amxd` firmado/empacado.
 - Observación de pista, escena, clips y armadura mediante Live API.
-- Escritura directa de clips MIDI.
+- [x] Arrastre directo de archivos MIDI completos o por rol a Ableton.
 - Mapeo optimizado para Push.
 - Canal local IPC entre el bridge y el plugin.
 

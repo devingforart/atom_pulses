@@ -20,8 +20,7 @@ public:
 
 private:
     void timerCallback() override;
-    void configureKnob(juce::Slider&, juce::Label&, const juce::String&,
-                       const juce::String& tooltip);
+    void configureLock(juce::ToggleButton&, PulsoAudioProcessor::Layer, const juce::String&);
 
     PulsoAudioProcessor& processor;
     PulsoLookAndFeel pulsoLookAndFeel;
@@ -30,58 +29,20 @@ private:
     juce::Label title;
     juce::Label subtitle;
     juce::Label status;
-    juce::Label helpHint;
-    juce::ComboBox roleBox;
-    juce::ComboBox rootBox;
-    juce::ComboBox scaleBox;
-    juce::ComboBox phraseBox;
-    juce::ComboBox modeBox;
-    juce::Slider followSlider;
-    juce::Slider riskSlider;
-    juce::Slider spaceSlider;
-    juce::Slider repetitionSlider;
-    juce::Slider complexitySlider;
-    juce::Slider developmentSlider;
-    juce::Slider grooveSlider;
-    juce::Slider humanizeSlider;
-    juce::Slider cohesionSlider;
-    juce::Slider energySlider;
-    juce::Slider gainSlider;
-    juce::Label followLabel;
-    juce::Label riskLabel;
-    juce::Label spaceLabel;
-    juce::Label repetitionLabel;
-    juce::Label complexityLabel;
-    juce::Label developmentLabel;
-    juce::Label grooveLabel;
-    juce::Label humanizeLabel;
-    juce::Label cohesionLabel;
-    juce::Label energyLabel;
-    juce::Label gainLabel;
-    juce::TextButton variationButton{"EVOLVE IDEA"};
-    juce::TextButton newCompositionButton{"NEW DNA"};
-    juce::ToggleButton previewButton{"PREVIEW"};
+    juce::Label aiBadge;
+    juce::Label ideaTitle;
+    juce::Label ideaDescription;
+    juce::Label promptLabel;
+    juce::TextEditor prompt;
+    juce::TextButton generateButton{"GENERATE IDEA"};
+    juce::TextButton nextButton{"NEXT IDEA"};
+    juce::TextButton regenerateButton{"REGENERATE UNLOCKED"};
+    juce::TextButton undoButton{"UNDO"};
+    juce::ToggleButton previewButton{"PREVIEW AUDIO"};
     juce::ToggleButton thruButton{"MIDI THRU"};
+    std::array<juce::ToggleButton, 4> lockButtons;
 
-    using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
-    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
-    std::unique_ptr<ComboAttachment> roleAttachment;
-    std::unique_ptr<ComboAttachment> rootAttachment;
-    std::unique_ptr<ComboAttachment> scaleAttachment;
-    std::unique_ptr<ComboAttachment> phraseAttachment;
-    std::unique_ptr<ComboAttachment> modeAttachment;
-    std::unique_ptr<SliderAttachment> followAttachment;
-    std::unique_ptr<SliderAttachment> riskAttachment;
-    std::unique_ptr<SliderAttachment> spaceAttachment;
-    std::unique_ptr<SliderAttachment> repetitionAttachment;
-    std::unique_ptr<SliderAttachment> complexityAttachment;
-    std::unique_ptr<SliderAttachment> developmentAttachment;
-    std::unique_ptr<SliderAttachment> grooveAttachment;
-    std::unique_ptr<SliderAttachment> humanizeAttachment;
-    std::unique_ptr<SliderAttachment> cohesionAttachment;
-    std::unique_ptr<SliderAttachment> energyAttachment;
-    std::unique_ptr<SliderAttachment> gainAttachment;
     std::unique_ptr<ButtonAttachment> previewAttachment;
     std::unique_ptr<ButtonAttachment> thruAttachment;
 

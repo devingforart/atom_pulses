@@ -11,6 +11,7 @@ PulsoAudioProcessor
 ├── captura de contexto MIDI
 ├── colas SPSC de memoria fija
 ├── worker de generación dedicado
+├── cliente Responses API + validación estructurada
 └── sintetizador de preescucha
         │
         ▼
@@ -63,10 +64,10 @@ línea junto con una semilla estable y genera en cuatro niveles:
 1. ADN rítmico y contorno interválico independiente del rol;
 2. funciones de statement, answer, development y cadence por sección;
 3. realizaciones coordinadas de bajo, batería y contramelodía;
-4. groove, microtiming, dinámica y función final de retorno.
+4. microtiming, dinámica y función final de retorno.
 
-`variationIndex` transforma el plan estable; `compositionSeed` solo cambia al pedir
-`New DNA`. Esto diferencia una variación reconocible de una composición nueva.
+`variationIndex` identifica regeneraciones de una idea; `compositionSeed` identifica
+su familia. Los locks por canal determinan qué material se conserva exactamente.
 
 `repetition` controla cuánto sobrevive del motivo; `complexity`, su detalle local;
 `development`, la diferencia entre exposición y cierre. `evolutionStep` cambia las
@@ -84,16 +85,13 @@ en el estado del plugin. También se persisten `compositionSeed` y `variationInd
 de modo que ADN y linaje vuelven exactamente al abrir el proyecto. La armonía se reconstruye desde MIDI
 entrante durante la reproducción.
 
-## Extensión neuronal prevista
+## Composición con GPT
 
-El contrato futuro será un `PatternProvider` asíncrono:
+`AiComposer` llama a Responses API exclusivamente desde el worker. Structured Outputs
+produce título, tonalidad, intención y eventos para armonía, melodía, bajo y batería.
+El parser rechaza longitud incorrecta, capas vacías, valores no finitos, pitches,
+velocidades o tiempos inválidos. Los locks se aplican nuevamente después de validar,
+por lo que una capa bloqueada nunca depende de que el modelo obedezca la instrucción.
 
-```cpp
-struct PatternProvider {
-    virtual void submit(GenerationContext) = 0;
-    virtual std::shared_ptr<const Pattern> latest() const = 0;
-};
-```
-
-El proveedor algorítmico actual y uno ONNX/MLX podrán intercambiarse sin modificar el
-scheduler ni la interfaz del plugin.
+Ante ausencia de credencial, error HTTP, timeout o composición inválida se ejecuta el
+motor local. El callback continúa reproduciendo la última idea durante toda la llamada.

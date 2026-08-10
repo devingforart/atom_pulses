@@ -35,11 +35,11 @@ struct GenerationContext {
     double beatsPerBar{4.0};
     double follow{0.65};
     double risk{0.30};
-    double space{0.35};
+    double space{};
     double repetition{0.75};
     double complexity{0.45};
     double development{0.40};
-    double groove{0.45};
+    double groove{};
     double humanize{0.30};
     double cohesion{0.80};
     double energy{0.55};

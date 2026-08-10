@@ -17,31 +17,22 @@ antes de tocar la instalación anterior.
 
 1. Crea una pista MIDI.
 2. Inserta PULSO.
-3. Activa la monitorización o arma la pista.
-4. Inicia el transporte.
-5. Toca y mantén un acorde.
+3. Escribe opcionalmente una dirección creativa.
+4. Pulsa `GENERATE IDEA`.
+5. Inicia el transporte.
 
 El sintetizador de `Preview` permite escuchar el patrón sin cargar otro instrumento.
-La armonía se actualiza a partir de las notas sostenidas y se aplica en el siguiente
-compás.
+El indicador distingue una composición GPT validada del motor local.
 
-## 3. Construir una frase armónica
+## 3. Conservar y regenerar capas
 
-1. Selecciona `Role: Ensemble`, `Phrase: 4 bars` y `Mode: Loop`.
-2. Crea un clip MIDI de cuatro compases con, por ejemplo, Cm | Ab | Fm | G.
-3. Deja cada acorde sostenido desde el primer tiempo de su compás.
-4. Reproduce una vuelta completa para que PULSO capture las cuatro posiciones.
-5. Escucha la segunda vuelta: el motivo se conserva, los apoyos siguen cada acorde y
-   el cuarto compás prepara el regreso a Cm.
-6. Cambia a `Evolve`: las vueltas siguientes alteran detalles, no la identidad central.
+1. Genera una idea y escúchala completa.
+2. Activa `LOCK MELODY` si te gusta el hook.
+3. Activa `LOCK HARMONY` si quieres conservar progresión y voicings.
+4. Pulsa `REGENERATE UNLOCKED`: las capas bloqueadas quedan idénticas nota por nota.
+5. Usa `UNDO` para volver al resultado completo anterior.
 
-Para una comparación clara, usa primero `Cohesion` y `Repeat` altos, `Groove` medio,
-`Complex` medio y `Develop` medio. `Evolve Idea` produce una transformación emparentada;
-`New DNA` es la única acción que reemplaza la identidad completa.
-
-En `Ensemble`, bajo sale por canal 1, contramelodía por canal 2 y percusión por canal
-10. Puedes grabar la salida completa y separar esos canales después, o escoger un rol
-individual antes de grabar.
+Armonía usa canal 3, melodía canal 2, bajo canal 1 y batería GM canal 10.
 
 ## 4. Enviar el MIDI a otro instrumento
 
@@ -55,9 +46,23 @@ individual antes de grabar.
 Para convertir el resultado en un clip, graba la segunda pista. Esta ruta conserva
 notas y velocidades como MIDI normal.
 
-## 5. Variaciones desde Max for Live
+## 5. Arrastrar clips MIDI directamente
 
-El plugin interpreta la nota MIDI 127 del canal 16 como el comando `Evolve Idea`.
+Cuando la partitura ya contiene notas, mantén pulsada una de las asas inferiores y
+arrástrala a una pista o espacio vacío del Arrangement de Live:
+
+- `ALL MIDI`: archivo MIDI multitrack con bajo, contramelodía y batería.
+- `HARMONY`: acordes y voicings del canal 3.
+- `BASS`: clip del canal 1.
+- `MELODY`: clip del canal 2.
+- `DRUMS`: clip GM del canal 10.
+
+El clip conserva la longitud completa de la frase, tempo, compás, velocidades y
+microtiming. Si un rol no existe en el patrón actual, su asa aparece desactivada.
+
+## 6. Variaciones desde Max for Live
+
+El plugin interpreta la nota MIDI 127 del canal 16 como `Regenerate Unlocked`.
 No la reenvía ni la usa como información armónica.
 
 `ableton/PulsoBridge.maxpat` es un patch Max que emite ese comando. Para usarlo:
@@ -70,10 +75,15 @@ No la reenvía ni la usa como información armónica.
 
 El puente es opcional: el botón de la interfaz del VST realiza la misma acción.
 
+## Activar GPT
+
+Ejecuta `scripts/configure-openai.ps1`, cierra Live y vuelve a abrirlo. PULSO lee
+`OPENAI_API_KEY` únicamente en el worker de generación. No hay red en el hilo de audio.
+Las instrucciones y notas bloqueadas se envían al servicio; el audio no se envía.
+
 ## Limitaciones conocidas
 
 - Live no ofrece a un VST acceso general al contenido de todas las pistas.
 - El MVP aprende la armonía del MIDI que llega a su propia instancia.
-- La escritura directa de clips requerirá un dispositivo Max for Live más profundo.
-- El modo `Percussion` utiliza canal MIDI 10; algunos instrumentos pueden necesitar
+- El canal de batería 10 puede requerir
   remapeo de canal.

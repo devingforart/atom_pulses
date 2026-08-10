@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.3.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.4.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -73,8 +73,12 @@ if(PULSO_BUILD_PLUGIN)
     )
 
     target_sources(Pulso PRIVATE
+        src/plugin/AiComposer.cpp
+        src/plugin/AiComposer.h
         src/plugin/LookAndFeel.cpp
         src/plugin/LookAndFeel.h
+        src/plugin/MidiExporter.cpp
+        src/plugin/MidiExporter.h
         src/plugin/PatternView.cpp
         src/plugin/PatternView.h
         src/plugin/PluginEditor.cpp

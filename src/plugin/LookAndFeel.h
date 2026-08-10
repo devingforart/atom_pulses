@@ -20,9 +20,9 @@ inline const auto panel = juce::Colour::fromRGB(24, 27, 34);
 inline const auto panelRaised = juce::Colour::fromRGB(34, 38, 47);
 inline const auto accent = juce::Colour::fromRGB(105, 239, 174);
 inline const auto accentHot = juce::Colour::fromRGB(255, 180, 86);
+inline const auto accentCounter = juce::Colour::fromRGB(125, 172, 255);
 inline const auto text = juce::Colour::fromRGB(235, 239, 244);
 inline const auto muted = juce::Colour::fromRGB(135, 145, 158);
 } // namespace colours
 
 } // namespace pulso::plugin
-

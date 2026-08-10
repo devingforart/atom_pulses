@@ -3,6 +3,7 @@
 #include "LookAndFeel.h"
 
 #include <algorithm>
+#include <array>
 
 namespace pulso::plugin {
 
@@ -14,6 +15,25 @@ void PatternView::paint(juce::Graphics& graphics) {
 
     const auto bars = processor.currentPhraseBars();
     const auto beats = bars * 4;
+    constexpr std::array sectionNames{"STATEMENT", "ANSWER", "DEVELOP", "DEVELOP"};
+    for (auto bar = 0; bar < bars; ++bar) {
+        const auto x = inner.getX() + inner.getWidth() * static_cast<float>(bar) /
+                                          static_cast<float>(bars);
+        const auto width = inner.getWidth() / static_cast<float>(bars);
+        if (bar % 2 == 1) {
+            graphics.setColour(colours::panelRaised.withAlpha(0.20f));
+            graphics.fillRect(juce::Rectangle<float>{x, inner.getY(), width, inner.getHeight()});
+        }
+        const auto label = bar == bars - 1 ? "CADENCE" : sectionNames[static_cast<std::size_t>(bar % 4)];
+        if (bars <= 8 || bar % 4 == 0 || bar == bars - 1) {
+            graphics.setColour(colours::muted.withAlpha(0.50f));
+            graphics.setFont(8.5f);
+            graphics.drawFittedText(label, juce::Rectangle<int>{juce::roundToInt(x) + 4,
+                                        juce::roundToInt(inner.getY()) + 13,
+                                        std::max(20, juce::roundToInt(width) - 7), 11},
+                                    juce::Justification::left, 1);
+        }
+    }
     for (int index = 0; index <= beats; ++index) {
         const auto isBar = index % 4 == 0;
         if (!isBar && bars > 8) continue;
@@ -34,7 +54,7 @@ void PatternView::paint(juce::Graphics& graphics) {
     if (!pattern || pattern->notes.empty()) {
         graphics.setColour(colours::muted);
         graphics.setFont(15.0f);
-        graphics.drawFittedText("Press NEW VARIATION or play a chord", inner.toNearestInt(),
+        graphics.drawFittedText("Press EVOLVE IDEA or play a chord", inner.toNearestInt(),
                                 juce::Justification::centred, 1);
         return;
     }
@@ -52,7 +72,9 @@ void PatternView::paint(juce::Graphics& graphics) {
         const auto normalizedPitch = static_cast<float>(note.pitch - minPitch) / static_cast<float>(pitchSpan);
         const auto y = inner.getBottom() - 8.0f - normalizedPitch * (inner.getHeight() - 12.0f);
         const auto alpha = juce::jmap(static_cast<float>(note.velocity), 1.0f, 127.0f, 0.45f, 1.0f);
-        graphics.setColour((note.channel == 10 ? colours::accentHot : colours::accent).withAlpha(alpha));
+        const auto colour = note.channel == 10 ? colours::accentHot :
+                            (note.channel == 2 ? colours::accentCounter : colours::accent);
+        graphics.setColour(colour.withAlpha(alpha));
         graphics.fillRoundedRectangle(x, y, width, 7.0f, 3.0f);
     }
 }

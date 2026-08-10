@@ -13,6 +13,7 @@ using namespace pulso;
 
 namespace {
 Role parseRole(std::string_view value) {
+    if (value == "ensemble" || value == "all") return Role::Ensemble;
     if (value == "drums" || value == "percussion") return Role::Percussion;
     if (value == "counter" || value == "countermelody") return Role::Countermelody;
     return Role::Bass;
@@ -44,7 +45,8 @@ int main(int argc, char** argv) {
     context.rootPitchClass = argc > 3 ? std::atoi(argv[3]) % 12 : 0;
     context.rootPitchClass = positiveModulo(context.rootPitchClass, 12);
     context.bars = std::clamp(argc > 4 ? std::atoi(argv[4]) : 4, 1, 16);
-    context.evolutionStep = argc > 5 ? std::strtoull(argv[5], nullptr, 10) : 0;
+    context.variationIndex = argc > 5 ? std::strtoull(argv[5], nullptr, 10) : 0;
+    context.evolutionStep = argc > 6 ? std::strtoull(argv[6], nullptr, 10) : 0;
     context.scale = ScaleKind::Minor;
     context.harmonyByBar = minorProgression(context.rootPitchClass, context.bars);
     context.chordPitchClasses = context.harmonyByBar.front();
@@ -52,7 +54,8 @@ int main(int argc, char** argv) {
     const auto pattern = Generator{}.generate(context);
     std::cout << "PULSO pattern | role=" << roleNames[static_cast<std::size_t>(context.role)]
               << " seed=" << context.seed << " root=" << context.rootPitchClass
-              << " bars=" << context.bars << " evolution=" << context.evolutionStep << '\n';
+              << " bars=" << context.bars << " variation=" << context.variationIndex
+              << " evolution=" << context.evolutionStep << '\n';
     std::cout << "beat\tduration\tpitch\tvelocity\tchannel\n";
     for (const auto& note : pattern.notes)
         std::cout << std::fixed << std::setprecision(2) << note.startBeat << '\t'

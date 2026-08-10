@@ -18,7 +18,7 @@ pulso_core
 ├── MusicTypes
 ├── Scale
 ├── Random determinista
-└── Generator de frases por roles
+└── CompositionPlan + intérpretes por rol
 ```
 
 `pulso_core` no depende de JUCE ni del sistema operativo. Puede reutilizarse en un
@@ -35,7 +35,7 @@ El callback de audio:
 - Programa note-on y note-off en offsets de muestra calculados desde PPQ/BPM.
 - Mantiene un registro acotado de notas generadas activas.
 
-La versión 0.2.1 genera exclusivamente en un `jthread` dedicado. El worker puede usar
+Desde 0.2.1, la generación ocurre exclusivamente en un `jthread` dedicado. El worker puede usar
 los contenedores dinámicos del core sin bloquear el callback. Antes de publicar,
 convierte el resultado a un bloque de máximo 2048 eventos; el callback solo realiza
 copias acotadas. El `shared_ptr` atómico se conserva únicamente para la vista de la UI,
@@ -55,14 +55,18 @@ expresa en beats, no en muestras, y está anclado al inicio global de la frase. 
 scheduler aplica módulo sobre 1–16 compases, transforma el intervalo del bloque actual
 a muestras y añade únicamente los eventos que caen dentro de ese intervalo.
 
-## Gramática de frase
+## Gramática de composición
 
 El processor conserva una línea armónica por posiciones de compás. El core recibe esa
-línea junto con una semilla estable y genera en tres niveles:
+línea junto con una semilla estable y genera en cuatro niveles:
 
-1. un motivo rítmico/melódico de un compás;
-2. realizaciones por compás condicionadas por acorde, registro y arco de desarrollo;
-3. una función final de retorno: aproximación de bajo, resolución melódica o fill.
+1. ADN rítmico y contorno interválico independiente del rol;
+2. funciones de statement, answer, development y cadence por sección;
+3. realizaciones coordinadas de bajo, batería y contramelodía;
+4. groove, microtiming, dinámica y función final de retorno.
+
+`variationIndex` transforma el plan estable; `compositionSeed` solo cambia al pedir
+`New DNA`. Esto diferencia una variación reconocible de una composición nueva.
 
 `repetition` controla cuánto sobrevive del motivo; `complexity`, su detalle local;
 `development`, la diferencia entre exposición y cierre. `evolutionStep` cambia las
@@ -76,8 +80,8 @@ BPM para poder probar el resultado.
 ## Estado
 
 Los parámetros pertenecen a `AudioProcessorValueTreeState`. JUCE serializa ese árbol
-en el estado del plugin. También se persiste `variationSeed`, de modo que el motivo
-vuelve a ser reproducible al abrir el proyecto. La armonía se reconstruye desde MIDI
+en el estado del plugin. También se persisten `compositionSeed` y `variationIndex`,
+de modo que ADN y linaje vuelven exactamente al abrir el proyecto. La armonía se reconstruye desde MIDI
 entrante durante la reproducción.
 
 ## Extensión neuronal prevista

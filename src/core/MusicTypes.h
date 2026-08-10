@@ -8,7 +8,7 @@
 
 namespace pulso {
 
-enum class Role : std::uint8_t { Bass = 0, Percussion, Countermelody };
+enum class Role : std::uint8_t { Bass = 0, Percussion, Countermelody, Ensemble };
 enum class ScaleKind : std::uint8_t { Major = 0, Minor, Dorian, Mixolydian, Chromatic };
 
 struct NoteEvent {
@@ -39,8 +39,13 @@ struct GenerationContext {
     double repetition{0.75};
     double complexity{0.45};
     double development{0.40};
+    double groove{0.45};
+    double humanize{0.30};
+    double cohesion{0.80};
+    double energy{0.55};
     int bars{4};
     std::uint64_t seed{1};
+    std::uint64_t variationIndex{};
     std::uint64_t evolutionStep{};
     std::vector<int> chordPitchClasses{0, 3, 7};
     std::vector<std::vector<int>> harmonyByBar;
@@ -53,7 +58,7 @@ struct Pattern {
     std::uint64_t seed{1};
 };
 
-constexpr std::array<std::string_view, 3> roleNames{"Bass", "Percussion", "Countermelody"};
+constexpr std::array<std::string_view, 4> roleNames{"Bass", "Percussion", "Countermelody", "Ensemble"};
 constexpr std::array<std::string_view, 5> scaleNames{"Major", "Minor", "Dorian", "Mixolydian", "Chromatic"};
 
 [[nodiscard]] constexpr int positiveModulo(int value, int modulus) noexcept {

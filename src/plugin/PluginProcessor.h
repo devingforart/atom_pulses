@@ -46,7 +46,12 @@ public:
     void setStateInformation(const void*, int) override;
 
     void requestVariation() noexcept {
-        variationSeed.fetch_add(1, std::memory_order_relaxed);
+        variationIndex.fetch_add(1, std::memory_order_relaxed);
+        generationRevision.fetch_add(1, std::memory_order_release);
+    }
+    void requestNewComposition() noexcept {
+        compositionSeed.fetch_add(1, std::memory_order_relaxed);
+        variationIndex.store(0, std::memory_order_relaxed);
         generationRevision.fetch_add(1, std::memory_order_release);
     }
     [[nodiscard]] std::shared_ptr<const Pattern> currentPattern() const noexcept {
@@ -55,6 +60,12 @@ public:
     [[nodiscard]] double currentTempo() const noexcept { return tempo.load(std::memory_order_relaxed); }
     [[nodiscard]] bool hostIsPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
     [[nodiscard]] int currentPhraseBars() const noexcept;
+    [[nodiscard]] std::uint64_t currentCompositionSeed() const noexcept {
+        return compositionSeed.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] std::uint64_t currentVariationIndex() const noexcept {
+        return variationIndex.load(std::memory_order_relaxed);
+    }
 
     juce::AudioProcessorValueTreeState parameters;
 
@@ -93,8 +104,13 @@ private:
         double repetition{0.75};
         double complexity{0.45};
         double development{0.40};
+        double groove{0.45};
+        double humanize{0.30};
+        double cohesion{0.80};
+        double energy{0.55};
         int bars{4};
         std::uint64_t seed{1};
+        std::uint64_t variationIndex{};
         std::uint64_t evolutionStep{};
         std::uint64_t serial{};
         std::uint64_t epoch{};
@@ -160,7 +176,8 @@ private:
 
     RealtimePattern activePattern{};
     std::atomic<std::shared_ptr<const Pattern>> uiPatternSnapshot;
-    std::atomic<std::uint64_t> variationSeed{1};
+    std::atomic<std::uint64_t> compositionSeed{1};
+    std::atomic<std::uint64_t> variationIndex{};
     std::atomic<std::uint64_t> generationRevision{1};
     std::atomic<std::uint64_t> processingEpoch{1};
     std::uint64_t submittedGenerationRevision{};

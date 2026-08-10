@@ -27,7 +27,7 @@ compás.
 
 ## 3. Construir una frase armónica
 
-1. Selecciona `Phrase: 4 bars` y `Mode: Loop`.
+1. Selecciona `Role: Ensemble`, `Phrase: 4 bars` y `Mode: Loop`.
 2. Crea un clip MIDI de cuatro compases con, por ejemplo, Cm | Ab | Fm | G.
 3. Deja cada acorde sostenido desde el primer tiempo de su compás.
 4. Reproduce una vuelta completa para que PULSO capture las cuatro posiciones.
@@ -35,9 +35,13 @@ compás.
    el cuarto compás prepara el regreso a Cm.
 6. Cambia a `Evolve`: las vueltas siguientes alteran detalles, no la identidad central.
 
-Para una comparación clara, usa primero `Repeat` alto, `Complex` medio y `Develop`
-medio. Baja `Repeat` para obtener más contraste; sube `Develop` para una cadencia o fill
-más marcado. `New Variation` crea otra identidad completa.
+Para una comparación clara, usa primero `Cohesion` y `Repeat` altos, `Groove` medio,
+`Complex` medio y `Develop` medio. `Evolve Idea` produce una transformación emparentada;
+`New DNA` es la única acción que reemplaza la identidad completa.
+
+En `Ensemble`, bajo sale por canal 1, contramelodía por canal 2 y percusión por canal
+10. Puedes grabar la salida completa y separar esos canales después, o escoger un rol
+individual antes de grabar.
 
 ## 4. Enviar el MIDI a otro instrumento
 
@@ -53,7 +57,7 @@ notas y velocidades como MIDI normal.
 
 ## 5. Variaciones desde Max for Live
 
-El plugin interpreta la nota MIDI 127 del canal 16 como el comando `New Variation`.
+El plugin interpreta la nota MIDI 127 del canal 16 como el comando `Evolve Idea`.
 No la reenvía ni la usa como información armónica.
 
 `ableton/PulsoBridge.maxpat` es un patch Max que emite ese comando. Para usarlo:

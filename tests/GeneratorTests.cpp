@@ -45,6 +45,20 @@ double sharedEventRatio(const Pattern& first, const Pattern& second) {
     return a.empty() ? 1.0 : static_cast<double>(intersection.size()) / static_cast<double>(a.size());
 }
 
+std::vector<NoteEvent> notesOnChannel(const Pattern& pattern, int channel) {
+    std::vector<NoteEvent> notes;
+    std::copy_if(pattern.notes.begin(), pattern.notes.end(), std::back_inserter(notes),
+                 [=](const auto& note) { return note.channel == channel; });
+    return notes;
+}
+
+double averageVelocity(const Pattern& pattern) {
+    if (pattern.notes.empty()) return 0.0;
+    auto total = 0.0;
+    for (const auto& note : pattern.notes) total += note.velocity;
+    return total / static_cast<double>(pattern.notes.size());
+}
+
 GenerationContext phraseContext() {
     GenerationContext context;
     context.rootPitchClass = 0;
@@ -57,6 +71,10 @@ GenerationContext phraseContext() {
     context.repetition = 0.82;
     context.complexity = 0.48;
     context.development = 0.52;
+    context.groove = 0.0;
+    context.humanize = 0.0;
+    context.cohesion = 0.85;
+    context.energy = 0.55;
     return context;
 }
 
@@ -119,9 +137,14 @@ void runGeneratorTests() {
     const auto counter = generator.generate(context);
     require(!counter.notes.empty(), "Countermelody must produce a phrase");
     require(std::all_of(counter.notes.begin(), counter.notes.end(), [&](const auto& note) {
-                return note.pitch >= 55 && note.pitch <= 88 &&
-                       isPitchClassInScale(note.pitch, context.rootPitchClass, context.scale);
-            }), "Countermelody must remain playable and diatonic");
+                const auto bar = std::clamp(static_cast<int>(note.startBeat / context.beatsPerBar),
+                                            0, context.bars - 1);
+                const auto& chord = context.harmonyByBar[static_cast<std::size_t>(bar)];
+                const auto pitchClass = positiveModulo(note.pitch, 12);
+                return note.pitch >= 55 && note.pitch <= 88 && note.channel == 2 &&
+                       (isPitchClassInScale(note.pitch, context.rootPitchClass, context.scale) ||
+                        std::find(chord.begin(), chord.end(), pitchClass) != chord.end());
+            }), "Countermelody must stay playable and use only scale or active-chord tones");
     for (std::size_t index = 1; index < counter.notes.size(); ++index)
         require(std::abs(counter.notes[index].pitch - counter.notes[index - 1].pitch) <= 9,
                 "Melodic voice leading must avoid unexplained leaps larger than a sixth");
@@ -132,8 +155,8 @@ void runGeneratorTests() {
         require(std::find(chord.begin(), chord.end(), positiveModulo(anchor->pitch, 12)) != chord.end(),
                 "Melodic downbeat anchors must be chord tones");
     }
-    require(positiveModulo(counter.notes.back().pitch, 12) == 7,
-            "The countermelody must resolve to the final chord root");
+    require(positiveModulo(counter.notes.back().pitch, 12) == 0,
+            "The countermelody must resolve to the returning phrase root");
 
     auto evolvedContext = context;
     evolvedContext.evolutionStep = 1;
@@ -146,13 +169,87 @@ void runGeneratorTests() {
                     return note.startBeat >= 0.0 && note.endBeat() <= pattern->lengthBeats;
                 }), "All generated notes must fit inside the phrase");
 
+    auto ensembleContext = phraseContext();
+    ensembleContext.role = Role::Ensemble;
+    const auto ensemble = generator.generate(ensembleContext);
+    auto soloContext = ensembleContext;
+    soloContext.role = Role::Bass;
+    require(notesOnChannel(ensemble, 1) == generator.generate(soloContext).notes,
+            "Ensemble bass must be the same interpreter of the shared composition plan");
+    soloContext.role = Role::Countermelody;
+    require(notesOnChannel(ensemble, 2) == generator.generate(soloContext).notes,
+            "Ensemble melody must derive from the same global composition plan");
+    soloContext.role = Role::Percussion;
+    require(notesOnChannel(ensemble, 10) == generator.generate(soloContext).notes,
+            "Ensemble drums must derive from the same global composition plan");
+
+    auto lineageContext = phraseContext();
+    lineageContext.role = Role::Countermelody;
+    lineageContext.space = 0.1;
+    lineageContext.repetition = 0.9;
+    const auto lineageOriginal = generator.generate(lineageContext);
+    lineageContext.variationIndex = 1;
+    const auto lineageVariation = generator.generate(lineageContext);
+    const auto relatedRatio = sharedEventRatio(lineageOriginal, lineageVariation);
+    auto newDnaContext = lineageContext;
+    newDnaContext.seed += 7919;
+    newDnaContext.variationIndex = 0;
+    const auto unrelated = generator.generate(newDnaContext);
+    require(relatedRatio >= 0.35,
+            "An evolved idea must preserve a recognisable part of its musical DNA");
+    require(relatedRatio > sharedEventRatio(lineageOriginal, unrelated),
+            "An evolved idea must be more closely related than a new DNA seed");
+
+    auto grooveContext = phraseContext();
+    grooveContext.role = Role::Percussion;
+    grooveContext.space = 0.0;
+    grooveContext.humanize = 0.0;
+    grooveContext.groove = 0.0;
+    const auto straight = generator.generate(grooveContext);
+    grooveContext.groove = 1.0;
+    const auto swung = generator.generate(grooveContext);
+    require(straight.notes.size() == swung.notes.size(),
+            "Groove must change feel without replacing the composition");
+    require(std::all_of(straight.notes.begin(), straight.notes.end(), [](const auto& note) {
+                return std::abs(note.startBeat * 4.0 - std::round(note.startBeat * 4.0)) < 0.001;
+            }), "Zero groove and humanize must remain exactly on the sixteenth grid");
+    require(std::any_of(swung.notes.begin(), swung.notes.end(), [](const auto& note) {
+                return std::abs(note.startBeat * 4.0 - std::round(note.startBeat * 4.0)) > 0.10;
+            }), "Maximum groove must create audible off-grid swing");
+
+    auto lowEnergyContext = phraseContext();
+    lowEnergyContext.role = Role::Ensemble;
+    lowEnergyContext.energy = 0.0;
+    const auto lowEnergy = generator.generate(lowEnergyContext);
+    lowEnergyContext.energy = 1.0;
+    const auto highEnergy = generator.generate(lowEnergyContext);
+    require(averageVelocity(highEnergy) > averageVelocity(lowEnergy) + 8.0,
+            "Energy must create a clear global dynamic difference across the ensemble");
+
+    auto threeFourContext = phraseContext();
+    threeFourContext.role = Role::Ensemble;
+    threeFourContext.beatsPerBar = 3.0;
+    const auto threeFour = generator.generate(threeFourContext);
+    requireNear(threeFour.lengthBeats, 12.0, 0.001,
+                "Four bars in 3/4 must produce a twelve-beat composition");
+    require(std::all_of(threeFour.notes.begin(), threeFour.notes.end(), [&](const auto& note) {
+                return note.startBeat >= 0.0 && note.endBeat() <= threeFour.lengthBeats;
+            }), "Non-4/4 composition must keep every role inside the phrase bounds");
+
     auto chromaticContext = phraseContext();
     chromaticContext.role = Role::Countermelody;
     chromaticContext.scale = ScaleKind::Chromatic;
     chromaticContext.rootPitchClass = 0;
     chromaticContext.harmonyByBar = {{0, 4, 7}, {0, 4, 7}, {0, 4, 7}, {0, 4, 7}};
     const auto chromatic = generator.generate(chromaticContext);
-    require(noteAt(chromatic, 0.0) != nullptr &&
-                positiveModulo(noteAt(chromatic, 0.0)->pitch, 12) == 0,
-            "Chromatic scale degrees must remain relative to the selected root");
+    auto transposedChromaticContext = chromaticContext;
+    transposedChromaticContext.rootPitchClass = 2;
+    transposedChromaticContext.chordPitchClasses = {2, 6, 9};
+    transposedChromaticContext.harmonyByBar = {{2, 6, 9}, {2, 6, 9}, {2, 6, 9}, {2, 6, 9}};
+    const auto transposedChromatic = generator.generate(transposedChromaticContext);
+    require(chromatic.notes.size() == transposedChromatic.notes.size(),
+            "Transposition must preserve chromatic phrase structure");
+    for (std::size_t index = 0; index < chromatic.notes.size(); ++index)
+        require(positiveModulo(transposedChromatic.notes[index].pitch - chromatic.notes[index].pitch, 12) == 2,
+                "Chromatic scale degrees must transpose with the selected root");
 }

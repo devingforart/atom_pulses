@@ -7,18 +7,49 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <span>
+#include <vector>
 
 namespace pulso {
 namespace {
 
+enum class HarmonicFunction { Tonic, Predominant, Dominant, Colour };
+enum class PhraseFunction { Statement, Answer, Development, Cadence };
+
 struct MotifCell {
     int step{};
-    double duration{};
-    int harmonicIndex{};
-    int velocityOffset{};
+    int durationSteps{1};
+    int degree{};
+    int accent{};
+    bool essential{};
 };
 
-double clampUnit(double value) { return std::clamp(value, 0.0, 1.0); }
+struct BarIntent {
+    PhraseFunction function{PhraseFunction::Statement};
+    HarmonicFunction harmony{HarmonicFunction::Colour};
+    double tension{};
+    int degreeShift{};
+    int rhythmicShift{};
+    bool invertContour{};
+    bool fragment{};
+};
+
+struct CompositionPlan {
+    std::vector<MotifCell> motif;
+    std::vector<BarIntent> bars;
+};
+
+double unit(double value) noexcept { return std::clamp(value, 0.0, 1.0); }
+
+int stepsPerBar(const GenerationContext& context) noexcept {
+    return std::clamp(static_cast<int>(std::lround(std::max(1.0, context.beatsPerBar) * 4.0)), 4, 32);
+}
+
+int fitMotifStep(const GenerationContext& context, int fourFourStep) noexcept {
+    const auto steps = stepsPerBar(context);
+    return std::clamp(static_cast<int>(std::lround(static_cast<double>(fourFourStep) *
+                                                   (steps - 1) / 15.0)), 0, steps - 1);
+}
 
 std::vector<int> normalizeHarmonyPreservingRoot(std::span<const int> pitches) {
     std::vector<int> result;
@@ -34,22 +65,10 @@ std::vector<int> normalizeHarmonyPreservingRoot(std::span<const int> pitches) {
 std::vector<int> fallbackHarmony(const GenerationContext& context) {
     auto chord = normalizeHarmonyPreservingRoot(context.chordPitchClasses);
     if (!chord.empty()) return chord;
-
-    if (context.scale == ScaleKind::Chromatic) {
-        const std::array harmony{context.rootPitchClass,
-                                 positiveModulo(context.rootPitchClass + 4, 12),
-                                 positiveModulo(context.rootPitchClass + 7, 12)};
-        return normalizeHarmonyPreservingRoot(harmony);
-    }
-
-    const auto intervals = intervalsFor(context.scale);
-    const auto thirdIndex = std::min<std::size_t>(2, intervals.size() - 1);
-    const auto fifthIndex = std::min<std::size_t>(4, intervals.size() - 1);
-    const std::array harmony{
-        context.rootPitchClass,
-        positiveModulo(context.rootPitchClass + intervals[thirdIndex], 12),
-        positiveModulo(context.rootPitchClass + intervals[fifthIndex], 12)};
-    return normalizeHarmonyPreservingRoot(harmony);
+    const auto third = context.scale == ScaleKind::Minor || context.scale == ScaleKind::Dorian ? 3 : 4;
+    return {positiveModulo(context.rootPitchClass, 12),
+            positiveModulo(context.rootPitchClass + third, 12),
+            positiveModulo(context.rootPitchClass + 7, 12)};
 }
 
 std::vector<int> harmonyForBar(const GenerationContext& context, int bar) {
@@ -60,15 +79,35 @@ std::vector<int> harmonyForBar(const GenerationContext& context, int bar) {
     return fallbackHarmony(context);
 }
 
+HarmonicFunction classifyHarmony(const GenerationContext& context, std::span<const int> chord) {
+    if (chord.empty()) return HarmonicFunction::Colour;
+    const auto relativeRoot = positiveModulo(chord.front() - context.rootPitchClass, 12);
+    if (relativeRoot == 0 || relativeRoot == 3 || relativeRoot == 4 || relativeRoot == 8 || relativeRoot == 9)
+        return HarmonicFunction::Tonic;
+    if (relativeRoot == 2 || relativeRoot == 5) return HarmonicFunction::Predominant;
+    if (relativeRoot == 7 || relativeRoot == 10 || relativeRoot == 11) return HarmonicFunction::Dominant;
+    return HarmonicFunction::Colour;
+}
+
+double harmonicTension(HarmonicFunction function) noexcept {
+    switch (function) {
+    case HarmonicFunction::Tonic: return 0.15;
+    case HarmonicFunction::Predominant: return 0.46;
+    case HarmonicFunction::Dominant: return 0.82;
+    case HarmonicFunction::Colour: return 0.58;
+    }
+    return 0.5;
+}
+
 int nearestPitchClassTo(int pitchClass, int reference, int minimum, int maximum) {
     auto best = std::clamp(reference, minimum, maximum);
-    auto bestDistance = std::numeric_limits<int>::max();
+    auto distance = std::numeric_limits<int>::max();
     for (auto pitch = minimum; pitch <= maximum; ++pitch) {
         if (positiveModulo(pitch, 12) != positiveModulo(pitchClass, 12)) continue;
-        const auto distance = std::abs(pitch - reference);
-        if (distance < bestDistance) {
+        const auto candidateDistance = std::abs(pitch - reference);
+        if (candidateDistance < distance) {
             best = pitch;
-            bestDistance = distance;
+            distance = candidateDistance;
         }
     }
     return best;
@@ -76,27 +115,25 @@ int nearestPitchClassTo(int pitchClass, int reference, int minimum, int maximum)
 
 int nearestChordToneTo(std::span<const int> chord, int reference, int minimum, int maximum) {
     auto best = std::clamp(reference, minimum, maximum);
-    auto bestDistance = std::numeric_limits<int>::max();
+    auto distance = std::numeric_limits<int>::max();
     for (const auto pitchClass : chord) {
         const auto candidate = nearestPitchClassTo(pitchClass, reference, minimum, maximum);
-        const auto distance = std::abs(candidate - reference);
-        if (distance < bestDistance) {
+        const auto candidateDistance = std::abs(candidate - reference);
+        if (candidateDistance < distance) {
             best = candidate;
-            bestDistance = distance;
+            distance = candidateDistance;
         }
     }
     return best;
 }
 
-int scaleDegreePitch(const GenerationContext& context, int degree, int basePitch = 60) {
+int scaleDegreePitch(const GenerationContext& context, int degree, int reference) {
     const auto intervals = intervalsFor(context.scale);
-    const auto scaleSize = static_cast<int>(intervals.size());
-    const auto rootNearBase = nearestPitchClassTo(context.rootPitchClass, basePitch,
-                                                  basePitch - 6, basePitch + 6);
-    if (scaleSize == 12) return rootNearBase + degree;
-    const auto octave = static_cast<int>(std::floor(static_cast<double>(degree) / scaleSize));
-    const auto normalizedDegree = positiveModulo(degree, scaleSize);
-    return rootNearBase + intervals[static_cast<std::size_t>(normalizedDegree)] + octave * 12;
+    const auto size = static_cast<int>(intervals.size());
+    const auto root = nearestPitchClassTo(context.rootPitchClass, reference, reference - 7, reference + 7);
+    if (size == 12) return root + degree;
+    const auto octave = static_cast<int>(std::floor(static_cast<double>(degree) / size));
+    return root + intervals[static_cast<std::size_t>(positiveModulo(degree, size))] + octave * 12;
 }
 
 int scaleApproachBelow(const GenerationContext& context, int targetPitchClass) {
@@ -107,276 +144,355 @@ int scaleApproachBelow(const GenerationContext& context, int targetPitchClass) {
     return positiveModulo(targetPitchClass - 1, 12);
 }
 
-bool sourceHasOnsetNear(const GenerationContext& context, double beat, double tolerance = 0.13) {
+bool sourceHasOnsetNear(const GenerationContext& context, double beat, double tolerance = 0.14) {
     return std::any_of(context.sourceNotes.begin(), context.sourceNotes.end(), [=](const auto& note) {
         return std::abs(note.beat - beat) <= tolerance;
     });
 }
 
-double phraseProgress(int bar, int bars) {
-    return bars <= 1 ? 0.0 : static_cast<double>(bar) / static_cast<double>(bars - 1);
+std::uint64_t eventSeed(const GenerationContext& context, int bar, int step, std::uint64_t salt) {
+    auto seed = context.seed ^ salt;
+    seed ^= static_cast<std::uint64_t>(bar + 1) * 0x9E3779B97F4A7C15ULL;
+    seed ^= static_cast<std::uint64_t>(step + 17) * 0xD1B54A32D192ED03ULL;
+    seed ^= context.variationIndex * 0x94D049BB133111EBULL;
+    seed ^= context.evolutionStep * 0xBF58476D1CE4E5B9ULL;
+    return seed;
+}
+
+double expressiveStart(const GenerationContext& context, int bar, int step, std::uint64_t salt) {
+    const auto barStart = static_cast<double>(bar) * context.beatsPerBar;
+    const auto barEnd = barStart + context.beatsPerBar;
+    auto beat = barStart + static_cast<double>(step) * 0.25;
+    if (step % 4 == 2) beat += unit(context.groove) * 0.115;
+    if (step != 0 && unit(context.humanize) > 0.0) {
+        Random random(eventSeed(context, bar, step, salt));
+        beat += (random.unit() * 2.0 - 1.0) * unit(context.humanize) * 0.022;
+    }
+    return std::clamp(beat, barStart, barEnd - 0.015);
+}
+
+int expressiveVelocity(const GenerationContext& context, int base, int bar, int step,
+                       double tension, std::uint64_t salt) {
+    Random random(eventSeed(context, bar, step, salt));
+    const auto human = static_cast<int>(std::lround((random.unit() * 2.0 - 1.0) *
+                                                     unit(context.humanize) * 11.0));
+    const auto energy = static_cast<int>(std::lround((unit(context.energy) - 0.5) * 18.0));
+    const auto arc = static_cast<int>(std::lround(tension * unit(context.development) * 9.0));
+    return std::clamp(base + human + energy + arc, 1, 127);
+}
+
+CompositionPlan buildCompositionPlan(const GenerationContext& context) {
+    CompositionPlan plan;
+    Random dna(context.seed ^ 0x434F4D504F534552ULL);
+    const auto complexity = unit(context.complexity);
+    const auto space = unit(context.space);
+    const auto desiredCells = std::clamp(4 + static_cast<int>(std::lround(complexity * 5.0 - space * 2.0)), 3, 9);
+
+    std::array<bool, 16> selected{};
+    selected[0] = true;
+    auto count = 1;
+    while (count < desiredCells) {
+        const auto step = dna.range(1, 15);
+        if (selected[static_cast<std::size_t>(step)]) continue;
+        const auto strong = step % 4 == 0;
+        const auto syncopated = step % 2 == 1;
+        auto accept = strong ? 0.74 : (syncopated ? 0.42 + complexity * 0.42 : 0.66);
+        const auto sourceBeat = static_cast<double>(step) / 16.0 * context.beatsPerBar;
+        if (sourceHasOnsetNear(context, sourceBeat)) accept += unit(context.follow) * 0.25;
+        if (!dna.chance(accept)) continue;
+        selected[static_cast<std::size_t>(step)] = true;
+        ++count;
+    }
+
+    auto degree = dna.range(0, 4);
+    for (auto step = 0; step < 16; ++step) {
+        if (!selected[static_cast<std::size_t>(step)]) continue;
+        if (!plan.motif.empty()) {
+            constexpr std::array moves{-2, -1, -1, 0, 1, 1, 2};
+            degree += moves[static_cast<std::size_t>(dna.range(0, static_cast<int>(moves.size()) - 1))];
+            degree = std::clamp(degree, -2, 8);
+        }
+        const auto nextSelected = std::find(selected.begin() + step + 1, selected.end(), true);
+        const auto nextStep = nextSelected == selected.end() ? 16 : static_cast<int>(nextSelected - selected.begin());
+        const auto duration = std::clamp(nextStep - step, 1, dna.chance(0.28) ? 4 : 2);
+        const auto sourceBeat = static_cast<double>(step) / 16.0 * context.beatsPerBar;
+        const auto essential = step == 0 || step % 4 == 0 || sourceHasOnsetNear(context, sourceBeat);
+        plan.motif.push_back({step, duration, degree, dna.range(-7, 7), essential});
+    }
+
+    const auto bars = std::clamp(context.bars, 1, 16);
+    plan.bars.reserve(static_cast<std::size_t>(bars));
+    for (auto bar = 0; bar < bars; ++bar) {
+        const auto chord = harmonyForBar(context, bar);
+        const auto positionInSection = bar % 4;
+        const auto finalBar = bar == bars - 1;
+        BarIntent intent;
+        intent.function = finalBar ? PhraseFunction::Cadence :
+                          (positionInSection == 0 ? PhraseFunction::Statement :
+                           positionInSection == 1 ? PhraseFunction::Answer :
+                           PhraseFunction::Development);
+        intent.harmony = classifyHarmony(context, chord);
+        const auto phraseProgress = bars <= 1 ? 0.0 : static_cast<double>(bar) / (bars - 1);
+        intent.tension = std::clamp(harmonicTension(intent.harmony) * 0.55 + phraseProgress * 0.45,
+                                    0.0, 1.0);
+
+        const auto lineage = static_cast<int>((context.variationIndex + context.evolutionStep) % 4);
+        if (intent.function == PhraseFunction::Answer) {
+            intent.degreeShift = lineage % 2 == 0 ? 1 : -1;
+            intent.invertContour = lineage == 2;
+        } else if (intent.function == PhraseFunction::Development) {
+            intent.degreeShift = positionInSection == 2 ? 2 : -1;
+            intent.rhythmicShift = lineage == 1 ? 1 : (lineage == 3 ? -1 : 0);
+        } else if (intent.function == PhraseFunction::Cadence) {
+            intent.fragment = true;
+        }
+        plan.bars.push_back(intent);
+    }
+    return plan;
+}
+
+int transformedStep(const MotifCell& cell, const BarIntent& intent, double cohesion) {
+    if (cell.essential || cohesion > 0.84) return cell.step;
+    return std::clamp(cell.step + intent.rhythmicShift, 0, 15);
+}
+
+int transformedDegree(const MotifCell& cell, const BarIntent& intent) {
+    const auto contour = intent.invertContour ? -cell.degree : cell.degree;
+    return contour + intent.degreeShift;
 }
 
 void normalizePattern(Pattern& pattern) {
     for (auto& note : pattern.notes) {
-        note.startBeat = std::clamp(note.startBeat, 0.0, pattern.lengthBeats - 0.001);
-        note.durationBeats = std::clamp(note.durationBeats, 0.03,
-                                        pattern.lengthBeats - note.startBeat);
+        note.startBeat = std::clamp(note.startBeat, 0.0, std::max(0.0, pattern.lengthBeats - 0.025));
+        note.durationBeats = std::clamp(note.durationBeats, 0.025,
+                                        std::max(0.025, pattern.lengthBeats - note.startBeat));
         note.pitch = std::clamp(note.pitch, 0, 127);
         note.velocity = std::clamp(note.velocity, 1, 127);
         note.channel = std::clamp(note.channel, 1, 16);
     }
-    std::sort(pattern.notes.begin(), pattern.notes.end(), [](const auto& a, const auto& b) {
-        if (a.startBeat != b.startBeat) return a.startBeat < b.startBeat;
-        if (a.channel != b.channel) return a.channel < b.channel;
-        return a.pitch < b.pitch;
+    std::sort(pattern.notes.begin(), pattern.notes.end(), [](const auto& left, const auto& right) {
+        if (left.startBeat != right.startBeat) return left.startBeat < right.startBeat;
+        if (left.channel != right.channel) return left.channel < right.channel;
+        return left.pitch < right.pitch;
     });
-}
 
-std::vector<MotifCell> makeBassMotif(const GenerationContext& context) {
-    Random random(context.seed ^ 0xBA5511ULL);
-    const auto beats = std::max(1, static_cast<int>(std::round(context.beatsPerBar)));
-    const auto totalSteps = beats * 4;
-    const auto complexity = clampUnit(context.complexity);
-    const auto space = clampUnit(context.space);
-    const auto follow = clampUnit(context.follow);
-    std::vector<MotifCell> motif;
-
-    for (auto step = 0; step < totalSteps; ++step) {
-        const auto beat = static_cast<double>(step) * 0.25;
-        const auto onBeat = step % 4 == 0;
-        const auto onEighth = step % 2 == 0;
-        const auto downbeat = step == 0;
-        auto probability = downbeat ? 1.0 : (onBeat ? 0.64 : (onEighth ? 0.38 : 0.08));
-        probability += complexity * (onEighth ? 0.18 : 0.30);
-        probability -= space * (downbeat ? 0.0 : 0.52);
-        if (sourceHasOnsetNear(context, beat)) probability += follow * 0.28;
-        if (!random.chance(probability)) continue;
-
-        const auto harmonicIndex = downbeat ? 0 : random.range(0, 2);
-        const auto duration = onBeat && random.chance(0.45 + follow * 0.30) ? 0.46 :
-                              (onEighth ? 0.23 : 0.115);
-        motif.push_back({step, duration, harmonicIndex, random.range(-6, 6)});
-    }
-    if (motif.empty() || motif.front().step != 0) motif.insert(motif.begin(), {0, 0.46, 0, 0});
-    return motif;
-}
-
-std::vector<MotifCell> makeMelodyMotif(const GenerationContext& context) {
-    Random random(context.seed ^ 0xC0A17E2ULL);
-    const auto beats = std::max(1, static_cast<int>(std::round(context.beatsPerBar)));
-    const auto slots = beats * 2;
-    const auto complexity = clampUnit(context.complexity);
-    const auto space = clampUnit(context.space);
-    const auto follow = clampUnit(context.follow);
-    std::vector<MotifCell> motif;
-    auto degree = 2;
-
-    for (auto slot = 0; slot < slots; ++slot) {
-        const auto beat = static_cast<double>(slot) * 0.5;
-        const auto strong = slot % 2 == 0;
-        auto probability = (strong ? 0.63 : 0.42) + complexity * 0.16 - space * 0.48;
-        if (sourceHasOnsetNear(context, beat, 0.20)) probability -= follow * 0.42;
-        if (!random.chance(probability)) continue;
-
-        if (!motif.empty()) {
-            const std::array moves{-2, -1, -1, 0, 1, 1, 2};
-            degree += moves[static_cast<std::size_t>(random.range(0, static_cast<int>(moves.size()) - 1))];
-            degree = std::clamp(degree, -2, 9);
+    std::array<std::array<int, 128>, 16> previous;
+    for (auto& channel : previous) channel.fill(-1);
+    for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
+        auto& note = pattern.notes[index];
+        auto& previousIndex = previous[static_cast<std::size_t>(note.channel - 1)]
+                                      [static_cast<std::size_t>(note.pitch)];
+        if (previousIndex >= 0) {
+            auto& earlier = pattern.notes[static_cast<std::size_t>(previousIndex)];
+            if (earlier.endBeat() > note.startBeat)
+                earlier.durationBeats = std::max(0.025, note.startBeat - earlier.startBeat - 0.005);
         }
-        motif.push_back({slot * 2, random.chance(0.58) ? 0.44 : 0.94, degree,
-                         random.range(-8, 8)});
+        previousIndex = static_cast<int>(index);
     }
-    if (motif.empty() || motif.front().step != 0) motif.insert(motif.begin(), {0, 0.94, 2, 0});
-    return motif;
+}
+
+Pattern renderBass(const GenerationContext& context, const CompositionPlan& plan) {
+    const auto bars = std::clamp(context.bars, 1, 16);
+    Pattern result{{}, std::max(1.0, context.beatsPerBar) * bars, context.seed};
+    auto previousPitch = pitchClassToMidi(harmonyForBar(context, 0).front(), 2, 28, 52);
+    const auto cohesion = unit(context.cohesion);
+
+    for (auto bar = 0; bar < bars; ++bar) {
+        const auto chord = harmonyForBar(context, bar);
+        const auto& intent = plan.bars[static_cast<std::size_t>(bar)];
+        for (const auto& cell : plan.motif) {
+            if (intent.fragment && !cell.essential && cell.step > 8) continue;
+            Random choice(eventSeed(context, bar, cell.step, 0x42415353ULL));
+            if (!cell.essential && choice.chance(unit(context.space) * 0.32 *
+                                                  (1.0 - unit(context.repetition)))) continue;
+            if (!cell.essential && !choice.chance(0.48 + cohesion * 0.30 +
+                                                   unit(context.repetition) * 0.24)) continue;
+
+            const auto step = fitMotifStep(context, transformedStep(cell, intent, cohesion));
+            const auto strong = step % 4 == 0;
+            auto pitchClass = chord.front();
+            if (!strong && chord.size() > 1) {
+                const auto index = static_cast<std::size_t>(positiveModulo(transformedDegree(cell, intent),
+                                                                          static_cast<int>(chord.size())));
+                pitchClass = chord[index];
+            }
+            if (!strong && unit(context.risk) > 0.62 && choice.chance((unit(context.risk) - 0.62) * 0.6))
+                pitchClass = positiveModulo(nearestPitchInScale(pitchClass + (choice.chance(0.5) ? 2 : -2),
+                                                                 context.rootPitchClass, context.scale), 12);
+
+            auto pitch = nearestPitchClassTo(pitchClass, previousPitch, 28, 52);
+            if (std::abs(pitch - previousPitch) > 7) pitch = nearestChordToneTo(chord, previousPitch, 28, 52);
+            const auto start = expressiveStart(context, bar, step, 0x42415353ULL);
+            const auto duration = std::min(cell.durationSteps * context.beatsPerBar / 16.0 * 0.88,
+                                           bar * context.beatsPerBar + context.beatsPerBar - start + 0.001);
+            const auto baseVelocity = step == 0 ? 106 : (strong ? 94 : 80) + cell.accent / 3;
+            result.notes.push_back({start, duration, pitch,
+                                    expressiveVelocity(context, baseVelocity, bar, step, intent.tension,
+                                                       0x42415353ULL), 1});
+            previousPitch = pitch;
+        }
+    }
+
+    if (bars > 1 && unit(context.development) > 0.12) {
+        const auto targetRoot = harmonyForBar(context, 0).front();
+        const auto approach = scaleApproachBelow(context, targetRoot);
+        const auto start = result.lengthBeats - 0.25;
+        result.notes.erase(std::remove_if(result.notes.begin(), result.notes.end(), [=](const auto& note) {
+                               return note.startBeat >= start - 0.001;
+                           }), result.notes.end());
+        result.notes.push_back({start, 0.22, nearestPitchClassTo(approach, previousPitch, 28, 52),
+                                expressiveVelocity(context, 88, bars - 1, 15, 1.0,
+                                                   0x434144454E4345ULL), 1});
+    }
+    return result;
+}
+
+Pattern renderDrums(const GenerationContext& context, const CompositionPlan& plan) {
+    const auto bars = std::clamp(context.bars, 1, 16);
+    Pattern result{{}, std::max(1.0, context.beatsPerBar) * bars, context.seed};
+    const auto complexity = unit(context.complexity);
+    const auto energy = unit(context.energy);
+
+    for (auto bar = 0; bar < bars; ++bar) {
+        const auto& intent = plan.bars[static_cast<std::size_t>(bar)];
+        std::array<bool, 32> motifSteps{};
+        for (const auto& cell : plan.motif)
+            motifSteps[static_cast<std::size_t>(fitMotifStep(
+                context, transformedStep(cell, intent, unit(context.cohesion))))] = true;
+
+        const auto barSteps = stepsPerBar(context);
+        for (auto step = 0; step < barSteps; ++step) {
+            Random choice(eventSeed(context, bar, step, 0x4452554D53ULL));
+            const auto midpointKick = ((barSteps / 2 + 2) / 4) * 4;
+            const auto kick = step == 0 || step == midpointKick ||
+                              (motifSteps[static_cast<std::size_t>(step)] &&
+                               step != 4 && step != 12 && choice.chance(0.28 + energy * 0.34));
+            const auto backbeat = step == 4 || (barSteps >= 16 && step == 12);
+            const auto ghostSnare = !backbeat && step % 2 == 1 &&
+                                    motifSteps[static_cast<std::size_t>(step)] &&
+                                    choice.chance(complexity * 0.28);
+            const auto hat = step % 2 == 0 ||
+                             (step % 2 == 1 && choice.chance(complexity * energy * 0.55));
+            const auto start = expressiveStart(context, bar, step, 0x4452554D53ULL);
+            if (kick)
+                result.notes.push_back({start, 0.07, 36,
+                                        expressiveVelocity(context, step == 0 ? 112 : 96, bar, step,
+                                                           intent.tension, 0x4B49434BULL), 10});
+            if (backbeat || ghostSnare)
+                result.notes.push_back({start, 0.07, 38,
+                                        expressiveVelocity(context, backbeat ? 106 : 58, bar, step,
+                                                           intent.tension, 0x534E415245ULL), 10});
+            if (hat && choice.chance(0.94 - unit(context.space) * 0.35)) {
+                const auto open = step == barSteps - 2 && intent.tension > 0.55 && choice.chance(energy * 0.65);
+                result.notes.push_back({start, open ? 0.18 : 0.045, open ? 46 : 42,
+                                        expressiveVelocity(context, 67 + (step % 4 == 2 ? 11 : 0), bar,
+                                                           step, intent.tension, 0x484154ULL), 10});
+            }
+        }
+
+        if (intent.function == PhraseFunction::Cadence && bars > 1 &&
+            unit(context.development) > 0.15) {
+            const auto fillStart = (bar + 1) * context.beatsPerBar - 1.0;
+            result.notes.erase(std::remove_if(result.notes.begin(), result.notes.end(), [=](const auto& note) {
+                                   return note.startBeat >= fillStart && (note.pitch == 42 || note.pitch == 46);
+                               }), result.notes.end());
+            constexpr std::array pitches{45, 47, 50, 38};
+            for (std::size_t index = 0; index < pitches.size(); ++index) {
+                const auto step = stepsPerBar(context) - 4 + static_cast<int>(index);
+                result.notes.push_back({expressiveStart(context, bar, step, 0x46494C4CULL), 0.07,
+                                        pitches[index], expressiveVelocity(context, 78 + static_cast<int>(index) * 8,
+                                                                          bar, step, 1.0, 0x46494C4CULL), 10});
+            }
+        }
+    }
+    return result;
+}
+
+Pattern renderCountermelody(const GenerationContext& context, const CompositionPlan& plan) {
+    const auto bars = std::clamp(context.bars, 1, 16);
+    Pattern result{{}, std::max(1.0, context.beatsPerBar) * bars, context.seed};
+    auto previousPitch = scaleDegreePitch(context, plan.motif.front().degree + 2, 67);
+    previousPitch = std::clamp(previousPitch, 55, 88);
+
+    for (auto bar = 0; bar < bars; ++bar) {
+        const auto chord = harmonyForBar(context, bar);
+        const auto& intent = plan.bars[static_cast<std::size_t>(bar)];
+        const auto responseShift = intent.function == PhraseFunction::Statement ? 0 : 2;
+
+        for (const auto& cell : plan.motif) {
+            if (intent.fragment && !cell.essential && cell.step < 8) continue;
+            Random choice(eventSeed(context, bar, cell.step, 0x4D454C4F4459ULL));
+            if (!cell.essential && choice.chance(unit(context.space) * 0.46 *
+                                                  (1.0 - unit(context.repetition) * 0.82))) continue;
+            if (sourceHasOnsetNear(context, static_cast<double>(cell.step) / 16.0 *
+                                                context.beatsPerBar, 0.18) &&
+                choice.chance(unit(context.follow) * 0.48)) continue;
+
+            auto step = cell.step == 0 ? 0 : transformedStep(cell, intent, unit(context.cohesion));
+            if (cell.step != 0 && unit(context.cohesion) > 0.45)
+                step = std::clamp(step + responseShift, 1, 15);
+            step = fitMotifStep(context, step);
+            auto degree = transformedDegree(cell, intent) + 2;
+            if (unit(context.risk) > 0.58 && choice.chance((unit(context.risk) - 0.58) * 0.45))
+                degree += choice.chance(0.5) ? 1 : -1;
+
+            auto pitch = scaleDegreePitch(context, degree, previousPitch);
+            while (pitch > 88) pitch -= 12;
+            while (pitch < 55) pitch += 12;
+            const auto strong = step % 4 == 0;
+            if (strong) pitch = nearestChordToneTo(chord, pitch, 55, 88);
+            if (std::abs(pitch - previousPitch) > 7)
+                pitch = nearestPitchClassTo(pitch, previousPitch, 55, 88);
+            if (std::abs(pitch - previousPitch) > 9)
+                pitch = nearestChordToneTo(chord, previousPitch, 55, 88);
+
+            const auto start = expressiveStart(context, bar, step, 0x4D454C4F4459ULL);
+            const auto duration = std::min(cell.durationSteps * context.beatsPerBar / 16.0 * 0.92 +
+                                               (strong ? 0.18 : 0.0),
+                                           bar * context.beatsPerBar + context.beatsPerBar - start + 0.001);
+            result.notes.push_back({start, duration, pitch,
+                                    expressiveVelocity(context, (strong ? 88 : 76) + cell.accent / 2,
+                                                       bar, step, intent.tension, 0x4D454C4F4459ULL), 2});
+            previousPitch = pitch;
+        }
+    }
+
+    if (bars > 1 && unit(context.development) > 0.10) {
+        const auto start = result.lengthBeats - 0.25;
+        const auto targetRoot = harmonyForBar(context, 0).front();
+        result.notes.erase(std::remove_if(result.notes.begin(), result.notes.end(), [=](const auto& note) {
+                               return note.startBeat >= start - 0.001;
+                           }), result.notes.end());
+        result.notes.push_back({start, 0.23, nearestPitchClassTo(targetRoot, previousPitch, 55, 88),
+                                expressiveVelocity(context, 94, bars - 1, 15, 1.0,
+                                                   0x5245534F4C5645ULL), 2});
+    }
+    return result;
+}
+
+void appendPattern(Pattern& destination, Pattern&& source) {
+    destination.notes.insert(destination.notes.end(),
+                             std::make_move_iterator(source.notes.begin()),
+                             std::make_move_iterator(source.notes.end()));
 }
 
 } // namespace
 
 Pattern Generator::generate(const GenerationContext& context) const {
+    const auto plan = buildCompositionPlan(context);
     Pattern result;
     switch (context.role) {
-    case Role::Bass: result = generateBass(context); break;
-    case Role::Percussion: result = generatePercussion(context); break;
-    case Role::Countermelody: result = generateCountermelody(context); break;
+    case Role::Ensemble:
+        result = {{}, std::max(1.0, context.beatsPerBar) * std::clamp(context.bars, 1, 16), context.seed};
+        appendPattern(result, renderBass(context, plan));
+        appendPattern(result, renderDrums(context, plan));
+        appendPattern(result, renderCountermelody(context, plan));
+        break;
+    case Role::Bass: result = renderBass(context, plan); break;
+    case Role::Percussion: result = renderDrums(context, plan); break;
+    case Role::Countermelody: result = renderCountermelody(context, plan); break;
     }
     normalizePattern(result);
-    return result;
-}
-
-Pattern Generator::generateBass(const GenerationContext& context) const {
-    const auto bars = std::clamp(context.bars, 1, 16);
-    Pattern result{{}, std::max(1.0, context.beatsPerBar) * bars, context.seed};
-    const auto motif = makeBassMotif(context);
-    const auto repetition = clampUnit(context.repetition);
-    const auto development = clampUnit(context.development);
-    const auto risk = clampUnit(context.risk);
-    auto previousPitch = pitchClassToMidi(harmonyForBar(context, 0).front(), 2, 28, 52);
-
-    for (auto bar = 0; bar < bars; ++bar) {
-        const auto chord = harmonyForBar(context, bar);
-        const auto progress = phraseProgress(bar, bars);
-        Random barRandom(context.seed ^ (static_cast<std::uint64_t>(bar + 1) * 0x9e3779b97f4a7c15ULL) ^
-                         (context.evolutionStep * 0xD1B54A32D192ED03ULL));
-        const auto variation = (1.0 - repetition) * 0.55 + development * progress * 0.20 +
-                               std::min(0.18, static_cast<double>(context.evolutionStep) * development * 0.025);
-
-        for (const auto& cell : motif) {
-            if (cell.step != 0 && barRandom.chance(variation * 0.22)) continue;
-            auto step = cell.step;
-            if (cell.step != 0 && barRandom.chance(variation * 0.20))
-                step = std::clamp(step + (barRandom.chance(0.5) ? 1 : -1), 0,
-                                  static_cast<int>(context.beatsPerBar * 4.0) - 1);
-            const auto strong = step % 8 == 0;
-            auto pitchClass = strong ? chord.front() :
-                chord[static_cast<std::size_t>(cell.harmonicIndex % static_cast<int>(chord.size()))];
-
-            if (!strong && risk > 0.58 && barRandom.chance((risk - 0.58) * variation)) {
-                const auto candidate = pitchClass + (barRandom.chance(0.5) ? 2 : -2);
-                pitchClass = positiveModulo(nearestPitchInScale(candidate, context.rootPitchClass,
-                                                                 context.scale), 12);
-            }
-            auto pitch = nearestPitchClassTo(pitchClass, previousPitch, 28, 52);
-            if (std::abs(pitch - previousPitch) > 7)
-                pitch = nearestChordToneTo(chord, previousPitch, 28, 52);
-            const auto start = bar * context.beatsPerBar + static_cast<double>(step) * 0.25;
-            const auto velocity = (step == 0 ? 108 : (strong ? 96 : 82)) + cell.velocityOffset;
-            result.notes.push_back({start, cell.duration, pitch, velocity, 1});
-            previousPitch = pitch;
-        }
-    }
-
-    if (bars > 1 && development > 0.15) {
-        const auto nextRoot = harmonyForBar(context, 0).front();
-        const auto approachPc = scaleApproachBelow(context, nextRoot);
-        const auto approachBeat = result.lengthBeats - 0.25;
-        result.notes.erase(std::remove_if(result.notes.begin(), result.notes.end(), [=](const auto& note) {
-                               return note.startBeat >= approachBeat - 0.001;
-                           }), result.notes.end());
-        result.notes.push_back({approachBeat, 0.22,
-                                nearestPitchClassTo(approachPc, previousPitch, 28, 52), 88, 1});
-    }
-    return result;
-}
-
-Pattern Generator::generatePercussion(const GenerationContext& context) const {
-    const auto bars = std::clamp(context.bars, 1, 16);
-    Pattern result{{}, std::max(1.0, context.beatsPerBar) * bars, context.seed};
-    const auto stepsPerBar = std::max(4, static_cast<int>(std::round(context.beatsPerBar * 4.0)));
-    const auto repetition = clampUnit(context.repetition);
-    const auto complexity = clampUnit(context.complexity);
-    const auto development = clampUnit(context.development);
-    const auto space = clampUnit(context.space);
-
-    Random motifRandom(context.seed ^ 0xD12A5ULL);
-    std::vector<bool> kick(static_cast<std::size_t>(stepsPerBar), false);
-    std::vector<bool> snare(static_cast<std::size_t>(stepsPerBar), false);
-    std::vector<bool> hat(static_cast<std::size_t>(stepsPerBar), false);
-    kick[0] = true;
-    for (auto step = 0; step < stepsPerBar; ++step) {
-        if (step % 8 == 4) snare[static_cast<std::size_t>(step)] = true;
-        if (step % 2 == 0 && motifRandom.chance(0.92 - space * 0.50))
-            hat[static_cast<std::size_t>(step)] = true;
-        if (step > 0 && step % 8 == 0) kick[static_cast<std::size_t>(step)] = true;
-        if (step > 0 && step % 4 != 0 && motifRandom.chance(complexity * 0.16))
-            kick[static_cast<std::size_t>(step)] = true;
-        if (step % 2 == 1 && motifRandom.chance(complexity * 0.28 - space * 0.12))
-            hat[static_cast<std::size_t>(step)] = true;
-    }
-
-    for (auto bar = 0; bar < bars; ++bar) {
-        const auto progress = phraseProgress(bar, bars);
-        Random barRandom(context.seed ^ (static_cast<std::uint64_t>(bar + 1) * 0x94D049BB133111EBULL) ^
-                         (context.evolutionStep * 0x2545F4914F6CDD1DULL));
-        const auto variation = (1.0 - repetition) * 0.42 + development * progress * 0.16 +
-                               std::min(0.15, static_cast<double>(context.evolutionStep) * development * 0.02);
-        const auto finalBar = bar == bars - 1;
-
-        for (auto step = 0; step < stepsPerBar; ++step) {
-            const auto beat = bar * context.beatsPerBar + static_cast<double>(step) * 0.25;
-            auto playKick = kick[static_cast<std::size_t>(step)];
-            auto playSnare = snare[static_cast<std::size_t>(step)];
-            auto playHat = hat[static_cast<std::size_t>(step)];
-            if (step != 0 && barRandom.chance(variation * 0.12)) playKick = !playKick;
-            if (!playSnare && barRandom.chance(variation * complexity * 0.08)) playSnare = true;
-            if (barRandom.chance(variation * 0.14)) playHat = !playHat;
-            if (playKick) result.notes.push_back({beat, 0.08, 36, step == 0 ? 114 : 96, 10});
-            if (playSnare) result.notes.push_back({beat, 0.08, 38, step % 8 == 4 ? 110 : 68, 10});
-            if (playHat) {
-                const auto open = step == stepsPerBar - 2 && progress > 0.45 &&
-                                  barRandom.chance(development * 0.55);
-                result.notes.push_back({beat, 0.05, open ? 46 : 42,
-                                        68 + (step % 4 == 2 ? 12 : 0) + barRandom.range(-5, 5), 10});
-            }
-        }
-
-        if (finalBar && bars > 1 && development > 0.18) {
-            const auto fillStart = (bar + 1) * context.beatsPerBar - 1.0;
-            result.notes.erase(std::remove_if(result.notes.begin(), result.notes.end(), [=](const auto& note) {
-                                   return note.startBeat >= fillStart && note.pitch == 42;
-                               }), result.notes.end());
-            constexpr std::array fillPitches{45, 47, 50, 38};
-            for (std::size_t index = 0; index < fillPitches.size(); ++index)
-                result.notes.push_back({fillStart + static_cast<double>(index) * 0.25, 0.08,
-                                        fillPitches[index], 82 + static_cast<int>(index) * 8, 10});
-        }
-    }
-    return result;
-}
-
-Pattern Generator::generateCountermelody(const GenerationContext& context) const {
-    const auto bars = std::clamp(context.bars, 1, 16);
-    Pattern result{{}, std::max(1.0, context.beatsPerBar) * bars, context.seed};
-    const auto motif = makeMelodyMotif(context);
-    const auto repetition = clampUnit(context.repetition);
-    const auto development = clampUnit(context.development);
-    const auto risk = clampUnit(context.risk);
-    auto previousPitch = scaleDegreePitch(context, motif.front().harmonicIndex, 67);
-    previousPitch = std::clamp(previousPitch, 55, 88);
-
-    for (auto bar = 0; bar < bars; ++bar) {
-        const auto chord = harmonyForBar(context, bar);
-        const auto progress = phraseProgress(bar, bars);
-        const auto arc = development < 0.2 ? 0 :
-                         (progress < 0.34 ? 0 : (progress < 0.72 ? 1 : 0));
-        Random barRandom(context.seed ^ (static_cast<std::uint64_t>(bar + 1) * 0xBF58476D1CE4E5B9ULL) ^
-                         (context.evolutionStep * 0x9E3779B97F4A7C15ULL));
-        const auto variation = (1.0 - repetition) * 0.50 + development * progress * 0.18 +
-                               std::min(0.16, static_cast<double>(context.evolutionStep) * development * 0.02);
-
-        for (const auto& cell : motif) {
-            const auto localBeat = static_cast<double>(cell.step) * 0.25;
-            if (sourceHasOnsetNear(context, localBeat, 0.18) &&
-                barRandom.chance(clampUnit(context.follow) * 0.50)) continue;
-            if (cell.step != 0 && barRandom.chance(variation * 0.18)) continue;
-
-            auto degree = cell.harmonicIndex + arc;
-            if (barRandom.chance(variation * risk * 0.30)) degree += barRandom.chance(0.5) ? 1 : -1;
-            auto candidate = scaleDegreePitch(context, degree, 67);
-            candidate = nearestPitchClassTo(candidate, previousPitch, 55, 88);
-            const auto strong = cell.step % 4 == 0;
-            if (strong) candidate = nearestChordToneTo(chord, candidate, 55, 88);
-            if (std::abs(candidate - previousPitch) > 7)
-                candidate = nearestPitchClassTo(candidate, previousPitch, 55, 88);
-            if (std::abs(candidate - previousPitch) > 9)
-                candidate = nearestChordToneTo(chord, previousPitch, 55, 88);
-
-            const auto start = bar * context.beatsPerBar + localBeat;
-            result.notes.push_back({start, cell.duration, candidate,
-                                    (strong ? 88 : 78) + cell.velocityOffset, 1});
-            previousPitch = candidate;
-        }
-    }
-
-    if (bars > 1 && development > 0.12) {
-        const auto finalStart = result.lengthBeats - 0.5;
-        const auto finalChord = harmonyForBar(context, bars - 1);
-        const auto target = nearestPitchClassTo(finalChord.front(), previousPitch, 55, 88);
-        result.notes.erase(std::remove_if(result.notes.begin(), result.notes.end(), [=](const auto& note) {
-                               return note.startBeat >= finalStart;
-                           }), result.notes.end());
-        result.notes.push_back({finalStart, 0.48, target, 92, 1});
-    }
     return result;
 }
 

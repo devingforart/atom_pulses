@@ -16,13 +16,18 @@ constexpr auto space = "space";
 constexpr auto repetition = "repetition";
 constexpr auto complexity = "complexity";
 constexpr auto development = "development";
+constexpr auto groove = "groove";
+constexpr auto humanize = "humanize";
+constexpr auto cohesion = "cohesion";
+constexpr auto energy = "energy";
 constexpr auto phraseBars = "phraseBars";
 constexpr auto mode = "mode";
 constexpr auto preview = "preview";
 constexpr auto thru = "thru";
 constexpr auto gain = "gain";
 constexpr std::array generative{role, scale, root, follow, risk, space, repetition,
-                                complexity, development, phraseBars, mode};
+                                complexity, development, groove, humanize, cohesion,
+                                energy, phraseBars, mode};
 constexpr std::array phraseLengths{1, 2, 4, 8, 16};
 } // namespace ids
 
@@ -59,7 +64,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PulsoAudioProcessor::createP
     using Int = juce::AudioParameterInt;
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> result;
     result.push_back(std::make_unique<Choice>(ids::role, "Role",
-                                              juce::StringArray{"Bass", "Percussion", "Countermelody"}, 0));
+                                              juce::StringArray{"Bass", "Percussion", "Countermelody", "Ensemble"}, 3));
     result.push_back(std::make_unique<Choice>(ids::scale, "Scale",
                                               juce::StringArray{"Major", "Minor", "Dorian", "Mixolydian", "Chromatic"}, 1));
     result.push_back(std::make_unique<Int>(ids::root, "Root", 0, 11, 0));
@@ -69,6 +74,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout PulsoAudioProcessor::createP
     result.push_back(std::make_unique<Float>(ids::repetition, "Repetition", 0.0f, 1.0f, 0.78f));
     result.push_back(std::make_unique<Float>(ids::complexity, "Complexity", 0.0f, 1.0f, 0.45f));
     result.push_back(std::make_unique<Float>(ids::development, "Development", 0.0f, 1.0f, 0.45f));
+    result.push_back(std::make_unique<Float>(ids::groove, "Groove", 0.0f, 1.0f, 0.48f));
+    result.push_back(std::make_unique<Float>(ids::humanize, "Humanize", 0.0f, 1.0f, 0.32f));
+    result.push_back(std::make_unique<Float>(ids::cohesion, "Cohesion", 0.0f, 1.0f, 0.82f));
+    result.push_back(std::make_unique<Float>(ids::energy, "Energy", 0.0f, 1.0f, 0.56f));
     result.push_back(std::make_unique<Choice>(ids::phraseBars, "Phrase Length",
                                               juce::StringArray{"1 bar", "2 bars", "4 bars", "8 bars", "16 bars"}, 2));
     result.push_back(std::make_unique<Choice>(ids::mode, "Phrase Mode",
@@ -217,9 +226,14 @@ PulsoAudioProcessor::GenerationRequest PulsoAudioProcessor::makeGenerationReques
     request.repetition = parameters.getRawParameterValue(ids::repetition)->load();
     request.complexity = parameters.getRawParameterValue(ids::complexity)->load();
     request.development = parameters.getRawParameterValue(ids::development)->load();
+    request.groove = parameters.getRawParameterValue(ids::groove)->load();
+    request.humanize = parameters.getRawParameterValue(ids::humanize)->load();
+    request.cohesion = parameters.getRawParameterValue(ids::cohesion)->load();
+    request.energy = parameters.getRawParameterValue(ids::energy)->load();
     request.bars = currentPhraseBars();
     request.beatsPerBar = beatsPerBar;
-    request.seed = variationSeed.load(std::memory_order_relaxed) * 0x9e3779b97f4a7c15ULL;
+    request.seed = compositionSeed.load(std::memory_order_relaxed) * 0x9e3779b97f4a7c15ULL;
+    request.variationIndex = variationIndex.load(std::memory_order_relaxed);
     request.evolutionStep = evolutionStep;
     request.serial = ++nextRequestSerial;
     request.epoch = processingEpoch.load(std::memory_order_acquire);
@@ -253,8 +267,13 @@ GenerationContext PulsoAudioProcessor::expandContext(const GenerationRequest& re
     context.repetition = request.repetition;
     context.complexity = request.complexity;
     context.development = request.development;
+    context.groove = request.groove;
+    context.humanize = request.humanize;
+    context.cohesion = request.cohesion;
+    context.energy = request.energy;
     context.bars = request.bars;
     context.seed = request.seed;
+    context.variationIndex = request.variationIndex;
     context.evolutionStep = request.evolutionStep;
 
     context.harmonyByBar.reserve(static_cast<std::size_t>(request.bars));
@@ -524,7 +543,8 @@ void PulsoAudioProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::Mi
 
 void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     auto state = parameters.copyState();
-    state.setProperty("variationSeed", static_cast<juce::int64>(variationSeed.load(std::memory_order_relaxed)), nullptr);
+    state.setProperty("compositionSeed", static_cast<juce::int64>(compositionSeed.load(std::memory_order_relaxed)), nullptr);
+    state.setProperty("variationIndex", static_cast<juce::int64>(variationIndex.load(std::memory_order_relaxed)), nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, destination);
 }
 
@@ -532,8 +552,13 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
     if (auto xml = getXmlFromBinary(data, size)) {
         if (xml->hasTagName(parameters.state.getType())) {
             auto state = juce::ValueTree::fromXml(*xml);
-            variationSeed.store(static_cast<std::uint64_t>(static_cast<juce::int64>(
-                                    state.getProperty("variationSeed", 1))), std::memory_order_relaxed);
+            const auto legacySeed = state.getProperty("variationSeed", 1);
+            compositionSeed.store(static_cast<std::uint64_t>(static_cast<juce::int64>(
+                                      state.getProperty("compositionSeed", legacySeed))),
+                                  std::memory_order_relaxed);
+            variationIndex.store(static_cast<std::uint64_t>(static_cast<juce::int64>(
+                                     state.getProperty("variationIndex", 0))),
+                                 std::memory_order_relaxed);
             parameters.replaceState(state);
         }
     }

@@ -42,6 +42,10 @@ private:
     juce::Slider repetitionSlider;
     juce::Slider complexitySlider;
     juce::Slider developmentSlider;
+    juce::Slider grooveSlider;
+    juce::Slider humanizeSlider;
+    juce::Slider cohesionSlider;
+    juce::Slider energySlider;
     juce::Slider gainSlider;
     juce::Label followLabel;
     juce::Label riskLabel;
@@ -49,8 +53,13 @@ private:
     juce::Label repetitionLabel;
     juce::Label complexityLabel;
     juce::Label developmentLabel;
+    juce::Label grooveLabel;
+    juce::Label humanizeLabel;
+    juce::Label cohesionLabel;
+    juce::Label energyLabel;
     juce::Label gainLabel;
-    juce::TextButton variationButton{"NEW VARIATION"};
+    juce::TextButton variationButton{"EVOLVE IDEA"};
+    juce::TextButton newCompositionButton{"NEW DNA"};
     juce::ToggleButton previewButton{"PREVIEW"};
     juce::ToggleButton thruButton{"MIDI THRU"};
 
@@ -68,6 +77,10 @@ private:
     std::unique_ptr<SliderAttachment> repetitionAttachment;
     std::unique_ptr<SliderAttachment> complexityAttachment;
     std::unique_ptr<SliderAttachment> developmentAttachment;
+    std::unique_ptr<SliderAttachment> grooveAttachment;
+    std::unique_ptr<SliderAttachment> humanizeAttachment;
+    std::unique_ptr<SliderAttachment> cohesionAttachment;
+    std::unique_ptr<SliderAttachment> energyAttachment;
     std::unique_ptr<SliderAttachment> gainAttachment;
     std::unique_ptr<ButtonAttachment> previewAttachment;
     std::unique_ptr<ButtonAttachment> thruAttachment;

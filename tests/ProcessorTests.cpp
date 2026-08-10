@@ -82,6 +82,12 @@ int main() {
     }
     require(producedPattern, "The worker must publish a playable pattern without blocking audio");
     require(peakMagnitude(audio) <= 1.0f, "Preview output must remain below digital full scale");
+    const auto composedPattern = processor.currentPattern();
+    require(composedPattern != nullptr, "The processor must expose its composed phrase");
+    for (const auto channel : {1, 2, 10})
+        require(std::any_of(composedPattern->notes.begin(), composedPattern->notes.end(),
+                            [=](const auto& note) { return note.channel == channel; }),
+                "Default Ensemble mode must coordinate bass, melody and drums");
 
     playHead.playing = false;
     midi.clear();
@@ -111,6 +117,8 @@ int main() {
     require(containsNoteOn(midi), "A transport seek must recover notes overlapping the destination");
 
     processor.requestVariation();
+    const auto originalDnaSeed = composedPattern->seed;
+    const auto originalComposition = composedPattern->notes;
     auto variationPanic = false;
     for (auto attempt = 0; attempt < 100 && !variationPanic; ++attempt) {
         advance(playHead, blockSize, sampleRate);
@@ -120,6 +128,23 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     require(variationPanic, "Replacing a live pattern must clean up notes from the previous pattern");
+    const auto variedPattern = processor.currentPattern();
+    require(variedPattern != nullptr && variedPattern->seed == originalDnaSeed,
+            "Evolve Idea must preserve the composition DNA seed");
+    require(variedPattern->notes != originalComposition,
+            "Evolve Idea must create a real transformation rather than a duplicate");
+
+    processor.requestNewComposition();
+    auto receivedNewDna = false;
+    for (auto attempt = 0; attempt < 100 && !receivedNewDna; ++attempt) {
+        advance(playHead, blockSize, sampleRate);
+        midi.clear();
+        processor.processBlock(audio, midi);
+        if (const auto candidate = processor.currentPattern())
+            receivedNewDna = candidate->seed != originalDnaSeed;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    require(receivedNewDna, "New DNA must replace the persistent composition identity");
 
     auto* preview = processor.parameters.getParameter("preview");
     require(preview != nullptr, "Preview parameter must exist");
@@ -162,8 +187,16 @@ int main() {
             ++tooltipCount;
         }
     }
-    require(tooltipCount >= 27, "The complete visible interface must be covered by tooltips");
+    require(tooltipCount >= 36, "The complete visible interface must be covered by tooltips");
     editor.reset();
+
+    juce::MemoryBlock savedState;
+    processor.getStateInformation(savedState);
+    pulso::plugin::PulsoAudioProcessor restored;
+    restored.setStateInformation(savedState.getData(), static_cast<int>(savedState.getSize()));
+    require(restored.currentCompositionSeed() == processor.currentCompositionSeed() &&
+                restored.currentVariationIndex() == processor.currentVariationIndex(),
+            "Composition DNA and lineage must survive a DAW project reload");
 
     processor.releaseResources();
     processor.setPlayHead(nullptr);

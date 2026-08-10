@@ -76,11 +76,11 @@ int main(int argc, char** argv) {
     constexpr auto sampleRate = 48000.0;
     constexpr auto blockSize = 256;
 
-    std::array<float, 4> kitEnergy{};
-    for (auto kit = 0; kit < static_cast<int>(kitEnergy.size()); ++kit) {
+    std::array<float, 8> worldEnergy{};
+    for (auto world = 0; world < static_cast<int>(worldEnergy.size()); ++world) {
         pulso::plugin::PreviewSynth drumPreview;
         drumPreview.prepare(sampleRate);
-        drumPreview.setDrumKit(kit);
+        drumPreview.setSoundWorld(world);
         juce::AudioBuffer<float> kitAudio(2, 8192);
         kitAudio.clear();
         juce::MidiBuffer kitMidi;
@@ -91,20 +91,89 @@ int main(int argc, char** argv) {
         drumPreview.renderNextBlock(kitAudio, kitMidi, 0, kitAudio.getNumSamples());
         for (auto channel = 0; channel < kitAudio.getNumChannels(); ++channel)
             for (auto sample = 0; sample < kitAudio.getNumSamples(); ++sample)
-                kitEnergy[static_cast<std::size_t>(kit)] += std::abs(kitAudio.getSample(channel, sample));
-        require(kitEnergy[static_cast<std::size_t>(kit)] > 1.0f,
-                "Every preview drum rack must render audible GM percussion");
+                worldEnergy[static_cast<std::size_t>(world)] += std::abs(kitAudio.getSample(channel, sample));
+        require(worldEnergy[static_cast<std::size_t>(world)] > 1.0f,
+                "Every preview sound world must render audible GM percussion");
     }
-    const auto [quietestKit, loudestKit] = std::minmax_element(kitEnergy.begin(), kitEnergy.end());
-    require(*loudestKit - *quietestKit > 1.0f,
-            "Preview drum racks must have measurably different sonic envelopes");
+    const auto [quietestWorld, loudestWorld] = std::minmax_element(worldEnergy.begin(), worldEnergy.end());
+    require(*loudestWorld - *quietestWorld > 1.0f,
+            "Preview sound worlds must have measurably different sonic envelopes");
+
+    std::array<std::array<float, 256>, 8> worldFingerprints{};
+    for (auto world = 0; world < static_cast<int>(worldFingerprints.size()); ++world) {
+        pulso::plugin::PreviewSynth fingerprintSynth;
+        fingerprintSynth.prepare(sampleRate);
+        fingerprintSynth.setSoundWorld(world);
+        juce::AudioBuffer<float> fingerprintAudio(2, 4096);
+        fingerprintAudio.clear();
+        juce::MidiBuffer fingerprintMidi;
+        fingerprintMidi.addEvent(juce::MidiMessage::noteOn(2, 69, static_cast<juce::uint8>(110)), 0);
+        fingerprintSynth.renderNextBlock(fingerprintAudio, fingerprintMidi, 0,
+                                         fingerprintAudio.getNumSamples());
+        for (auto sample = 0; sample < 256; ++sample)
+            worldFingerprints[static_cast<std::size_t>(world)][static_cast<std::size_t>(sample)] =
+                fingerprintAudio.getSample(0, 1024 + sample);
+    }
+    auto clearlyDifferentWorlds = 0;
+    for (std::size_t world = 1; world < worldFingerprints.size(); ++world) {
+        auto difference = 0.0f;
+        for (std::size_t sample = 0; sample < worldFingerprints[world].size(); ++sample)
+            difference += std::abs(worldFingerprints[world][sample] - worldFingerprints[0][sample]);
+        if (difference / static_cast<float>(worldFingerprints[world].size()) > 0.001f)
+            ++clearlyDifferentWorlds;
+    }
+    require(clearlyDifferentWorlds >= 6,
+            "Sound worlds must switch oscillator families, not merely rename one Game Boy timbre");
+
+    pulso::plugin::PreviewSynth switchedWorldSynth;
+    pulso::plugin::PreviewSynth unchangedWorldSynth;
+    switchedWorldSynth.prepare(sampleRate);
+    unchangedWorldSynth.prepare(sampleRate);
+    juce::MidiBuffer heldNoteMidi;
+    heldNoteMidi.addEvent(juce::MidiMessage::noteOn(2, 64, static_cast<juce::uint8>(105)), 0);
+    juce::AudioBuffer<float> switchedAudio(2, 2048);
+    juce::AudioBuffer<float> unchangedAudio(2, 2048);
+    switchedAudio.clear();
+    unchangedAudio.clear();
+    switchedWorldSynth.renderNextBlock(switchedAudio, heldNoteMidi, 0, 2048);
+    unchangedWorldSynth.renderNextBlock(unchangedAudio, heldNoteMidi, 0, 2048);
+    switchedWorldSynth.setSoundWorld(7);
+    juce::MidiBuffer noNewNotes;
+    switchedAudio.clear();
+    unchangedAudio.clear();
+    switchedWorldSynth.renderNextBlock(switchedAudio, noNewNotes, 0, 2048);
+    unchangedWorldSynth.renderNextBlock(unchangedAudio, noNewNotes, 0, 2048);
+    auto liveSwitchDifference = 0.0f;
+    for (auto sample = 0; sample < 2048; ++sample)
+        liveSwitchDifference += std::abs(switchedAudio.getSample(0, sample) -
+                                         unchangedAudio.getSample(0, sample));
+    require(liveSwitchDifference / 2048.0f > 0.001f,
+            "Changing world must audibly replace the timbre of already sustained preview notes");
+
+    pulso::plugin::PreviewSynth ensemblePreview;
+    ensemblePreview.prepare(sampleRate);
+    ensemblePreview.setSoundWorld(0);
+    juce::AudioBuffer<float> ensemblePreviewAudio(2, 16384);
+    ensemblePreviewAudio.clear();
+    juce::MidiBuffer ensemblePreviewMidi;
+    for (auto channel = 1; channel <= 9; ++channel)
+        ensemblePreviewMidi.addEvent(juce::MidiMessage::noteOn(channel, 36 + channel * 5,
+                                                               static_cast<juce::uint8>(96)), channel * 120);
+    ensemblePreview.renderNextBlock(ensemblePreviewAudio, ensemblePreviewMidi, 0,
+                                    ensemblePreviewAudio.getNumSamples());
+    require(ensemblePreviewAudio.getMagnitude(0, 0, ensemblePreviewAudio.getNumSamples()) > 0.001f &&
+                ensemblePreviewAudio.getMagnitude(1, 0, ensemblePreviewAudio.getNumSamples()) > 0.001f,
+            "All nine tonal roles must render through the multitimbral stereo preview");
 
     pulso::plugin::PulsoAudioProcessor processor;
     require(std::abs(processor.parameters.getRawParameterValue("space")->load()) < 0.0001f &&
                 std::abs(processor.parameters.getRawParameterValue("groove")->load()) < 0.0001f,
             "Retired Space and Groove controls must always default to zero");
-    require(processor.parameters.getParameter("previewKit") != nullptr,
-            "The selectable preview drum rack must be a persistent host parameter");
+    require(processor.parameters.getParameter("previewWorld") != nullptr,
+            "The selectable preview sound world must be a persistent host parameter");
+    processor.setCreativeDirection("spacious dub echoes with restrained movement");
+    require(processor.currentPreviewWorldName() == "DUB SPACE",
+            "AUTO preview must translate creative-direction vocabulary into a sound world");
     TestPlayHead playHead;
     processor.setPlayHead(&playHead);
     processor.prepareToPlay(sampleRate, blockSize);
@@ -227,11 +296,12 @@ int main(int argc, char** argv) {
     processor.processBlock(audio, midi);
     require(containsPanic(midi), "Stopping transport must emit an explicit MIDI panic");
 
-    for (auto block = 0; block < 40; ++block) {
+    for (auto block = 0; block < 700; ++block) {
         midi.clear();
         processor.processBlock(audio, midi);
     }
-    require(peakMagnitude(audio) < 0.0001f, "Preview voices must fully release after transport stops");
+    require(peakMagnitude(audio) < 0.001f,
+            "Preview voices and spatial effects must decay below -60 dB after transport stops");
 
     playHead.ppq = 0.10;
     playHead.playing = true;
@@ -323,12 +393,13 @@ int main(int argc, char** argv) {
     auto* preview = processor.parameters.getParameter("preview");
     require(preview != nullptr, "Preview parameter must exist");
     preview->setValueNotifyingHost(0.0f);
-    for (auto block = 0; block < 40; ++block) {
+    for (auto block = 0; block < 700; ++block) {
         advance(playHead, blockSize, sampleRate);
         midi.clear();
         processor.processBlock(audio, midi);
     }
-    require(peakMagnitude(audio) < 0.0001f, "Disabling preview must release audio without a stuck voice");
+    require(peakMagnitude(audio) < 0.001f,
+            "Disabling preview must let instruments and spatial effects decay without a stuck voice");
 
     preview->setValueNotifyingHost(1.0f);
     auto longestCallback = std::chrono::microseconds::zero();
@@ -364,7 +435,7 @@ int main(int argc, char** argv) {
     require(tooltipCount >= 22, "The complete visible interface must be covered by tooltips");
     editor.reset();
 
-    processor.parameters.getParameter("previewKit")->setValueNotifyingHost(1.0f);
+    processor.parameters.getParameter("previewWorld")->setValueNotifyingHost(1.0f);
     juce::MemoryBlock savedState;
     processor.getStateInformation(savedState);
     pulso::plugin::PulsoAudioProcessor restored;
@@ -380,8 +451,8 @@ int main(int argc, char** argv) {
     require(std::abs(restored.parameters.getRawParameterValue("space")->load()) < 0.0001f &&
                 std::abs(restored.parameters.getRawParameterValue("groove")->load()) < 0.0001f,
             "Reloading a project must keep retired controls fixed at zero");
-    require(std::abs(restored.parameters.getRawParameterValue("previewKit")->load() - 3.0f) < 0.0001f,
-            "The selected preview drum rack must survive a DAW project reload");
+    require(std::abs(restored.parameters.getRawParameterValue("previewWorld")->load() - 8.0f) < 0.0001f,
+            "The selected preview sound world must survive a DAW project reload");
 
     ensembleFile.deleteFile();
     bassFile.deleteFile();

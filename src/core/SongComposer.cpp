@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <limits>
 #include <numeric>
 
 namespace pulso {
@@ -137,6 +138,96 @@ int constrainToVoiceRegister(int pitch, const PlannedVoice* voice) {
     while (pitch < voice->minimumPitch && pitch + 12 <= voice->maximumPitch) pitch += 12;
     while (pitch > voice->maximumPitch && pitch - 12 >= voice->minimumPitch) pitch -= 12;
     return std::clamp(pitch, voice->minimumPitch, voice->maximumPitch);
+}
+
+std::uint64_t mix64(std::uint64_t value) noexcept {
+    value ^= value >> 30;
+    value *= 0xbf58476d1ce4e5b9ULL;
+    value ^= value >> 27;
+    value *= 0x94d049bb133111ebULL;
+    return value ^ (value >> 31);
+}
+
+double signedHumanValue(std::uint64_t seed, VoiceId voice, int absoluteBar, int ordinal) noexcept {
+    const auto value = mix64(seed ^ (static_cast<std::uint64_t>(voice) + 1) * 0x9e3779b97f4a7c15ULL ^
+                             static_cast<std::uint64_t>(absoluteBar + 1) * 0xd1b54a32d192ed03ULL ^
+                             static_cast<std::uint64_t>(ordinal + 1) * 0x94d049bb133111ebULL);
+    return static_cast<double>(value & 0xffffu) / 32767.5 - 1.0;
+}
+
+bool voicePresentInBar(const SongPlan& plan, const SongSection& section,
+                       VoiceId voice, int localBar) {
+    const auto phrase = positiveModulo(localBar, 8);
+    const auto cell = positiveModulo(localBar, 4);
+    const auto highEnergy = section.energy >= 0.76;
+    const auto sparse = section.density < 0.42;
+    const auto* planned = plannedVoice(plan, voice);
+    const auto activity = planned == nullptr ? 0.6 : planned->activity;
+    const auto probabilityGate = static_cast<double>(mix64(plan.seed ^
+        static_cast<std::uint64_t>(section.startBar + localBar / 2 + 1) * 0x9e3779b97f4a7c15ULL ^
+        static_cast<std::uint64_t>(voice))) / static_cast<double>(std::numeric_limits<std::uint64_t>::max());
+
+    switch (voice) {
+        case VoiceId::CoreDrums: return highEnergy ? phrase != 7 : cell != 3;
+        case VoiceId::LowPercussion: return (cell == 1 || (highEnergy && cell == 2)) && probabilityGate < activity + 0.20;
+        case VoiceId::HighPercussion: return sparse ? cell == 2 : (highEnergy ? phrase != 3 && phrase != 7 : cell < 2);
+        case VoiceId::SubBass: return highEnergy ? phrase != 7 : cell != 3;
+        case VoiceId::MovementBass: return cell == 1 || (highEnergy && cell == 2);
+        case VoiceId::HarmonicFoundation: return highEnergy ? phrase != 7 : cell < 3;
+        case VoiceId::HarmonicPulse: return highEnergy ? cell != 3 : cell == 1 || cell == 2;
+        case VoiceId::HarmonicUpper: return phrase == 2 || phrase == 3 || (highEnergy && phrase == 6);
+        case VoiceId::Lead: return phrase == 0 || phrase == 1 || phrase == 4 ||
+                                   (section.tension > 0.72 && phrase == 5);
+        case VoiceId::Countermelody: return phrase == 2 || phrase == 3 || phrase == 6;
+        case VoiceId::Atmosphere: return phrase < 3 || phrase == 5 || sparse;
+        case VoiceId::Transitions: return localBar + 1 == section.bars;
+        default: return probabilityGate < activity;
+    }
+}
+
+void applyNaturalPhrasing(Pattern& chunk, const SongPlan& plan, const SongSection& section,
+                          int sectionBar, double beatsPerBar) {
+    auto ordinal = 0;
+    chunk.notes.erase(std::remove_if(chunk.notes.begin(), chunk.notes.end(), [&](const auto& note) {
+        const auto chunkBar = std::clamp(static_cast<int>(std::floor(note.startBeat / beatsPerBar)),
+                                         0, std::max(0, static_cast<int>(chunk.lengthBeats / beatsPerBar) - 1));
+        const auto localBar = sectionBar + chunkBar;
+        if (!voicePresentInBar(plan, section, note.voice, localBar)) return true;
+
+        const auto beatInBar = note.startBeat - chunkBar * beatsPerBar;
+        const auto phraseBoundary = positiveModulo(localBar + 1, 8) == 0;
+        const auto breathLength = 0.38 + section.tension * 0.54;
+        const auto rhythmOrBass = isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
+                                  isVoiceInFamily(note.voice, VoiceFamily::Bass);
+        if (phraseBoundary && rhythmOrBass && beatInBar >= beatsPerBar - breathLength)
+            return true;
+        return false;
+    }), chunk.notes.end());
+
+    std::array<int, static_cast<std::size_t>(VoiceId::Count)> voiceOrdinals{};
+    for (auto& note : chunk.notes) {
+        const auto chunkBar = std::clamp(static_cast<int>(std::floor(note.startBeat / beatsPerBar)), 0, 15);
+        const auto absoluteBar = section.startBar + sectionBar + chunkBar;
+        const auto index = note.voice == VoiceId::Unspecified ? 0 : static_cast<std::size_t>(note.voice);
+        const auto noteOrdinal = index < voiceOrdinals.size() ? voiceOrdinals[index]++ : ordinal++;
+        const auto human = signedHumanValue(plan.seed, note.voice, absoluteBar, noteOrdinal);
+        const auto phrasePosition = positiveModulo(sectionBar + chunkBar, 8) / 7.0;
+        const auto arc = 0.91 + 0.10 * std::sin(phrasePosition * 3.14159265358979323846);
+        note.velocity = std::clamp(static_cast<int>(std::lround(note.velocity * arc + human * 5.0)), 1, 127);
+
+        auto maximumOffset = 0.0;
+        if (note.voice == VoiceId::HighPercussion) maximumOffset = 0.020;
+        else if (note.voice == VoiceId::LowPercussion) maximumOffset = 0.014;
+        else if (note.voice == VoiceId::HarmonicPulse || note.voice == VoiceId::MovementBass) maximumOffset = 0.010;
+        else if (isVoiceInFamily(note.voice, VoiceFamily::Melodic)) maximumOffset = 0.013;
+        if (note.voice != VoiceId::CoreDrums) {
+            const auto barStart = chunkBar * beatsPerBar;
+            note.startBeat = std::clamp(note.startBeat + human * maximumOffset,
+                                        barStart, barStart + beatsPerBar - 0.015);
+        }
+        if (isVoiceInFamily(note.voice, VoiceFamily::Melodic))
+            note.durationBeats = std::max(0.04, note.durationBeats * (0.94 + human * 0.05));
+    }
 }
 
 } // namespace
@@ -449,10 +540,12 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
             const auto finalChunkOfSection = sectionBar + chunkBars == section.bars;
             if (voiceIsActive(section, VoiceId::Transitions) && finalChunkOfSection) {
                 const auto transitionStart = std::max(0.0, chunkBars * plan.beatsPerBar - plan.beatsPerBar);
-                for (auto step = 0; step < 8; ++step)
-                    chunk.notes.push_back({transitionStart + step * plan.beatsPerBar / 8.0, 0.08,
-                        step < 4 ? 38 : 40, std::clamp(55 + step * 7, 1, 127), 10,
-                        VoiceId::Transitions});
+                chunk.notes.push_back({transitionStart, std::max(0.25, plan.beatsPerBar * 0.94),
+                    72, std::clamp(static_cast<int>(48 + section.tension * 48), 1, 127),
+                    voiceDefinition(VoiceId::Transitions).midiChannel, VoiceId::Transitions});
+                chunk.notes.push_back({chunkBars * plan.beatsPerBar - 0.24, 0.20, 84,
+                    std::clamp(static_cast<int>(62 + section.energy * 38), 1, 127),
+                    voiceDefinition(VoiceId::Transitions).midiChannel, VoiceId::Transitions});
                 chunk.controls.push_back({transitionStart, 74, 28, 9, VoiceId::Transitions});
                 chunk.controls.push_back({chunkBars * plan.beatsPerBar - 0.05, 74, 118, 9, VoiceId::Transitions});
             }
@@ -469,6 +562,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
             chunk.notes.erase(std::remove_if(chunk.notes.begin(), chunk.notes.end(), [&](const auto& note) {
                 return !voiceIsActive(section, note.voice);
             }), chunk.notes.end());
+            applyNaturalPhrasing(chunk, plan, section, sectionBar, plan.beatsPerBar);
 
             appendShifted(song, std::move(chunk), offset, song.lengthBeats);
             sectionBar += chunkBars;

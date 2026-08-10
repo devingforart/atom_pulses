@@ -312,6 +312,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "multiple complementary harmonic voices, independent bass functions, melodic dialogue, atmosphere and "
         "transitions when musically justified. Do not activate every voice in every section. Complexity must come "
         "from coordinated independence, negative space and long-range development, never indiscriminate density. "
+        "Treat active_voices as an available cast, not a command to play continuously: design implied entrances, "
+        "responses, withdrawals, breath before arrivals, tension plateaus and genuine low-density descents. "
         "Harmonic tension must follow the dramatic curve. minimum_pitch and maximum_pitch are MIDI pitches. The section "
         "bars MUST sum exactly to ") + juce::String(totalBars) + ". Use between 5 and 14 sections. Energy, tension "
         "and density are values from 0 to 1. Chord degrees use 0-6. Motif intervals are semitones relative to the "

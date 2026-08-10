@@ -23,9 +23,14 @@ antes de tocar la instalación anterior.
 6. Inicia el transporte.
 
 El sintetizador de `Preview` permite escuchar el patrón sin cargar otro instrumento.
-El selector junto a `PREVIEW AUDIO` ofrece cuatro drum racks: `DEEP CIRCUIT`, `ORGANIC
-ROOM`, `ANALOG PULSE` y `CINEMATIC`. Elige el carácter que permita juzgar mejor la idea;
-la selección se guarda en el Set y no modifica el MIDI.
+El selector junto a `PREVIEW AUDIO` ofrece `AUTO` y ocho mundos sonoros completos:
+`DEEP PROGRESSIVE`, `ORGANIC MOTION`, `ANALOG WARMTH`, `DUB SPACE`, `MINIMAL PULSE`,
+`HYPNOTIC NIGHT`, `CINEMATIC ARC` y `DARK CLUB`. No son sólo drum racks: cada opción
+reasigna el carácter de todas las voces y su espacio compartido. `AUTO` toma su decisión
+de la dirección creativa. La selección se guarda en el Set y no modifica el MIDI.
+El cambio tímbrico se oye sobre la composición actual; para obtener la nueva dramaturgia
+de silencios y respiraciones hay que pulsar `COMPOSE SONG` o `REGENERATE UNLOCKED`, ya
+que esas decisiones forman parte del MIDI y no del preset de escucha.
 El indicador distingue una composición GPT validada del motor local.
 La franja superior muestra la forma completa. Pulsa una sección para seleccionarla;
 después arrastra `SECTION` para convertirla en un clip MIDI independiente. `FULL SONG`

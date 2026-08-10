@@ -43,14 +43,14 @@ private:
     juce::TextButton regenerateButton{"REGENERATE UNLOCKED"};
     juce::TextButton undoButton{"UNDO"};
     juce::ToggleButton previewButton{"PREVIEW AUDIO"};
-    juce::ComboBox drumKit;
+    juce::ComboBox soundWorld;
     juce::ToggleButton thruButton{"MIDI THRU"};
     std::array<juce::ToggleButton, 4> lockButtons;
 
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
     using ChoiceAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     std::unique_ptr<ButtonAttachment> previewAttachment;
-    std::unique_ptr<ChoiceAttachment> drumKitAttachment;
+    std::unique_ptr<ChoiceAttachment> soundWorldAttachment;
     std::unique_ptr<ButtonAttachment> thruAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PulsoAudioProcessorEditor)

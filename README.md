@@ -14,12 +14,14 @@ Este repositorio contiene un MVP funcional para Ableton Live en Windows:
 - Un `CompositionPlan` global con motivo, contorno, secciones, función armónica y tensión.
 - Modo `IDEA` para frases y modo canción de 30 segundos a 30 minutos.
 - Arquitectura jerárquica con secciones, ADN temático, curva dramática y cadencia final.
+- Dramaturgia de presencia por frase: entradas tardías, diálogo, compases de respiración,
+  drops antes de fronteras y densidades que cambian sin perder el hilo temático.
 - Modos `Loop` y `Evolve`, con evolución gradual en cada vuelta de la frase.
 - Flujo sin perillas: describir, generar, bloquear capas, regenerar, avanzar y deshacer.
 - Variaciones reproducibles y estado persistente en el proyecto del DAW.
 - Motor de tiempo real: generación en worker, panic MIDI y recuperación de seek/loop.
-- Preescucha con cuatro drum racks sintetizados, polifonía rítmica reservada, ganancia
-  suavizada y limitador a -0.5 dBFS.
+- Preescucha multitimbral con ocho mundos sonoros, selección automática desde el prompt,
+  polifonía rítmica reservada, espacio estéreo y limitador a -0.5 dBFS.
 - Ayuda contextual en toda la interfaz: deja el cursor sobre cualquier elemento durante 0.35 s.
 - Salida MIDI para grabar o alimentar cualquier instrumento.
 - Arrastre directo de la canción, una sección, una familia o una voz individual como `.mid`.
@@ -100,9 +102,15 @@ abrir el plugin.
 La aplicación standalone permite probar la interfaz y el sintetizador de preescucha.
 Consulta [docs/ABLETON.md](docs/ABLETON.md) para el enrutamiento MIDI completo.
 
-El selector inferior ofrece `DEEP CIRCUIT`, `ORGANIC ROOM`, `ANALOG PULSE` y
-`CINEMATIC`. Son drum racks internos sin samples externos: cambian únicamente la
-monitorización y nunca alteran las notas ni el archivo MIDI exportado.
+El selector inferior ofrece `AUTO` y ocho mundos: `DEEP PROGRESSIVE`, `ORGANIC MOTION`,
+`ANALOG WARMTH`, `DUB SPACE`, `MINIMAL PULSE`, `HYPNOTIC NIGHT`, `CINEMATIC ARC` y
+`DARK CLUB`. Cada mundo cambia coordinadamente los instrumentos de las doce voces,
+drums, filtros, envolventes, estéreo, delay y espacio. `AUTO` interpreta la dirección
+creativa. La monitorización nunca altera las notas ni el MIDI exportado.
+
+Las paletas no son etiquetas sobre el mismo oscilador: alternan familias band-limited,
+FM, triángulos orgánicos, capas analógicas, texturas, saturación y articulaciones. Los
+osciladores PolyBLEP reducen el aliasing áspero asociado a previews tipo chiptune.
 
 También puedes arrastrar desde la franja inferior de la partitura: `FULL SONG` crea el
 archivo multitrack completo; `RHYTHM`, `BASS`, `HARMONY` y `LEADS+FX` crean familias independientes.
@@ -141,10 +149,11 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 
 ## Estado del producto
 
-La versión 0.6.1 integra un arquitecto GPT de forma larga, Structured Outputs, renderizado
+La versión 0.8 integra un arquitecto GPT de forma larga, Structured Outputs, renderizado
 jerárquico de hasta 512 compases, doce voces con entrada y salida dinámica, expresión
-CC, drum racks de preescucha, timeline de secciones, exportación por voz y fallback
-algorítmico. La red nunca se usa desde el callback de audio.
+CC, respiración coordinada por frase, preview multitimbral band-limited por mundos
+sonoros, timeline de secciones, exportación por voz y fallback algorítmico. La red nunca
+se usa desde el callback de audio.
 
 Lee [docs/ROADMAP.md](docs/ROADMAP.md) para las siguientes etapas y
 [docs/LICENSING.md](docs/LICENSING.md) antes de distribuir binarios.

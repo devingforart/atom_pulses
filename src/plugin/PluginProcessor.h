@@ -37,7 +37,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return true; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.1; }
+    double getTailLengthSeconds() const override { return 3.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -63,6 +63,7 @@ public:
     [[nodiscard]] juce::String currentIdeaTitle() const;
     [[nodiscard]] juce::String currentIdeaDescription() const;
     [[nodiscard]] juce::String currentCreativeDirection() const;
+    [[nodiscard]] juce::String currentPreviewWorldName() const;
     [[nodiscard]] int targetSongDurationSeconds() const noexcept {
         return songDurationSeconds.load(std::memory_order_relaxed);
     }
@@ -226,6 +227,7 @@ private:
     std::atomic<bool> generationInProgress{};
     std::atomic<float> generationProgress{};
     std::atomic<int> songDurationSeconds{};
+    std::atomic<int> automaticPreviewWorld{};
     std::atomic<std::uint8_t> lockedLayers{};
     std::atomic<std::uint64_t> compositionSeed{1};
     std::atomic<std::uint64_t> variationIndex{};

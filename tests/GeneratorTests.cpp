@@ -292,6 +292,33 @@ void runGeneratorTests() {
                 const auto& definition = voiceDefinition(note.voice);
                 return note.pitch >= definition.minimumPitch && note.pitch <= definition.maximumPitch;
             }), "Every pitched orchestration voice must remain inside its designed register");
+
+    std::vector<std::set<VoiceId>> voicesByBar(static_cast<std::size_t>(longPlan.totalBars));
+    std::vector<bool> leadByBar(static_cast<std::size_t>(longPlan.totalBars));
+    std::vector<bool> onsetByBar(static_cast<std::size_t>(longPlan.totalBars));
+    std::vector<bool> breathAtEnd(static_cast<std::size_t>(longPlan.totalBars), true);
+    for (const auto& note : longSong.notes) {
+        const auto bar = std::clamp(static_cast<int>(note.startBeat / longPlan.beatsPerBar),
+                                    0, longPlan.totalBars - 1);
+        voicesByBar[static_cast<std::size_t>(bar)].insert(note.voice);
+        onsetByBar[static_cast<std::size_t>(bar)] = true;
+        if (note.voice == VoiceId::Lead) leadByBar[static_cast<std::size_t>(bar)] = true;
+        const auto beatInBar = note.startBeat - bar * longPlan.beatsPerBar;
+        if (beatInBar >= longPlan.beatsPerBar - 0.38 &&
+            (isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
+             isVoiceInFamily(note.voice, VoiceFamily::Bass)))
+            breathAtEnd[static_cast<std::size_t>(bar)] = false;
+    }
+    std::set<std::size_t> orchestrationDensities;
+    for (const auto& voices : voicesByBar) orchestrationDensities.insert(voices.size());
+    require(orchestrationDensities.size() >= 5,
+            "A long-form song must breathe through several clearly different orchestration densities");
+    require(std::count(leadByBar.begin(), leadByBar.end(), false) > longPlan.totalBars / 3,
+            "The lead must leave substantial negative space instead of becoming an eternal arpeggio");
+    require(std::count(onsetByBar.begin(), onsetByBar.end(), false) >= longPlan.totalBars / 24,
+            "The dramatic arc must contain genuine bars of breath without new attacks");
+    require(std::count(breathAtEnd.begin(), breathAtEnd.end(), true) > longPlan.totalBars / 3,
+            "Rhythm and bass must create frequent phrase-end breathing windows");
     require(longFormComposer.render(longPlan, songFoundation).notes == longSong.notes,
             "The same long-form plan and DNA must render deterministically");
     const auto compactPlan = SongComposer::createLocalPlan(

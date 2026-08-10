@@ -4,22 +4,86 @@
 #include <cmath>
 
 namespace pulso::plugin {
+namespace {
+
+constexpr std::array<PreviewSynth::SoundWorld, 8> allWorlds{
+    PreviewSynth::SoundWorld::DeepProgressive, PreviewSynth::SoundWorld::OrganicMotion,
+    PreviewSynth::SoundWorld::AnalogWarmth, PreviewSynth::SoundWorld::DubSpace,
+    PreviewSynth::SoundWorld::MinimalPulse, PreviewSynth::SoundWorld::HypnoticNight,
+    PreviewSynth::SoundWorld::CinematicArc, PreviewSynth::SoundWorld::DarkClub
+};
+
+float sine(double phase) noexcept { return static_cast<float>(std::sin(phase)); }
+float triangle(double phase) noexcept {
+    return static_cast<float>(2.0 / juce::MathConstants<double>::pi * std::asin(std::sin(phase)));
+}
+float polyBlep(double phase, double phaseDelta) noexcept {
+    auto t = phase / juce::MathConstants<double>::twoPi;
+    t -= std::floor(t);
+    const auto dt = std::clamp(std::abs(phaseDelta) / juce::MathConstants<double>::twoPi, 1.0e-7, 0.49);
+    if (t < dt) {
+        const auto x = t / dt;
+        return static_cast<float>(x + x - x * x - 1.0);
+    }
+    if (t > 1.0 - dt) {
+        const auto x = (t - 1.0) / dt;
+        return static_cast<float>(x * x + x + x + 1.0);
+    }
+    return 0.0f;
+}
+
+float bandlimitedSaw(double phase, double phaseDelta) noexcept {
+    auto t = phase / juce::MathConstants<double>::twoPi;
+    t -= std::floor(t);
+    return static_cast<float>(2.0 * t - 1.0) - polyBlep(phase, phaseDelta);
+}
+
+float bandlimitedSquare(double phase, double phaseDelta) noexcept {
+    auto value = sine(phase) >= 0.0f ? 1.0f : -1.0f;
+    value += polyBlep(phase, phaseDelta);
+    value -= polyBlep(phase + juce::MathConstants<double>::pi, phaseDelta);
+    return value;
+}
+
+} // namespace
+
+const PreviewSynth::WorldProfile& PreviewSynth::profile() const noexcept {
+    static constexpr std::array profiles{
+        WorldProfile{0.48f, 0.76f, 0.46f, 0.28f, 1.05f, 0.56f, 1.00f}, // Deep Progressive
+        WorldProfile{0.62f, 0.88f, 0.36f, 0.12f, 0.82f, 0.72f, 0.82f}, // Organic Motion
+        WorldProfile{0.55f, 0.94f, 0.28f, 0.46f, 0.92f, 0.48f, 0.94f}, // Analog Warmth
+        WorldProfile{0.34f, 0.82f, 0.88f, 0.22f, 1.28f, 0.84f, 0.90f}, // Dub Space
+        WorldProfile{0.72f, 0.52f, 0.18f, 0.18f, 0.58f, 0.38f, 0.78f}, // Minimal Pulse
+        WorldProfile{0.42f, 0.68f, 0.62f, 0.32f, 1.16f, 0.76f, 0.96f}, // Hypnotic Night
+        WorldProfile{0.58f, 0.86f, 0.78f, 0.16f, 1.42f, 0.92f, 1.08f}, // Cinematic Arc
+        WorldProfile{0.70f, 0.50f, 0.32f, 0.58f, 0.72f, 0.52f, 1.18f}  // Dark Club
+    };
+    return profiles[std::clamp(static_cast<std::size_t>(soundWorld), std::size_t{}, profiles.size() - 1)];
+}
 
 void PreviewSynth::prepare(double newSampleRate) noexcept {
     sampleRate = std::max(1.0, newSampleRate);
-    attackDelta = 1.0f / static_cast<float>(sampleRate * 0.003);
-    releaseMultiplier = static_cast<float>(std::exp(std::log(0.0001) / (sampleRate * 0.030)));
+    delayLeft.assign(static_cast<std::size_t>(sampleRate * 2.0) + 1, 0.0f);
+    delayRight.assign(delayLeft.size(), 0.0f);
+    roomLeft.assign(static_cast<std::size_t>(sampleRate * 0.9) + 1, 0.0f);
+    roomRight.assign(roomLeft.size(), 0.0f);
     reset();
 }
 
 void PreviewSynth::reset() noexcept {
     drumVoices = {};
     tonalVoices = {};
+    std::fill(delayLeft.begin(), delayLeft.end(), 0.0f);
+    std::fill(delayRight.begin(), delayRight.end(), 0.0f);
+    std::fill(roomLeft.begin(), roomLeft.end(), 0.0f);
+    std::fill(roomRight.begin(), roomRight.end(), 0.0f);
+    delayWrite = 0;
+    roomWrite = 0;
     ageCounter = 0;
 }
 
-void PreviewSynth::setDrumKit(int kit) noexcept {
-    drumKit = static_cast<DrumKit>(std::clamp(kit, 0, static_cast<int>(DrumKit::Count) - 1));
+void PreviewSynth::setSoundWorld(int world) noexcept {
+    soundWorld = allWorlds[std::clamp(world, 0, static_cast<int>(allWorlds.size()) - 1)];
 }
 
 void PreviewSynth::allNotesOff(int midiChannel, bool allowTailOff) noexcept {
@@ -47,68 +111,147 @@ PreviewSynth::Voice* PreviewSynth::selectVoice(bool drum) noexcept {
     return drum ? select(drumVoices) : select(tonalVoices);
 }
 
+PreviewSynth::VoiceKind PreviewSynth::kindForChannel(int channel) const noexcept {
+    switch (channel) {
+        case 1: return VoiceKind::SubBass;
+        case 2: return VoiceKind::Lead;
+        case 3: return VoiceKind::Foundation;
+        case 4: return VoiceKind::Pulse;
+        case 5: return VoiceKind::Upper;
+        case 6: return VoiceKind::MovementBass;
+        case 7: return VoiceKind::Counter;
+        case 8: return VoiceKind::Atmosphere;
+        case 9: return VoiceKind::Transition;
+        default: return VoiceKind::Lead;
+    }
+}
+
 void PreviewSynth::noteOn(int channel, int note, float velocity) noexcept {
     if (channel == 10) {
         drumNoteOn(note, velocity);
         return;
     }
-    auto* selected = selectVoice(false);
-    *selected = {};
-    selected->active = true;
-    selected->channel = std::clamp(channel, 1, 16);
-    selected->note = std::clamp(note, 0, 127);
-    selected->level = std::clamp(velocity, 0.0f, 1.0f) * 0.10f;
-    selected->age = ++ageCounter;
-    selected->kind = VoiceKind::Tonal;
-    selected->pan = std::clamp((static_cast<float>(channel) - 8.0f) * 0.055f, -0.38f, 0.38f);
-    selected->phaseDelta = juce::MathConstants<double>::twoPi *
-                           juce::MidiMessage::getMidiNoteInHertz(selected->note) / sampleRate;
+
+    auto* voice = selectVoice(false);
+    *voice = {};
+    voice->active = true;
+    voice->channel = std::clamp(channel, 1, 16);
+    voice->note = std::clamp(note, 0, 127);
+    voice->level = std::clamp(velocity, 0.0f, 1.0f) * 0.095f;
+    voice->age = ++ageCounter;
+    voice->kind = kindForChannel(voice->channel);
+    voice->noiseState = 0x85ebca6bu ^ static_cast<std::uint32_t>(voice->note * 2246822519u) ^
+                        static_cast<std::uint32_t>(voice->age);
+    const auto& world = profile();
+    voice->pan = std::clamp((static_cast<float>(voice->channel) - 5.0f) * 0.09f * world.stereo,
+                            -0.58f, 0.58f);
+    auto cutoff = 1800.0f + world.brightness * 5600.0f;
+
+    switch (voice->kind) {
+        case VoiceKind::SubBass:
+            voice->attackSeconds = 0.008f; voice->decaySeconds = 0.18f; voice->sustain = 0.92f;
+            voice->releaseSeconds = 0.12f; voice->level *= 1.32f; cutoff = 120.0f + world.brightness * 260.0f; break;
+        case VoiceKind::MovementBass:
+            voice->attackSeconds = 0.004f; voice->decaySeconds = 0.24f; voice->sustain = 0.52f;
+            voice->releaseSeconds = 0.10f; voice->level *= 1.12f; cutoff = 520.0f + world.brightness * 1500.0f; break;
+        case VoiceKind::Foundation:
+            voice->attackSeconds = 0.10f + world.space * 0.24f; voice->decaySeconds = 0.55f;
+            voice->sustain = 0.78f; voice->releaseSeconds = 0.48f + world.space * 0.72f;
+            voice->level *= 0.78f; cutoff = 700.0f + world.brightness * 2100.0f; break;
+        case VoiceKind::Pulse:
+            voice->attackSeconds = 0.002f; voice->decaySeconds = 0.16f + world.decay * 0.18f;
+            voice->sustain = 0.20f; voice->releaseSeconds = 0.12f; cutoff = 1300.0f + world.brightness * 4200.0f; break;
+        case VoiceKind::Upper:
+            voice->attackSeconds = 0.006f; voice->decaySeconds = 0.62f;
+            voice->sustain = 0.28f; voice->releaseSeconds = 0.55f; voice->level *= 0.72f;
+            cutoff = 2600.0f + world.brightness * 6800.0f; break;
+        case VoiceKind::Lead:
+            voice->attackSeconds = 0.018f; voice->decaySeconds = 0.30f;
+            voice->sustain = 0.68f; voice->releaseSeconds = 0.26f; cutoff = 1500.0f + world.brightness * 4800.0f; break;
+        case VoiceKind::Counter:
+            voice->attackSeconds = 0.035f; voice->decaySeconds = 0.42f;
+            voice->sustain = 0.58f; voice->releaseSeconds = 0.38f; voice->level *= 0.76f;
+            cutoff = 1100.0f + world.brightness * 3600.0f; break;
+        case VoiceKind::Atmosphere:
+            voice->attackSeconds = 0.34f + world.space * 0.55f; voice->decaySeconds = 0.75f;
+            voice->sustain = 0.72f; voice->releaseSeconds = 1.1f + world.space;
+            voice->level *= 0.48f; cutoff = 420.0f + world.brightness * 1900.0f; break;
+        case VoiceKind::Transition:
+            voice->attackSeconds = 0.08f; voice->decaySeconds = 0.65f;
+            voice->sustain = 0.42f; voice->releaseSeconds = 0.85f; voice->level *= 0.58f;
+            cutoff = 900.0f + world.brightness * 6200.0f; break;
+        default: break;
+    }
+
+    switch (soundWorld) {
+        case SoundWorld::OrganicMotion:
+            voice->attackSeconds *= 0.78f; voice->releaseSeconds *= 0.72f; cutoff *= 0.82f; break;
+        case SoundWorld::AnalogWarmth:
+            cutoff *= 0.88f; voice->decaySeconds *= 1.12f; break;
+        case SoundWorld::DubSpace:
+            cutoff *= 0.58f; voice->releaseSeconds *= 1.65f; voice->sustain *= 0.90f; break;
+        case SoundWorld::MinimalPulse:
+            voice->attackSeconds *= 0.45f; voice->decaySeconds *= 0.52f;
+            voice->releaseSeconds *= 0.46f; voice->sustain *= 0.72f; cutoff *= 1.22f; break;
+        case SoundWorld::HypnoticNight:
+            cutoff *= 0.72f; voice->releaseSeconds *= 1.28f; break;
+        case SoundWorld::CinematicArc:
+            voice->attackSeconds *= 1.55f; voice->releaseSeconds *= 1.85f;
+            voice->decaySeconds *= 1.40f; cutoff *= 0.76f; break;
+        case SoundWorld::DarkClub:
+            voice->attackSeconds *= 0.56f; voice->releaseSeconds *= 0.62f; cutoff *= 1.32f; break;
+        case SoundWorld::DeepProgressive: break;
+        default: break;
+    }
+
+    const auto frequency = juce::MidiMessage::getMidiNoteInHertz(voice->note);
+    voice->phaseDelta = juce::MathConstants<double>::twoPi * frequency / sampleRate;
+    voice->filterAlpha = std::clamp(1.0f - std::exp(-juce::MathConstants<float>::twoPi * cutoff /
+                                                    static_cast<float>(sampleRate)), 0.001f, 1.0f);
 }
 
 void PreviewSynth::drumNoteOn(int note, float velocity) noexcept {
-    auto* selected = selectVoice(true);
-    *selected = {};
-    selected->active = true;
-    selected->channel = 10;
-    selected->note = std::clamp(note, 0, 127);
-    selected->level = std::clamp(velocity, 0.0f, 1.0f);
-    selected->envelope = 1.0f;
-    selected->age = ++ageCounter;
-    selected->noiseState = 0x9e3779b9u ^ (static_cast<std::uint32_t>(note) * 2654435761u) ^
-                           static_cast<std::uint32_t>(selected->age);
+    auto* voice = selectVoice(true);
+    *voice = {};
+    voice->active = true;
+    voice->oneShot = true;
+    voice->channel = 10;
+    voice->note = std::clamp(note, 0, 127);
+    voice->level = std::clamp(velocity, 0.0f, 1.0f) * profile().drumWeight;
+    voice->envelope = 1.0f;
+    voice->age = ++ageCounter;
+    voice->noiseState = 0x9e3779b9u ^ (static_cast<std::uint32_t>(note) * 2654435761u) ^
+                        static_cast<std::uint32_t>(voice->age);
 
-    if (note == 35 || note == 36) selected->kind = VoiceKind::Kick;
-    else if (note == 38 || note == 40) selected->kind = VoiceKind::Snare;
-    else if (note == 37 || note == 39) selected->kind = VoiceKind::Clap;
-    else if (note == 42 || note == 44) selected->kind = VoiceKind::ClosedHat;
-    else if (note == 46) selected->kind = VoiceKind::OpenHat;
-    else if (note == 49 || note == 51 || note == 52 || note == 55 || note == 57)
-        selected->kind = VoiceKind::Cymbal;
+    if (note == 35 || note == 36) voice->kind = VoiceKind::Kick;
+    else if (note == 38 || note == 40) voice->kind = VoiceKind::Snare;
+    else if (note == 37 || note == 39) voice->kind = VoiceKind::Clap;
+    else if (note == 42 || note == 44) voice->kind = VoiceKind::ClosedHat;
+    else if (note == 46) voice->kind = VoiceKind::OpenHat;
+    else if (note == 49 || note == 51 || note == 52 || note == 55 || note == 57) voice->kind = VoiceKind::Cymbal;
     else if (note == 41 || note == 43 || note == 45 || note == 47 || note == 48 || note == 50)
-        selected->kind = VoiceKind::LowPercussion;
-    else selected->kind = VoiceKind::HighPercussion;
+        voice->kind = VoiceKind::LowPercussion;
+    else voice->kind = VoiceKind::HighPercussion;
 
-    constexpr std::array kickTune{48.0f, 54.0f, 51.0f, 43.0f};
-    constexpr std::array kitDecay{1.0f, 0.82f, 0.62f, 1.35f};
-    constexpr std::array kitTone{0.38f, 0.62f, 0.78f, 0.48f};
-    const auto kit = static_cast<std::size_t>(drumKit);
-    selected->tone = kitTone[kit];
-    selected->pan = selected->kind == VoiceKind::Kick ? 0.0f :
-        std::clamp((static_cast<float>((note * 7) % 17) - 8.0f) * 0.055f, -0.44f, 0.44f);
-
-    auto frequency = 180.0f + static_cast<float>(note - 35) * 8.0f;
-    switch (selected->kind) {
-        case VoiceKind::Kick: frequency = kickTune[kit]; selected->decaySeconds = 0.42f * kitDecay[kit]; break;
-        case VoiceKind::Snare: frequency = 185.0f; selected->decaySeconds = 0.24f * kitDecay[kit]; break;
-        case VoiceKind::Clap: frequency = 720.0f; selected->decaySeconds = 0.18f * kitDecay[kit]; break;
-        case VoiceKind::ClosedHat: frequency = 6300.0f; selected->decaySeconds = 0.065f * kitDecay[kit]; break;
-        case VoiceKind::OpenHat: frequency = 5700.0f; selected->decaySeconds = 0.34f * kitDecay[kit]; break;
-        case VoiceKind::Cymbal: frequency = 4100.0f; selected->decaySeconds = 0.72f * kitDecay[kit]; break;
-        case VoiceKind::LowPercussion: selected->decaySeconds = 0.25f * kitDecay[kit]; break;
-        case VoiceKind::HighPercussion: frequency += 700.0f; selected->decaySeconds = 0.12f * kitDecay[kit]; break;
-        case VoiceKind::Tonal: break;
+    const auto& world = profile();
+    voice->tone = world.brightness;
+    voice->pan = voice->kind == VoiceKind::Kick ? 0.0f :
+        std::clamp((static_cast<float>((note * 7) % 17) - 8.0f) * 0.055f * world.stereo, -0.52f, 0.52f);
+    auto frequency = 175.0f + static_cast<float>(note - 35) * 8.0f;
+    switch (voice->kind) {
+        case VoiceKind::Kick:
+            frequency = 42.0f + world.warmth * 14.0f; voice->decaySeconds = 0.24f + world.decay * 0.22f; break;
+        case VoiceKind::Snare:
+            frequency = 165.0f + world.brightness * 55.0f; voice->decaySeconds = 0.14f + world.decay * 0.11f; break;
+        case VoiceKind::Clap: frequency = 720.0f; voice->decaySeconds = 0.12f + world.space * 0.11f; break;
+        case VoiceKind::ClosedHat: frequency = 6100.0f; voice->decaySeconds = 0.038f + world.decay * 0.034f; break;
+        case VoiceKind::OpenHat: frequency = 5500.0f; voice->decaySeconds = 0.18f + world.decay * 0.20f; break;
+        case VoiceKind::Cymbal: frequency = 3900.0f; voice->decaySeconds = 0.42f + world.decay * 0.42f; break;
+        case VoiceKind::LowPercussion: voice->decaySeconds = 0.16f + world.decay * 0.12f; break;
+        case VoiceKind::HighPercussion: frequency += 700.0f; voice->decaySeconds = 0.07f + world.decay * 0.07f; break;
+        default: break;
     }
-    selected->phaseDelta = juce::MathConstants<double>::twoPi * frequency / sampleRate;
+    voice->phaseDelta = juce::MathConstants<double>::twoPi * frequency / sampleRate;
 }
 
 void PreviewSynth::noteOff(int channel, int note, bool allowTailOff) noexcept {
@@ -127,63 +270,130 @@ void PreviewSynth::handleMessage(const juce::MidiMessage& message) noexcept {
     else if (message.isAllSoundOff()) allNotesOff(message.getChannel(), false);
 }
 
-float PreviewSynth::renderDrumSample(Voice& voice) noexcept {
+float PreviewSynth::nextNoise(Voice& voice) noexcept {
     voice.noiseState = voice.noiseState * 1664525u + 1013904223u;
-    const auto noise = static_cast<float>((voice.noiseState >> 8) & 0x00ffffffu) /
-                       static_cast<float>(0x00800000u) - 1.0f;
+    return static_cast<float>((voice.noiseState >> 8) & 0x00ffffffu) /
+           static_cast<float>(0x00800000u) - 1.0f;
+}
+
+float PreviewSynth::renderDrumSample(Voice& voice) noexcept {
+    const auto noise = nextNoise(voice);
     const auto highNoise = noise - voice.previousNoise * 0.82f;
     voice.previousNoise = noise;
     const auto t = static_cast<float>(voice.ageSeconds);
-    const auto body = static_cast<float>(std::sin(voice.phase));
+    const auto body = sine(voice.phase);
     auto sample = 0.0f;
-
     switch (voice.kind) {
         case VoiceKind::Kick: {
             const auto sweep = std::exp(-t * 34.0f);
-            voice.phase += voice.phaseDelta * (1.0 + 4.5 * sweep);
-            sample = body * (0.94f - voice.tone * 0.12f) + highNoise * sweep * 0.18f;
+            voice.phase += voice.phaseDelta * (1.0 + 4.8 * sweep);
+            sample = body * 0.90f + highNoise * sweep * (0.10f + voice.tone * 0.10f);
             break;
         }
         case VoiceKind::Snare:
             voice.phase += voice.phaseDelta;
-            sample = noise * (0.66f + voice.tone * 0.22f) + body * (0.34f - voice.tone * 0.12f);
-            break;
+            sample = noise * (0.58f + voice.tone * 0.28f) + body * (0.34f - voice.tone * 0.10f); break;
         case VoiceKind::Clap: {
             voice.phase += voice.phaseDelta;
-            const auto burst = std::fmod(t * 28.0f, 1.0f) < 0.32f || t > 0.095f ? 1.0f : 0.18f;
-            sample = highNoise * burst * 0.82f + body * 0.08f;
-            break;
+            const auto burst = std::fmod(t * 31.0f, 1.0f) < 0.30f || t > 0.09f ? 1.0f : 0.12f;
+            sample = highNoise * burst * 0.86f + body * 0.06f; break;
         }
         case VoiceKind::ClosedHat:
         case VoiceKind::OpenHat:
-            voice.phase += voice.phaseDelta;
-            voice.secondaryPhase += voice.phaseDelta * 1.41421356;
-            sample = highNoise * 0.58f +
-                     static_cast<float>(std::sin(voice.phase) * std::sin(voice.secondaryPhase)) * 0.42f;
-            break;
+            voice.phase += voice.phaseDelta; voice.secondaryPhase += voice.phaseDelta * 1.41421356;
+            sample = highNoise * 0.58f + sine(voice.phase) * sine(voice.secondaryPhase) * 0.42f; break;
         case VoiceKind::LowPercussion: {
             const auto sweep = std::exp(-t * 18.0f);
             voice.phase += voice.phaseDelta * (1.0 + 0.9 * sweep);
-            sample = body * 0.84f + noise * 0.16f;
-            break;
+            sample = body * 0.84f + noise * 0.16f; break;
         }
         case VoiceKind::HighPercussion:
-            voice.phase += voice.phaseDelta;
-            sample = body * 0.38f + highNoise * 0.62f;
-            break;
+            voice.phase += voice.phaseDelta; sample = body * 0.32f + highNoise * 0.68f; break;
         case VoiceKind::Cymbal:
-            voice.phase += voice.phaseDelta;
-            voice.secondaryPhase += voice.phaseDelta * 1.6180339;
-            sample = highNoise * 0.62f +
-                     static_cast<float>(std::sin(voice.phase) + std::sin(voice.secondaryPhase)) * 0.19f;
-            break;
-        case VoiceKind::Tonal: break;
+            voice.phase += voice.phaseDelta; voice.secondaryPhase += voice.phaseDelta * 1.6180339;
+            sample = highNoise * 0.64f + (sine(voice.phase) + sine(voice.secondaryPhase)) * 0.18f; break;
+        default: break;
     }
-    if (voice.phase >= juce::MathConstants<double>::twoPi)
-        voice.phase = std::fmod(voice.phase, juce::MathConstants<double>::twoPi);
-    if (voice.secondaryPhase >= juce::MathConstants<double>::twoPi)
-        voice.secondaryPhase = std::fmod(voice.secondaryPhase, juce::MathConstants<double>::twoPi);
+    switch (soundWorld) {
+        case SoundWorld::OrganicMotion: sample = sample * 0.78f + noise * 0.10f; break;
+        case SoundWorld::AnalogWarmth: sample = std::tanh(sample * 1.55f) * 0.82f; break;
+        case SoundWorld::DubSpace: sample = sample * 0.60f + body * 0.28f; break;
+        case SoundWorld::MinimalPulse: sample *= 0.72f; break;
+        case SoundWorld::HypnoticNight:
+            sample = sample * 0.72f + sine(voice.secondaryPhase * 0.73) * voice.envelope * 0.11f; break;
+        case SoundWorld::CinematicArc: sample = sample * 0.78f + noise * 0.16f; break;
+        case SoundWorld::DarkClub: sample = std::tanh(sample * 2.55f) * 0.76f; break;
+        case SoundWorld::DeepProgressive: break;
+        default: break;
+    }
     return sample;
+}
+
+float PreviewSynth::renderVoiceSample(Voice& voice) noexcept {
+    const auto& world = profile();
+    const auto s1 = sine(voice.phase);
+    const auto s2 = sine(voice.secondaryPhase);
+    const auto tri1 = triangle(voice.phase);
+    const auto tri2 = triangle(voice.secondaryPhase);
+    const auto saw1 = bandlimitedSaw(voice.phase, voice.phaseDelta);
+    const auto saw2 = bandlimitedSaw(voice.secondaryPhase, voice.phaseDelta * 2.002);
+    const auto square1 = bandlimitedSquare(voice.phase, voice.phaseDelta);
+    const auto noise = nextNoise(voice);
+    auto colourA = s1;
+    auto colourB = tri2;
+    switch (soundWorld) {
+        case SoundWorld::DeepProgressive:
+            colourA = s1 * 0.62f + saw1 * 0.38f; colourB = tri2; break;
+        case SoundWorld::OrganicMotion:
+            colourA = tri1 * 0.72f + s1 * 0.28f; colourB = tri2 * 0.82f + noise * 0.10f; break;
+        case SoundWorld::AnalogWarmth:
+            colourA = saw1 * 0.66f + square1 * 0.22f + s1 * 0.12f;
+            colourB = saw2 * 0.70f + s2 * 0.30f; break;
+        case SoundWorld::DubSpace:
+            colourA = s1 * 0.82f + tri1 * 0.18f; colourB = s2 * 0.72f + tri2 * 0.28f; break;
+        case SoundWorld::MinimalPulse:
+            colourA = square1 * 0.52f + s1 * 0.48f; colourB = saw2 * 0.56f + s2 * 0.44f; break;
+        case SoundWorld::HypnoticNight:
+            colourA = sine(voice.phase + s2 * 2.35f); colourB = sine(voice.secondaryPhase + s1 * 1.28f); break;
+        case SoundWorld::CinematicArc:
+            colourA = tri1 * 0.48f + s1 * 0.42f + noise * 0.10f;
+            colourB = tri2 * 0.52f + s2 * 0.48f; break;
+        case SoundWorld::DarkClub:
+            colourA = std::tanh(saw1 * 2.4f); colourB = square1 * 0.48f + saw2 * 0.52f; break;
+        default: break;
+    }
+    auto raw = 0.0f;
+    switch (voice.kind) {
+        case VoiceKind::SubBass: raw = s1 * 0.76f + colourA * 0.24f; break;
+        case VoiceKind::MovementBass: raw = colourA * 0.70f + colourB * 0.30f; break;
+        case VoiceKind::Foundation: raw = colourA * 0.44f + colourB * 0.41f + s1 * 0.15f; break;
+        case VoiceKind::Pulse: raw = colourA * 0.68f + colourB * 0.32f; break;
+        case VoiceKind::Upper:
+            raw = sine(voice.phase + colourB * (1.0f + world.brightness * 2.2f)) * 0.72f + colourB * 0.28f; break;
+        case VoiceKind::Lead: raw = colourA * 0.62f + colourB * 0.24f + s1 * 0.14f; break;
+        case VoiceKind::Counter: raw = tri1 * 0.42f + colourB * 0.42f + s1 * 0.16f; break;
+        case VoiceKind::Atmosphere: raw = (colourA + colourB) * 0.36f + noise * 0.20f; break;
+        case VoiceKind::Transition: {
+            raw = (noise - voice.previousNoise * 0.72f) * 0.72f + s1 * 0.18f;
+            voice.previousNoise = noise; break;
+        }
+        default: return renderDrumSample(voice);
+    }
+
+    voice.filterLeft += voice.filterAlpha * (raw - voice.filterLeft);
+    raw = voice.filterLeft;
+    const auto drive = 1.0f + world.drive * 3.5f;
+    raw = std::tanh(raw * drive) / std::tanh(drive);
+    auto driftAmount = 0.0;
+    if (soundWorld == SoundWorld::OrganicMotion) driftAmount = 0.00055;
+    else if (soundWorld == SoundWorld::AnalogWarmth) driftAmount = 0.00115;
+    else if (soundWorld == SoundWorld::CinematicArc) driftAmount = 0.00072;
+    const auto drift = 1.0 + driftAmount * std::sin(voice.ageSeconds * 1.7 + voice.note * 0.37);
+    voice.phase += voice.phaseDelta * drift;
+    const auto detune = voice.kind == VoiceKind::Foundation || voice.kind == VoiceKind::Atmosphere ?
+        1.0035 + world.stereo * 0.003 : 2.002;
+    voice.secondaryPhase += voice.phaseDelta * detune / drift;
+    return raw;
 }
 
 void PreviewSynth::renderVoices(juce::AudioBuffer<float>& output, int startSample,
@@ -193,45 +403,82 @@ void PreviewSynth::renderVoices(juce::AudioBuffer<float>& output, int startSampl
         for (auto& voice : voices) {
             if (!voice.active) continue;
             for (auto sample = startSample; sample < endSample; ++sample) {
-                float value{};
-                if (voice.kind != VoiceKind::Tonal) {
+                if (voice.oneShot) {
                     voice.envelope = std::exp(-static_cast<float>(voice.ageSeconds) /
                                               std::max(0.015f, voice.decaySeconds));
-                    if (voice.envelope < 0.0003f || voice.releasing) {
-                        voice = {};
-                        break;
-                    }
-                    value = renderDrumSample(voice) * voice.level * voice.envelope * 0.32f;
-                    voice.ageSeconds += 1.0 / sampleRate;
+                } else if (voice.releasing) {
+                    voice.envelope *= std::exp(-1.0f / (std::max(0.015f, voice.releaseSeconds) *
+                                                       static_cast<float>(sampleRate)));
+                } else if (voice.ageSeconds < voice.attackSeconds) {
+                    voice.envelope = static_cast<float>(voice.ageSeconds) / std::max(0.001f, voice.attackSeconds);
                 } else {
-                    if (voice.releasing) {
-                        voice.envelope *= releaseMultiplier;
-                        if (voice.envelope < 0.0001f) {
-                            voice = {};
-                            break;
-                        }
-                    } else {
-                        voice.envelope = std::min(1.0f, voice.envelope + attackDelta);
-                    }
-                    const auto fundamental = static_cast<float>(std::sin(voice.phase));
-                    const auto harmonic = static_cast<float>(std::sin(voice.phase * 2.0)) * 0.16f;
-                    value = (fundamental + harmonic) * voice.level * voice.envelope;
-                    voice.phase += voice.phaseDelta;
+                    voice.envelope = voice.sustain + (1.0f - voice.sustain) *
+                        std::exp(-(static_cast<float>(voice.ageSeconds) - voice.attackSeconds) /
+                                 std::max(0.015f, voice.decaySeconds));
+                }
+                if (voice.envelope < 0.00025f && (voice.oneShot || voice.releasing)) {
+                    voice = {};
+                    break;
                 }
 
-                const auto left = value * (voice.pan > 0.0f ? 1.0f - voice.pan * 0.55f : 1.0f);
-                const auto right = value * (voice.pan < 0.0f ? 1.0f + voice.pan * 0.55f : 1.0f);
+                const auto raw = voice.oneShot ? renderDrumSample(voice) : renderVoiceSample(voice);
+                const auto level = voice.oneShot ? 0.30f : 1.0f;
+                const auto value = raw * voice.level * voice.envelope * level;
+                const auto left = value * (voice.pan > 0.0f ? 1.0f - voice.pan * 0.62f : 1.0f);
+                const auto right = value * (voice.pan < 0.0f ? 1.0f + voice.pan * 0.62f : 1.0f);
                 if (output.getNumChannels() > 0) output.addSample(0, sample, left);
                 if (output.getNumChannels() > 1) output.addSample(1, sample, right);
                 for (auto channel = 2; channel < output.getNumChannels(); ++channel)
                     output.addSample(channel, sample, value);
+                voice.ageSeconds += 1.0 / sampleRate;
                 if (voice.phase >= juce::MathConstants<double>::twoPi)
-                    voice.phase -= juce::MathConstants<double>::twoPi;
+                    voice.phase = std::fmod(voice.phase, juce::MathConstants<double>::twoPi);
+                if (voice.secondaryPhase >= juce::MathConstants<double>::twoPi)
+                    voice.secondaryPhase = std::fmod(voice.secondaryPhase, juce::MathConstants<double>::twoPi);
             }
         }
     };
     renderBank(drumVoices);
     renderBank(tonalVoices);
+}
+
+void PreviewSynth::processEffects(juce::AudioBuffer<float>& output, int startSample,
+                                  int numSamples) noexcept {
+    if (output.getNumChannels() < 1 || delayLeft.empty() || roomLeft.empty()) return;
+    const auto& world = profile();
+    const auto delaySeconds = 0.19f + world.space * 0.31f;
+    const auto delaySamples = std::clamp(static_cast<std::size_t>(sampleRate * delaySeconds),
+                                         std::size_t{1}, delayLeft.size() - 1);
+    const auto roomSamplesL = std::clamp(static_cast<std::size_t>(sampleRate * (0.113f + world.space * 0.079f)),
+                                         std::size_t{1}, roomLeft.size() - 1);
+    const auto roomSamplesR = std::clamp(static_cast<std::size_t>(sampleRate * (0.149f + world.space * 0.091f)),
+                                         std::size_t{1}, roomRight.size() - 1);
+    const auto wetDelay = world.space * 0.24f;
+    const auto wetRoom = world.space * 0.30f;
+    const auto delayFeedback = 0.18f + world.space * 0.34f;
+    const auto roomFeedback = 0.36f + world.space * 0.36f;
+
+    for (auto sample = startSample; sample < startSample + numSamples; ++sample) {
+        const auto dryL = output.getSample(0, sample);
+        const auto dryR = output.getNumChannels() > 1 ? output.getSample(1, sample) : dryL;
+        const auto delayRead = (delayWrite + delayLeft.size() - delaySamples) % delayLeft.size();
+        const auto roomReadL = (roomWrite + roomLeft.size() - roomSamplesL) % roomLeft.size();
+        const auto roomReadR = (roomWrite + roomRight.size() - roomSamplesR) % roomRight.size();
+        const auto echoL = delayLeft[delayRead];
+        const auto echoR = delayRight[delayRead];
+        const auto roomL = roomLeft[roomReadL];
+        const auto roomR = roomRight[roomReadR];
+
+        delayLeft[delayWrite] = dryL + echoR * delayFeedback;
+        delayRight[delayWrite] = dryR + echoL * delayFeedback;
+        roomLeft[roomWrite] = dryL * 0.72f + roomR * roomFeedback;
+        roomRight[roomWrite] = dryR * 0.72f + roomL * roomFeedback;
+        output.setSample(0, sample, dryL + echoL * wetDelay + roomL * wetRoom);
+        if (output.getNumChannels() > 1)
+            output.setSample(1, sample, dryR + echoR * wetDelay + roomR * wetRoom);
+        delayWrite = (delayWrite + 1) % delayLeft.size();
+        roomWrite = (roomWrite + 1) % roomLeft.size();
+    }
 }
 
 void PreviewSynth::renderNextBlock(juce::AudioBuffer<float>& output, const juce::MidiBuffer& midi,
@@ -245,6 +492,7 @@ void PreviewSynth::renderNextBlock(juce::AudioBuffer<float>& output, const juce:
         cursor = eventSample;
     }
     if (cursor < blockEnd) renderVoices(output, cursor, blockEnd - cursor);
+    processEffects(output, startSample, numSamples);
 }
 
 } // namespace pulso::plugin

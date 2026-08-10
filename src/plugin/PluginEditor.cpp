@@ -87,8 +87,10 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     regenerateButton.onClick = [this] { processor.requestRegenerateUnlocked(); };
     undoButton.onClick = [this] { processor.requestUndo(); };
 
-    drumKit.addItemList({"DEEP CIRCUIT", "ORGANIC ROOM", "ANALOG PULSE", "CINEMATIC"}, 1);
-    drumKit.setJustificationType(juce::Justification::centred);
+    soundWorld.addItemList({"AUTO · DEEP PROGRESSIVE", "DEEP PROGRESSIVE", "ORGANIC MOTION",
+                            "ANALOG WARMTH", "DUB SPACE", "MINIMAL PULSE", "HYPNOTIC NIGHT",
+                            "CINEMATIC ARC", "DARK CLUB"}, 1);
+    soundWorld.setJustificationType(juce::Justification::centred);
 
     configureLock(lockButtons[0], PulsoAudioProcessor::Layer::Harmony,
                   "HARMONY + FX · Preserve foundation, pulses, upper harmony, atmosphere and transitions while other families change.");
@@ -103,8 +105,8 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     nextButton.setTooltip("Create the next idea. Locked layers remain note-for-note identical; unlocked layers are recomposed.");
     regenerateButton.setTooltip("Recompose only unlocked layers around everything you decided to keep.");
     undoButton.setTooltip("Restore the complete previous idea. Press again to toggle back.");
-    previewButton.setTooltip("Enable the internal reference ensemble and selected drum rack. MIDI export and output are unaffected.");
-    drumKit.setTooltip("Select the preview drum rack. DEEP emphasizes sub weight; ORGANIC uses shorter room-like percussion; ANALOG is tight and electronic; CINEMATIC has longer, darker decays. This changes only monitoring, never the MIDI.");
+    previewButton.setTooltip("Enable the multitimbral reference ensemble and selected sound world. MIDI export and output are unaffected.");
+    soundWorld.setTooltip("Choose a complete preview sound world for all twelve voices. AUTO reads the creative direction; manual choices audition the same MIDI through different instruments, drums, space and colour. Monitoring changes, composition does not.");
     thruButton.setTooltip("Also pass incoming MIDI to the output alongside PULSO's composition.");
     prompt.setTooltip("Describe mood, movement, instrumentation or narrative in natural language. Leave empty for an autonomous idea.");
     promptLabel.setTooltip(prompt.getTooltip());
@@ -121,14 +123,14 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     for (auto* component : std::array<juce::Component*, 22>{
              &title, &subtitle, &status, &aiBadge, &promptLabel, &durationLabel, &prompt, &duration, &ideaTitle,
              &ideaDescription, &generateButton, &nextButton, &regenerateButton, &undoButton,
-             &previewButton, &drumKit, &thruButton, &lockButtons[0], &lockButtons[1], &lockButtons[2],
+             &previewButton, &soundWorld, &thruButton, &lockButtons[0], &lockButtons[1], &lockButtons[2],
              &lockButtons[3], &patternView})
         addAndMakeVisible(component);
 
     addChildComponent(compositionProgress);
 
     previewAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "preview", previewButton);
-    drumKitAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "previewKit", drumKit);
+    soundWorldAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "previewWorld", soundWorld);
     thruAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "thru", thruButton);
     startTimerHz(20);
 }
@@ -189,7 +191,7 @@ void PulsoAudioProcessorEditor::resized() {
     auto actions = area;
     previewButton.setBounds(actions.removeFromLeft(130));
     actions.removeFromLeft(8);
-    drumKit.setBounds(actions.removeFromLeft(150));
+    soundWorld.setBounds(actions.removeFromLeft(170));
     actions.removeFromLeft(8);
     thruButton.setBounds(actions.removeFromLeft(110));
     undoButton.setBounds(actions.removeFromRight(90));
@@ -213,6 +215,7 @@ void PulsoAudioProcessorEditor::timerCallback() {
     for (auto& button : lockButtons) button.setEnabled(!composing);
 
     aiBadge.setText(processor.currentAiStatus(), juce::dontSendNotification);
+    soundWorld.changeItemText(1, "AUTO · " + processor.currentPreviewWorldName());
     ideaTitle.setText(processor.currentIdeaTitle(), juce::dontSendNotification);
     ideaDescription.setText(processor.currentIdeaDescription(), juce::dontSendNotification);
     status.setText(juce::String(processor.currentTempo(), 1) + " BPM  ·  " +

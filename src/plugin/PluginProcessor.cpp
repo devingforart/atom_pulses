@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <initializer_list>
 
 namespace pulso::plugin {
 namespace ids {
@@ -24,13 +25,34 @@ constexpr auto energy = "energy";
 constexpr auto phraseBars = "phraseBars";
 constexpr auto mode = "mode";
 constexpr auto preview = "preview";
-constexpr auto previewKit = "previewKit";
+constexpr auto previewWorld = "previewWorld";
 constexpr auto thru = "thru";
 constexpr auto gain = "gain";
 constexpr std::array generative{role, scale, root, follow, risk, space, repetition,
                                 complexity, development, groove, humanize, cohesion,
                                 energy, phraseBars, mode};
 constexpr std::array phraseLengths{1, 2, 4, 8, 16};
+
+int previewWorldFromDirection(juce::String direction) {
+    direction = direction.toLowerCase();
+    const auto has = [&direction](std::initializer_list<const char*> words) {
+        return std::any_of(words.begin(), words.end(), [&direction](const auto* word) {
+            return direction.contains(word);
+        });
+    };
+    if (has({"organic", "tribal", "acoustic", "earthy", "hand percussion"})) return 1;
+    if (has({"analog", "analogue", "vintage", "warm", "tape", "retro"})) return 2;
+    if (has({"dub", "echo", "spacious", "space", "delay", "reggae"})) return 3;
+    if (has({"minimal", "sparse", "restrained", "clean", "micro"})) return 4;
+    if (has({"hypnotic", "nocturnal", "trance", "meditative", "rolling"})) return 5;
+    if (has({"cinematic", "epic", "orchestral", "soundtrack", "dramatic"})) return 6;
+    if (has({"dark", "club", "peak", "warehouse", "hard", "driving"})) return 7;
+    return 0;
+}
+
+constexpr std::array previewWorldNames{"DEEP PROGRESSIVE", "ORGANIC MOTION", "ANALOG WARMTH",
+                                       "DUB SPACE", "MINIMAL PULSE", "HYPNOTIC NIGHT",
+                                       "CINEMATIC ARC", "DARK CLUB"};
 
 juce::String songPlanToJson(const SongPlan& plan) {
     auto* jsonRoot = new juce::DynamicObject();
@@ -110,6 +132,13 @@ void PulsoAudioProcessor::parameterChanged(const juce::String&, float) {
 void PulsoAudioProcessor::setCreativeDirection(const juce::String& direction) {
     const std::scoped_lock lock(creativeDirectionMutex);
     creativeDirection = direction.substring(0, 600);
+    automaticPreviewWorld.store(ids::previewWorldFromDirection(creativeDirection), std::memory_order_relaxed);
+}
+
+juce::String PulsoAudioProcessor::currentPreviewWorldName() const {
+    const auto selected = static_cast<int>(parameters.getRawParameterValue(ids::previewWorld)->load());
+    const auto resolved = selected == 0 ? automaticPreviewWorld.load(std::memory_order_relaxed) : selected - 1;
+    return ids::previewWorldNames[static_cast<std::size_t>(std::clamp(resolved, 0, 7))];
 }
 
 void PulsoAudioProcessor::setTargetSongDurationSeconds(int seconds) noexcept {
@@ -216,8 +245,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout PulsoAudioProcessor::createP
     result.push_back(std::make_unique<Choice>(ids::mode, "Phrase Mode",
                                               juce::StringArray{"Loop", "Evolve"}, 0));
     result.push_back(std::make_unique<Bool>(ids::preview, "Preview", true));
-    result.push_back(std::make_unique<Choice>(ids::previewKit, "Preview Drum Rack",
-                                              juce::StringArray{"Deep Circuit", "Organic Room", "Analog Pulse", "Cinematic"}, 0));
+    result.push_back(std::make_unique<Choice>(ids::previewWorld, "Preview Sound World",
+                                              juce::StringArray{"Auto", "Deep Progressive", "Organic Motion",
+                                                  "Analog Warmth", "Dub Space", "Minimal Pulse",
+                                                  "Hypnotic Night", "Cinematic Arc", "Dark Club"}, 0));
     result.push_back(std::make_unique<Bool>(ids::thru, "MIDI Thru", false));
     result.push_back(std::make_unique<Float>(ids::gain, "Output",
                                              juce::NormalisableRange<float>(-36.0f, 0.0f, 0.1f), -12.0f));
@@ -886,7 +917,9 @@ void PulsoAudioProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::Mi
     midi.addEvents(generatedMidi, 0, -1, 0);
 
     const auto previewEnabled = parameters.getRawParameterValue(ids::preview)->load() > 0.5f;
-    previewSynth.setDrumKit(static_cast<int>(parameters.getRawParameterValue(ids::previewKit)->load()));
+    const auto selectedPreviewWorld = static_cast<int>(parameters.getRawParameterValue(ids::previewWorld)->load());
+    previewSynth.setSoundWorld(selectedPreviewWorld == 0
+        ? automaticPreviewWorld.load(std::memory_order_relaxed) : selectedPreviewWorld - 1);
     if (!previewEnabled && previewWasEnabled) silencePreview(true);
     if (previewEnabled) {
         previewMidi.addEvents(generatedMidi, 0, -1, 0);
@@ -988,6 +1021,8 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
             {
                 const std::scoped_lock lock(creativeDirectionMutex);
                 creativeDirection = state.getProperty("creativeDirection", {}).toString().substring(0, 600);
+                automaticPreviewWorld.store(ids::previewWorldFromDirection(creativeDirection),
+                                            std::memory_order_relaxed);
             }
             juce::MemoryBlock compositionData;
             if (compositionData.fromBase64Encoding(

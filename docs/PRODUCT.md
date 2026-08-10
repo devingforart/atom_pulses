@@ -28,12 +28,13 @@ el flujo de la sesión.
 7. Mantener resultados reproducibles dentro de una sesión.
 8. Explicar cada decisión en contexto: ningún control depende de consultar un manual externo.
 
-## Alcance de 0.6
+## Alcance de 0.8
 
 Incluye composición simbólica mediante GPT, salida estructurada validada, fallback
 local, armonía exportable, locks exactos por capa, regeneración selectiva, Undo,
 persistencia de la partitura completa, canciones de hasta 30 minutos, forma jerárquica,
-orquestación dinámica de doce voces, automatización expresiva, timeline de secciones,
+orquestación dinámica de doce voces, preview multitimbral con ocho mundos sonoros,
+automatización expresiva, timeline de secciones,
 arrastre MIDI por voz o familia, transporte y preescucha segura.
 No incluye todavía sidechain de audio ni conocimiento general de otras pistas.
 
@@ -53,6 +54,8 @@ reglas observables:
 8. **Forma:** cada sección presenta, contrasta, desarrolla, culmina o resuelve el mismo ADN.
 9. **Orquestación:** las voces entran y salen según la función de la sección; densidad no
    significa que las doce deban sonar simultáneamente.
+10. **Respiración:** lead, acompañamiento, bajo y ritmo contienen ausencias coordinadas;
+    cada frase reserva espacio antes de volver a afirmar el motivo.
 
 La reproducción repite el resultado de manera exacta hasta que el usuario solicita
 otra idea o regenera las capas desbloqueadas.

@@ -26,7 +26,7 @@
 - Swing, microtiming, dinámica, energía y cohesión reproducibles.
 - Worker de tiempo real, recuperación de transporte y pruebas simuladas del processor.
 
-## 0.4 — AI Composition Browser (actual)
+## 0.4 — AI Composition Browser
 
 - [x] GPT mediante Responses API y Structured Outputs.
 - [x] Armonía, melodía, bajo y batería como capas MIDI independientes.
@@ -50,7 +50,16 @@
 - Onsets, densidad, centroid y energía por bandas.
 - Regla de espacio negativo frente al kick y la voz.
 
-## 0.7 — Motor neuronal
+## 0.8 — Interpretación y respiración (actual)
+
+- [x] Doce voces con presencia variable por frase y sección.
+- [x] Diálogo entre lead y contrapunto, alternancia de bajos y drops coordinados.
+- [x] Ocho mundos sonoros multitimbrales con selección automática desde el prompt.
+- [x] Osciladores band-limited, filtros, articulaciones y efectos espaciales.
+- Evaluaciones ciegas con productores y ajuste de vocabularios por familia musical.
+- Biblioteca factory opcional de samples propios con velocity layers y round-robin.
+
+## 0.9 — Motor neuronal
 
 - `PatternProvider` intercambiable.
 - Modelo MIDI pequeño exportado a ONNX.

@@ -47,11 +47,18 @@ En stop, seek, loop o sustitución de patrón, el scheduler emite note-off para 
 y CC 123 en los canales generativos. Si la reproducción comienza dentro de una nota,
 reconstruye el note-on en la primera muestra y conserva su note-off original.
 
-La preescucha reserva 24 voces one-shot para batería y 40 voces tonales, de modo que
-los acordes densos no roben el pulso. El canal GM 10 se sintetiza mediante cuatro drum
-racks seleccionables con kick, snare, clap, hats, toms, percusión y cymbals diferenciados.
-Después usa ganancia suavizada y un limitador a -0.5 dBFS. Al desactivarla o detener el
-transporte, las voces completan una liberación corta para evitar clics.
+La preescucha reserva 24 voces one-shot para batería y 48 voces tonales, de modo que
+los acordes densos no roben el pulso. Los canales de las doce voces se traducen a nueve
+motores: sub, bajo móvil, foundation, pulse, upper, lead, counter, atmosphere y
+transitions. El canal GM 10 sintetiza kick, snare, clap, hats, toms, percusión y cymbals.
+
+Ocho perfiles coordinan brillo, calidez, saturación, decay, anchura, peso rítmico, delay
+y room. El modo `AUTO` clasifica la dirección creativa fuera del callback y publica sólo
+un índice atómico al audio. El DSP utiliza bancos de voces y buffers preasignados: no
+reserva memoria ni toma locks durante `processBlock`. La salida usa ganancia suavizada y
+limitador a -0.5 dBFS; las colas espaciales decaen de forma controlada al detenerse.
+Cada mundo selecciona además una familia oscilatoria propia —orgánica, analógica, FM,
+minimal, cinematográfica o saturada— con saw y square PolyBLEP para reducir aliasing.
 
 ## Modelo de sincronización
 
@@ -123,3 +130,15 @@ evita colisiones principales y genera CC 11/1/74 para dinámica, tensión y tran
 Los locks y filtros de exportación operan sobre identidad y familia de voz, no sólo
 sobre canal MIDI. Por eso dos capas que comparten canal siguen siendo pistas separadas
 en el archivo multitrack y pueden conservarse o arrastrarse de forma independiente.
+
+## Respiración y dramaturgia
+
+Después del desarrollo temático, `SongComposer` aplica una matriz determinista de
+presencia por voz y frase. Lead y contrapunto se responden; sub y movement bass alternan;
+pulse, upper y atmosphere trabajan a escalas temporales distintas; rhythm deja ventanas
+antes de límites de ocho compases. La energía amplía la presencia, pero ni siquiera el
+clímax obliga a todas las voces a atacar permanentemente.
+
+Una segunda pasada introduce microtiming correlacionado por función, arcos de velocidad
+y pequeñas variaciones de duración. Las decisiones proceden de ADN, sección y posición,
+por lo que son naturales pero reproducibles, no jitter aleatorio.

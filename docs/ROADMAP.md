@@ -1,6 +1,6 @@
 # Roadmap
 
-## 0.1 — MVP actual
+## 0.1 — MVP base
 
 - Motor algorítmico determinista.
 - Bajo, percusión y contramelodía.
@@ -8,16 +8,24 @@
 - Transporte del host, salida MIDI y preescucha.
 - Windows VST3 y standalone.
 
-## 0.2 — Validación con músicos
+## 0.2 — Frases coherentes (actual)
 
-- Persistir semilla y patrón exactos.
+- Frases seleccionables de 1, 2, 4, 8 o 16 compases.
+- Línea armónica capturada por compás.
+- Motivo estable, conducción de voces, desarrollo y resolución por rol.
+- Modos de reproducción exacta y evolución gradual.
+- Semilla de identidad persistente.
+- Pruebas de invariantes musicales y retención de identidad.
+
+## 0.3 — Validación con músicos
+
 - Bloqueos separados para ritmo, armonía y dinámica.
 - Botones A/B/C y historial de variaciones.
 - Swing y anticipaciones.
 - Pruebas automatizadas del processor con bloques de transporte simulados.
 - Instalador firmado y matriz de compatibilidad de Live.
 
-## 0.3 — Contexto Ableton
+## 0.4 — Contexto Ableton
 
 - Dispositivo `.amxd` firmado/empacado.
 - Observación de pista, escena, clips y armadura mediante Live API.
@@ -25,14 +33,14 @@
 - Mapeo optimizado para Push.
 - Canal local IPC entre el bridge y el plugin.
 
-## 0.4 — Audio contextual
+## 0.5 — Audio contextual
 
 - Sidechain estéreo opcional.
 - Onsets, densidad, centroid y energía por bandas.
 - Regla de espacio negativo frente al kick y la voz.
 - Worker dedicado con colas lock-free.
 
-## 0.5 — Motor neuronal
+## 0.6 — Motor neuronal
 
 - `PatternProvider` intercambiable.
 - Modelo MIDI pequeño exportado a ONNX.
@@ -48,4 +56,3 @@
 - Accesibilidad, internacionalización y manual completo.
 - Firma de código, instaladores, crash reporting opt-in y soporte.
 - Revisión legal de modelos, dataset, marca y licencias.
-

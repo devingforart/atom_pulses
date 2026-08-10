@@ -36,8 +36,14 @@ struct GenerationContext {
     double follow{0.65};
     double risk{0.30};
     double space{0.35};
+    double repetition{0.75};
+    double complexity{0.45};
+    double development{0.40};
+    int bars{4};
     std::uint64_t seed{1};
+    std::uint64_t evolutionStep{};
     std::vector<int> chordPitchClasses{0, 3, 7};
+    std::vector<std::vector<int>> harmonyByBar;
     std::vector<SourceNote> sourceNotes;
 };
 
@@ -56,4 +62,3 @@ constexpr std::array<std::string_view, 5> scaleNames{"Major", "Minor", "Dorian",
 }
 
 } // namespace pulso
-

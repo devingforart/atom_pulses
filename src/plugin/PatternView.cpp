@@ -12,10 +12,22 @@ void PatternView::paint(juce::Graphics& graphics) {
     graphics.fillRoundedRectangle(bounds, 12.0f);
     const auto inner = bounds.reduced(14.0f);
 
-    graphics.setColour(colours::panelRaised);
-    for (int index = 0; index <= 16; ++index) {
-        const auto x = inner.getX() + inner.getWidth() * static_cast<float>(index) / 16.0f;
+    const auto bars = processor.currentPhraseBars();
+    const auto beats = bars * 4;
+    for (int index = 0; index <= beats; ++index) {
+        const auto isBar = index % 4 == 0;
+        if (!isBar && bars > 8) continue;
+        const auto x = inner.getX() + inner.getWidth() * static_cast<float>(index) /
+                                          static_cast<float>(beats);
+        graphics.setColour(isBar ? colours::muted.withAlpha(0.42f) :
+                                   colours::panelRaised.withAlpha(0.70f));
         graphics.drawVerticalLine(juce::roundToInt(x), inner.getY(), inner.getBottom());
+        if (isBar && index < beats) {
+            graphics.setColour(colours::muted.withAlpha(0.65f));
+            graphics.setFont(10.0f);
+            graphics.drawText(juce::String(index / 4 + 1), juce::roundToInt(x) + 4,
+                              juce::roundToInt(inner.getY()), 22, 13, juce::Justification::left);
+        }
     }
 
     const auto pattern = processor.currentPattern();
@@ -46,4 +58,3 @@ void PatternView::paint(juce::Graphics& graphics) {
 }
 
 } // namespace pulso::plugin
-

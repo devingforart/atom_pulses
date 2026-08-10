@@ -9,6 +9,10 @@ desarrollo `%LOCALAPPDATA%\Programs\Common\VST3`. En Live abre
 carpeta como `VST3 Custom Folder` o instala globalmente en
 `C:\Program Files\Common Files\VST3` desde una consola elevada.
 
+Para actualizar una versión existente, cierra Live antes de ejecutar el instalador:
+Windows bloquea el DLL mientras el plugin está cargado. El script comprueba ese bloqueo
+antes de tocar la instalación anterior.
+
 ## 2. Escuchar inmediatamente
 
 1. Crea una pista MIDI.
@@ -21,7 +25,21 @@ El sintetizador de `Preview` permite escuchar el patrón sin cargar otro instrum
 La armonía se actualiza a partir de las notas sostenidas y se aplica en el siguiente
 compás.
 
-## 3. Enviar el MIDI a otro instrumento
+## 3. Construir una frase armónica
+
+1. Selecciona `Phrase: 4 bars` y `Mode: Loop`.
+2. Crea un clip MIDI de cuatro compases con, por ejemplo, Cm | Ab | Fm | G.
+3. Deja cada acorde sostenido desde el primer tiempo de su compás.
+4. Reproduce una vuelta completa para que PULSO capture las cuatro posiciones.
+5. Escucha la segunda vuelta: el motivo se conserva, los apoyos siguen cada acorde y
+   el cuarto compás prepara el regreso a Cm.
+6. Cambia a `Evolve`: las vueltas siguientes alteran detalles, no la identidad central.
+
+Para una comparación clara, usa primero `Repeat` alto, `Complex` medio y `Develop`
+medio. Baja `Repeat` para obtener más contraste; sube `Develop` para una cadencia o fill
+más marcado. `New Variation` crea otra identidad completa.
+
+## 4. Enviar el MIDI a otro instrumento
 
 1. Conserva PULSO en la primera pista.
 2. Crea una segunda pista MIDI y carga el instrumento deseado.
@@ -33,7 +51,7 @@ compás.
 Para convertir el resultado en un clip, graba la segunda pista. Esta ruta conserva
 notas y velocidades como MIDI normal.
 
-## 4. Variaciones desde Max for Live
+## 5. Variaciones desde Max for Live
 
 El plugin interpreta la nota MIDI 127 del canal 16 como el comando `New Variation`.
 No la reenvía ni la usa como información armónica.

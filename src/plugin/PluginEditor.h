@@ -31,13 +31,21 @@ private:
     juce::ComboBox roleBox;
     juce::ComboBox rootBox;
     juce::ComboBox scaleBox;
+    juce::ComboBox phraseBox;
+    juce::ComboBox modeBox;
     juce::Slider followSlider;
     juce::Slider riskSlider;
     juce::Slider spaceSlider;
+    juce::Slider repetitionSlider;
+    juce::Slider complexitySlider;
+    juce::Slider developmentSlider;
     juce::Slider gainSlider;
     juce::Label followLabel;
     juce::Label riskLabel;
     juce::Label spaceLabel;
+    juce::Label repetitionLabel;
+    juce::Label complexityLabel;
+    juce::Label developmentLabel;
     juce::Label gainLabel;
     juce::TextButton variationButton{"NEW VARIATION"};
     juce::ToggleButton previewButton{"PREVIEW"};
@@ -49,9 +57,14 @@ private:
     std::unique_ptr<ComboAttachment> roleAttachment;
     std::unique_ptr<ComboAttachment> rootAttachment;
     std::unique_ptr<ComboAttachment> scaleAttachment;
+    std::unique_ptr<ComboAttachment> phraseAttachment;
+    std::unique_ptr<ComboAttachment> modeAttachment;
     std::unique_ptr<SliderAttachment> followAttachment;
     std::unique_ptr<SliderAttachment> riskAttachment;
     std::unique_ptr<SliderAttachment> spaceAttachment;
+    std::unique_ptr<SliderAttachment> repetitionAttachment;
+    std::unique_ptr<SliderAttachment> complexityAttachment;
+    std::unique_ptr<SliderAttachment> developmentAttachment;
     std::unique_ptr<SliderAttachment> gainAttachment;
     std::unique_ptr<ButtonAttachment> previewAttachment;
     std::unique_ptr<ButtonAttachment> thruAttachment;
@@ -60,4 +73,3 @@ private:
 };
 
 } // namespace pulso::plugin
-

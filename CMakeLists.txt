@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.1.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.2.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -100,4 +100,15 @@ if(PULSO_BUILD_PLUGIN)
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
     )
+
+    if(PULSO_BUILD_TESTS)
+        add_executable(pulso_processor_tests tests/ProcessorTests.cpp)
+        target_include_directories(pulso_processor_tests PRIVATE src tests)
+        target_link_libraries(pulso_processor_tests PRIVATE
+            Pulso
+            juce::juce_audio_utils
+            juce::juce_dsp
+        )
+        add_test(NAME pulso_processor_tests COMMAND pulso_processor_tests)
+    endif()
 endif()

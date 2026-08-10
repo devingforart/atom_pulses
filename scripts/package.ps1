@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $preset = if ($Configuration -eq 'Debug') { 'windows-debug' } else { 'windows-release' }
-$version = '0.1.0'
+$version = '0.2.1'
 $packageName = "PULSO-$version-windows-x64"
 $distRoot = Join-Path $projectRoot 'dist'
 $stage = Join-Path $distRoot $packageName
@@ -47,4 +47,3 @@ $hashLine = "$($hash.Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($
 [System.IO.File]::WriteAllText("$archive.sha256", $hashLine)
 Write-Host "Created $archive" -ForegroundColor Green
 Write-Host "SHA256 $($hash.Hash)"
-

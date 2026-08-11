@@ -90,7 +90,12 @@ int main(int argc, char** argv) {
             60, 30, 120.0, 4.0, 424242, stopSource.get_token(), error);
         require(error.isEmpty(), "Live OpenAI song-plan request failed: " + error.toStdString());
         require(plan.sections.size() >= 3 && plan.voices.size() >= 7 && plan.totalBars == 30 &&
-                    !plan.rhythmMotifs.empty() &&
+                    plan.rhythmMotifs.size() >= 2 && !plan.rhythmLanguage.description.empty() &&
+                    std::all_of(plan.voices.begin(), plan.voices.end(), [](const auto& voice) {
+                        return voice.performance.authored &&
+                               voice.performance.expressionDepth >= 0.0 &&
+                               voice.performance.expressionDepth <= 1.0;
+                    }) &&
                     std::all_of(plan.sections.begin(), plan.sections.end(), [](const auto& section) {
                         return !section.rhythm.motifId.empty();
                     }),
@@ -204,6 +209,33 @@ int main(int argc, char** argv) {
     require(snareOverrideDifference / 512.0f > 0.005f && unrelatedHatDifference < 0.000001f,
             "A snare override must audibly change only snare while hats keep their own selection");
 
+    const auto renderProcessorAudition = [&](int selection) {
+        pulso::plugin::PulsoAudioProcessor auditionProcessor;
+        TestPlayHead auditionPlayHead;
+        auditionProcessor.setPlayHead(&auditionPlayHead);
+        auditionProcessor.prepareToPlay(sampleRate, 8192);
+        auditionProcessor.parameters.getParameter("preview")->setValueNotifyingHost(0.0f);
+        auditionProcessor.setVoicePreviewTimbre(pulso::VoiceId::SnareClap, selection);
+        auditionProcessor.auditionVoicePreview(pulso::VoiceId::SnareClap);
+        juce::AudioBuffer<float> audio(2, 8192);
+        audio.clear();
+        juce::MidiBuffer midi;
+        auditionProcessor.processBlock(audio, midi);
+        std::array<float, 1024> fingerprint{};
+        for (std::size_t sample = 0; sample < fingerprint.size(); ++sample)
+            fingerprint[sample] = audio.getSample(0, static_cast<int>(sample + 32));
+        auditionProcessor.releaseResources();
+        auditionProcessor.setPlayHead(nullptr);
+        return fingerprint;
+    };
+    const auto processorSnare808 = renderProcessorAudition(1);
+    const auto processorSnare909 = renderProcessorAudition(2);
+    auto processorAuditionDifference = 0.0f;
+    for (std::size_t sample = 0; sample < processorSnare808.size(); ++sample)
+        processorAuditionDifference += std::abs(processorSnare808[sample] - processorSnare909[sample]);
+    require(processorAuditionDifference / 1024.0f > 0.001f,
+            "Per-row host parameter changes must reach the audible processor preview end to end");
+
     for (const auto note : {38, 42}) {
         pulso::plugin::PreviewSynth roundRobinSynth;
         roundRobinSynth.prepare(sampleRate);
@@ -250,6 +282,38 @@ int main(int argc, char** argv) {
                 "Every instrument family selector must audibly change its synthesis model");
     }
 
+    const auto renderVoiceControl = [&](int transpose, float levelDb) {
+        pulso::plugin::PreviewSynth synth;
+        synth.prepare(sampleRate);
+        synth.setBassTone(0);
+        synth.setVoiceTranspose(pulso::VoiceId::SubBass, transpose);
+        synth.setVoiceLevelDb(pulso::VoiceId::SubBass, levelDb);
+        juce::AudioBuffer<float> audio(2, 8192);
+        audio.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(1, 43, static_cast<juce::uint8>(112)), 0);
+        synth.renderNextBlock(audio, midi, 0, audio.getNumSamples());
+        auto crossings = 0;
+        auto energy = 0.0f;
+        for (auto sample = 1025; sample < 8192; ++sample) {
+            const auto previous = audio.getSample(0, sample - 1);
+            const auto current = audio.getSample(0, sample);
+            if ((previous < 0.0f && current >= 0.0f) || (previous >= 0.0f && current < 0.0f)) ++crossings;
+            energy += std::abs(current);
+        }
+        return std::pair{crossings, energy};
+    };
+    const auto octaveDown = renderVoiceControl(-12, 0.0f);
+    const auto originalRegister = renderVoiceControl(0, 0.0f);
+    const auto octaveUp = renderVoiceControl(12, 0.0f);
+    const auto quieterRegister = renderVoiceControl(0, -12.0f);
+    require(originalRegister.first > octaveDown.first * 1.55 &&
+                octaveUp.first > originalRegister.first * 1.55,
+            "Per-lane -12/0/+12 controls must produce real octave changes in preview audio");
+    require(quieterRegister.second < originalRegister.second * 0.32f &&
+                quieterRegister.second > originalRegister.second * 0.18f,
+            "Per-lane dB control must apply the expected independent preview gain");
+
     pulso::plugin::PreviewSynth switchedWorldSynth;
     pulso::plugin::PreviewSynth unchangedWorldSynth;
     switchedWorldSynth.prepare(sampleRate);
@@ -293,6 +357,28 @@ int main(int argc, char** argv) {
     require(renderWithExpression(112) > renderWithExpression(32) * 2.0f,
             "Preview must interpret CC11/74 dynamics instead of flattening the composed expression");
 
+    auto renderPitchGesture = [&](int bend, int pressure) {
+        pulso::plugin::PreviewSynth expressiveSynth;
+        expressiveSynth.prepare(sampleRate);
+        juce::AudioBuffer<float> expressiveAudio(2, 4096);
+        expressiveAudio.clear();
+        juce::MidiBuffer expressiveMidi;
+        expressiveMidi.addEvent(juce::MidiMessage::pitchWheel(2, bend), 0);
+        expressiveMidi.addEvent(juce::MidiMessage::channelPressureChange(2, pressure), 0);
+        expressiveMidi.addEvent(juce::MidiMessage::noteOn(2, 67, static_cast<juce::uint8>(105)), 1);
+        expressiveMidi.addEvent(juce::MidiMessage::aftertouchChange(2, 67, pressure), 2);
+        expressiveSynth.renderNextBlock(expressiveAudio, expressiveMidi, 0, expressiveAudio.getNumSamples());
+        return expressiveAudio;
+    };
+    const auto neutralGesture = renderPitchGesture(8192, 0);
+    const auto expressiveGesture = renderPitchGesture(12288, 100);
+    auto gestureDifference = 0.0f;
+    for (auto sample = 0; sample < neutralGesture.getNumSamples(); ++sample)
+        gestureDifference += std::abs(neutralGesture.getSample(0, sample) -
+                                      expressiveGesture.getSample(0, sample));
+    require(gestureDifference / neutralGesture.getNumSamples() > 0.001f,
+            "Preview must audibly interpret pitch bend, pressure and poly-aftertouch");
+
     pulso::plugin::PreviewSynth ensemblePreview;
     ensemblePreview.prepare(sampleRate);
     ensemblePreview.setSoundWorld(0);
@@ -322,14 +408,28 @@ int main(int argc, char** argv) {
             "Drum and tonal instrument choices must be persistent, with 909 as the quality-first default");
     for (std::size_t voice = 0; voice < static_cast<std::size_t>(pulso::VoiceId::Count); ++voice) {
         const auto id = juce::String("previewVoice") + juce::String(static_cast<int>(voice)).paddedLeft('0', 2);
+        const auto octaveId = juce::String("previewOctave") + juce::String(static_cast<int>(voice)).paddedLeft('0', 2);
+        const auto levelId = juce::String("previewLevel") + juce::String(static_cast<int>(voice)).paddedLeft('0', 2);
         require(processor.parameters.getParameter(id) != nullptr &&
+                    processor.parameters.getParameter(octaveId) != nullptr &&
+                    processor.parameters.getParameter(levelId) != nullptr &&
                     pulso::plugin::PulsoAudioProcessor::voicePreviewTimbreChoices(
                         static_cast<pulso::VoiceId>(voice)).size() == 5,
-                "Every visible lane must expose five persistent preview choices");
+                "Every visible lane must expose persistent sound, octave and level controls");
     }
     require(processor.parameters.getParameter("performance") != nullptr &&
                 processor.parameters.getRawParameterValue("performance")->load() < 0.5f,
             "Human Performance must be a persistent button that defaults to exact timing");
+    require(processor.parameters.getParameter("language") != nullptr &&
+                processor.uiLanguage() == pulso::plugin::UiLanguage::Spanish,
+            "The complete interface language must be a persistent parameter and default to Spanish");
+    const auto accentedTranslation = pulso::plugin::tr(
+        pulso::plugin::UiLanguage::Spanish, pulso::plugin::TextId::Subtitle);
+    require(accentedTranslation.containsChar(0x00d3),
+            "Spanish accents must be decoded as real Unicode code points: " +
+                accentedTranslation.toStdString());
+    require(pulso::plugin::bullet().length() == 1 && pulso::plugin::bullet()[0] == 0x00b7,
+            "The middle-dot separator must be one U+00B7 code point");
     processor.toggleVoiceSolo(pulso::VoiceId::Lead);
     require(processor.isVoiceSolo(pulso::VoiceId::Lead) &&
                 processor.isVoiceAudible(pulso::VoiceId::Lead) &&
@@ -374,8 +474,8 @@ int main(int argc, char** argv) {
     require(composedPattern != nullptr, "The processor must expose its composed phrase");
     require(std::all_of(composedPattern->notes.begin(), composedPattern->notes.end(), [](const auto& note) {
                 return std::abs(note.startBeat * 4.0 - std::round(note.startBeat * 4.0)) < 0.000001 &&
-                       std::abs(note.endBeat() * 4.0 - std::round(note.endBeat() * 4.0)) < 0.000001;
-            }), "The default processor pattern must be perfectly quantized before audition and export");
+                       std::abs(note.endBeat() * 16.0 - std::round(note.endBeat() * 16.0)) < 0.000001;
+            }), "The processor must publish exact onsets with fine expressive note-off timing");
     for (const auto channel : {1, 2, 3, 10})
         require(std::any_of(composedPattern->notes.begin(), composedPattern->notes.end(),
                             [=](const auto& note) { return note.channel == channel; }),
@@ -447,18 +547,19 @@ int main(int argc, char** argv) {
 
     const auto songPlanExample = juce::String(R"json({
       "title":"The Long Return","key":"F# major","summary":"A complete dramatic arc",
-      "root_pitch_class":2,"mode":"minor","groove_family":"deep_progressive_house","motif_intervals":[0,3,7,5],
+      "root_pitch_class":2,"mode":"minor","rhythm_language":{"description":"A displaced acoustic-electric dialogue","pulse_stability":0.42,"backbeat_gravity":0.78,"syncopation":0.64,"ghost_density":0.32,"velocity_contrast":0.71,"timing_freedom":0.28,"orchestration_motion":0.67,"silence_bias":0.35,"call_response":0.74},"motif_intervals":[0,3,7,5],
       "chord_degrees":[0,5,3,6],"rhythm_motifs":[{
         "id":"A","bars":1,"steps_per_bar":16,"kick":"1000100010001000","snare_clap":"0000200000002000",
         "closed_hats":"0010001000100010","open_hats_shaker":"0000001000000020",
-        "low_percussion":"0000010000010000","high_percussion":"0001000000100000"
+        "low_percussion":"0000010000010000","high_percussion":"0001000000100000",
+        "ornaments":[{"step":14,"instrument":"tom_mid","velocity":76,"duration_steps":0.75}]
       }],"voices":[
         {"id":"core_drums","function":"Pulse anchor","interaction":"Leaves space at cadences","activity":0.8,"syncopation":0.4,"minimum_pitch":35,"maximum_pitch":81},
         {"id":"sub_bass","function":"Tonal gravity","interaction":"Supports harmonic rhythm","activity":0.7,"syncopation":0.2,"minimum_pitch":28,"maximum_pitch":48},
         {"id":"movement_bass","function":"Forward motion","interaction":"Answers the sub bass","activity":0.5,"syncopation":0.5,"minimum_pitch":36,"maximum_pitch":62},
         {"id":"harmonic_foundation","function":"Voice-led foundation","interaction":"Frames the lead","activity":0.6,"syncopation":0.1,"minimum_pitch":45,"maximum_pitch":76},
         {"id":"harmonic_pulse","function":"Rhythmic harmony","interaction":"Answers percussion","activity":0.5,"syncopation":0.6,"minimum_pitch":50,"maximum_pitch":84},
-        {"id":"lead","function":"Carries the motif","interaction":"Alternates with countermelody","activity":0.6,"syncopation":0.4,"minimum_pitch":55,"maximum_pitch":92},
+        {"id":"lead","function":"Carries the motif","interaction":"Alternates with countermelody","activity":0.6,"syncopation":0.4,"minimum_pitch":55,"maximum_pitch":92,"performance_intent":"Sing with a restrained late bloom","articulation":"legato","dynamic_contour":"phrase_arc","vibrato":"late_expressive","pitch_gesture":"gentle_bends","expression_depth":0.72,"brightness":0.61,"humanization":0.48,"sustain_pedal":false},
         {"id":"atmosphere","function":"Long-range depth","interaction":"Bridges sparse sections","activity":0.4,"syncopation":0.0,"minimum_pitch":42,"maximum_pitch":92}
       ],"sections":[
         {"name":"Prologue","function":"Introduce motif fragments","harmonic_direction":"Tonic ambiguity","motif_treatment":"Fragment","bars":8,"energy":0.2,"tension":0.2,"density":0.3,"motif_variant":0,"active_voices":["harmonic_foundation","lead","atmosphere"],"kick_state":"reduced","kick_continuity":"sectional","percussion_density":0.2,"rhythmic_syncopation":0.2,"swing":0.08,"rhythm_motif_id":"A","rhythm_mutations":[],"rhythm_gestures":[]},
@@ -476,9 +577,33 @@ int main(int argc, char** argv) {
                 parsedSongPlan.sections.back().startBar == 24 && parsedSongPlan.key == "D minor" &&
                 parsedSongPlan.sections[1].rhythm.kickState == pulso::KickState::FourOnFloor &&
                 parsedSongPlan.rhythmMotifs.size() == 1 &&
+                parsedSongPlan.rhythmLanguage.description == "A displaced acoustic-electric dialogue" &&
+                parsedSongPlan.rhythmMotifs.front().ornaments.size() == 1 &&
+                parsedSongPlan.rhythmMotifs.front().ornaments.front().instrument == pulso::RhythmInstrument::TomMid &&
                 parsedSongPlan.sections[1].rhythm.mutations.size() == 1 &&
-                parsedSongPlan.sections[1].rhythm.gestures.size() == 2,
+                parsedSongPlan.sections[1].rhythm.gestures.size() == 2 &&
+                std::any_of(parsedSongPlan.voices.begin(), parsedSongPlan.voices.end(), [](const auto& voice) {
+                    return voice.id == pulso::VoiceId::Lead && voice.performance.authored &&
+                           voice.performance.vibrato == pulso::VibratoStyle::LateExpressive &&
+                           voice.performance.pitchGesture == pulso::PitchGesture::GentleBends &&
+                           std::abs(voice.performance.expressionDepth - 0.72) < 0.001;
+                }),
             "Validated song architecture must preserve voices and contiguous section metadata");
+    pulso::GenerationContext authoredPerformanceContext;
+    authoredPerformanceContext.role = pulso::Role::Ensemble;
+    authoredPerformanceContext.seed = parsedSongPlan.seed;
+    const auto authoredPerformance = pulso::SongComposer{}.render(parsedSongPlan,
+                                                                   authoredPerformanceContext);
+    require(std::any_of(authoredPerformance.expressions.begin(), authoredPerformance.expressions.end(),
+                [](const auto& event) {
+                    return event.voice == pulso::VoiceId::Lead &&
+                           event.type == pulso::ExpressionEventType::PitchBend && event.value != 8192;
+                }) && std::any_of(authoredPerformance.expressions.begin(), authoredPerformance.expressions.end(),
+                [](const auto& event) {
+                    return event.voice == pulso::VoiceId::Lead &&
+                           event.type == pulso::ExpressionEventType::PolyAftertouch;
+                }),
+            "AI-authored performance intent must reach note-level bends and aftertouch");
 
     const auto orchestrationPlan = pulso::SongComposer::createLocalPlan(
         "Deep progressive long-form test", 120, 120.0, 4.0, 8841, 2, pulso::ScaleKind::Minor);
@@ -498,8 +623,27 @@ int main(int argc, char** argv) {
                 orchestrationMidi.getNumTracks() == 16,
             "Full-song export must contain a conductor plus fifteen independently named voice tracks");
     require(!orchestration.controls.empty() &&
+                !orchestration.expressions.empty() &&
                 orchestration.markers.size() == orchestrationPlan.sections.size(),
             "Long-form export must retain expressive CC data and structural section markers");
+    auto exportedPitchBend = false;
+    auto exportedPressure = false;
+    auto exportedAftertouch = false;
+    auto exportedSustain = false;
+    for (auto track = 0; track < orchestrationMidi.getNumTracks(); ++track) {
+        const auto* sequence = orchestrationMidi.getTrack(track);
+        if (sequence == nullptr) continue;
+        for (auto event = 0; event < sequence->getNumEvents(); ++event) {
+            const auto message = sequence->getEventPointer(event)->message;
+            exportedPitchBend = exportedPitchBend || message.isPitchWheel();
+            exportedPressure = exportedPressure || message.isChannelPressure();
+            exportedAftertouch = exportedAftertouch || message.isAftertouch();
+            exportedSustain = exportedSustain || (message.isController() &&
+                                                   message.getControllerNumber() == 64);
+        }
+    }
+    require(exportedPitchBend && exportedPressure && exportedAftertouch && exportedSustain,
+            "Exported MIDI must contain bends, pressure, per-note aftertouch and sustain pedal");
 
     const auto bassFile = exportFolder.getNonexistentChildFile("bass", ".mid", false);
     exportOptions.channelFilter = 1;
@@ -658,13 +802,17 @@ int main(int argc, char** argv) {
             ++tooltipCount;
         }
     }
-    require(tooltipCount >= 22, "The complete visible interface must be covered by tooltips");
+    require(tooltipCount >= 19, "The streamlined visible interface must remain fully covered by tooltips");
     editor.reset();
 
     processor.parameters.getParameter("previewWorld")->setValueNotifyingHost(1.0f);
+    processor.parameters.getParameter("language")->setValueNotifyingHost(0.0f);
     processor.setVoicePreviewTimbre(pulso::VoiceId::SnareClap, 1);
     processor.setVoicePreviewTimbre(pulso::VoiceId::ClosedHats, 2);
     processor.setVoicePreviewTimbre(pulso::VoiceId::Lead, 4);
+    processor.setVoicePreviewOctave(pulso::VoiceId::SnareClap, -12);
+    processor.parameters.getParameter("previewLevel12")->setValueNotifyingHost(
+        processor.parameters.getParameter("previewLevel12")->convertTo0to1(-7.5f));
     processor.toggleVoiceSolo(pulso::VoiceId::HarmonicPulse);
     processor.toggleVoiceMute(pulso::VoiceId::ClosedHats);
     juce::MemoryBlock savedState;
@@ -681,17 +829,24 @@ int main(int argc, char** argv) {
     const auto restoredPatternSnapshot = restored.currentPattern();
     const auto originalPatternSnapshot = processor.currentPattern();
     require(restoredPatternSnapshot != nullptr && originalPatternSnapshot != nullptr &&
-                restoredPatternSnapshot->notes == originalPatternSnapshot->notes,
+                restoredPatternSnapshot->notes == originalPatternSnapshot->notes &&
+                restoredPatternSnapshot->controls == originalPatternSnapshot->controls &&
+                restoredPatternSnapshot->expressions == originalPatternSnapshot->expressions,
             "The complete approved AI composition must survive a DAW project reload exactly");
     require(std::abs(restored.parameters.getRawParameterValue("space")->load()) < 0.0001f &&
                 std::abs(restored.parameters.getRawParameterValue("groove")->load()) < 0.0001f,
             "Reloading a project must keep retired controls fixed at zero");
     require(std::abs(restored.parameters.getRawParameterValue("previewWorld")->load() - 8.0f) < 0.0001f,
             "The selected preview sound world must survive a DAW project reload");
+    require(restored.uiLanguage() == pulso::plugin::UiLanguage::English,
+            "The selected interface and tooltip language must survive a DAW project reload");
     require(restored.voicePreviewTimbre(pulso::VoiceId::SnareClap) == 1 &&
                 restored.voicePreviewTimbre(pulso::VoiceId::ClosedHats) == 2 &&
                 restored.voicePreviewTimbre(pulso::VoiceId::Lead) == 4,
             "Every per-lane preview sound must survive an Ableton project reload");
+    require(restored.voicePreviewOctave(pulso::VoiceId::SnareClap) == -12 &&
+                std::abs(restored.voicePreviewLevelDb(pulso::VoiceId::SnareClap) + 7.5f) < 0.01f,
+            "Per-lane octave and level must survive an Ableton project reload");
 
     ensembleFile.deleteFile();
     bassFile.deleteFile();

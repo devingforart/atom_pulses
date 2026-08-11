@@ -25,19 +25,33 @@ double signedUnit(std::uint64_t seed, const NoteEvent& note, std::size_t ordinal
 
 } // namespace
 
-void quantizePatternTiming(Pattern& pattern, int stepsPerBeat) {
-    const auto steps = std::clamp(stepsPerBeat, 1, 16);
-    const auto grid = 1.0 / steps;
-    const auto snap = [grid](double beat) { return std::round(beat / grid) * grid; };
+void quantizePatternTiming(Pattern& pattern, int onsetStepsPerBeat,
+                           int releaseStepsPerBeat) {
+    const auto onsetSteps = std::clamp(onsetStepsPerBeat, 1, 16);
+    const auto releaseSteps = std::clamp(releaseStepsPerBeat, onsetSteps, 64);
+    const auto onsetGrid = 1.0 / onsetSteps;
+    const auto releaseGrid = 1.0 / releaseSteps;
+    const auto snapOnset = [onsetGrid](double beat) {
+        return std::round(beat / onsetGrid) * onsetGrid;
+    };
+    const auto snapRelease = [releaseGrid](double beat) {
+        return std::round(beat / releaseGrid) * releaseGrid;
+    };
     for (auto& note : pattern.notes) {
-        const auto start = std::clamp(snap(note.startBeat), 0.0,
-                                      std::max(0.0, pattern.lengthBeats - grid));
-        const auto end = std::clamp(snap(note.endBeat()), start + grid, pattern.lengthBeats);
+        const auto originalEnd = note.endBeat();
+        const auto start = std::clamp(snapOnset(note.startBeat), 0.0,
+                                      std::max(0.0, pattern.lengthBeats - releaseGrid));
+        const auto end = std::clamp(snapRelease(originalEnd), start + releaseGrid,
+                                    pattern.lengthBeats);
         note.startBeat = start;
-        note.durationBeats = std::max(grid, end - start);
+        note.durationBeats = std::max(releaseGrid, end - start);
     }
     for (auto& control : pattern.controls)
-        control.beat = std::clamp(snap(control.beat), 0.0, std::max(0.0, pattern.lengthBeats - grid));
+        control.beat = std::clamp(snapRelease(control.beat), 0.0,
+                                  std::max(0.0, pattern.lengthBeats - releaseGrid));
+    for (auto& expression : pattern.expressions)
+        expression.beat = std::clamp(snapRelease(expression.beat), 0.0,
+                                     std::max(0.0, pattern.lengthBeats - releaseGrid));
     std::sort(pattern.notes.begin(), pattern.notes.end(), [](const auto& left, const auto& right) {
         if (left.startBeat != right.startBeat) return left.startBeat < right.startBeat;
         if (left.voice != right.voice) return left.voice < right.voice;

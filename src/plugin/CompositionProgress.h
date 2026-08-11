@@ -1,6 +1,7 @@
 #pragma once
 
 #include "LookAndFeel.h"
+#include "Localization.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <functional>
@@ -15,6 +16,7 @@ public:
 
     void setComposing(bool shouldBeActive, bool isUsingAi,
                       const juce::String& stage, float progress);
+    void setLanguage(UiLanguage);
     void paint(juce::Graphics&) override;
     void resized() override;
     std::function<void()> onCancel;
@@ -29,6 +31,7 @@ private:
     float progress{};
     juce::String stage;
     juce::TextButton cancelButton{"CANCEL"};
+    UiLanguage language{UiLanguage::English};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompositionProgress)
 };

@@ -74,6 +74,9 @@ bool writePatternToMidiFile(const Pattern& pattern, const juce::File& destinatio
     for (const auto& control : pattern.controls)
         if (control.channel >= 1 && control.channel <= 16 && selected(control.voice, control.channel))
             populatedVoices[static_cast<std::size_t>(resolvedVoice(control.voice, control.channel))] = true;
+    for (const auto& expression : pattern.expressions)
+        if (expression.channel >= 1 && expression.channel <= 16 && selected(expression.voice, expression.channel))
+            populatedVoices[static_cast<std::size_t>(resolvedVoice(expression.voice, expression.channel))] = true;
 
     auto exportedNotes = 0;
     for (std::size_t voiceIndex = 0; voiceIndex < populatedVoices.size(); ++voiceIndex) {
@@ -109,6 +112,30 @@ bool writePatternToMidiFile(const Pattern& pattern, const juce::File& destinatio
                 std::clamp(control.channel, 1, 16), std::clamp(control.controller, 0, 127),
                 std::clamp(control.value, 0, 127));
             message.setTimeStamp(std::clamp(control.beat, 0.0, pattern.lengthBeats) *
+                                 ticksPerQuarterNote);
+            track.addEvent(message);
+        }
+        for (const auto& expression : pattern.expressions) {
+            if (resolvedVoice(expression.voice, expression.channel) != voice ||
+                !selected(expression.voice, expression.channel)) continue;
+            const auto channel = std::clamp(expression.channel, 1, 16);
+            juce::MidiMessage message;
+            switch (expression.type) {
+                case ExpressionEventType::PitchBend:
+                    message = juce::MidiMessage::pitchWheel(channel,
+                        std::clamp(expression.value, 0, 16383));
+                    break;
+                case ExpressionEventType::ChannelPressure:
+                    message = juce::MidiMessage::channelPressureChange(channel,
+                        std::clamp(expression.value, 0, 127));
+                    break;
+                case ExpressionEventType::PolyAftertouch:
+                    message = juce::MidiMessage::aftertouchChange(channel,
+                        std::clamp(expression.note, 0, 127),
+                        std::clamp(expression.value, 0, 127));
+                    break;
+            }
+            message.setTimeStamp(std::clamp(expression.beat, 0.0, pattern.lengthBeats) *
                                  ticksPerQuarterNote);
             track.addEvent(message);
         }

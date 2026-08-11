@@ -14,9 +14,10 @@ std::optional<Enum> fromKey(std::string_view key,
 }
 } // namespace
 
-std::string_view grooveFamilyKey(GrooveFamily value) noexcept {
-    constexpr std::array names{"deep_progressive_house", "organic_progressive",
-                               "driving_house", "hybrid"};
+std::string_view rhythmInstrumentKey(RhythmInstrument value) noexcept {
+    constexpr std::array names{"kick_deep", "kick_alt", "snare", "sidestick", "clap",
+        "tom_low", "tom_mid", "tom_high", "closed_hat", "pedal_hat", "open_hat",
+        "ride", "crash", "shaker", "tambourine", "cowbell", "conga_low", "conga_high"};
     return names[static_cast<std::size_t>(value) < names.size() ? static_cast<std::size_t>(value) : 0];
 }
 std::string_view kickStateKey(KickState value) noexcept {
@@ -42,12 +43,18 @@ std::string_view rhythmMutationKey(RhythmMutationKind value) noexcept {
     return names[static_cast<std::size_t>(value) < names.size() ? static_cast<std::size_t>(value) : 0];
 }
 
-std::optional<GrooveFamily> grooveFamilyFromKey(std::string_view key) noexcept {
-    constexpr std::array values{
-        std::pair<std::string_view, GrooveFamily>{"deep_progressive_house", GrooveFamily::DeepProgressiveHouse},
-        std::pair<std::string_view, GrooveFamily>{"organic_progressive", GrooveFamily::OrganicProgressive},
-        std::pair<std::string_view, GrooveFamily>{"driving_house", GrooveFamily::DrivingHouse},
-        std::pair<std::string_view, GrooveFamily>{"hybrid", GrooveFamily::Hybrid}};
+std::optional<RhythmInstrument> rhythmInstrumentFromKey(std::string_view key) noexcept {
+    constexpr std::array<std::pair<std::string_view, RhythmInstrument>, 18> values{{
+        {"kick_deep", RhythmInstrument::KickDeep},
+        {"kick_alt", RhythmInstrument::KickAlt}, {"snare", RhythmInstrument::Snare},
+        {"sidestick", RhythmInstrument::Sidestick}, {"clap", RhythmInstrument::Clap},
+        {"tom_low", RhythmInstrument::TomLow}, {"tom_mid", RhythmInstrument::TomMid},
+        {"tom_high", RhythmInstrument::TomHigh}, {"closed_hat", RhythmInstrument::ClosedHat},
+        {"pedal_hat", RhythmInstrument::PedalHat}, {"open_hat", RhythmInstrument::OpenHat},
+        {"ride", RhythmInstrument::Ride}, {"crash", RhythmInstrument::Crash},
+        {"shaker", RhythmInstrument::Shaker}, {"tambourine", RhythmInstrument::Tambourine},
+        {"cowbell", RhythmInstrument::Cowbell}, {"conga_low", RhythmInstrument::CongaLow},
+        {"conga_high", RhythmInstrument::CongaHigh}}};
     return fromKey(key, values);
 }
 std::optional<KickState> kickStateFromKey(std::string_view key) noexcept {

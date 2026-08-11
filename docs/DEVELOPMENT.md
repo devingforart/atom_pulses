@@ -56,3 +56,17 @@ Además de las pruebas unitarias:
 3. Ejecuta el validador VST3 incluido por Steinberg/JUCE si está disponible.
 4. Prueba Live a 44.1/48/96 kHz y buffers de 64, 256 y 1024 muestras.
 5. Guarda, cierra y vuelve a abrir un Live Set.
+
+## Diagnóstico de OpenAI
+
+La credencial debe existir como `OPENAI_API_KEY` en el entorno de usuario de Windows; una
+variable disponible solamente en la consola de desarrollo no llega a Ableton. Configúrala con
+`scripts/configure-openai.ps1` y reinicia el DAW. Las pruebas opcionales de integración real son:
+
+```powershell
+./build/windows-release/Release/pulso_processor_tests.exe --live-cancel
+./build/windows-release/Release/pulso_processor_tests.exe --live-ai
+```
+
+La primera exige cancelación en menos de cuatro segundos. La segunda valida autenticación,
+Responses API, Structured Outputs, parseo y contrato de orquestación dinámica.

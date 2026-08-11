@@ -9,6 +9,7 @@ namespace pulso::plugin {
 class PatternView final : public juce::Component, public juce::SettableTooltipClient {
 public:
     explicit PatternView(PulsoAudioProcessor& owner);
+    void languageChanged();
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;

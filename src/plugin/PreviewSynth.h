@@ -30,6 +30,8 @@ public:
     void setHarmonyTone(int tone) noexcept;
     void setMelodyTone(int tone) noexcept;
     void setVoiceTimbre(VoiceId voice, int selection) noexcept;
+    void setVoiceTranspose(VoiceId voice, int semitones) noexcept;
+    void setVoiceLevelDb(VoiceId voice, float decibels) noexcept;
     void allNotesOff(int midiChannel, bool allowTailOff) noexcept;
     void renderNextBlock(juce::AudioBuffer<float>&, const juce::MidiBuffer&,
                          int startSample, int numSamples) noexcept;
@@ -62,14 +64,20 @@ private:
         float filterLeft{};
         float filterRight{};
         float filterAlpha{1.0f};
+        float expressionGain{1.0f};
+        float expressiveBrightness{0.5f};
+        float expressivePressure{};
         int note{-1};
+        int sourceNote{-1};
         int channel{};
         bool active{};
         bool releasing{};
+        bool heldByPedal{};
         bool oneShot{};
         VoiceKind kind{VoiceKind::Lead};
         std::uint32_t noiseState{1};
         std::uint64_t age{};
+        float outputGain{1.0f};
     };
 
     struct WorldProfile {
@@ -99,6 +107,8 @@ private:
     [[nodiscard]] BassTone effectiveBassTone(VoiceKind) const noexcept;
     [[nodiscard]] HarmonyTone effectiveHarmonyTone(VoiceKind) const noexcept;
     [[nodiscard]] MelodyTone effectiveMelodyTone(VoiceKind) const noexcept;
+    [[nodiscard]] int voiceTranspose(VoiceKind) const noexcept;
+    [[nodiscard]] float voiceLevelGain(VoiceKind) const noexcept;
 
     std::array<Voice, drumVoiceCount> drumVoices{};
     std::array<Voice, tonalVoiceCount> tonalVoices{};
@@ -111,6 +121,10 @@ private:
     std::array<float, 16> channelExpression{};
     std::array<float, 16> channelModulation{};
     std::array<float, 16> channelBrightness{};
+    std::array<float, 16> channelPitchBend{};
+    std::array<float, 16> channelPressure{};
+    std::array<bool, 16> channelSustain{};
+    std::array<std::array<float, 128>, 16> polyAftertouch{};
     double sampleRate{44100.0};
     SoundWorld soundWorld{SoundWorld::DeepProgressive};
     DrumKit drumKit{DrumKit::TR909};
@@ -118,6 +132,10 @@ private:
     HarmonyTone harmonyTone{HarmonyTone::DeepPad};
     MelodyTone melodyTone{MelodyTone::WarmMono};
     std::array<int, static_cast<std::size_t>(VoiceId::Count)> voiceTimbres{};
+    std::array<int, static_cast<std::size_t>(VoiceId::Count)> voiceTransposes{};
+    std::array<float, static_cast<std::size_t>(VoiceId::Count)> voiceLevelGains{
+        1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+        1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
     std::uint64_t ageCounter{};
 };
 

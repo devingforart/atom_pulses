@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.14.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.19.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,13 +13,23 @@ option(PULSO_BUILD_CLI "Build the pattern demo CLI" ON)
 include(FetchContent)
 
 add_library(pulso_core STATIC
+    src/core/CompositionModel.cpp
+    src/core/CompositionModel.h
     src/core/Generator.cpp
     src/core/Generator.h
+    src/core/HarmonyEngine.cpp
+    src/core/HarmonyEngine.h
     src/core/MusicTypes.h
+    src/core/MusicalCritic.cpp
+    src/core/MusicalCritic.h
     src/core/Orchestration.cpp
     src/core/Orchestration.h
     src/core/PerformanceTiming.cpp
     src/core/PerformanceTiming.h
+    src/core/PerformanceExpression.cpp
+    src/core/PerformanceExpression.h
+    src/core/PhraseComposer.cpp
+    src/core/PhraseComposer.h
     src/core/PhraseDirector.cpp
     src/core/PhraseDirector.h
     src/core/Random.h
@@ -39,7 +49,7 @@ target_compile_features(pulso_core PUBLIC cxx_std_20)
 set_target_properties(pulso_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(MSVC)
-    target_compile_options(pulso_core PRIVATE /W4 /permissive-)
+    target_compile_options(pulso_core PRIVATE /W4 /permissive- /utf-8)
 else()
     target_compile_options(pulso_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
@@ -94,6 +104,8 @@ if(PULSO_BUILD_PLUGIN)
         src/plugin/CompositionProgress.h
         src/plugin/LookAndFeel.cpp
         src/plugin/LookAndFeel.h
+        src/plugin/Localization.cpp
+        src/plugin/Localization.h
         src/plugin/MidiExporter.cpp
         src/plugin/MidiExporter.h
         src/plugin/PatternView.cpp
@@ -115,12 +127,19 @@ if(PULSO_BUILD_PLUGIN)
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
     )
+    if(WIN32)
+        target_link_libraries(Pulso PRIVATE winhttp)
+    endif()
 
     target_compile_definitions(Pulso PUBLIC
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
     )
+
+    if(MSVC)
+        target_compile_options(Pulso PRIVATE /utf-8)
+    endif()
 
     if(PULSO_BUILD_TESTS)
         add_executable(pulso_processor_tests tests/ProcessorTests.cpp)
@@ -130,6 +149,9 @@ if(PULSO_BUILD_PLUGIN)
             juce::juce_audio_utils
             juce::juce_dsp
         )
+        if(MSVC)
+            target_compile_options(pulso_processor_tests PRIVATE /utf-8)
+        endif()
         add_test(NAME pulso_processor_tests COMMAND pulso_processor_tests)
     endif()
 endif()

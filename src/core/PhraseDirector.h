@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CompositionModel.h"
 #include "Orchestration.h"
 
 #include <array>
@@ -29,6 +30,13 @@ struct BarDirection {
     bool breath{};
     bool fullBreath{};
     bool arrival{};
+    int phraseIndex{};
+    int barInPhrase{};
+    int phraseBars{8};
+    double phrasePosition{};
+    double intensity{0.5};
+    PhraseFunction phraseFunction{PhraseFunction::Establish};
+    MotifTransformation motifTransformation{MotifTransformation::Original};
     VoiceId foreground{VoiceId::Unspecified};
     VoiceId response{VoiceId::Unspecified};
     std::array<VoiceDirection, static_cast<std::size_t>(VoiceId::Count)> voices{};

@@ -1,7 +1,10 @@
 #include "SongComposer.h"
 
 #include "Random.h"
+#include "HarmonyEngine.h"
+#include "MusicalCritic.h"
 #include "PhraseDirector.h"
+#include "PhraseComposer.h"
 #include "RhythmEngine.h"
 #include "TonalContract.h"
 
@@ -13,25 +16,6 @@
 
 namespace pulso {
 namespace {
-
-constexpr std::array minorSemitones{0, 2, 3, 5, 7, 8, 10};
-constexpr std::array majorSemitones{0, 2, 4, 5, 7, 9, 11};
-constexpr std::array dorianSemitones{0, 2, 3, 5, 7, 9, 10};
-constexpr std::array mixolydianSemitones{0, 2, 4, 5, 7, 9, 10};
-
-int degreePitchClass(const SongPlan& plan, int degree) {
-    const auto index = static_cast<std::size_t>(positiveModulo(degree, 7));
-    const auto semitone = plan.scale == ScaleKind::Major ? majorSemitones[index]
-        : plan.scale == ScaleKind::Dorian ? dorianSemitones[index]
-        : plan.scale == ScaleKind::Mixolydian ? mixolydianSemitones[index]
-                                              : minorSemitones[index];
-    return positiveModulo(plan.rootPitchClass + semitone, 12);
-}
-
-std::vector<int> chordForDegree(const SongPlan& plan, int degree) {
-    return {degreePitchClass(plan, degree), degreePitchClass(plan, degree + 2),
-            degreePitchClass(plan, degree + 4)};
-}
 
 int nearestPitchClass(int pitchClass, int target, int minimum, int maximum) {
     auto best = std::clamp(target, minimum, maximum);
@@ -56,6 +40,10 @@ void appendShifted(Pattern& destination, Pattern&& source, double beatOffset,
     for (auto& control : source.controls) {
         control.beat += beatOffset;
         if (control.beat < songLength) destination.controls.push_back(control);
+    }
+    for (auto& expression : source.expressions) {
+        expression.beat += beatOffset;
+        if (expression.beat < songLength) destination.expressions.push_back(expression);
     }
     for (auto& marker : source.markers) {
         marker.beat += beatOffset;
@@ -127,6 +115,7 @@ std::vector<PlannedVoice> defaultVoicePlan() {
         result.push_back({definition.id, functions[index], interactions[index],
                           index == 10 ? 0.36 : 0.62, index == 2 || index == 6 ? 0.72 : 0.38,
                           definition.minimumPitch, definition.maximumPitch});
+        result.back().performance = defaultPerformanceProfile(definition.id);
     }
     return result;
 }
@@ -162,6 +151,63 @@ double signedHumanValue(std::uint64_t seed, VoiceId voice, int absoluteBar, int 
                              static_cast<std::uint64_t>(absoluteBar + 1) * 0xd1b54a32d192ed03ULL ^
                              static_cast<std::uint64_t>(ordinal + 1) * 0x94d049bb133111ebULL);
     return static_cast<double>(value & 0xffffu) / 32767.5 - 1.0;
+}
+
+std::uint64_t textIdentity(const std::string& text) noexcept {
+    auto hash = std::uint64_t{1469598103934665603ULL};
+    for (const auto character : text) {
+        hash ^= static_cast<unsigned char>(character);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+RhythmMotif createOpenRhythmMotif(const std::string& direction, std::uint64_t seed,
+                                  int variant) {
+    RhythmMotif motif;
+    motif.id = std::string(1, static_cast<char>('A' + variant));
+    motif.bars = 2;
+    motif.stepsPerBar = 16;
+    const auto length = motif.bars * motif.stepsPerBar;
+    motif.kick.assign(static_cast<std::size_t>(length), '0');
+    motif.snareClap.assign(static_cast<std::size_t>(length), '0');
+    motif.closedHats.assign(static_cast<std::size_t>(length), '0');
+    motif.openHatsShaker.assign(static_cast<std::size_t>(length), '0');
+    motif.lowPercussion.assign(static_cast<std::size_t>(length), '0');
+    motif.highPercussion.assign(static_cast<std::size_t>(length), '0');
+    Random random(seed ^ textIdentity(direction) ^
+                  (static_cast<std::uint64_t>(variant + 1) * 0xd1b54a32d192ed03ULL));
+    const auto rotation = random.range(0, 3);
+    const auto backbeatA = random.chance(0.5) ? 4 : 6;
+    const auto backbeatB = random.chance(0.5) ? 12 : 14;
+    for (auto step = 0; step < length; ++step) {
+        const auto local = step % 16;
+        const auto index = static_cast<std::size_t>(step);
+        const auto downbeat = local % 4 == rotation;
+        if ((step == 0 || downbeat) ? random.chance(0.52 + variant * 0.08)
+                                    : random.chance(0.08 + variant * 0.025))
+            motif.kick[index] = local == rotation ? '2' : '1';
+        if (local == backbeatA || local == backbeatB)
+            motif.snareClap[index] = random.chance(0.82) ? '2' : '1';
+        else if (random.chance(0.035 + variant * 0.018))
+            motif.snareClap[index] = '1';
+        if ((local + variant) % (variant == 1 ? 2 : 4) == 0 || random.chance(0.18))
+            motif.closedHats[index] = random.chance(0.20) ? '2' : '1';
+        if ((local + rotation) % 8 == 6 && random.chance(0.72)) motif.openHatsShaker[index] = '1';
+        if (random.chance(0.08 + variant * 0.025)) motif.lowPercussion[index] = '1';
+        if (random.chance(0.10 + variant * 0.03)) motif.highPercussion[index] = '1';
+    }
+    motif.kick.front() = '2';
+    const auto ornamentCount = 2 + random.range(0, 4);
+    constexpr std::array instruments{RhythmInstrument::Sidestick, RhythmInstrument::TomLow,
+        RhythmInstrument::TomMid, RhythmInstrument::TomHigh, RhythmInstrument::Ride,
+        RhythmInstrument::Crash, RhythmInstrument::Shaker, RhythmInstrument::Tambourine,
+        RhythmInstrument::Cowbell, RhythmInstrument::CongaLow, RhythmInstrument::CongaHigh};
+    for (auto index = 0; index < ornamentCount; ++index)
+        motif.ornaments.push_back({random.range(0, length - 1),
+            instruments[static_cast<std::size_t>(random.range(0, static_cast<int>(instruments.size()) - 1))],
+            random.range(42, 88), random.chance(0.22) ? 1.5 : 0.5});
+    return motif;
 }
 
 void applyDirectedPerformance(Pattern& chunk, const SongPlan& plan, const SongSection& section,
@@ -203,86 +249,8 @@ void applyDirectedPerformance(Pattern& chunk, const SongPlan& plan, const SongSe
         note.velocity = std::clamp(static_cast<int>(std::lround(
             note.velocity * arc * (0.72 + instruction.expression * 0.38) + human * 4.0)), 1, 127);
 
-        auto maximumOffset = 0.0;
-        if (note.voice == VoiceId::ClosedHats) maximumOffset = 0.006;
-        else if (note.voice == VoiceId::OpenHatsShaker) maximumOffset = 0.011;
-        else if (note.voice == VoiceId::SnareClap) maximumOffset = 0.004;
-        else if (note.voice == VoiceId::HighPercussion) maximumOffset = 0.020;
-        else if (note.voice == VoiceId::LowPercussion) maximumOffset = 0.014;
-        else if (note.voice == VoiceId::HarmonicPulse || note.voice == VoiceId::MovementBass) maximumOffset = 0.010;
-        else if (isVoiceInFamily(note.voice, VoiceFamily::Melodic)) maximumOffset = 0.013;
-        if (note.voice != VoiceId::CoreDrums) {
-            const auto barStart = chunkBar * beatsPerBar;
-            note.startBeat = std::clamp(note.startBeat + human * maximumOffset,
-                                        barStart, barStart + beatsPerBar - 0.015);
-        }
         if (isVoiceInFamily(note.voice, VoiceFamily::Melodic))
-            note.durationBeats = std::max(0.04, note.durationBeats * (0.94 + human * 0.05));
-    }
-}
-
-void addDirectedMelody(Pattern& chunk, const SongPlan& plan, const SongSection& section,
-                       const GenerationContext& context, const std::vector<BarDirection>& directions,
-                       int sectionBar, int chunkBars, int& previousLead, int& previousCounter,
-                       std::size_t& motifCursor) {
-    constexpr std::array<std::array<double, 4>, 4> leadStarts{{
-        {{0.25, 1.45, 2.80, -1.0}}, {{0.0, 0.85, 2.35, -1.0}},
-        {{0.45, 1.20, 2.90, -1.0}}, {{0.20, 1.90, -1.0, -1.0}}
-    }};
-    constexpr std::array<std::array<double, 4>, 4> leadDurations{{
-        {{0.52, 0.68, 0.92, 0.0}}, {{0.42, 0.78, 1.18, 0.0}},
-        {{0.58, 0.48, 0.72, 0.0}}, {{0.72, 1.10, 0.0, 0.0}}
-    }};
-    constexpr std::array<double, 4> counterStarts{0.55, 1.82, 3.02, -1.0};
-    constexpr std::array<double, 4> counterDurations{0.62, 0.84, 0.54, 0.0};
-
-    for (auto bar = 0; bar < chunkBars; ++bar) {
-        const auto localBar = sectionBar + bar;
-        if (localBar >= static_cast<int>(directions.size())) break;
-        const auto& direction = directions[static_cast<std::size_t>(localBar)];
-        const auto voice = direction.foreground;
-        if (voice != VoiceId::Lead && voice != VoiceId::Countermelody) continue;
-        const auto& instruction = direction.forVoice(voice);
-        if (instruction.maximumOnsets <= 0) continue;
-        const auto barStart = bar * plan.beatsPerBar;
-        const auto scale = plan.beatsPerBar / 4.0;
-        const auto phrase = positiveModulo(localBar, 8);
-        const auto patternIndex = phrase == 0 ? 0 : phrase == 1 ? 1 : phrase == 4 ? 2 : 3;
-        const auto& starts = voice == VoiceId::Lead ? leadStarts[static_cast<std::size_t>(patternIndex)]
-                                                    : counterStarts;
-        const auto& durations = voice == VoiceId::Lead ? leadDurations[static_cast<std::size_t>(patternIndex)]
-                                                       : counterDurations;
-        auto& previousPitch = voice == VoiceId::Lead ? previousLead : previousCounter;
-        const auto count = std::min(instruction.maximumOnsets, 4);
-        for (auto noteIndex = 0; noteIndex < count; ++noteIndex) {
-            if (starts[static_cast<std::size_t>(noteIndex)] < 0.0) break;
-            const auto position = starts[static_cast<std::size_t>(noteIndex)] * scale;
-            if (position < instruction.entryBeat || position >= instruction.exitBeat) continue;
-            const auto motifIndex = voice == VoiceId::Lead ? motifCursor++ :
-                motifCursor + static_cast<std::size_t>(noteIndex + 2);
-            auto interval = plan.motifIntervals[motifIndex % plan.motifIntervals.size()];
-            if (voice == VoiceId::Countermelody) interval = 7 - interval;
-            if (section.motifVariant % 3 == 2) interval += noteIndex % 2 == 0 ? 2 : -2;
-            auto pitchClass = positiveModulo(plan.rootPitchClass + interval, 12);
-            if (noteIndex == 0 && direction.arrival)
-                pitchClass = context.harmonyByBar[static_cast<std::size_t>(bar)].front();
-            const auto target = previousPitch + std::clamp(interval, -5, 5);
-            const auto* planned = plannedVoice(plan, voice);
-            auto pitch = nearestPitchClass(pitchClass, target,
-                planned == nullptr ? 52 : planned->minimumPitch,
-                planned == nullptr ? 92 : planned->maximumPitch);
-            if (std::abs(pitch - previousPitch) > 8)
-                pitch = nearestPitchClass(pitchClass, previousPitch,
-                    planned == nullptr ? 52 : planned->minimumPitch,
-                    planned == nullptr ? 92 : planned->maximumPitch);
-            const auto duration = std::min(durations[static_cast<std::size_t>(noteIndex)] * scale,
-                                           instruction.exitBeat - position - 0.02);
-            if (duration <= 0.03) continue;
-            chunk.notes.push_back({barStart + position, duration, pitch,
-                std::clamp(static_cast<int>(58 + section.energy * 36 + (noteIndex == 0 ? 7 : 0)), 1, 127),
-                voiceDefinition(voice).midiChannel, voice});
-            previousPitch = pitch;
-        }
+            note.durationBeats = std::max(0.04, note.durationBeats * (0.95 + human * 0.035));
     }
 }
 
@@ -313,13 +281,19 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
     plan.chordDegrees = plan.scale == ScaleKind::Major ? std::vector<int>{0, 4, 5, 3}
                                                        : std::vector<int>{0, 5, 3, 6};
     plan.voices = defaultVoicePlan();
-    plan.rhythmMotifs.push_back({"A", 2, 16,
-        "10001000100010001000100010001000",
-        "00002000000020000000200000002000",
-        "00100010001000100010001000100010",
-        "00000010000000100000001000000020",
-        "00000100000100000000001000010000",
-        "00010000001000000001000000100000"});
+    Random rhythmRandom(seed ^ textIdentity(direction) ^ 0x525954484dULL);
+    plan.rhythmLanguage.description = "Open local rhythm derived from the creative direction and composition DNA";
+    plan.rhythmLanguage.pulseStability = 0.35 + rhythmRandom.unit() * 0.50;
+    plan.rhythmLanguage.backbeatGravity = 0.25 + rhythmRandom.unit() * 0.65;
+    plan.rhythmLanguage.syncopation = 0.18 + rhythmRandom.unit() * 0.70;
+    plan.rhythmLanguage.ghostDensity = 0.05 + rhythmRandom.unit() * 0.36;
+    plan.rhythmLanguage.velocityContrast = 0.30 + rhythmRandom.unit() * 0.58;
+    plan.rhythmLanguage.timingFreedom = 0.04 + rhythmRandom.unit() * 0.34;
+    plan.rhythmLanguage.orchestrationMotion = 0.20 + rhythmRandom.unit() * 0.68;
+    plan.rhythmLanguage.silenceBias = 0.12 + rhythmRandom.unit() * 0.52;
+    plan.rhythmLanguage.callResponse = 0.18 + rhythmRandom.unit() * 0.70;
+    for (auto variant = 0; variant < 3; ++variant)
+        plan.rhythmMotifs.push_back(createOpenRhythmMotif(direction, seed, variant));
 
     struct Template { const char* name; const char* function; double share; double energy; double tension; double density; int motif; };
     constexpr std::array form{
@@ -363,7 +337,8 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
         plan.sections.back().activeVoices = defaultActiveVoices(plan.sections.back());
         auto& rhythm = plan.sections.back().rhythm;
         rhythm.authored = true;
-        rhythm.motifId = "A";
+        rhythm.motifId = plan.rhythmMotifs[static_cast<std::size_t>(item.motif %
+            static_cast<int>(plan.rhythmMotifs.size()))].id;
         rhythm.percussionDensity = item.density;
         rhythm.syncopation = std::clamp(0.22 + item.tension * 0.42, 0.0, 1.0);
         rhythm.swing = containsCaseInsensitive(direction, "organic") ? 0.16 : 0.08;
@@ -429,6 +404,20 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     plan.key = canonicalKeyName(plan.rootPitchClass, plan.scale);
     for (auto& value : plan.chordDegrees) value = positiveModulo(value, 7);
     if (plan.voices.empty()) plan.voices = defaultVoicePlan();
+    if (plan.rhythmLanguage.description.empty())
+        plan.rhythmLanguage.description = "Open rhythmic conversation";
+    if (plan.rhythmLanguage.description.size() > 240)
+        plan.rhythmLanguage.description.resize(240);
+    for (auto* value : {&plan.rhythmLanguage.pulseStability,
+                        &plan.rhythmLanguage.backbeatGravity,
+                        &plan.rhythmLanguage.syncopation,
+                        &plan.rhythmLanguage.ghostDensity,
+                        &plan.rhythmLanguage.velocityContrast,
+                        &plan.rhythmLanguage.timingFreedom,
+                        &plan.rhythmLanguage.orchestrationMotion,
+                        &plan.rhythmLanguage.silenceBias,
+                        &plan.rhythmLanguage.callResponse})
+        *value = std::clamp(std::isfinite(*value) ? *value : 0.5, 0.0, 1.0);
     if (plan.rhythmMotifs.size() > 6) plan.rhythmMotifs.resize(6);
     std::vector<std::string> motifIds;
     for (std::size_t index = 0; index < plan.rhythmMotifs.size(); ++index) {
@@ -450,6 +439,13 @@ void SongComposer::normalizePlan(SongPlan& plan) {
         cleanMask(motif.openHatsShaker);
         cleanMask(motif.lowPercussion);
         cleanMask(motif.highPercussion);
+        if (motif.ornaments.size() > 48) motif.ornaments.resize(48);
+        for (auto& ornament : motif.ornaments) {
+            ornament.step = std::clamp(ornament.step, 0, std::max(0, static_cast<int>(expected) - 1));
+            ornament.velocity = std::clamp(ornament.velocity, 1, 127);
+            ornament.durationSteps = std::clamp(
+                std::isfinite(ornament.durationSteps) ? ornament.durationSteps : 0.5, 0.10, 8.0);
+        }
     }
     const auto defaults = defaultVoicePlan();
     for (const auto rhythmVoice : {VoiceId::SnareClap, VoiceId::ClosedHats, VoiceId::OpenHatsShaker})
@@ -469,6 +465,23 @@ void SongComposer::normalizePlan(SongPlan& plan) {
         voice.syncopation = std::clamp(voice.syncopation, 0.0, 1.0);
         voice.minimumPitch = std::clamp(voice.minimumPitch, definition.minimumPitch, definition.maximumPitch);
         voice.maximumPitch = std::clamp(voice.maximumPitch, voice.minimumPitch, definition.maximumPitch);
+        if (!voice.performance.authored)
+            voice.performance = defaultPerformanceProfile(voice.id);
+        voice.performance.expressionDepth = std::clamp(voice.performance.expressionDepth, 0.0, 1.0);
+        voice.performance.brightness = std::clamp(voice.performance.brightness, 0.0, 1.0);
+        voice.performance.humanization = std::clamp(voice.performance.humanization, 0.0, 1.0);
+        const auto pitchEligible = voice.id == VoiceId::SubBass || voice.id == VoiceId::MovementBass ||
+                                   voice.id == VoiceId::Lead || voice.id == VoiceId::Countermelody;
+        if (!pitchEligible) voice.performance.pitchGesture = PitchGesture::Stable;
+        if (isVoiceInFamily(voice.id, VoiceFamily::Rhythm)) {
+            voice.performance.vibrato = VibratoStyle::None;
+            voice.performance.sustainPedal = false;
+        }
+        const auto pedalEligible = voice.id == VoiceId::HarmonicFoundation ||
+                                   voice.id == VoiceId::HarmonicUpper ||
+                                   voice.id == VoiceId::Atmosphere;
+        if (!pedalEligible) voice.performance.sustainPedal = false;
+        if (voice.performance.intent.size() > 240) voice.performance.intent.resize(240);
         return false;
     }), plan.voices.end());
 
@@ -584,24 +597,19 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         workUnits += static_cast<std::size_t>((section.bars + 15) / 16);
     auto completed = std::size_t{};
     auto globalChunk = std::uint64_t{};
-    std::array<int, 3> previousVoicing{48, 55, 60};
-    auto previousLeadPitch = 72;
-    auto previousCounterPitch = 65;
-    auto motifCursor = std::size_t{};
+    HarmonyState harmonyState;
+    PhrasePerformanceState phraseState;
     std::vector<std::vector<int>> songHarmony(static_cast<std::size_t>(plan.totalBars));
 
     for (const auto& section : plan.sections) {
         const auto directions = PhraseDirector::create(plan, section);
+        const auto sectionHarmony = HarmonyEngine::composeSection(plan, section, directions,
+                                                                   harmonyState);
         for (auto localBar = 0; localBar < section.bars; ++localBar) {
-            const auto& direction = directions[static_cast<std::size_t>(localBar)];
-            auto progressionIndex = direction.harmonicStep + section.motifVariant;
-            if (&section == &plan.sections.back() && localBar + 1 == section.bars)
-                progressionIndex = 0;
             const auto absoluteBar = section.startBar + localBar;
             if (absoluteBar >= 0 && absoluteBar < plan.totalBars)
-                songHarmony[static_cast<std::size_t>(absoluteBar)] = chordForDegree(
-                    plan, plan.chordDegrees[static_cast<std::size_t>(progressionIndex) %
-                                            plan.chordDegrees.size()]);
+                songHarmony[static_cast<std::size_t>(absoluteBar)] =
+                    sectionHarmony[static_cast<std::size_t>(localBar)].pitchClasses;
         }
         song.markers.push_back({section.startBar * plan.beatsPerBar, section.name});
         auto sectionBar = 0;
@@ -639,86 +647,23 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
                     note.pitch = constrainToVoiceRegister(note.pitch, voice);
             }
             chunk.notes.erase(std::remove_if(chunk.notes.begin(), chunk.notes.end(), [](const auto& note) {
-                return note.voice != VoiceId::Unspecified && isVoiceInFamily(note.voice, VoiceFamily::Rhythm);
-            }), chunk.notes.end());
-            chunk.notes.erase(std::remove_if(chunk.notes.begin(), chunk.notes.end(), [](const auto& note) {
-                return note.voice == VoiceId::Lead || note.voice == VoiceId::Countermelody;
+                return note.voice != VoiceId::Unspecified &&
+                       (isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
+                        isVoiceInFamily(note.voice, VoiceFamily::Bass) ||
+                        isVoiceInFamily(note.voice, VoiceFamily::Harmony) ||
+                        isVoiceInFamily(note.voice, VoiceFamily::Melodic));
             }), chunk.notes.end());
 
-            if (voiceIsActive(section, VoiceId::MovementBass)) {
-                const auto originalNotes = chunk.notes;
-                auto bassIndex = 0;
-                for (const auto& source : originalNotes) {
-                    if (source.voice != VoiceId::SubBass || bassIndex++ % 2 != 1) continue;
-                    auto movement = source;
-                    movement.voice = VoiceId::MovementBass;
-                    movement.channel = voiceDefinition(movement.voice).midiChannel;
-                    movement.pitch = constrainToVoiceRegister(source.pitch + 12,
-                                                               plannedVoice(plan, movement.voice));
-                    movement.durationBeats = std::min(source.durationBeats, 0.48);
-                    movement.velocity = std::max(1, source.velocity - 12);
-                    chunk.notes.push_back(movement);
-                }
-            }
-
-            addDirectedMelody(chunk, plan, section, context, directions, sectionBar, chunkBars,
-                              previousLeadPitch, previousCounterPitch, motifCursor);
+            PhraseComposer::renderBassVoices(chunk, plan, section, directions, sectionHarmony,
+                                              sectionBar, chunkBars, phraseState);
+            PhraseComposer::renderMelodicVoices(chunk, plan, section, directions, sectionHarmony,
+                                                 sectionBar, chunkBars, phraseState);
 
             for (auto bar = 0; bar < chunkBars; ++bar) {
-                const auto& chord = context.harmonyByBar[static_cast<std::size_t>(bar)];
-                const auto barStart = bar * plan.beatsPerBar;
                 const auto localBar = sectionBar + bar;
                 const auto& direction = directions[static_cast<std::size_t>(localBar)];
-                std::array<int, 3> voicing{};
-                for (auto voiceIndex = 0; voiceIndex < 3; ++voiceIndex) {
-                    const auto target = previousVoicing[static_cast<std::size_t>(voiceIndex)];
-                    voicing[static_cast<std::size_t>(voiceIndex)] = nearestPitchClass(
-                        chord[static_cast<std::size_t>(voiceIndex)], target, 45 + voiceIndex * 4, 72 + voiceIndex * 3);
-                    if (direction.forVoice(VoiceId::HarmonicFoundation).maximumOnsets > 0)
-                        chunk.notes.push_back({barStart,
-                            std::min((section.bars - localBar) * plan.beatsPerBar - 0.03,
-                                     direction.harmonicHoldBars * plan.beatsPerBar - 0.06),
-                            constrainToVoiceRegister(voicing[static_cast<std::size_t>(voiceIndex)],
-                                                     plannedVoice(plan, VoiceId::HarmonicFoundation)),
-                            std::clamp(static_cast<int>(54 + section.energy * 34), 1, 127),
-                            voiceDefinition(VoiceId::HarmonicFoundation).midiChannel,
-                            VoiceId::HarmonicFoundation});
-                }
-                previousVoicing = voicing;
-
-                const auto pulseBudget = direction.forVoice(VoiceId::HarmonicPulse).maximumOnsets;
-                if (pulseBudget > 0) {
-                    constexpr std::array pulsePositions{0.35, 1.65, 3.05};
-                    const auto pulseCount = std::clamp(pulseBudget / 2, 1, 3);
-                    for (auto pulse = 0; pulse < pulseCount; ++pulse)
-                        for (auto chordTone = 0; chordTone < 2; ++chordTone)
-                            chunk.notes.push_back({barStart + std::min(pulsePositions[static_cast<std::size_t>(pulse)],
-                                                                       plan.beatsPerBar - 0.25),
-                                0.22 + section.energy * 0.18,
-                                constrainToVoiceRegister(voicing[static_cast<std::size_t>(chordTone)] + 12,
-                                                         plannedVoice(plan, VoiceId::HarmonicPulse)),
-                                std::clamp(static_cast<int>(58 + section.energy * 32), 1, 127),
-                                voiceDefinition(VoiceId::HarmonicPulse).midiChannel, VoiceId::HarmonicPulse});
-                }
-                if (direction.forVoice(VoiceId::HarmonicUpper).maximumOnsets > 0) {
-                    const auto extension = degreePitchClass(plan, plan.chordDegrees[
-                        static_cast<std::size_t>(section.startBar + sectionBar + bar) % plan.chordDegrees.size()] + 6);
-                    const auto upperStart = std::min(plan.beatsPerBar - 0.25, plan.beatsPerBar * 0.125);
-                    chunk.notes.push_back({barStart + upperStart, std::min(plan.beatsPerBar * 1.65,
-                                                              (chunkBars - bar) * plan.beatsPerBar - 0.02),
-                        nearestPitchClass(extension, 79, 67, 96),
-                        std::clamp(static_cast<int>(45 + section.energy * 27), 1, 127),
-                        voiceDefinition(VoiceId::HarmonicUpper).midiChannel, VoiceId::HarmonicUpper});
-                }
-                if (direction.forVoice(VoiceId::Atmosphere).maximumOnsets > 0) {
-                    chunk.notes.push_back({barStart,
-                        std::min(direction.harmonicHoldBars * plan.beatsPerBar - 0.04,
-                                 (chunkBars - bar) * plan.beatsPerBar - 0.02),
-                        nearestPitchClass(chord.front(), 55, 43, 72),
-                        std::clamp(static_cast<int>(36 + section.energy * 20), 1, 127),
-                        voiceDefinition(VoiceId::Atmosphere).midiChannel, VoiceId::Atmosphere});
-                }
-
+                HarmonyEngine::renderBar(chunk, plan, section, direction,
+                    sectionHarmony[static_cast<std::size_t>(localBar)], bar, chunkBars - bar);
             }
 
             RhythmEngine::renderChunk(chunk, plan, section, directions, sectionBar, chunkBars);
@@ -766,9 +711,23 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         }
     }
 
+    [[maybe_unused]] const auto rhythmReport = RhythmEngine::enforceContract(song, plan);
     [[maybe_unused]] const auto tonalReport = repairTonalContract(
         song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, songHarmony);
-    [[maybe_unused]] const auto rhythmReport = RhythmEngine::enforceContract(song, plan);
+    [[maybe_unused]] const auto qualityReport = MusicalCritic::reviewAndRefine(song, plan);
+    [[maybe_unused]] const auto finalTonalReport = repairTonalContract(
+        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, songHarmony);
+    for (auto& note : song.notes) {
+        if (note.voice == VoiceId::Unspecified ||
+            isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
+            note.voice == VoiceId::Transitions) continue;
+        const auto& definition = voiceDefinition(note.voice);
+        if (note.pitch < definition.minimumPitch || note.pitch > definition.maximumPitch)
+            note.pitch = nearestPitchClass(positiveModulo(note.pitch, 12), note.pitch,
+                                           definition.minimumPitch, definition.maximumPitch);
+    }
+
+    PerformanceExpression::apply(song, plan);
 
     std::sort(song.notes.begin(), song.notes.end(), [](const auto& left, const auto& right) {
         if (left.startBeat != right.startBeat) return left.startBeat < right.startBeat;

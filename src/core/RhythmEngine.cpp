@@ -98,6 +98,30 @@ const LaneInfo& infoFor(RhythmLane lane) {
     });
 }
 
+LaneInfo infoFor(RhythmInstrument instrument) {
+    switch (instrument) {
+        case RhythmInstrument::KickDeep: return {RhythmLane::Kick, VoiceId::CoreDrums, 36, 98};
+        case RhythmInstrument::KickAlt: return {RhythmLane::Kick, VoiceId::CoreDrums, 35, 91};
+        case RhythmInstrument::Snare: return {RhythmLane::SnareClap, VoiceId::SnareClap, 38, 84};
+        case RhythmInstrument::Sidestick: return {RhythmLane::SnareClap, VoiceId::SnareClap, 37, 68};
+        case RhythmInstrument::Clap: return {RhythmLane::SnareClap, VoiceId::SnareClap, 39, 82};
+        case RhythmInstrument::TomLow: return {RhythmLane::LowPercussion, VoiceId::LowPercussion, 45, 75};
+        case RhythmInstrument::TomMid: return {RhythmLane::LowPercussion, VoiceId::LowPercussion, 47, 72};
+        case RhythmInstrument::TomHigh: return {RhythmLane::HighPercussion, VoiceId::HighPercussion, 50, 70};
+        case RhythmInstrument::ClosedHat: return {RhythmLane::ClosedHats, VoiceId::ClosedHats, 42, 57};
+        case RhythmInstrument::PedalHat: return {RhythmLane::ClosedHats, VoiceId::ClosedHats, 44, 53};
+        case RhythmInstrument::OpenHat: return {RhythmLane::OpenHatsShaker, VoiceId::OpenHatsShaker, 46, 64};
+        case RhythmInstrument::Ride: return {RhythmLane::HighPercussion, VoiceId::HighPercussion, 51, 66};
+        case RhythmInstrument::Crash: return {RhythmLane::HighPercussion, VoiceId::HighPercussion, 49, 82};
+        case RhythmInstrument::Shaker: return {RhythmLane::OpenHatsShaker, VoiceId::OpenHatsShaker, 70, 48};
+        case RhythmInstrument::Tambourine: return {RhythmLane::HighPercussion, VoiceId::HighPercussion, 54, 62};
+        case RhythmInstrument::Cowbell: return {RhythmLane::HighPercussion, VoiceId::HighPercussion, 56, 66};
+        case RhythmInstrument::CongaLow: return {RhythmLane::LowPercussion, VoiceId::LowPercussion, 64, 67};
+        case RhythmInstrument::CongaHigh: return {RhythmLane::HighPercussion, VoiceId::HighPercussion, 63, 65};
+    }
+    return infoFor(RhythmLane::HighPercussion);
+}
+
 bool renderMotifBar(Pattern& pattern, const SongPlan& plan, const SongSection& section,
                     const RhythmMotif& motif, int localBar, int absoluteBar,
                     double barStart, double weight) {
@@ -123,13 +147,58 @@ bool renderMotifBar(Pattern& pattern, const SongPlan& plan, const SongSection& s
             }
             const auto quarter = 4.0 * step / motif.stepsPerBar;
             if (info.lane == RhythmLane::Kick && suppressKickAt(section, localBar, quarter)) continue;
-            const auto micro = info.lane == RhythmLane::Kick || info.lane == RhythmLane::SnareClap
-                ? 0.0 : human(plan.seed, absoluteBar, static_cast<int>(info.lane), step) * 0.010;
+            const auto timingRange = 0.002 + plan.rhythmLanguage.timingFreedom * 0.014;
+            const auto micro = info.lane == RhythmLane::Kick ? 0.0
+                : human(plan.seed, absoluteBar, static_cast<int>(info.lane), step) * timingRange;
             const auto swing = step % 2 == 1 ? section.rhythm.swing * stepDuration * 0.32 : 0.0;
-            const auto velocity = static_cast<int>((info.velocity + (symbol == '2' ? 13 : 0) +
-                human(plan.seed, absoluteBar, static_cast<int>(info.lane), step) * 4.0) * weight);
+            const auto contrast = plan.rhythmLanguage.velocityContrast;
+            const auto backbeat = info.lane == RhythmLane::SnareClap &&
+                (std::abs(quarter - 1.0) < 0.05 || std::abs(quarter - 3.0) < 0.05)
+                ? plan.rhythmLanguage.backbeatGravity * 15.0 : 0.0;
+            const auto offbeat = step % 4 != 0 ? plan.rhythmLanguage.syncopation * 5.0 : 0.0;
+            const auto responseShape = (info.lane == RhythmLane::LowPercussion ||
+                                        info.lane == RhythmLane::HighPercussion)
+                ? ((motifBar + (info.lane == RhythmLane::HighPercussion ? 1 : 0)) % 2 == 0 ? 1.0 : -1.0) *
+                    plan.rhythmLanguage.callResponse * 5.0 : 0.0;
+            const auto humanRange = info.lane == RhythmLane::Kick
+                ? (1.0 - plan.rhythmLanguage.pulseStability) * 7.0
+                : 2.0 + contrast * 6.0;
+            const auto pulseAnchor = info.lane == RhythmLane::Kick && step % 4 == 0
+                ? plan.rhythmLanguage.pulseStability * 7.0 : 0.0;
+            const auto velocity = static_cast<int>((info.velocity - (symbol == '1' ? contrast * 7.0 : 0.0) +
+                (symbol == '2' ? 8.0 + contrast * 13.0 : 0.0) + backbeat + offbeat + responseShape +
+                pulseAnchor + human(plan.seed, absoluteBar, static_cast<int>(info.lane), step) * humanRange) * weight);
             addHit(pattern, barStart + step * stepDuration + micro + swing, info.pitch, velocity,
                    info.voice, info.lane == RhythmLane::OpenHatsShaker ? 0.14 : 0.055);
+        }
+    }
+
+    for (const auto& ornament : motif.ornaments) {
+        if (ornament.step / motif.stepsPerBar != motifBar) continue;
+        const auto info = infoFor(ornament.instrument);
+        if (!active(section, info.voice)) continue;
+        if (info.voice == VoiceId::CoreDrums && section.rhythm.kickState == KickState::Muted) continue;
+        const auto localStep = ornament.step % motif.stepsPerBar;
+        const auto motion = plan.rhythmLanguage.orchestrationMotion;
+        const auto shapedVelocity = std::clamp(static_cast<int>(std::lround(
+            ornament.velocity * weight + human(plan.seed, absoluteBar, 12, localStep) * (3.0 + motion * 8.0))), 1, 127);
+        addHit(pattern, barStart + localStep * stepDuration, info.pitch, shapedVelocity, info.voice,
+               std::max(0.025, ornament.durationSteps * stepDuration));
+    }
+
+    if (plan.rhythmLanguage.ghostDensity > 0.02 && active(section, VoiceId::SnareClap)) {
+        for (auto step = 1; step < motif.stepsPerBar; ++step) {
+            const auto chance = (human(plan.seed ^ 0x47484f5354ULL, absoluteBar, 9, step) + 1.0) * 0.5;
+            const auto effectiveGhostDensity = plan.rhythmLanguage.ghostDensity *
+                (1.0 - plan.rhythmLanguage.silenceBias * 0.72);
+            if (chance > effectiveGhostDensity * 0.42) continue;
+            const auto beat = barStart + step * stepDuration;
+            const auto collision = std::any_of(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+                return note.voice == VoiceId::SnareClap && std::abs(note.startBeat - beat) < stepDuration * 0.25;
+            });
+            if (!collision)
+                addHit(pattern, beat, 38, std::clamp(static_cast<int>(24 +
+                    plan.rhythmLanguage.velocityContrast * 18.0), 1, 55), VoiceId::SnareClap, 0.035);
         }
     }
     return true;
@@ -171,6 +240,21 @@ void applyMutations(Pattern& pattern, const SongPlan& plan, const SongSection& s
     }
 }
 
+void applyPhraseWindow(Pattern& pattern, const BarDirection& direction,
+                       double barStart, double beatsPerBar) {
+    pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+        if (!isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
+            note.startBeat < barStart || note.startBeat >= barStart + beatsPerBar)
+            return false;
+        const auto& instruction = direction.forVoice(note.voice);
+        if (instruction.participation == Participation::Silent || instruction.maximumOnsets <= 0)
+            return true;
+        const auto beatInBar = note.startBeat - barStart;
+        return beatInBar + 0.0001 < instruction.entryBeat ||
+               beatInBar >= instruction.exitBeat - 0.0001;
+    }), pattern.notes.end());
+}
+
 } // namespace
 
 void RhythmEngine::renderChunk(Pattern& pattern, const SongPlan& plan, const SongSection& section,
@@ -208,6 +292,8 @@ void RhythmEngine::renderChunk(Pattern& pattern, const SongPlan& plan, const Son
                     addHit(pattern, barStart + (3.0 + index * 0.25) * beatScale, pitches[index],
                            67 + static_cast<int>(index) * 7, VoiceId::LowPercussion, 0.065);
             }
+            applyPhraseWindow(pattern, directions[static_cast<std::size_t>(localBar)],
+                              barStart, plan.beatsPerBar);
             continue;
         }
 
@@ -276,9 +362,9 @@ void RhythmEngine::renderChunk(Pattern& pattern, const SongPlan& plan, const Son
 
         if (drumsPresent && active(section, VoiceId::LowPercussion) &&
             section.rhythm.percussionDensity > 0.38) {
-            const std::array positions = plan.grooveFamily == GrooveFamily::OrganicProgressive
-                ? std::array{1.25, 2.75} : section.rhythm.syncopation > 0.58
-                    ? std::array{1.50, 2.75} : std::array{1.50, 3.25};
+            const std::array positions{
+                1.0 + plan.rhythmLanguage.syncopation * 0.75,
+                3.25 - plan.rhythmLanguage.callResponse * 0.75};
             const auto count = section.rhythm.percussionDensity > 0.72 ? 2 : 1;
             for (auto index = 0; index < count; ++index)
                 addHit(pattern, barStart + (positions[static_cast<std::size_t>(index)] +
@@ -303,6 +389,8 @@ void RhythmEngine::renderChunk(Pattern& pattern, const SongPlan& plan, const Son
                 addHit(pattern, barStart + (3.0 + index * 0.25) * beatScale, pitches[index],
                        67 + static_cast<int>(index) * 7, VoiceId::LowPercussion, 0.065);
         }
+        applyPhraseWindow(pattern, directions[static_cast<std::size_t>(localBar)],
+                          barStart, plan.beatsPerBar);
     }
 }
 

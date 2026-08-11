@@ -8,14 +8,21 @@ namespace pulso::plugin {
 CompositionProgress::CompositionProgress() {
     setInterceptsMouseClicks(true, true);
     setVisible(false);
-    setTooltip("PULSO is composing in the background. The current idea remains available until the new one is ready.");
-    cancelButton.setTooltip("Stop the current request immediately and keep the composition already playing.");
     cancelButton.onClick = [this] {
         cancelButton.setEnabled(false);
-        cancelButton.setButtonText("CANCELLING...");
+        cancelButton.setButtonText(tr(language, TextId::Cancelling));
         if (onCancel) onCancel();
     };
     addAndMakeVisible(cancelButton);
+    setLanguage(UiLanguage::English);
+}
+
+void CompositionProgress::setLanguage(UiLanguage nextLanguage) {
+    language = nextLanguage;
+    setTooltip(tr(language, TextId::ProgressTip));
+    cancelButton.setTooltip(tr(language, TextId::CancelTip));
+    if (cancelButton.isEnabled()) cancelButton.setButtonText(tr(language, TextId::Cancel));
+    repaint();
 }
 
 void CompositionProgress::resized() {
@@ -39,7 +46,7 @@ void CompositionProgress::setComposing(bool shouldBeActive, bool isUsingAi,
         phase = 0.0f;
         startedAtMs = juce::Time::getMillisecondCounterHiRes();
         cancelButton.setEnabled(true);
-        cancelButton.setButtonText("CANCEL");
+        cancelButton.setButtonText(tr(language, TextId::Cancel));
         setVisible(true);
         toFront(false);
         startTimerHz(30);
@@ -59,7 +66,6 @@ void CompositionProgress::paint(juce::Graphics& graphics) {
     if (!active) return;
 
     graphics.fillAll(colours::background.withAlpha(0.78f));
-
     auto card = getLocalBounds().toFloat().withSizeKeepingCentre(
         juce::jmin(440.0f, static_cast<float>(getWidth()) - 32.0f), 144.0f);
     graphics.setColour(colours::panelRaised.withAlpha(0.98f));
@@ -87,19 +93,19 @@ void CompositionProgress::paint(juce::Graphics& graphics) {
 
     graphics.setColour(colours::text);
     graphics.setFont(juce::FontOptions(16.0f, juce::Font::bold));
-    graphics.drawText(usingAi ? "GPT IS COMPOSING YOUR IDEA" : "COMPOSING YOUR IDEA",
+    graphics.drawText(tr(language, usingAi ? TextId::GptComposing : TextId::Composing),
                       copy.removeFromTop(26.0f), juce::Justification::centredLeft, false);
-
     graphics.setColour(colours::muted);
     graphics.setFont(juce::FontOptions(12.0f));
-    graphics.drawText("The current composition keeps playing while the new one is prepared.",
-                      copy.removeFromTop(22.0f), juce::Justification::centredLeft, false);
-
+    graphics.drawText(tr(language, TextId::CurrentKeepsPlaying), copy.removeFromTop(22.0f),
+                      juce::Justification::centredLeft, false);
     graphics.setColour(colours::accent);
     graphics.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-    const auto timing = stage.isNotEmpty() ? stage + "  ·  " + juce::String(elapsedSeconds) + " s"
-        : elapsedSeconds < 1 ? juce::String("DIRECTING HARMONY, MELODY, BASS AND RHYTHM")
-                             : juce::String("WORKING  ·  ") + juce::String(elapsedSeconds) + " s";
+    const auto timing = stage.isNotEmpty() ? stage + "  " + bullet() + "  " +
+        juce::String(elapsedSeconds) + " s"
+        : elapsedSeconds < 1 ? tr(language, TextId::Directing)
+                             : tr(language, TextId::Working) + "  " + bullet() + "  " +
+                               juce::String(elapsedSeconds) + " s";
     graphics.drawText(timing, copy, juce::Justification::centredLeft, false);
 
     if (progress > 0.0f) {

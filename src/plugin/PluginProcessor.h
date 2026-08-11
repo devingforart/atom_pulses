@@ -2,6 +2,7 @@
 
 #include "core/Generator.h"
 #include "core/SongComposer.h"
+#include "Localization.h"
 #include "AiComposer.h"
 #include "PreviewSynth.h"
 
@@ -69,6 +70,12 @@ public:
     [[nodiscard]] int voicePreviewTimbre(VoiceId) const noexcept;
     [[nodiscard]] juce::String voicePreviewTimbreName(VoiceId) const;
     [[nodiscard]] static juce::StringArray voicePreviewTimbreChoices(VoiceId);
+    void setVoicePreviewOctave(VoiceId, int semitones);
+    [[nodiscard]] int voicePreviewOctave(VoiceId) const noexcept;
+    [[nodiscard]] float voicePreviewLevelDb(VoiceId) const noexcept;
+    [[nodiscard]] static juce::String voicePreviewTimbreParameterId(VoiceId);
+    [[nodiscard]] static juce::String voicePreviewLevelParameterId(VoiceId);
+    void auditionVoicePreview(VoiceId) noexcept;
     [[nodiscard]] juce::String currentAiStatus() const;
     [[nodiscard]] juce::String currentIdeaTitle() const;
     [[nodiscard]] juce::String currentIdeaDescription() const;
@@ -84,6 +91,7 @@ public:
         return generationProgress.load(std::memory_order_relaxed);
     }
     [[nodiscard]] bool aiAvailable() const { return AiComposer::hasApiKey(); }
+    [[nodiscard]] UiLanguage uiLanguage() const noexcept;
     [[nodiscard]] bool isComposing() const noexcept {
         return generationInProgress.load(std::memory_order_acquire);
     }
@@ -278,6 +286,14 @@ private:
     std::atomic<double> transportBeat{};
     std::atomic<bool> hostTransportAvailable{false};
     std::array<std::atomic<float>*, static_cast<std::size_t>(VoiceId::Count)> voiceTimbreParameters{};
+    std::atomic<float>* languageParameter{};
+    std::array<std::atomic<float>*, static_cast<std::size_t>(VoiceId::Count)> voiceOctaveParameters{};
+    std::array<std::atomic<float>*, static_cast<std::size_t>(VoiceId::Count)> voiceLevelParameters{};
+    std::atomic<int> pendingPreviewAudition{-1};
+    int activePreviewAudition{-1};
+    int previewAuditionSamplesRemaining{};
+    int previewAuditionChannel{};
+    int previewAuditionNote{};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PulsoAudioProcessor)
 };

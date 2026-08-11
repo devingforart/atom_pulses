@@ -64,6 +64,17 @@ Las quince selecciones son parámetros automatizables y persistentes del host. S
 MUTE, arrastre MIDI y selección tímbrica comparten una fila, pero el audio de preview y
 el contenido MIDI continúan siendo capas independientes.
 
+El clic abre un inspector completo por voz:
+
+- `PREVIEW SOUND` escoge o hereda el modelo de síntesis.
+- `-12 / 0 / +12` cambia únicamente el registro de escucha de esa pista.
+- `LEVEL` ajusta su balance entre -36 y +6 dB con suavizado para evitar zipper noise.
+- `AUDITION` reproduce inmediatamente un golpe o nota representativa, incluso con el
+  transporte detenido, sin enviar ese evento de prueba a la salida MIDI.
+
+El transpose y el nivel pertenecen al preview: no cambian pitches, velocities ni archivos
+MIDI. La fila muestra los overrides activos para revisar la mezcla de un vistazo.
+
 La línea cian sobre el arreglo es el playhead de PULSO. Sigue la posición PPQ de Ableton
 y muestra `PLAY` o `PAUSED`, el compás, la sección musical y el tiempo dentro de la obra.
 Al hacer seek, detener o reanudar Live, el indicador salta inmediatamente a la posición
@@ -115,8 +126,15 @@ quedan exactamente en semicorcheas. Al activarlo, PULSO desplaza sólo la salida
 unos pocos milisegundos según la función de cada voz. Graba esa salida en otra pista si
 quieres capturar la interpretación; arrastra desde la partitura si quieres el MIDI limpio.
 
-El clip conserva longitud, tempo, compás, velocidades, microtiming, marcadores y CC
-expresivos. Si una voz no existe en el patrón actual, su fila aparece atenuada.
+El clip conserva longitud, tempo, compás, velocidades, articulaciones, marcadores, CC11
+de expresión, CC1 de modulación, CC74 de brillo, CC64 de pedal, pitch bend, channel
+pressure y poly-aftertouch. PULSO configura por RPN un rango de bend de ±2 semitonos.
+El instrumento receptor debe mapear o soportar esos mensajes para oírlos. Si una voz no
+existe en el patrón actual, su fila aparece atenuada.
+
+PULSO no activa MPE implícitamente: Live y muchos instrumentos tratan los canales MPE como
+canales miembro y eso entraría en conflicto con las pistas por voz. Los bends expresivos
+se aplican solamente a voces monofónicas que ya poseen un canal independiente.
 
 ## 6. Variaciones desde Max for Live
 
@@ -138,6 +156,11 @@ El puente es opcional: el botón de la interfaz del VST realiza la misma acción
 Ejecuta `scripts/configure-openai.ps1`, cierra Live y vuelve a abrirlo. PULSO lee
 `OPENAI_API_KEY` únicamente en el worker de generación. No hay red en el hilo de audio.
 Las instrucciones y notas bloqueadas se envían al servicio; el audio no se envía.
+
+La versión 0.19 no traduce la instrucción a uno de cuatro grooves internos. GPT construye
+el lenguaje rítmico y sus motivos a partir de la descripción completa. Pedidos explícitos,
+como un bombo constante en negras, siguen actuando como restricciones porque forman parte
+de la intención del usuario, no porque pertenezcan a una plantilla de género.
 
 ## Limitaciones conocidas
 

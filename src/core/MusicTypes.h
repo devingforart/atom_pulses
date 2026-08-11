@@ -36,6 +36,23 @@ struct ControlEvent {
     friend bool operator==(const ControlEvent&, const ControlEvent&) = default;
 };
 
+enum class ExpressionEventType : std::uint8_t {
+    PitchBend = 0,
+    ChannelPressure,
+    PolyAftertouch
+};
+
+struct ExpressionEvent {
+    double beat{};
+    ExpressionEventType type{ExpressionEventType::PitchBend};
+    int value{8192};
+    int note{-1};
+    int channel{1};
+    VoiceId voice{VoiceId::Unspecified};
+
+    friend bool operator==(const ExpressionEvent&, const ExpressionEvent&) = default;
+};
+
 struct MarkerEvent {
     double beat{};
     std::string name;
@@ -77,6 +94,7 @@ struct GenerationContext {
 struct Pattern {
     std::vector<NoteEvent> notes;
     std::vector<ControlEvent> controls;
+    std::vector<ExpressionEvent> expressions;
     std::vector<MarkerEvent> markers;
     double lengthBeats{4.0};
     std::uint64_t seed{1};

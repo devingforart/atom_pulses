@@ -31,10 +31,133 @@ juce::Colour colourForFamily(VoiceFamily family) {
     if (family == VoiceFamily::Melodic) return colours::accentCounter;
     return juce::Colour::fromRGB(115, 214, 225);
 }
+
+juce::String kickStateDisplay(UiLanguage language, KickState state) {
+    switch (state) {
+        case KickState::Muted: return tr(language, TextId::KickMuted);
+        case KickState::Reduced: return tr(language, TextId::KickReduced);
+        case KickState::Sparse: return tr(language, TextId::KickSparse);
+        case KickState::FourOnFloor: return tr(language, TextId::KickFourOnFloor);
+    }
+    return {};
+}
+
+class VoiceInspector final : public juce::Component, private juce::Timer {
+public:
+    VoiceInspector(PulsoAudioProcessor& owner, VoiceId selectedVoice)
+        : processor(owner), voice(selectedVoice) {
+        const auto language = processor.uiLanguage();
+        setSize(390, 184);
+        title.setText(voiceDisplayName(language, voice).toUpperCase(),
+                      juce::dontSendNotification);
+        title.setFont(juce::FontOptions(16.0f, juce::Font::bold));
+        title.setColour(juce::Label::textColourId, colours::accent);
+        soundLabel.setText(tr(language, TextId::PreviewSound), juce::dontSendNotification);
+        octaveLabel.setText(tr(language, TextId::Octave), juce::dontSendNotification);
+        levelLabel.setText(tr(language, TextId::Level), juce::dontSendNotification);
+        for (auto* label : {&soundLabel, &octaveLabel, &levelLabel}) {
+            label->setFont(juce::FontOptions(9.5f, juce::Font::bold));
+            label->setColour(juce::Label::textColourId, colours::muted);
+        }
+
+        sound.addItemList(localizedTimbreChoices(language, voice), 1);
+        sound.setJustificationType(juce::Justification::centred);
+        sound.setTooltip(tr(language, TextId::SoundTip));
+        soundAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+            processor.parameters, PulsoAudioProcessor::voicePreviewTimbreParameterId(voice), sound);
+        sound.onChange = [this] { processor.auditionVoicePreview(voice); };
+
+        constexpr std::array labels{"-12", "0", "+12"};
+        constexpr std::array values{-12, 0, 12};
+        for (std::size_t index = 0; index < octaveButtons.size(); ++index) {
+            auto& button = octaveButtons[index];
+            button.setButtonText(labels[index]);
+            button.setClickingTogglesState(true);
+            button.setRadioGroupId(8107, juce::dontSendNotification);
+            button.setTooltip(tr(language, index == 0 ? TextId::OctaveDownTip :
+                                           index == 2 ? TextId::OctaveUpTip :
+                                                        TextId::OctaveOriginalTip));
+            button.onClick = [this, value = values[index]] {
+                processor.setVoicePreviewOctave(voice, value);
+                processor.auditionVoicePreview(voice);
+            };
+        }
+
+        level.setSliderStyle(juce::Slider::LinearHorizontal);
+        level.setTextBoxStyle(juce::Slider::TextBoxRight, false, 66, 22);
+        level.setTextValueSuffix(" dB");
+        level.setTooltip(tr(language, TextId::LevelTip));
+        levelAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+            processor.parameters, PulsoAudioProcessor::voicePreviewLevelParameterId(voice), level);
+        audition.setButtonText(tr(language, TextId::Audition));
+        audition.setTooltip(tr(language, TextId::AuditionTip));
+        audition.onClick = [this] { processor.auditionVoicePreview(voice); };
+
+        addAndMakeVisible(title);
+        addAndMakeVisible(soundLabel);
+        addAndMakeVisible(sound);
+        addAndMakeVisible(octaveLabel);
+        addAndMakeVisible(levelLabel);
+        addAndMakeVisible(level);
+        addAndMakeVisible(audition);
+        for (auto& button : octaveButtons) addAndMakeVisible(button);
+        startTimerHz(20);
+        timerCallback();
+    }
+
+    void paint(juce::Graphics& graphics) override {
+        graphics.fillAll(colours::panel);
+        graphics.setColour(colours::panelRaised);
+        graphics.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 8.0f, 1.0f);
+    }
+
+    void resized() override {
+        auto area = getLocalBounds().reduced(14);
+        title.setBounds(area.removeFromTop(24));
+        auto labels = area.removeFromTop(16);
+        soundLabel.setBounds(labels.removeFromLeft(198));
+        octaveLabel.setBounds(labels.removeFromLeft(122));
+        levelLabel.setBounds(labels);
+        auto controls = area.removeFromTop(34);
+        sound.setBounds(controls.removeFromLeft(190));
+        controls.removeFromLeft(8);
+        const auto octaveWidth = 40;
+        for (auto& button : octaveButtons) button.setBounds(controls.removeFromLeft(octaveWidth).reduced(2, 0));
+        area.removeFromTop(12);
+        auto bottom = area.removeFromTop(36);
+        audition.setBounds(bottom.removeFromRight(92).reduced(2, 1));
+        bottom.removeFromRight(8);
+        level.setBounds(bottom);
+    }
+
+private:
+    void timerCallback() override {
+        const auto octave = processor.voicePreviewOctave(voice);
+        octaveButtons[0].setToggleState(octave == -12, juce::dontSendNotification);
+        octaveButtons[1].setToggleState(octave == 0, juce::dontSendNotification);
+        octaveButtons[2].setToggleState(octave == 12, juce::dontSendNotification);
+    }
+
+    PulsoAudioProcessor& processor;
+    VoiceId voice;
+    juce::Label title, soundLabel, octaveLabel, levelLabel;
+    juce::ComboBox sound;
+    std::array<juce::TextButton, 3> octaveButtons;
+    juce::Slider level;
+    juce::TextButton audition{"AUDITION"};
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> soundAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> levelAttachment;
+};
 } // namespace
 
 PatternView::PatternView(PulsoAudioProcessor& owner) : processor(owner) {
     setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+    languageChanged();
+}
+
+void PatternView::languageChanged() {
+    setTooltip(tr(processor.uiLanguage(), TextId::PatternTip));
+    repaint();
 }
 
 juce::Rectangle<int> PatternView::dragStripBounds() const noexcept {
@@ -161,6 +284,13 @@ juce::File PatternView::createExportFile(int channel) const {
             sliced.beat -= start;
             exportPattern.controls.push_back(sliced);
         }
+        exportPattern.expressions.clear();
+        for (const auto& expression : pattern->expressions) {
+            if (expression.beat < start || expression.beat >= end) continue;
+            auto sliced = expression;
+            sliced.beat -= start;
+            exportPattern.expressions.push_back(sliced);
+        }
         exportPattern.markers = {{0.0, section.name}};
         exportPattern.lengthBeats = section.bars * plan->beatsPerBar;
         role = "Section_" + juce::String(selectedSection + 1) + "_" +
@@ -183,6 +313,13 @@ juce::File PatternView::createExportFile(int channel) const {
                     probe.voice = control.voice;
                     return !noteMatchesTarget(probe, channel);
                 }), exportPattern.controls.end());
+            exportPattern.expressions.erase(std::remove_if(exportPattern.expressions.begin(), exportPattern.expressions.end(),
+                [channel](const auto& expression) {
+                    NoteEvent probe;
+                    probe.channel = expression.channel;
+                    probe.voice = expression.voice;
+                    return !noteMatchesTarget(probe, channel);
+                }), exportPattern.expressions.end());
         }
     }
     const auto stem = "PULSO_DNA_" + juce::String(processor.currentCompositionSeed()) + "_" +
@@ -198,27 +335,9 @@ juce::File PatternView::createExportFile(int channel) const {
 }
 
 void PatternView::showTimbreMenu(VoiceId voice, const juce::MouseEvent& event) {
-    juce::PopupMenu menu;
-    const auto choices = PulsoAudioProcessor::voicePreviewTimbreChoices(voice);
-    const auto selected = processor.voicePreviewTimbre(voice);
-    menu.addSectionHeader(juce::String(voiceDefinition(voice).name.data()).toUpperCase() + " - PREVIEW SOUND");
-    for (auto index = 0; index < choices.size(); ++index) {
-        if (index == 1) menu.addSeparator();
-        menu.addItem(index + 1, choices[index], true, index == selected);
-    }
-    const auto safeThis = juce::Component::SafePointer<PatternView>(this);
-    const auto screenPosition = event.getScreenPosition();
-    const auto options = juce::PopupMenu::Options{}
-        .withTargetScreenArea({screenPosition.x, screenPosition.y, 1, 1})
-        .withMinimumWidth(270);
-    menu.showMenuAsync(options,
-                       [safeThis, voice](int result) {
-        if (safeThis == nullptr || result <= 0) return;
-        safeThis->processor.setVoicePreviewTimbre(voice, result - 1);
-        safeThis->feedback = juce::String(voiceDefinition(voice).name.data()).toUpperCase() +
-                             " - " + safeThis->processor.voicePreviewTimbreName(voice).toUpperCase();
-        safeThis->repaint();
-    });
+    const auto target = juce::Rectangle<int>{event.getPosition().x, event.getPosition().y, 1, 1};
+    juce::CallOutBox::launchAsynchronously(std::make_unique<VoiceInspector>(processor, voice),
+                                           target, this);
 }
 
 void PatternView::mouseDown(const juce::MouseEvent& event) {
@@ -226,9 +345,10 @@ void PatternView::mouseDown(const juce::MouseEvent& event) {
         const auto voice = static_cast<VoiceId>(std::abs(audition) - 1);
         if (audition > 0) processor.toggleVoiceSolo(voice);
         else processor.toggleVoiceMute(voice);
-        feedback = juce::String(voiceDefinition(voice).name.data()).toUpperCase() +
-            (audition > 0 ? (processor.isVoiceSolo(voice) ? " · SOLO" : " · SOLO OFF")
-                          : (processor.isVoiceMuted(voice) ? " · MUTED" : " · MUTE OFF"));
+        const auto language = processor.uiLanguage();
+        feedback = voiceDisplayName(language, voice).toUpperCase() + " " + bullet() + " " +
+            tr(language, audition > 0 ? (processor.isVoiceSolo(voice) ? TextId::Solo : TextId::SoloOff)
+                                      : (processor.isVoiceMuted(voice) ? TextId::Muted : TextId::MuteOff));
         armedChannel = noTarget;
         repaint();
         return;
@@ -246,10 +366,11 @@ void PatternView::mouseDown(const juce::MouseEvent& event) {
         selectedSection = section;
         const auto plan = processor.currentSongPlan();
         const auto rhythm = plan && section < static_cast<int>(plan->sections.size())
-            ? juce::String(kickStateKey(plan->sections[static_cast<std::size_t>(section)].rhythm.kickState).data())
-                  .replaceCharacter('_', ' ').toUpperCase()
+            ? kickStateDisplay(processor.uiLanguage(),
+                  plan->sections[static_cast<std::size_t>(section)].rhythm.kickState)
             : juce::String{};
-        feedback = "SECTION " + juce::String(section + 1) + " · " + rhythm;
+        feedback = tr(processor.uiLanguage(), TextId::Section) + " " + juce::String(section + 1) +
+                   " " + bullet() + " " + rhythm;
         armedChannel = noTarget;
         repaint();
         return;
@@ -272,13 +393,13 @@ void PatternView::mouseDrag(const juce::MouseEvent& event) {
     dragAttempted = true;
     const auto file = createExportFile(armedChannel);
     if (!file.existsAsFile()) {
-        feedback = "MIDI EXPORT FAILED";
+        feedback = tr(processor.uiLanguage(), TextId::ExportFailed);
         repaint();
         return;
     }
 
     dragInProgress = true;
-    feedback = "DROP INTO ABLETON";
+    feedback = tr(processor.uiLanguage(), TextId::DropIntoAbleton);
     repaint();
     const auto safeThis = juce::Component::SafePointer<PatternView>(this);
     const auto started = juce::DragAndDropContainer::performExternalDragDropOfFiles(
@@ -286,12 +407,12 @@ void PatternView::mouseDrag(const juce::MouseEvent& event) {
             if (safeThis == nullptr) return;
             safeThis->dragInProgress = false;
             safeThis->armedChannel = noTarget;
-            safeThis->feedback = "MIDI READY";
+            safeThis->feedback = tr(safeThis->processor.uiLanguage(), TextId::MidiReady);
             safeThis->repaint();
         });
     if (!started) {
         dragInProgress = false;
-        feedback = "DRAG NOT AVAILABLE";
+        feedback = tr(processor.uiLanguage(), TextId::DragUnavailable);
         repaint();
     }
 }
@@ -321,6 +442,7 @@ void PatternView::mouseExit(const juce::MouseEvent&) {
 }
 
 void PatternView::paint(juce::Graphics& graphics) {
+    const auto language = processor.uiLanguage();
     const auto bounds = getLocalBounds().toFloat();
     graphics.setColour(colours::panel);
     graphics.fillRoundedRectangle(bounds, 12.0f);
@@ -356,8 +478,8 @@ void PatternView::paint(juce::Graphics& graphics) {
                 graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
                 auto label = juce::String::fromUTF8(section.name.c_str()).toUpperCase();
                 if (sectionBounds.getWidth() > 78.0f)
-                    label += " · " + juce::String(kickStateKey(section.rhythm.kickState).data())
-                                         .replaceCharacter('_', ' ').toUpperCase();
+                    label += " " + bullet() + " " +
+                             kickStateDisplay(language, section.rhythm.kickState);
                 graphics.drawFittedText(label,
                                         sectionBounds.toNearestInt().reduced(4, 0),
                                         juce::Justification::centred, 1);
@@ -404,8 +526,16 @@ void PatternView::paint(juce::Graphics& graphics) {
         graphics.setColour((highlighted ? colourForFamily(voiceDefinition(voice).family) : colours::muted)
                                .withAlpha(activeInSelection ? 1.0f : 0.32f));
         graphics.setFont(juce::FontOptions(hasSongPlan ? 8.6f : 9.5f, juce::Font::bold));
-        const auto voiceName = juce::String(voiceDefinition(voice).name.data()).toUpperCase();
-        const auto soundName = processor.voicePreviewTimbreName(voice).toUpperCase();
+        const auto voiceName = voiceDisplayName(language, voice).toUpperCase();
+        const auto timbres = localizedTimbreChoices(language, voice);
+        const auto timbreIndex = std::clamp(processor.voicePreviewTimbre(voice), 0,
+                                            std::max(0, timbres.size() - 1));
+        auto soundName = timbres[timbreIndex].toUpperCase();
+        const auto octave = processor.voicePreviewOctave(voice);
+        const auto levelDb = processor.voicePreviewLevelDb(voice);
+        if (octave != 0) soundName += octave > 0 ? "  +12" : "  -12";
+        if (std::abs(levelDb) >= 0.05f)
+            soundName += "  " + juce::String(levelDb, 1) + "DB";
         graphics.drawFittedText(juce::String("::  ") + voiceName + "  >  " + soundName,
                                 timbreArea.toNearestInt().reduced(3, 0),
                                 juce::Justification::centredLeft, 1);
@@ -443,7 +573,7 @@ void PatternView::paint(juce::Graphics& graphics) {
     if (!pattern || pattern->notes.empty()) {
         graphics.setColour(colours::muted);
         graphics.setFont(15.0f);
-        graphics.drawFittedText("Press EVOLVE IDEA or play a chord", inner.toNearestInt(),
+        graphics.drawFittedText(tr(language, TextId::EmptyPattern), inner.toNearestInt(),
                                 juce::Justification::centred, 1);
     } else {
         for (std::size_t lane = 0; lane < laneVoices.size(); ++lane) {
@@ -503,9 +633,10 @@ void PatternView::paint(juce::Graphics& graphics) {
         }
         const auto seconds = static_cast<int>(std::floor(arrangementBeat * 60.0 /
                                                           std::max(1.0, processor.currentTempo())));
-        auto readout = processor.hostIsPlaying() ? "PLAY" : "PAUSED";
-        if (!processor.hasHostTransport()) readout = "PREVIEW";
-        juce::String playheadText = juce::String(readout) + "  |  BAR " + juce::String(currentBar + 1);
+        auto readout = tr(language, processor.hostIsPlaying() ? TextId::Play : TextId::Paused);
+        if (!processor.hasHostTransport()) readout = tr(language, TextId::Preview);
+        juce::String playheadText = readout + "  |  " + tr(language, TextId::Bar) + " " +
+                                    juce::String(currentBar + 1);
         if (sectionName.isNotEmpty()) playheadText += "  |  " + sectionName;
         playheadText += "  |  " + juce::String(seconds / 60).paddedLeft('0', 2) + ":" +
                         juce::String(seconds % 60).paddedLeft('0', 2);
@@ -521,7 +652,9 @@ void PatternView::paint(juce::Graphics& graphics) {
                                 juce::Justification::centred, 1);
     }
 
-    constexpr std::array labels{"FULL SONG", "RHYTHM", "BASS", "HARMONY", "LEADS + FX", "SECTION"};
+    const std::array labels{tr(language, TextId::FullSong), tr(language, TextId::Rhythm),
+                            tr(language, TextId::Bass), tr(language, TextId::Harmony),
+                            tr(language, TextId::LeadsFx), tr(language, TextId::Section)};
     constexpr std::array exportChannels{fullSongTarget, rhythmTarget, bassTarget,
                                         harmonyTarget, melodicTextureTarget, sectionTarget};
     for (auto index = 0; index < 6; ++index) {

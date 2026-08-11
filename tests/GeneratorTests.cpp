@@ -1,6 +1,9 @@
 #include "TestSupport.h"
 
 #include "core/Generator.h"
+#include "core/HarmonyEngine.h"
+#include "core/MusicalCritic.h"
+#include "core/CompositionModel.h"
 #include "core/PhraseDirector.h"
 #include "core/PerformanceTiming.h"
 #include "core/Scale.h"
@@ -12,12 +15,22 @@
 #include <cmath>
 #include <iterator>
 #include <set>
+#include <string>
 #include <tuple>
 #include <vector>
 
 using namespace pulso;
 
 namespace {
+
+std::string motifFingerprint(const RhythmMotif& motif) {
+    auto result = motif.kick + '|' + motif.snareClap + '|' + motif.closedHats + '|' +
+                  motif.openHatsShaker + '|' + motif.lowPercussion + '|' + motif.highPercussion;
+    for (const auto& ornament : motif.ornaments)
+        result += '|' + std::to_string(ornament.step) + ':' +
+                  std::string(rhythmInstrumentKey(ornament.instrument));
+    return result;
+}
 
 std::vector<int> rhythmicSignature(const Pattern& pattern, int bar, double beatsPerBar) {
     std::vector<int> result;
@@ -93,10 +106,10 @@ void runGeneratorTests() {
     quantizePatternTiming(timingPattern, 4);
     require(std::all_of(timingPattern.notes.begin(), timingPattern.notes.end(), [](const auto& note) {
                 return std::abs(note.startBeat * 4.0 - std::round(note.startBeat * 4.0)) < 0.000001 &&
-                       std::abs(note.endBeat() * 4.0 - std::round(note.endBeat() * 4.0)) < 0.000001;
-            }) && std::abs(timingPattern.controls.front().beat * 4.0 -
-                           std::round(timingPattern.controls.front().beat * 4.0)) < 0.000001,
-            "Stored notes, note-offs and controls must land on the exact sixteenth-note grid");
+                       std::abs(note.endBeat() * 16.0 - std::round(note.endBeat() * 16.0)) < 0.000001;
+            }) && std::abs(timingPattern.controls.front().beat * 16.0 -
+                           std::round(timingPattern.controls.front().beat * 16.0)) < 0.000001,
+            "Stored onsets must be exact while note-offs and controls retain fine articulation");
     require(performanceOffsetBeats(timingPattern.notes.front(), 42, 0, 120.0) == 0.0 &&
                 std::abs(performanceOffsetBeats(timingPattern.notes.back(), 42, 1, 120.0)) <= 0.008 &&
                 performanceOffsetBeats(timingPattern.notes.back(), 42, 1, 120.0) ==
@@ -286,16 +299,40 @@ void runGeneratorTests() {
                     return !section.rhythm.motifId.empty();
                 }),
             "Every local long-form score must carry reusable rhythmic DNA across its sections");
+    std::set<std::string> longFormRhythmicIdeas;
+    for (const auto& motif : longPlan.rhythmMotifs)
+        longFormRhythmicIdeas.insert(motifFingerprint(motif));
+    require(longFormRhythmicIdeas.size() >= 3 &&
+                std::any_of(longPlan.rhythmMotifs.begin(), longPlan.rhythmMotifs.end(), [](const auto& motif) {
+                    return !motif.ornaments.empty();
+                }),
+            "Open local rhythm planning must provide contrasting motifs and an extensible instrument vocabulary");
+
+    const auto liveDrumPlan = SongComposer::createLocalPlan(
+        "Raw live drums with a heavy backbeat, tom conversation and irregular cymbal breath",
+        96, 120.0, 4.0, 55191, 0, ScaleKind::Minor);
+    const auto machinePulsePlan = SongComposer::createLocalPlan(
+        "Hypnotic machine pulse, displaced metallic accents and sparse asymmetrical percussion",
+        96, 120.0, 4.0, 55191, 0, ScaleKind::Minor);
+    require(motifFingerprint(liveDrumPlan.rhythmMotifs.front()) !=
+                motifFingerprint(machinePulsePlan.rhythmMotifs.front()) &&
+                (std::abs(liveDrumPlan.rhythmLanguage.backbeatGravity -
+                          machinePulsePlan.rhythmLanguage.backbeatGravity) > 0.001 ||
+                 std::abs(liveDrumPlan.rhythmLanguage.syncopation -
+                          machinePulsePlan.rhythmLanguage.syncopation) > 0.001),
+            "Different musical intentions must not collapse onto the same hidden genre template");
     require(longPlan.sections.front().startBar == 0 &&
                 longPlan.sections.back().startBar + longPlan.sections.back().bars == longPlan.totalBars,
             "Song sections must cover the entire target duration without gaps");
     auto directedBreaths = 0;
     auto extendedHarmonyBars = 0;
+    std::set<int> narrativePhraseLengths;
     for (const auto& section : longPlan.sections) {
         const auto directions = PhraseDirector::create(longPlan, section);
         require(directions.size() == static_cast<std::size_t>(section.bars),
                 "PhraseDirector must publish one complete attention contract per bar");
         for (const auto& direction : directions) {
+            narrativePhraseLengths.insert(direction.phraseBars);
             const auto leadForeground = direction.forVoice(VoiceId::Lead).participation ==
                                         Participation::Foreground;
             const auto counterForeground = direction.forVoice(VoiceId::Countermelody).participation ==
@@ -308,10 +345,34 @@ void runGeneratorTests() {
     }
     require(directedBreaths > 0 && extendedHarmonyBars > 0,
             "The formal score must include genuine breaths and variable harmonic rhythm");
+    require(narrativePhraseLengths.size() >= 2,
+            "Long-form narrative planning must vary phrase length instead of imposing one eight-bar mould");
+
+    auto authoredSection = longPlan.sections.front();
+    authoredSection.motifTreatment = "Invert the central question before the arrival";
+    const auto authoredNarrative = NarrativePlanner::create(longPlan, authoredSection);
+    require(std::any_of(authoredNarrative.begin(), authoredNarrative.end(), [](const auto& bar) {
+                return bar.transformation == MotifTransformation::Invert;
+            }), "AI-authored motif treatment must reach the note-level narrative planner");
+
+    auto tenseSection = longPlan.sections[std::min<std::size_t>(1, longPlan.sections.size() - 1)];
+    tenseSection.tension = 0.92;
+    tenseSection.harmonicDirection = "Sustain ambiguity before resolving home";
+    const auto tenseDirections = PhraseDirector::create(longPlan, tenseSection);
+    HarmonyState harmonyState;
+    const auto richHarmony = HarmonyEngine::composeSection(longPlan, tenseSection,
+                                                            tenseDirections, harmonyState);
+    require(std::any_of(richHarmony.begin(), richHarmony.end(), [](const auto& moment) {
+                return moment.voiceCount == 4 && moment.pitchClasses.size() >= 4;
+            }), "High-tension harmony must expose seventh/colour tones and four-part voice leading");
     GenerationContext songFoundation = phraseContext();
     songFoundation.role = Role::Ensemble;
     SongComposer longFormComposer;
     const auto longSong = longFormComposer.render(longPlan, songFoundation);
+    const auto musicalQuality = MusicalCritic::review(longSong, longPlan);
+    require(musicalQuality.overall > 0.35 && musicalQuality.variation > 0.45 &&
+                musicalQuality.negativeSpace > 0.30,
+            "The rendered score must pass minimum symbolic quality, variation and breathing thresholds");
     requireNear(longSong.lengthBeats, 1080.0, 0.001,
                 "Nine minutes at 120 BPM must render exactly 1080 beats");
     require(!longSong.notes.empty() && longSong.notes.size() < 32768,
@@ -324,21 +385,50 @@ void runGeneratorTests() {
     for (const auto& note : longSong.notes) renderedVoices.insert(note.voice);
     require(renderedVoices.size() == voiceDefinitions.size(),
             "The long-form orchestrator must use all twelve available voices across the complete arc");
-    require(longSong.markers.size() == longPlan.sections.size() && !longSong.controls.empty(),
-            "A complete song must include section markers and expressive MIDI automation");
+    require(longSong.markers.size() == longPlan.sections.size() && !longSong.controls.empty() &&
+                !longSong.expressions.empty(),
+            "A complete song must include section markers, CC curves and expressive MIDI events");
+    require(std::any_of(longSong.controls.begin(), longSong.controls.end(), [](const auto& event) {
+                return event.controller == 11;
+            }) && std::any_of(longSong.controls.begin(), longSong.controls.end(), [](const auto& event) {
+                return event.controller == 74;
+            }) && std::any_of(longSong.controls.begin(), longSong.controls.end(), [](const auto& event) {
+                return event.controller == 64;
+            }), "Performance profiles must render dynamics, timbre and intentional pedal data");
+    require(std::any_of(longSong.expressions.begin(), longSong.expressions.end(), [](const auto& event) {
+                return event.type == ExpressionEventType::PitchBend && event.value != 8192;
+            }) && std::any_of(longSong.expressions.begin(), longSong.expressions.end(), [](const auto& event) {
+                return event.type == ExpressionEventType::ChannelPressure;
+            }) && std::any_of(longSong.expressions.begin(), longSong.expressions.end(), [](const auto& event) {
+                return event.type == ExpressionEventType::PolyAftertouch;
+            }), "The interpreter must produce safe bends, pressure and per-note aftertouch");
+    require(std::none_of(longSong.expressions.begin(), longSong.expressions.end(), [](const auto& event) {
+                return event.type == ExpressionEventType::PitchBend &&
+                       isVoiceInFamily(event.voice, VoiceFamily::Rhythm);
+            }), "Channel pitch expression must never detune the shared drum channel");
+    require(std::all_of(longSong.expressions.begin(), longSong.expressions.end(), [](const auto& event) {
+                const auto maximum = event.type == ExpressionEventType::PitchBend ? 16383 : 127;
+                return std::isfinite(event.beat) && event.beat >= 0.0 && event.value >= 0 &&
+                       event.value <= maximum && event.channel >= 1 && event.channel <= 16;
+            }), "Every generated expression event must remain valid standard MIDI data");
     require(std::all_of(longPlan.sections.begin(), longPlan.sections.end(), [](const auto& section) {
                 return !section.activeVoices.empty();
             }) && std::count_if(longPlan.sections.begin(), longPlan.sections.end(), [](const auto& section) {
                 return section.activeVoices.size() < voiceDefinitions.size();
             }) > static_cast<int>(longPlan.sections.size() / 2),
             "Dynamic orchestration must use intentional subsets rather than every voice everywhere");
-    require(std::all_of(longSong.notes.begin(), longSong.notes.end(), [&](const auto& note) {
+    const auto invalidRegisterNote = std::find_if(longSong.notes.begin(), longSong.notes.end(), [&](const auto& note) {
                 if (note.voice == VoiceId::CoreDrums || note.voice == VoiceId::LowPercussion ||
                     note.voice == VoiceId::HighPercussion || note.voice == VoiceId::Transitions)
-                    return note.pitch >= 0 && note.pitch <= 127;
+                    return !(note.pitch >= 0 && note.pitch <= 127);
                 const auto& definition = voiceDefinition(note.voice);
-                return note.pitch >= definition.minimumPitch && note.pitch <= definition.maximumPitch;
-            }), "Every pitched orchestration voice must remain inside its designed register");
+                return !(note.pitch >= definition.minimumPitch && note.pitch <= definition.maximumPitch);
+            });
+    require(invalidRegisterNote == longSong.notes.end(),
+            invalidRegisterNote == longSong.notes.end()
+                ? "Every pitched orchestration voice must remain inside its designed register"
+                : "Register violation: voice=" + std::to_string(static_cast<int>(invalidRegisterNote->voice)) +
+                  " pitch=" + std::to_string(invalidRegisterNote->pitch));
     require(std::all_of(longSong.notes.begin(), longSong.notes.end(), [&](const auto& note) {
                 if (isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
                     note.voice == VoiceId::Transitions) return true;

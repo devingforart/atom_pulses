@@ -58,6 +58,7 @@
 - [x] Kits 808/909/Modern/Organic y modelos independientes de bajo, armonía y melodía.
 - [x] Variación analógica de snare/hats, hat choke y voz mono sin octava chiptune.
 - [x] Paleta individual persistente para las quince voces desde sus propias filas.
+- [x] Inspector por voz con octava, nivel suavizado y audition local libre de MIDI externo.
 - [x] Playhead de arrangement sincronizado con PPQ, sección, compás y tiempo musical.
 - [x] Osciladores band-limited, filtros, articulaciones y efectos espaciales.
 - Evaluaciones ciegas con productores y ajuste de vocabularios por familia musical.
@@ -87,7 +88,7 @@
 - [x] Microtiming por instrumento, ciclos de velocity y coordinación de transientes kick–bass.
 - [x] Interpretación estricta de pedidos como «bombo en negras constante» en GPT y fallback local.
 
-## 0.12 — Lenguaje generativo abierto (actual)
+## 0.12 — Lenguaje generativo abierto
 
 - [x] Celdas rítmicas GPT de 1–4 compases en seis instrumentos independientes.
 - [x] Desarrollo seccional mediante add/remove/shift/ratchet/velocity con propósito musical.
@@ -97,6 +98,44 @@
 - [x] Cliente OpenAI cancelable con watchdog, deadlines por etapa y cierre seguro del host.
 - [x] UI por etapas con `CANCEL` y rollback transaccional de patrón y linaje.
 - [x] Rejilla compositiva exacta y `HUMAN PERFORMANCE` no destructivo con una única pasada.
+
+## 0.16 — Interpretación simbólica profesional
+
+- [x] Frases variables con función narrativa y memoria temática.
+- [x] Fragmentación, secuencia, inversión, aumentación, desplazamiento y cadencia.
+- [x] Lead, contrapunto, sub y movement bass como músicos independientes.
+- [x] Armonía extendida y conducción determinista de cuatro voces.
+- [x] Crítico simbólico con métricas de respiración, variación, saltos y densidad.
+- [x] Ataques exactos y note-offs a resolución 1/64 para conservar articulación.
+- [x] Dirección semántica de GPT conectada al renderer y razonamiento medio en forma larga.
+
+## 0.18 — Interpretación MIDI dirigida por IA
+
+- [x] Perfil expresivo estricto por voz dentro del plan GPT.
+- [x] Articulación, microdinámica y curvas CC11/1/74 por frase.
+- [x] Sustain CC64 limitado a voces apropiadas y resets transaccionales.
+- [x] Pitch bend RPN ±2 en voces monofónicas, channel pressure y poly-aftertouch.
+- [x] Preview, scheduler, seek, locks, slicing, exportación y persistencia E2E.
+- [ ] MPE opcional con zona configurable y perfiles específicos por instrumento receptor.
+- [ ] Evaluaciones ciegas con productores sobre un corpus de prompts versionado.
+- [ ] Importación opcional de MIDI de referencia para extraer groove y gramática sin copiar notas.
+
+## 0.19 — Autoría rítmica abierta
+
+- [x] Eliminación de las cuatro familias rítmicas y de su selector implícito.
+- [x] `RhythmLanguage` continuo y semántico escrito mediante Structured Outputs.
+- [x] Dos a seis motivos contrastantes escritos por GPT, sin patrón house obligatorio.
+- [x] Orquestación extensible con kicks alternativos, toms, platos y percusiones GM.
+- [x] Fallback sensible al texto completo y pruebas anti-colapso entre intenciones distintas.
+- [ ] Lenguaje armónico abierto con acordes, inversiones, extensiones y modulación por sección.
+
+## 0.17 — Interfaz localizada y compacta (actual)
+
+- [x] Español e inglés seleccionables dentro del VST y persistentes por proyecto.
+- [x] Tooltips, progreso, timeline, transporte, exportación e inspectores traducidos.
+- [x] UTF-8 explícito en MSVC con pruebas de code points para acentos y separadores.
+- [x] Eliminación visual de KIT/BASS/HARMONY/MELODY globales redundantes.
+- [x] Mayor superficie vertical para el arrangement y controles individuales por voz.
 
 ## Futuro — Motor neuronal
 

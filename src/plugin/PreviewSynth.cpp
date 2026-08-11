@@ -82,6 +82,10 @@ void PreviewSynth::reset() noexcept {
     channelExpression.fill(1.0f);
     channelModulation.fill(0.0f);
     channelBrightness.fill(0.5f);
+    channelPitchBend.fill(0.0f);
+    channelPressure.fill(0.0f);
+    channelSustain.fill(false);
+    polyAftertouch = {};
     ageCounter = 0;
 }
 
@@ -108,6 +112,17 @@ void PreviewSynth::setMelodyTone(int tone) noexcept {
 void PreviewSynth::setVoiceTimbre(VoiceId voice, int selection) noexcept {
     const auto index = static_cast<std::size_t>(voice);
     if (index < voiceTimbres.size()) voiceTimbres[index] = std::clamp(selection, 0, 4);
+}
+
+void PreviewSynth::setVoiceTranspose(VoiceId voice, int semitones) noexcept {
+    const auto index = static_cast<std::size_t>(voice);
+    if (index < voiceTransposes.size()) voiceTransposes[index] = std::clamp(semitones, -12, 12);
+}
+
+void PreviewSynth::setVoiceLevelDb(VoiceId voice, float decibels) noexcept {
+    const auto index = static_cast<std::size_t>(voice);
+    if (index < voiceLevelGains.size())
+        voiceLevelGains[index] = juce::Decibels::decibelsToGain(std::clamp(decibels, -36.0f, 6.0f));
 }
 
 VoiceId PreviewSynth::voiceForKind(VoiceKind kind) const noexcept {
@@ -158,11 +173,22 @@ PreviewSynth::MelodyTone PreviewSynth::effectiveMelodyTone(VoiceKind kind) const
     return override > 0 ? static_cast<MelodyTone>(override - 1) : melodyTone;
 }
 
+int PreviewSynth::voiceTranspose(VoiceKind kind) const noexcept {
+    const auto index = static_cast<std::size_t>(voiceForKind(kind));
+    return index < voiceTransposes.size() ? voiceTransposes[index] : 0;
+}
+
+float PreviewSynth::voiceLevelGain(VoiceKind kind) const noexcept {
+    const auto index = static_cast<std::size_t>(voiceForKind(kind));
+    return index < voiceLevelGains.size() ? voiceLevelGains[index] : 1.0f;
+}
+
 void PreviewSynth::allNotesOff(int midiChannel, bool allowTailOff) noexcept {
     const auto release = [midiChannel, allowTailOff](auto& voices) {
         for (auto& voice : voices) {
             if (!voice.active || (midiChannel > 0 && voice.channel != midiChannel)) continue;
             if (allowTailOff) {
+                voice.heldByPedal = false;
                 voice.releasing = true;
                 voice.releaseSeconds = std::min(voice.releaseSeconds, 0.18f);
             }
@@ -211,10 +237,19 @@ void PreviewSynth::noteOn(int channel, int note, float velocity) noexcept {
     *voice = {};
     voice->active = true;
     voice->channel = std::clamp(channel, 1, 16);
-    voice->note = std::clamp(note, 0, 127);
+    voice->sourceNote = std::clamp(note, 0, 127);
+    polyAftertouch[static_cast<std::size_t>(voice->channel - 1)]
+                  [static_cast<std::size_t>(voice->sourceNote)] = 0.0f;
+    voice->note = voice->sourceNote;
+    const auto expressiveChannel = static_cast<std::size_t>(voice->channel - 1);
+    voice->expressionGain = channelExpression[expressiveChannel];
+    voice->expressiveBrightness = channelBrightness[expressiveChannel];
+    voice->expressivePressure = channelPressure[expressiveChannel];
     voice->level = std::clamp(velocity, 0.0f, 1.0f) * 0.095f;
     voice->age = ++ageCounter;
     voice->kind = kindForChannel(voice->channel);
+    voice->note = std::clamp(voice->sourceNote + voiceTranspose(voice->kind), 0, 127);
+    voice->outputGain = voiceLevelGain(voice->kind);
     voice->noiseState = 0x85ebca6bu ^ static_cast<std::uint32_t>(voice->note * 2246822519u) ^
                         static_cast<std::uint32_t>(voice->age);
     const auto phaseSeed = static_cast<double>((voice->noiseState >> 8) & 0xffffu) / 65535.0;
@@ -346,7 +381,8 @@ void PreviewSynth::drumNoteOn(int note, float velocity) noexcept {
     voice->active = true;
     voice->oneShot = true;
     voice->channel = 10;
-    voice->note = std::clamp(note, 0, 127);
+    voice->sourceNote = std::clamp(note, 0, 127);
+    voice->note = voice->sourceNote;
     voice->level = std::clamp(velocity, 0.0f, 1.0f) * profile().drumWeight;
     voice->envelope = 1.0f;
     voice->age = ++ageCounter;
@@ -367,6 +403,7 @@ void PreviewSynth::drumNoteOn(int note, float velocity) noexcept {
     else if (note == 41 || note == 43 || note == 45 || note == 47 || note == 48 || note == 50)
         voice->kind = VoiceKind::LowPercussion;
     else voice->kind = VoiceKind::HighPercussion;
+    voice->outputGain = voiceLevelGain(voice->kind);
 
     const auto& world = profile();
     voice->tone = world.brightness;
@@ -422,7 +459,8 @@ void PreviewSynth::drumNoteOn(int note, float velocity) noexcept {
     }
     const auto tuningSpread = selectedKit == DrumKit::TR808 ? 0.010f :
                               selectedKit == DrumKit::TR909 ? 0.006f : 0.014f;
-    frequency *= 1.0f + voice->variant * tuningSpread;
+    frequency *= (1.0f + voice->variant * tuningSpread) *
+                 static_cast<float>(std::pow(2.0, static_cast<double>(voiceTranspose(voice->kind)) / 12.0));
     voice->decaySeconds *= 1.0f + voice->variant * 0.055f;
     voice->phaseDelta = juce::MathConstants<double>::twoPi * frequency / sampleRate;
 }
@@ -430,8 +468,10 @@ void PreviewSynth::drumNoteOn(int note, float velocity) noexcept {
 void PreviewSynth::noteOff(int channel, int note, bool allowTailOff) noexcept {
     if (channel == 10) return;
     for (auto& voice : tonalVoices) {
-        if (!voice.active || voice.channel != channel || voice.note != note) continue;
-        if (allowTailOff) voice.releasing = true;
+        if (!voice.active || voice.channel != channel || voice.sourceNote != note) continue;
+        if (allowTailOff && channelSustain[static_cast<std::size_t>(std::clamp(channel, 1, 16) - 1)])
+            voice.heldByPedal = true;
+        else if (allowTailOff) voice.releasing = true;
         else voice = {};
     }
 }
@@ -447,6 +487,27 @@ void PreviewSynth::handleMessage(const juce::MidiMessage& message) noexcept {
         if (message.getControllerNumber() == 11) channelExpression[channel] = value;
         else if (message.getControllerNumber() == 1) channelModulation[channel] = value;
         else if (message.getControllerNumber() == 74) channelBrightness[channel] = value;
+        else if (message.getControllerNumber() == 64) {
+            const auto wasSustained = channelSustain[channel];
+            channelSustain[channel] = message.getControllerValue() >= 64;
+            if (wasSustained && !channelSustain[channel])
+                for (auto& voice : tonalVoices)
+                    if (voice.active && voice.channel == message.getChannel() && voice.heldByPedal) {
+                        voice.heldByPedal = false;
+                        voice.releasing = true;
+                    }
+        }
+    }
+    else if (message.isPitchWheel()) {
+        const auto channel = static_cast<std::size_t>(std::clamp(message.getChannel(), 1, 16) - 1);
+        channelPitchBend[channel] = std::clamp((message.getPitchWheelValue() - 8192) / 8192.0f, -1.0f, 1.0f);
+    } else if (message.isChannelPressure()) {
+        const auto channel = static_cast<std::size_t>(std::clamp(message.getChannel(), 1, 16) - 1);
+        channelPressure[channel] = static_cast<float>(message.getChannelPressureValue()) / 127.0f;
+    } else if (message.isAftertouch()) {
+        const auto channel = static_cast<std::size_t>(std::clamp(message.getChannel(), 1, 16) - 1);
+        const auto note = static_cast<std::size_t>(std::clamp(message.getNoteNumber(), 0, 127));
+        polyAftertouch[channel][note] = static_cast<float>(message.getAfterTouchValue()) / 127.0f;
     }
 }
 
@@ -658,8 +719,15 @@ float PreviewSynth::renderVoiceSample(Voice& voice) noexcept {
     }
 
     const auto channelIndex = static_cast<std::size_t>(std::clamp(voice.channel, 1, 16) - 1);
+    const auto notePressure = polyAftertouch[channelIndex][static_cast<std::size_t>(
+        std::clamp(voice.sourceNote, 0, 127))];
+    const auto smoothing = 1.0f - std::exp(-1.0f / (0.012f * static_cast<float>(sampleRate)));
+    voice.expressionGain += (channelExpression[channelIndex] - voice.expressionGain) * smoothing;
+    voice.expressiveBrightness += (channelBrightness[channelIndex] - voice.expressiveBrightness) * smoothing;
+    const auto pressureTarget = std::max(channelPressure[channelIndex], notePressure);
+    voice.expressivePressure += (pressureTarget - voice.expressivePressure) * smoothing;
     const auto expressiveAlpha = std::clamp(voice.filterAlpha *
-        (0.48f + channelBrightness[channelIndex] * 1.04f), 0.001f, 1.0f);
+        (0.48f + voice.expressiveBrightness * 1.04f + voice.expressivePressure * 0.22f), 0.001f, 1.0f);
     voice.filterLeft += expressiveAlpha * (raw - voice.filterLeft);
     raw = voice.filterLeft;
     const auto drive = 1.0f + world.drive * 3.5f;
@@ -677,7 +745,8 @@ float PreviewSynth::renderVoiceSample(Voice& voice) noexcept {
         ? std::min(1.0, voice.ageSeconds / 0.32) * 0.00115 * std::sin(voice.ageSeconds * 5.15) : 0.0;
     const auto drift = 1.0 + driftAmount * std::sin(voice.ageSeconds * 1.7 + voice.note * 0.37) +
                        modulation * std::sin(voice.ageSeconds * 5.1) + warmVibrato;
-    voice.phase += voice.phaseDelta * drift;
+    const auto bendRatio = std::pow(2.0, channelPitchBend[channelIndex] * 2.0 / 12.0);
+    voice.phase += voice.phaseDelta * drift * bendRatio;
     auto detune = voice.kind == VoiceKind::Foundation || voice.kind == VoiceKind::Atmosphere ?
         1.0035 + world.stereo * 0.003 : 2.002;
     if ((voice.kind == VoiceKind::SubBass || voice.kind == VoiceKind::MovementBass) &&
@@ -688,7 +757,7 @@ float PreviewSynth::renderVoiceSample(Voice& voice) noexcept {
         else if (selectedMelodyTone == MelodyTone::SoftPluck) detune = 1.0032;
         else if (selectedMelodyTone == MelodyTone::Air) detune = 1.0025;
     }
-    voice.secondaryPhase += voice.phaseDelta * detune / drift;
+    voice.secondaryPhase += voice.phaseDelta * detune / drift * bendRatio;
     return raw;
 }
 
@@ -719,9 +788,13 @@ void PreviewSynth::renderVoices(juce::AudioBuffer<float>& output, int startSampl
 
                 const auto raw = voice.oneShot ? renderDrumSample(voice) : renderVoiceSample(voice);
                 const auto level = voice.oneShot ? 0.30f : 1.0f;
-                const auto expression = channelExpression[static_cast<std::size_t>(
-                    std::clamp(voice.channel, 1, 16) - 1)];
-                const auto value = raw * voice.level * voice.envelope * level * expression;
+                const auto expression = voice.oneShot ? 1.0f : voice.expressionGain;
+                const auto targetVoiceGain = voiceLevelGain(voice.kind);
+                const auto gainSmoothing = 1.0f - std::exp(-1.0f /
+                    (0.020f * static_cast<float>(sampleRate)));
+                voice.outputGain += (targetVoiceGain - voice.outputGain) * gainSmoothing;
+                const auto value = raw * voice.level * voice.envelope * level * expression *
+                                   (1.0f + voice.expressivePressure * 0.10f) * voice.outputGain;
                 const auto left = value * (voice.pan > 0.0f ? 1.0f - voice.pan * 0.62f : 1.0f);
                 const auto right = value * (voice.pan < 0.0f ? 1.0f + voice.pan * 0.62f : 1.0f);
                 if (output.getNumChannels() > 0) output.addSample(0, sample, left);

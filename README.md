@@ -108,16 +108,15 @@ abrir el plugin.
 La aplicación standalone permite probar la interfaz y el sintetizador de preescucha.
 Consulta [docs/ABLETON.md](docs/ABLETON.md) para el enrutamiento MIDI completo.
 
-El selector inferior ofrece `AUTO` y ocho mundos: `DEEP PROGRESSIVE`, `ORGANIC MOTION`,
+El selector de mundo ofrece `AUTO` y ocho ambientes: `DEEP PROGRESSIVE`, `ORGANIC MOTION`,
 `ANALOG WARMTH`, `DUB SPACE`, `MINIMAL PULSE`, `HYPNOTIC NIGHT`, `CINEMATIC ARC` y
 `DARK CLUB`. Cada mundo cambia coordinadamente los instrumentos de las quince voces,
 drums, filtros, envolventes, estéreo, delay y espacio. `AUTO` interpreta la dirección
 creativa. La monitorización nunca altera las notas ni el MIDI exportado.
 
-La fila de instrumentos desacopla la fuente sonora del ambiente: `KIT` permite elegir
-`808 DEEP`, `909 HOUSE`, `MODERN CLUB` u `ORGANIC`; `BASS`, `HARMONY` y `MELODY`
-ofrecen cuatro modelos de síntesis diferenciados cada uno. Los cambios son inmediatos,
-se guardan con el proyecto de Ableton y sólo afectan la preescucha.
+Cada fila abre su propio inspector sonoro. Desde allí se elige el timbre individual,
+octava, nivel y audition de esa voz sin ocupar espacio permanente con selectores globales.
+Los cambios son inmediatos, se guardan con el proyecto de Ableton y sólo afectan la preescucha.
 
 Las paletas no son etiquetas sobre el mismo oscilador: alternan familias band-limited,
 FM, triángulos orgánicos, capas analógicas, texturas, saturación y articulaciones. Los
@@ -129,6 +128,16 @@ Selecciona un bloque de la forma y arrastra `SECTION` para exportar sólo esa pa
 También puedes arrastrar directamente cualquiera de las quince filas. PULSO escribe una
 pista MIDI por voz, tempo, compás, marcadores de sección, CC expresivos, nombres,
 canales y velocidades en el archivo.
+
+## Interpretación MIDI instrumental
+
+GPT asigna a cada voz una identidad de ejecución estructurada: articulación, contorno
+dinámico, vibrato, gesto de afinación, profundidad expresiva, brillo, pedal y humanidad.
+El motor local convierte esa intención en note lengths, microdinámica, CC11, CC1, CC74,
+CC64, pitch bend con rango RPN seguro, channel pressure y poly-aftertouch. Los bends se
+limitan a bajos y melodías monofónicas con canal dedicado; acordes y batería nunca se
+desafinan por una automatización compartida. Al iniciar playback desde mitad de la obra,
+PULSO reconstruye el estado expresivo vigente antes de recuperar notas sostenidas.
 
 ## Flujo de composición
 
@@ -160,17 +169,24 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 
 ## Estado del producto
 
-La versión 0.14.0 integra un arquitecto GPT de forma larga con una segunda pasada crítica,
+La versión 0.19.0 integra un arquitecto GPT de forma larga con razonamiento medio y una segunda pasada crítica,
 Structured Outputs, motivos rítmicos abiertos y mutaciones con propósito, renderizado
 jerárquico de hasta 512 compases, quince voces con entrada y salida dinámica, expresión
-CC interpretada, dirección previa de foreground/response/support, presupuestos de ataques,
+instrumental dirigida por IA con CC, bends, pressure, aftertouch y pedal, dirección previa de foreground/response/support, presupuestos de ataques,
 respiración coordinada por frase, contrato tonal E2E, dirección rítmica por estados y gestos,
 SOLO/MUTE persistente por voz sin modificar el MIDI fuente,
 generación cancelable, deadlines de red y fallback automático al primer borrador válido,
-MIDI base cuantizado y una interpretación humana opcional no destructiva,
+transporte WinHTTP nativo en Windows con proxy automático y cancelación inmediata,
+un plan narrativo de frases variables, transformación temática semántica, armonía extendida
+con conducción de cuatro voces, bajo sub y bajo móvil compuestos independientemente,
+crítica simbólica posterior al render, ataques MIDI exactos con releases expresivos y una
+interpretación humana opcional no destructiva,
 preview multitimbral band-limited por mundos sonoros,
 playhead visual sincronizado con el PPQ de Ableton,
 paletas persistentes de sonido individual directamente en las quince filas,
+inspectores por voz con octava -12/0/+12, nivel en dB y audition instantáneo,
+interfaz completa español/inglés con cambio persistente dentro del VST y tooltips localizados,
+codificación UTF-8 explícita y layout inferior simplificado sin selectores globales redundantes,
 timeline de secciones, exportación por voz y fallback algorítmico. La red nunca se usa
 desde el callback de audio.
 

@@ -7,9 +7,10 @@
 
 namespace pulso {
 
-// The composition remains editable on a strict musical lattice. Expressive timing is
-// calculated separately by the scheduler and never mutates the stored/exported pattern.
-void quantizePatternTiming(Pattern&, int stepsPerBeat = 4);
+// Onsets remain editable on a strict musical lattice. Releases use a finer grid so
+// articulation, legato and phrase breathing survive MIDI export.
+void quantizePatternTiming(Pattern&, int onsetStepsPerBeat = 4,
+                           int releaseStepsPerBeat = 16);
 
 [[nodiscard]] double performanceOffsetBeats(const NoteEvent&, std::uint64_t seed,
                                              std::size_t ordinal, double bpm) noexcept;

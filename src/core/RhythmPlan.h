@@ -8,8 +8,25 @@
 
 namespace pulso {
 
-enum class GrooveFamily : std::uint8_t {
-    DeepProgressiveHouse = 0, OrganicProgressive, DrivingHouse, Hybrid
+// Continuous musical primitives, authored by GPT, replace closed genre labels.
+// They describe how a rhythm behaves without naming a style or prescribing a template.
+struct RhythmLanguage {
+    std::string description{"Open rhythmic conversation"};
+    double pulseStability{0.62};
+    double backbeatGravity{0.48};
+    double syncopation{0.42};
+    double ghostDensity{0.18};
+    double velocityContrast{0.52};
+    double timingFreedom{0.20};
+    double orchestrationMotion{0.40};
+    double silenceBias{0.28};
+    double callResponse{0.52};
+};
+
+enum class RhythmInstrument : std::uint8_t {
+    KickDeep = 0, KickAlt, Snare, Sidestick, Clap,
+    TomLow, TomMid, TomHigh, ClosedHat, PedalHat, OpenHat,
+    Ride, Crash, Shaker, Tambourine, Cowbell, CongaLow, CongaHigh
 };
 
 enum class KickState : std::uint8_t { Muted = 0, Reduced, Sparse, FourOnFloor };
@@ -32,6 +49,13 @@ struct RhythmMotif {
     std::string openHatsShaker;
     std::string lowPercussion;
     std::string highPercussion;
+    struct Ornament {
+        int step{};
+        RhythmInstrument instrument{RhythmInstrument::Shaker};
+        int velocity{72};
+        double durationSteps{0.5};
+    };
+    std::vector<Ornament> ornaments;
 };
 
 struct RhythmMutation {
@@ -63,13 +87,13 @@ struct SectionRhythmPlan {
     std::vector<RhythmMutation> mutations;
 };
 
-[[nodiscard]] std::string_view grooveFamilyKey(GrooveFamily) noexcept;
+[[nodiscard]] std::string_view rhythmInstrumentKey(RhythmInstrument) noexcept;
 [[nodiscard]] std::string_view kickStateKey(KickState) noexcept;
 [[nodiscard]] std::string_view kickContinuityKey(KickContinuity) noexcept;
 [[nodiscard]] std::string_view rhythmGestureKey(RhythmGestureKind) noexcept;
 [[nodiscard]] std::string_view rhythmLaneKey(RhythmLane) noexcept;
 [[nodiscard]] std::string_view rhythmMutationKey(RhythmMutationKind) noexcept;
-[[nodiscard]] std::optional<GrooveFamily> grooveFamilyFromKey(std::string_view) noexcept;
+[[nodiscard]] std::optional<RhythmInstrument> rhythmInstrumentFromKey(std::string_view) noexcept;
 [[nodiscard]] std::optional<KickState> kickStateFromKey(std::string_view) noexcept;
 [[nodiscard]] std::optional<KickContinuity> kickContinuityFromKey(std::string_view) noexcept;
 [[nodiscard]] std::optional<RhythmGestureKind> rhythmGestureFromKey(std::string_view) noexcept;

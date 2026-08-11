@@ -74,6 +74,12 @@ sin búsquedas, asignación ni locks. `PreviewSynth` resuelve kit o modelo por `
 modo que snare, closed hat y open hat pueden pertenecer a máquinas diferentes durante la
 misma escucha. La interfaz escribe mediante gestos de parámetro normales del host.
 
+Cada voz añade `previewOctaveNN` y `previewLevelNN`. El primero es una elección discreta
+de -12/0/+12 semitonos y el segundo trabaja entre -36 y +6 dB. El pitch se resuelve después
+de identificar la pieza GM para que transponer un snare no lo convierta en otro instrumento;
+el gain se suaviza durante 20 ms dentro de cada voz activa. Un buzón atómico de audition
+inyecta exclusivamente en `previewMidi`, por lo que nunca contamina salida ni exportación.
+
 ## Modelo de sincronización
 
 El host proporciona BPM, posición PPQ, estado de reproducción y compás. Cada patrón se
@@ -83,13 +89,55 @@ a muestras y añade únicamente los eventos que caen dentro de ese intervalo.
 
 ## Tiempo compositivo e interpretación
 
-`PerformanceTiming` separa la partitura de su ejecución. Antes de publicar, todo onset,
-note-off y CC se normaliza a una rejilla de semicorcheas; por eso preview apagado, archivos
-arrastrados y sesiones restauradas parten siempre de tiempo exacto. `HUMAN PERFORMANCE`
+`PerformanceTiming` separa la partitura de su ejecución. Antes de publicar, cada onset se
+normaliza a una rejilla de semicorcheas; note-off y CC usan una rejilla fina de 1/64 para
+conservar legato, staccato, releases y respiración. Por eso preview apagado, archivos
+arrastrados y sesiones restauradas parten de ataques exactos sin destruir articulación.
+`HUMAN PERFORMANCE`
 no muta ese patrón: el scheduler añade una sola desviación determinista y acotada en
 milisegundos. Kick y foundation permanecen exactos; backbeat, hats, percusión, bajo y
 melodía reciben perfiles distintos con un swing compartido y sin doble humanización.
-Grabar la salida MIDI captura la interpretación; arrastrar el archivo conserva la rejilla.
+Grabar la salida MIDI captura la interpretación; arrastrar el archivo conserva ataques
+exactos y duraciones expresivas.
+
+## Compositor simbólico 0.16
+
+`NarrativePlanner` convierte cada sección en frases deterministas de longitud variable
+(4–12 compases), con función de establish, question, answer, develop, suspend, arrive o
+release. El texto `motif_treatment` escrito por GPT se traduce a fragmentación, secuencia,
+inversión, aumentación, desplazamiento o cadencia y alcanza directamente las notas.
+
+`PhraseComposer` realiza lead, contramelodía, sub y movement bass como intérpretes con
+memoria independiente. Sus ritmos se derivan de identidad, frase, función y transformación;
+el movement bass ya no copia eventos del sub. Los apoyos métricos obedecen la armonía,
+mientras los pasos débiles desarrollan el ADN diatónico.
+
+`HarmonyEngine` construye un timeline armónico explícito. Según tensión y dirección
+semántica agrega séptimas y colores, mantiene pedales intencionales, reconoce llegadas a
+tónica y minimiza movimiento, cruces y separaciones excesivas entre cuatro voces. Foundation,
+pulse, upper y atmosphere reciben realizaciones distintas del mismo momento armónico.
+
+`MusicalCritic` analiza el score completo después del render. Mide espacio negativo,
+repetición exacta, saltos, rango dinámico, densidad y claridad; repara solapamientos
+monofónicos, limita acumulación no rítmica y publica curvas CC11 de frase. `TonalContract`
+vuelve a validar el resultado revisado antes de que el worker lo publique.
+
+## Localización y superficie de control
+
+`Localization` concentra todos los textos estáticos, estados conocidos, nombres de voz,
+paletas, timeline, exportación, progreso y tooltips. El parámetro `language` pertenece a
+`AudioProcessorValueTreeState`, por lo que español o inglés se restauran con el proyecto.
+El cambio se aplica en el message thread sin reconstruir el processor ni tocar audio.
+
+MSVC compila core, plugin y tests con `/utf-8`. Los literales internacionales se construyen
+como `char8_t` y se convierten explícitamente mediante `String::fromUTF8`; los separadores
+usan U+00B7. Las pruebas verifican code points reales para impedir regresiones como `Â·`
+o `composiciÃ³n`.
+
+Los antiguos ComboBox globales de kit, bajo, armonía y melodía ya no se crean en el editor.
+Las quince filas conservan selección individual, octava, nivel y audition. Sus parámetros
+legacy permanecen únicamente en el processor para abrir proyectos anteriores sin alterar
+IDs ni automatizaciones; no reservan componentes, attachments ni espacio de layout.
 
 ## Gramática de composición
 
@@ -129,10 +177,11 @@ esquema limita la respuesta al catálogo conocido por el renderer.
 Una segunda llamada actúa como compositor-crítico: compara alternativas de desarrollo,
 revisa linaje, respiración, interlock kick–bass y causalidad formal, y devuelve un plan
 completo revisado. Si esa revisión falla, la primera respuesta validada permanece utilizable.
-Arquitectura y crítica comparten un deadline total de 65 segundos. La arquitectura tiene
+Arquitectura y crítica comparten un deadline total de 90 segundos. La arquitectura tiene
 prioridad y la crítica opcional recibe como máximo 10 segundos del tiempo restante.
-`WebInputStream::cancel`
-interrumpe conexión o lectura desde un watchdog y desde el botón `CANCEL`. La operación es
+En Windows, `AiComposer` usa WinHTTP nativo con TLS, configuración automática de proxy y
+timeouts por etapa. Un watchdog cierra el request activo desde el botón `CANCEL` o al vencer
+el deadline; en las demás plataformas se usa `WebInputStream::cancel`. La operación es
 transaccional: cancelar conserva patrón, seed y variante anteriores. El destructor solicita
 la misma cancelación antes de unir el worker, por lo que cerrar el dispositivo no espera el
 deadline completo de la red.
@@ -169,11 +218,42 @@ textura (`Atmosphere`, `Transitions`). Cada sección contiene un conjunto explí
 voces activas. `SongComposer` normaliza ese conjunto, mantiene registros musicales,
 evita colisiones principales y genera CC 11/1/74 para dinámica, tensión y transición.
 
+## Intérprete expresivo 0.18
+
+Cada `PlannedVoice` contiene un `PerformanceProfile` escrito por GPT mediante Structured
+Outputs: articulación, contorno dinámico, vibrato, gesto de pitch, profundidad, brillo,
+humanización, pedal e intención semántica. `PerformanceExpression` no acepta una lista
+arbitraria de eventos del modelo; traduce esos conceptos a MIDI validado y reproducible.
+
+El renderer modifica duraciones y microdinámica sin mover ataques, dibuja curvas CC11/1/74,
+usa CC64 sólo en voces sostenidas y publica pitch bend, channel pressure y poly-aftertouch.
+Los pitch gestures se restringen a lead, contrapunto, sub y movement bass, todos con canal
+dedicado, y un RPN fija ±2 semitonos. Rhythm y armonía polifónica permanecen pitch-stable.
+Cada final de sección resetea bend, pressure, modulación y pedal; panic hace lo mismo en los
+16 canales. Un seek o cambio de patrón reconstruye en sample cero el último estado expresivo
+anterior al playhead antes de reactivar notas solapadas.
+
+`Pattern::expressions` separa mensajes de 14 bits y pressure de los CC de 7 bits. Scheduler,
+preview, locks, slicing, exportación multitrack y estado binario versión 3 conservan ambos.
+El preview interpreta bend, sustain, pressure y aftertouch además de CC11/1/74.
+
 Los locks y filtros de exportación operan sobre identidad y familia de voz, no sólo
 sobre canal MIDI. Por eso dos capas que comparten canal siguen siendo pistas separadas
 en el archivo multitrack y pueden conservarse o arrastrarse de forma independiente.
 
 ## Dirección rítmica
+
+Desde 0.19 no existe una enumeración de estilos rítmicos ni plantillas `organic`, `deep`,
+`driving` o `hybrid`. GPT escribe un `RhythmLanguage` abierto: descripción musical,
+estabilidad del pulso, gravedad de backbeat, síncopa, ghosts, contraste dinámico, libertad
+temporal, movimiento de orquestación, silencio y llamada/respuesta. También compone entre
+dos y seis motivos y puede orquestar articulaciones GM adicionales (kicks alternativos,
+sidestick, toms, ride, crash, shaker, tambourine, cowbell y congas).
+
+El renderer no elige un género: convierte esa partitura en eventos, aplica desarrollo
+seccional y valida solamente seguridad, rango e invariantes pedidos expresamente. El
+fallback sin red es reproducible, pero deriva sus motivos de la dirección completa y la
+semilla; no selecciona una familia estilística cerrada.
 
 `RhythmPlan` separa identidad, estructura y gesto. `RhythmMotif` conserva celdas de 1–4
 compases en seis máscaras independientes (`0` silencio, `1` golpe, `2` acento), y cada

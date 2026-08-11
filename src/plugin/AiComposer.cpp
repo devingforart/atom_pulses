@@ -11,6 +11,17 @@
 #include <initializer_list>
 #include <thread>
 
+#if JUCE_WINDOWS
+ #ifndef WIN32_LEAN_AND_MEAN
+  #define WIN32_LEAN_AND_MEAN
+ #endif
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #include <windows.h>
+ #include <winhttp.h>
+#endif
+
 namespace pulso::plugin {
 namespace {
 
@@ -102,18 +113,30 @@ const juce::String songPlanSchema = R"json({
     "summary":{"type":"string"},
     "root_pitch_class":{"type":"integer"},
     "mode":{"type":"string","enum":["major","minor","dorian","mixolydian"]},
-    "groove_family":{"type":"string","enum":["deep_progressive_house","organic_progressive","driving_house","hybrid"]},
+    "rhythm_language":{"type":"object","properties":{
+      "description":{"type":"string"},
+      "pulse_stability":{"type":"number"},"backbeat_gravity":{"type":"number"},
+      "syncopation":{"type":"number"},"ghost_density":{"type":"number"},
+      "velocity_contrast":{"type":"number"},"timing_freedom":{"type":"number"},
+      "orchestration_motion":{"type":"number"},"silence_bias":{"type":"number"},
+      "call_response":{"type":"number"}
+    },"required":["description","pulse_stability","backbeat_gravity","syncopation","ghost_density","velocity_contrast","timing_freedom","orchestration_motion","silence_bias","call_response"],"additionalProperties":false},
     "motif_intervals":{"type":"array","items":{"type":"integer"},"minItems":3,"maxItems":8},
     "chord_degrees":{"type":"array","items":{"type":"integer"},"minItems":2,"maxItems":12},
-    "rhythm_motifs":{"type":"array","minItems":1,"maxItems":6,"items":{
+    "rhythm_motifs":{"type":"array","minItems":2,"maxItems":6,"items":{
       "type":"object","properties":{
         "id":{"type":"string"},"bars":{"type":"integer"},
         "steps_per_bar":{"type":"integer","enum":[8,16]},
         "kick":{"type":"string"},"snare_clap":{"type":"string"},
         "closed_hats":{"type":"string"},"open_hats_shaker":{"type":"string"},
-        "low_percussion":{"type":"string"},"high_percussion":{"type":"string"}
+        "low_percussion":{"type":"string"},"high_percussion":{"type":"string"},
+        "ornaments":{"type":"array","maxItems":48,"items":{"type":"object","properties":{
+          "step":{"type":"integer"},
+          "instrument":{"type":"string","enum":["kick_deep","kick_alt","snare","sidestick","clap","tom_low","tom_mid","tom_high","closed_hat","pedal_hat","open_hat","ride","crash","shaker","tambourine","cowbell","conga_low","conga_high"]},
+          "velocity":{"type":"integer"},"duration_steps":{"type":"number"}
+        },"required":["step","instrument","velocity","duration_steps"],"additionalProperties":false}}
       },
-      "required":["id","bars","steps_per_bar","kick","snare_clap","closed_hats","open_hats_shaker","low_percussion","high_percussion"],
+      "required":["id","bars","steps_per_bar","kick","snare_clap","closed_hats","open_hats_shaker","low_percussion","high_percussion","ornaments"],
       "additionalProperties":false
     }},
     "voices":{"type":"array","minItems":7,"maxItems":15,"items":{
@@ -125,9 +148,18 @@ const juce::String songPlanSchema = R"json({
         "activity":{"type":"number"},
         "syncopation":{"type":"number"},
         "minimum_pitch":{"type":"integer"},
-        "maximum_pitch":{"type":"integer"}
+        "maximum_pitch":{"type":"integer"},
+        "performance_intent":{"type":"string"},
+        "articulation":{"type":"string","enum":["percussive","staccato","detached","natural","legato","sustained","swelling"]},
+        "dynamic_contour":{"type":"string","enum":["steady","phrase_arc","crescendo","decrescendo","swell","pulsing"]},
+        "vibrato":{"type":"string","enum":["none","late_subtle","late_expressive","continuous_subtle"]},
+        "pitch_gesture":{"type":"string","enum":["stable","approach","gentle_bends","portamento"]},
+        "expression_depth":{"type":"number"},
+        "brightness":{"type":"number"},
+        "humanization":{"type":"number"},
+        "sustain_pedal":{"type":"boolean"}
       },
-      "required":["id","function","interaction","activity","syncopation","minimum_pitch","maximum_pitch"],
+      "required":["id","function","interaction","activity","syncopation","minimum_pitch","maximum_pitch","performance_intent","articulation","dynamic_contour","vibrato","pitch_gesture","expression_depth","brightness","humanization","sustain_pedal"],
       "additionalProperties":false
     }},
     "sections":{"type":"array","minItems":3,"maxItems":20,"items":{
@@ -173,7 +205,7 @@ const juce::String songPlanSchema = R"json({
       "additionalProperties":false
     }}
   },
-  "required":["title","key","summary","root_pitch_class","mode","groove_family","motif_intervals","chord_degrees","rhythm_motifs","voices","sections"],
+  "required":["title","key","summary","root_pitch_class","mode","rhythm_language","motif_intervals","chord_degrees","rhythm_motifs","voices","sections"],
   "additionalProperties":false
 })json";
 
@@ -221,10 +253,118 @@ struct HttpResponse {
     bool connected{};
     bool cancelled{};
     bool timedOut{};
+    unsigned long nativeError{};
 };
+
+#if JUCE_WINDOWS
+HttpResponse performWindowsRequest(const juce::String& body, const juce::String& apiKey,
+                                   std::stop_token token, std::chrono::milliseconds budget) {
+    HttpResponse result;
+    if (token.stop_requested()) {
+        result.cancelled = true;
+        return result;
+    }
+
+    const auto timeoutMs = std::clamp(static_cast<int>(budget.count()), 1000, 120000);
+    const auto session = WinHttpOpen(L"PULSO/0.17.1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                                     WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (session == nullptr) {
+        result.nativeError = GetLastError();
+        return result;
+    }
+    WinHttpSetTimeouts(session, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
+    const auto connection = WinHttpConnect(session, L"api.openai.com",
+                                            INTERNET_DEFAULT_HTTPS_PORT, 0);
+    if (connection == nullptr) {
+        result.nativeError = GetLastError();
+        WinHttpCloseHandle(session);
+        return result;
+    }
+    const auto request = WinHttpOpenRequest(connection, L"POST", L"/v1/responses",
+        nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
+    if (request == nullptr) {
+        result.nativeError = GetLastError();
+        WinHttpCloseHandle(connection);
+        WinHttpCloseHandle(session);
+        return result;
+    }
+
+    std::atomic<HINTERNET> activeRequest{request};
+    std::atomic<bool> finished{};
+    std::atomic<bool> deadlineReached{};
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    std::jthread watchdog([&](std::stop_token watchdogToken) {
+        while (!watchdogToken.stop_requested() && !finished.load(std::memory_order_acquire)) {
+            if (token.stop_requested() || std::chrono::steady_clock::now() >= deadline) {
+                deadlineReached.store(!token.stop_requested(), std::memory_order_release);
+                if (const auto handle = activeRequest.exchange(nullptr, std::memory_order_acq_rel))
+                    WinHttpCloseHandle(handle);
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        }
+    });
+
+    const auto headers = juce::String("Content-Type: application/json\r\nAuthorization: Bearer ") +
+                         apiKey + "\r\n";
+    const auto utf8Body = body.toUTF8();
+    const auto bodyBytes = static_cast<DWORD>(utf8Body.sizeInBytes() - 1);
+    auto sent = WinHttpSendRequest(request, headers.toWideCharPointer(),
+        static_cast<DWORD>(-1L), const_cast<char*>(utf8Body.getAddress()), bodyBytes, bodyBytes, 0) != FALSE;
+    if (sent) sent = WinHttpReceiveResponse(request, nullptr) != FALSE;
+    if (sent) {
+        DWORD status{};
+        DWORD statusSize = sizeof(status);
+        if (WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                                WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize,
+                                WINHTTP_NO_HEADER_INDEX)) {
+            result.status = static_cast<int>(status);
+            result.connected = true;
+            juce::MemoryOutputStream response;
+            for (;;) {
+                DWORD available{};
+                if (!WinHttpQueryDataAvailable(request, &available)) {
+                    result.nativeError = GetLastError();
+                    result.connected = false;
+                    break;
+                }
+                if (available == 0) break;
+                juce::HeapBlock<char> buffer(available);
+                DWORD read{};
+                if (!WinHttpReadData(request, buffer.getData(), available, &read)) {
+                    result.nativeError = GetLastError();
+                    result.connected = false;
+                    break;
+                }
+                if (read > 0) response.write(buffer.getData(), read);
+            }
+            if (result.connected)
+                result.body = juce::String::fromUTF8(static_cast<const char*>(response.getData()),
+                                                      static_cast<int>(response.getDataSize()));
+        } else {
+            result.nativeError = GetLastError();
+        }
+    } else if (!token.stop_requested() && !deadlineReached.load(std::memory_order_acquire)) {
+        result.nativeError = GetLastError();
+    }
+
+    finished.store(true, std::memory_order_release);
+    watchdog.request_stop();
+    if (const auto handle = activeRequest.exchange(nullptr, std::memory_order_acq_rel))
+        WinHttpCloseHandle(handle);
+    WinHttpCloseHandle(connection);
+    WinHttpCloseHandle(session);
+    result.cancelled = token.stop_requested();
+    result.timedOut = deadlineReached.load(std::memory_order_acquire);
+    return result;
+}
+#endif
 
 HttpResponse performRequest(const juce::String& body, const juce::String& apiKey,
                             std::stop_token token, std::chrono::milliseconds budget) {
+#if JUCE_WINDOWS
+    return performWindowsRequest(body, apiKey, token, budget);
+#else
     HttpResponse result;
     if (token.stop_requested()) {
         result.cancelled = true;
@@ -265,12 +405,15 @@ HttpResponse performRequest(const juce::String& body, const juce::String& apiKey
     result.cancelled = token.stop_requested();
     result.timedOut = deadlineReached.load(std::memory_order_acquire);
     return result;
+#endif
 }
 
 juce::String apiErrorMessage(const HttpResponse& response) {
     auto error = response.timedOut ? juce::String("OpenAI request reached its time budget")
                : response.cancelled ? juce::String("Generation cancelled")
-               : !response.connected ? juce::String("Could not connect to OpenAI")
+               : !response.connected ? juce::String("Could not connect to OpenAI") +
+                    (response.nativeError != 0 ? " (transport error " +
+                     juce::String(static_cast<int>(response.nativeError)) + ")" : juce::String{})
                : juce::String("OpenAI HTTP ") + juce::String(response.status);
     if (const auto parsed = juce::JSON::parse(response.body); !parsed.isVoid())
         if (const auto* object = parsed.getDynamicObject())
@@ -354,12 +497,12 @@ AiComposition AiComposer::compose(const juce::String& creativeDirection, int bar
         describeReference(reference, lockedLayers);
 
     const auto body = juce::String("{\"model\":\"") + model +
-        "\",\"reasoning\":{\"effort\":\"low\"},\"max_output_tokens\":16000,\"input\":" +
+        "\",\"reasoning\":{\"effort\":\"medium\"},\"max_output_tokens\":16000,\"input\":" +
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_composition\","
         "\"strict\":true,\"schema\":" + schema() + "}}}";
 
-    const auto http = performRequest(body, apiKey, token, std::chrono::seconds(30));
+    const auto http = performRequest(body, apiKey, token, std::chrono::seconds(60));
     if (!http.connected || http.status < 200 || http.status >= 300 ||
         http.cancelled || http.timedOut) {
         error = apiErrorMessage(http);
@@ -505,20 +648,32 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "Harmonic tension must follow the dramatic curve. minimum_pitch and maximum_pitch are MIDI pitches. "
         "The key label, root_pitch_class and mode MUST describe exactly the same tonal centre. Chromatic notes are "
         "reserved for brief prepared passing motion that resolves by semitone; structural notes remain diatonic. "
-        "Write a deliberate rhythm score for every section. kick_state defines its stable identity and "
-        "kick_continuity says whether quarter-note anchors are mandatory. Use four_on_floor as the normal driving "
-        "foundation for house and progressive-house requests. Create contrast through explicit rhythm_gestures: "
+        "Invent the rhythmic language from the creative direction itself; there are no preset genre families and "
+        "you must not default unrelated requests to house, four-on-the-floor or the same backbeat. Describe the "
+        "language semantically, then set its continuous behavioural dimensions from 0 to 1. Write a deliberate "
+        "rhythm score for every section. kick_state defines macro presence and kick_continuity says whether explicit "
+        "quarter-note anchors are mandatory. Use four_on_floor only when the request or your musical reading truly "
+        "calls for it. Create contrast through explicit rhythm_gestures: "
         "mute or remove kicks before transitions, add occasional double kicks or pickups, then restore the established "
         "groove after breaks. Every exception must have structural purpose and gestures must remain rare. Kick, "
         "snare/clap, closed hats, open hats/shaker and percussion are independent voices. Never choose a breakbeat "
         "unless the user explicitly requests one. percussion_density, rhythmic_syncopation and swing are 0 to 1; "
-        "bar_offset is local to its section and beat is zero-based. Invent 1-6 reusable rhythm_motifs as open "
-        "one-to-four-bar rhythmic DNA. Each lane mask has exactly bars * steps_per_bar characters: 0 is silence, "
+        "bar_offset is local to its section and beat is zero-based. Invent 2-6 reusable rhythm_motifs as open "
+        "one-to-four-bar rhythmic DNA. Use genuinely different motifs when the form needs different rhythmic ideas; "
+        "do not merely rename one mask. Each lane mask has exactly bars * steps_per_bar characters: 0 is silence, "
         "1 is a normal hit and 2 is an accent. Do not default every motif to a generic grid: internally consider "
         "at least three rhythm solutions, then choose the one whose kick, clap, hats and two percussion lanes form "
-        "the clearest conversation. Sections develop a shared motif through sparse rhythm_mutations rather than "
+        "the clearest conversation. ornaments add freely chosen GM-kit articulations such as alternate kicks, "
+        "sidestick, toms, ride, crash, shaker, tambourine, cowbell and congas; step spans the complete motif and "
+        "duration_steps is measured in motif steps. Use ornaments purposefully, not as constant clutter. Sections "
+        "develop a shared motif through sparse rhythm_mutations rather than "
         "replacing it arbitrarily. Every mutation needs an audible dramatic purpose. Preserve silence, asymmetry, "
-        "call-and-response and recognizable lineage across the full song. The macro kick contract still wins when "
+        "call-and-response and recognizable lineage across the full song. Give every voice a distinct performance "
+        "identity: articulation, dynamic contour, vibrato, pitch gesture, brightness, expression depth and "
+        "humanization must serve its instrumental role. Pitch gestures belong only to monophonic bass or melodic "
+        "voices; polyphonic harmony and drums remain pitch-stable. Sustain pedal is only for foundation, upper "
+        "harmony or atmosphere when connected phrasing is intentional. Expression must breathe with the form and "
+        "must never remain maximal or mechanically identical. The macro kick contract still wins when "
         "the user explicitly requests constant quarter-note kick or when a section deliberately mutes it. "
         "The section bars MUST sum exactly to ") + juce::String(totalBars) + ". Use between 5 and 14 sections. Energy, tension "
         "and density are values from 0 to 1. Chord degrees use 0-6. Motif intervals are semitones relative to the "
@@ -527,12 +682,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         " quarter-note beats per bar. Creative direction: " + direction;
 
     const auto body = juce::String("{\"model\":\"") + model +
-        "\",\"reasoning\":{\"effort\":\"low\"},\"max_output_tokens\":9000,\"input\":" +
+        "\",\"reasoning\":{\"effort\":\"medium\"},\"max_output_tokens\":9000,\"input\":" +
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_plan\","
         "\"strict\":true,\"schema\":" + songPlanSchema + "}}}";
 
-    constexpr auto totalAiBudget = std::chrono::seconds(65);
+    constexpr auto totalAiBudget = std::chrono::seconds(90);
     const auto aiStarted = std::chrono::steady_clock::now();
     if (progress) progress(AiSongStage::Architecture);
     const auto http = performRequest(body, apiKey, token, totalAiBudget);
@@ -606,9 +761,18 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
     const auto mode = object->getProperty("mode").toString();
     result.scale = mode == "major" ? ScaleKind::Major : mode == "dorian" ? ScaleKind::Dorian
                  : mode == "mixolydian" ? ScaleKind::Mixolydian : ScaleKind::Minor;
-    if (const auto groove = grooveFamilyFromKey(
-            object->getProperty("groove_family").toString().toStdString()))
-        result.grooveFamily = *groove;
+    if (const auto* language = object->getProperty("rhythm_language").getDynamicObject()) {
+        result.rhythmLanguage.description = language->getProperty("description").toString().trim().toStdString();
+        result.rhythmLanguage.pulseStability = static_cast<double>(language->getProperty("pulse_stability"));
+        result.rhythmLanguage.backbeatGravity = static_cast<double>(language->getProperty("backbeat_gravity"));
+        result.rhythmLanguage.syncopation = static_cast<double>(language->getProperty("syncopation"));
+        result.rhythmLanguage.ghostDensity = static_cast<double>(language->getProperty("ghost_density"));
+        result.rhythmLanguage.velocityContrast = static_cast<double>(language->getProperty("velocity_contrast"));
+        result.rhythmLanguage.timingFreedom = static_cast<double>(language->getProperty("timing_freedom"));
+        result.rhythmLanguage.orchestrationMotion = static_cast<double>(language->getProperty("orchestration_motion"));
+        result.rhythmLanguage.silenceBias = static_cast<double>(language->getProperty("silence_bias"));
+        result.rhythmLanguage.callResponse = static_cast<double>(language->getProperty("call_response"));
+    }
     if (const auto* motif = object->getProperty("motif_intervals").getArray())
         for (const auto& value : *motif) result.motifIntervals.push_back(static_cast<int>(value));
     if (const auto* chords = object->getProperty("chord_degrees").getArray())
@@ -617,7 +781,7 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
         for (const auto& item : *motifs) {
             const auto* motif = item.getDynamicObject();
             if (motif == nullptr) continue;
-            result.rhythmMotifs.push_back({
+            RhythmMotif parsedMotif{
                 motif->getProperty("id").toString().trim().toStdString(),
                 static_cast<int>(motif->getProperty("bars")),
                 static_cast<int>(motif->getProperty("steps_per_bar")),
@@ -626,7 +790,19 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
                 motif->getProperty("closed_hats").toString().toStdString(),
                 motif->getProperty("open_hats_shaker").toString().toStdString(),
                 motif->getProperty("low_percussion").toString().toStdString(),
-                motif->getProperty("high_percussion").toString().toStdString()});
+                motif->getProperty("high_percussion").toString().toStdString()};
+            if (const auto* ornaments = motif->getProperty("ornaments").getArray())
+                for (const auto& ornamentItem : *ornaments) {
+                    const auto* ornament = ornamentItem.getDynamicObject();
+                    if (ornament == nullptr) continue;
+                    if (const auto instrument = rhythmInstrumentFromKey(
+                            ornament->getProperty("instrument").toString().toStdString()))
+                        parsedMotif.ornaments.push_back({
+                            static_cast<int>(ornament->getProperty("step")), *instrument,
+                            static_cast<int>(ornament->getProperty("velocity")),
+                            static_cast<double>(ornament->getProperty("duration_steps"))});
+                }
+            result.rhythmMotifs.push_back(std::move(parsedMotif));
         }
     }
     if (const auto* voices = object->getProperty("voices").getArray()) {
@@ -635,13 +811,37 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
             if (voice == nullptr) continue;
             const auto id = voiceIdFromKey(voice->getProperty("id").toString().toStdString());
             if (!id) continue;
-            result.voices.push_back({*id,
+            PlannedVoice parsedVoice{*id,
                 voice->getProperty("function").toString().trim().toStdString(),
                 voice->getProperty("interaction").toString().trim().toStdString(),
                 static_cast<double>(voice->getProperty("activity")),
                 static_cast<double>(voice->getProperty("syncopation")),
                 static_cast<int>(voice->getProperty("minimum_pitch")),
-                static_cast<int>(voice->getProperty("maximum_pitch"))});
+                static_cast<int>(voice->getProperty("maximum_pitch"))};
+            parsedVoice.performance = defaultPerformanceProfile(*id);
+            if (const auto value = articulationStyleFromKey(
+                    voice->getProperty("articulation").toString().toStdString()))
+                parsedVoice.performance.articulation = *value;
+            if (const auto value = dynamicContourFromKey(
+                    voice->getProperty("dynamic_contour").toString().toStdString()))
+                parsedVoice.performance.dynamics = *value;
+            if (const auto value = vibratoStyleFromKey(
+                    voice->getProperty("vibrato").toString().toStdString()))
+                parsedVoice.performance.vibrato = *value;
+            if (const auto value = pitchGestureFromKey(
+                    voice->getProperty("pitch_gesture").toString().toStdString()))
+                parsedVoice.performance.pitchGesture = *value;
+            if (voice->hasProperty("expression_depth"))
+                parsedVoice.performance.expressionDepth = static_cast<double>(voice->getProperty("expression_depth"));
+            if (voice->hasProperty("brightness"))
+                parsedVoice.performance.brightness = static_cast<double>(voice->getProperty("brightness"));
+            if (voice->hasProperty("humanization"))
+                parsedVoice.performance.humanization = static_cast<double>(voice->getProperty("humanization"));
+            if (voice->hasProperty("sustain_pedal"))
+                parsedVoice.performance.sustainPedal = static_cast<bool>(voice->getProperty("sustain_pedal"));
+            parsedVoice.performance.intent = voice->getProperty("performance_intent").toString().trim().toStdString();
+            parsedVoice.performance.authored = voice->hasProperty("articulation");
+            result.voices.push_back(std::move(parsedVoice));
         }
     }
 

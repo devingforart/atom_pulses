@@ -27,6 +27,7 @@ private:
     [[nodiscard]] juce::Rectangle<int> voiceTimelineBounds() const noexcept;
     [[nodiscard]] static bool noteMatchesTarget(const NoteEvent&, int) noexcept;
     [[nodiscard]] juce::File createExportFile(int channel) const;
+    void showTimbreMenu(VoiceId, const juce::MouseEvent&);
 
     PulsoAudioProcessor& processor;
     int armedChannel{-999};

@@ -89,6 +89,75 @@ void PreviewSynth::setSoundWorld(int world) noexcept {
     soundWorld = allWorlds[std::clamp(world, 0, static_cast<int>(allWorlds.size()) - 1)];
 }
 
+void PreviewSynth::setDrumKit(int kit) noexcept {
+    drumKit = static_cast<DrumKit>(std::clamp(kit, 0, static_cast<int>(DrumKit::Count) - 1));
+}
+
+void PreviewSynth::setBassTone(int tone) noexcept {
+    bassTone = static_cast<BassTone>(std::clamp(tone, 0, static_cast<int>(BassTone::Count) - 1));
+}
+
+void PreviewSynth::setHarmonyTone(int tone) noexcept {
+    harmonyTone = static_cast<HarmonyTone>(std::clamp(tone, 0, static_cast<int>(HarmonyTone::Count) - 1));
+}
+
+void PreviewSynth::setMelodyTone(int tone) noexcept {
+    melodyTone = static_cast<MelodyTone>(std::clamp(tone, 0, static_cast<int>(MelodyTone::Count) - 1));
+}
+
+void PreviewSynth::setVoiceTimbre(VoiceId voice, int selection) noexcept {
+    const auto index = static_cast<std::size_t>(voice);
+    if (index < voiceTimbres.size()) voiceTimbres[index] = std::clamp(selection, 0, 4);
+}
+
+VoiceId PreviewSynth::voiceForKind(VoiceKind kind) const noexcept {
+    switch (kind) {
+        case VoiceKind::Kick: return VoiceId::CoreDrums;
+        case VoiceKind::Snare:
+        case VoiceKind::Clap: return VoiceId::SnareClap;
+        case VoiceKind::ClosedHat: return VoiceId::ClosedHats;
+        case VoiceKind::OpenHat:
+        case VoiceKind::Cymbal: return VoiceId::OpenHatsShaker;
+        case VoiceKind::LowPercussion: return VoiceId::LowPercussion;
+        case VoiceKind::HighPercussion: return VoiceId::HighPercussion;
+        case VoiceKind::SubBass: return VoiceId::SubBass;
+        case VoiceKind::MovementBass: return VoiceId::MovementBass;
+        case VoiceKind::Foundation: return VoiceId::HarmonicFoundation;
+        case VoiceKind::Pulse: return VoiceId::HarmonicPulse;
+        case VoiceKind::Upper: return VoiceId::HarmonicUpper;
+        case VoiceKind::Lead: return VoiceId::Lead;
+        case VoiceKind::Counter: return VoiceId::Countermelody;
+        case VoiceKind::Atmosphere: return VoiceId::Atmosphere;
+        case VoiceKind::Transition: return VoiceId::Transitions;
+    }
+    return VoiceId::Unspecified;
+}
+
+PreviewSynth::DrumKit PreviewSynth::effectiveDrumKit(VoiceKind kind) const noexcept {
+    const auto voice = voiceForKind(kind);
+    const auto index = static_cast<std::size_t>(voice);
+    const auto override = index < voiceTimbres.size() ? voiceTimbres[index] : 0;
+    return override > 0 ? static_cast<DrumKit>(override - 1) : drumKit;
+}
+
+PreviewSynth::BassTone PreviewSynth::effectiveBassTone(VoiceKind kind) const noexcept {
+    const auto index = static_cast<std::size_t>(voiceForKind(kind));
+    const auto override = index < voiceTimbres.size() ? voiceTimbres[index] : 0;
+    return override > 0 ? static_cast<BassTone>(override - 1) : bassTone;
+}
+
+PreviewSynth::HarmonyTone PreviewSynth::effectiveHarmonyTone(VoiceKind kind) const noexcept {
+    const auto index = static_cast<std::size_t>(voiceForKind(kind));
+    const auto override = index < voiceTimbres.size() ? voiceTimbres[index] : 0;
+    return override > 0 ? static_cast<HarmonyTone>(override - 1) : harmonyTone;
+}
+
+PreviewSynth::MelodyTone PreviewSynth::effectiveMelodyTone(VoiceKind kind) const noexcept {
+    const auto index = static_cast<std::size_t>(voiceForKind(kind));
+    const auto override = index < voiceTimbres.size() ? voiceTimbres[index] : 0;
+    return override > 0 ? static_cast<MelodyTone>(override - 1) : melodyTone;
+}
+
 void PreviewSynth::allNotesOff(int midiChannel, bool allowTailOff) noexcept {
     const auto release = [midiChannel, allowTailOff](auto& voices) {
         for (auto& voice : voices) {
@@ -148,6 +217,10 @@ void PreviewSynth::noteOn(int channel, int note, float velocity) noexcept {
     voice->kind = kindForChannel(voice->channel);
     voice->noiseState = 0x85ebca6bu ^ static_cast<std::uint32_t>(voice->note * 2246822519u) ^
                         static_cast<std::uint32_t>(voice->age);
+    const auto phaseSeed = static_cast<double>((voice->noiseState >> 8) & 0xffffu) / 65535.0;
+    voice->phase = phaseSeed * juce::MathConstants<double>::twoPi;
+    voice->secondaryPhase = std::fmod(voice->phase * 1.61803398875 + 0.73,
+                                      juce::MathConstants<double>::twoPi);
     const auto& world = profile();
     voice->pan = std::clamp((static_cast<float>(voice->channel) - 5.0f) * 0.09f * world.stereo,
                             -0.58f, 0.58f);
@@ -189,6 +262,52 @@ void PreviewSynth::noteOn(int channel, int note, float velocity) noexcept {
         default: break;
     }
 
+    if (voice->kind == VoiceKind::SubBass || voice->kind == VoiceKind::MovementBass) {
+        switch (effectiveBassTone(voice->kind)) {
+            case BassTone::DeepSub:
+                cutoff *= 0.42f; voice->attackSeconds = 0.012f; voice->sustain = 0.94f; break;
+            case BassTone::WarmAnalog:
+                cutoff *= 0.72f; voice->attackSeconds = 0.008f; break;
+            case BassTone::RollingReese:
+                cutoff *= 0.92f; voice->attackSeconds = 0.018f; voice->releaseSeconds *= 1.45f; break;
+            case BassTone::AcidPluck:
+                cutoff *= 1.55f; voice->attackSeconds = 0.002f; voice->decaySeconds = 0.14f;
+                voice->sustain = 0.16f; voice->releaseSeconds = 0.07f; break;
+            case BassTone::Count: break;
+        }
+    } else if (voice->kind == VoiceKind::Foundation || voice->kind == VoiceKind::Pulse ||
+               voice->kind == VoiceKind::Upper || voice->kind == VoiceKind::Atmosphere) {
+        switch (effectiveHarmonyTone(voice->kind)) {
+            case HarmonyTone::DeepPad:
+                cutoff *= 0.62f; voice->attackSeconds = std::max(voice->attackSeconds, 0.16f);
+                voice->releaseSeconds *= 1.45f; break;
+            case HarmonyTone::WarmPoly:
+                cutoff *= 0.88f; voice->attackSeconds *= 0.65f; break;
+            case HarmonyTone::HouseOrgan:
+                cutoff *= 1.28f; voice->attackSeconds = 0.006f; voice->decaySeconds = 0.18f;
+                voice->sustain = 0.88f; voice->releaseSeconds = 0.11f; break;
+            case HarmonyTone::Glass:
+                cutoff *= 1.46f; voice->attackSeconds = 0.004f; voice->decaySeconds = 0.52f;
+                voice->sustain = 0.24f; voice->releaseSeconds = 0.72f; break;
+            case HarmonyTone::Count: break;
+        }
+    } else if (voice->kind == VoiceKind::Lead || voice->kind == VoiceKind::Counter) {
+        switch (effectiveMelodyTone(voice->kind)) {
+            case MelodyTone::WarmMono:
+                cutoff *= 0.58f; voice->attackSeconds = 0.026f; voice->decaySeconds = 0.38f;
+                voice->sustain = 0.72f; voice->releaseSeconds = 0.36f; break;
+            case MelodyTone::SoftPluck:
+                cutoff *= 0.96f; voice->attackSeconds = 0.003f; voice->decaySeconds = 0.22f;
+                voice->sustain = 0.18f; voice->releaseSeconds = 0.20f; break;
+            case MelodyTone::Air:
+                cutoff *= 0.58f; voice->attackSeconds = 0.10f; voice->releaseSeconds = 0.74f; break;
+            case MelodyTone::Bell:
+                cutoff *= 1.48f; voice->attackSeconds = 0.002f; voice->decaySeconds = 0.68f;
+                voice->sustain = 0.12f; voice->releaseSeconds = 0.82f; break;
+            case MelodyTone::Count: break;
+        }
+    }
+
     switch (soundWorld) {
         case SoundWorld::OrganicMotion:
             voice->attackSeconds *= 0.78f; voice->releaseSeconds *= 0.72f; cutoff *= 0.82f; break;
@@ -217,6 +336,11 @@ void PreviewSynth::noteOn(int channel, int note, float velocity) noexcept {
 }
 
 void PreviewSynth::drumNoteOn(int note, float velocity) noexcept {
+    if (note == 42 || note == 44) {
+        for (auto& active : drumVoices)
+            if (active.active && active.kind == VoiceKind::OpenHat)
+                active.decaySeconds = std::min(active.decaySeconds, 0.012f);
+    }
     auto* voice = selectVoice(true);
     *voice = {};
     voice->active = true;
@@ -228,6 +352,11 @@ void PreviewSynth::drumNoteOn(int note, float velocity) noexcept {
     voice->age = ++ageCounter;
     voice->noiseState = 0x9e3779b9u ^ (static_cast<std::uint32_t>(note) * 2654435761u) ^
                         static_cast<std::uint32_t>(voice->age);
+    voice->variant = static_cast<float>((voice->noiseState >> 9) & 0xffffu) / 32767.5f - 1.0f;
+    voice->phase = (static_cast<double>((voice->noiseState >> 4) & 0xffffu) / 65535.0) *
+                   juce::MathConstants<double>::twoPi;
+    voice->secondaryPhase = std::fmod(voice->phase * 1.41421356237 + 0.41,
+                                      juce::MathConstants<double>::twoPi);
 
     if (note == 35 || note == 36) voice->kind = VoiceKind::Kick;
     else if (note == 38 || note == 40) voice->kind = VoiceKind::Snare;
@@ -257,6 +386,44 @@ void PreviewSynth::drumNoteOn(int note, float velocity) noexcept {
         case VoiceKind::HighPercussion: frequency += 700.0f; voice->decaySeconds = 0.07f + world.decay * 0.07f; break;
         default: break;
     }
+    // These are instrument models, not cosmetic EQ presets. 808 favours long sine bodies,
+    // 909 adds a shorter driven transient, Modern Club is controlled and weighty, and
+    // Organic replaces electronic percussion with rounded skin-like resonances.
+    const auto selectedKit = effectiveDrumKit(voice->kind);
+    switch (selectedKit) {
+        case DrumKit::TR808:
+            voice->tone = 0.28f;
+            if (voice->kind == VoiceKind::Kick) { frequency = 48.0f; voice->decaySeconds = 0.58f; }
+            else if (voice->kind == VoiceKind::Snare) { frequency = 182.0f; voice->decaySeconds = 0.24f; }
+            else if (voice->kind == VoiceKind::Clap) voice->decaySeconds = 0.19f;
+            break;
+        case DrumKit::TR909:
+            voice->tone = 0.72f;
+            if (voice->kind == VoiceKind::Kick) { frequency = 52.0f; voice->decaySeconds = 0.32f; }
+            else if (voice->kind == VoiceKind::Snare) { frequency = 205.0f; voice->decaySeconds = 0.18f; }
+            else if (voice->kind == VoiceKind::ClosedHat) voice->decaySeconds = 0.055f;
+            else if (voice->kind == VoiceKind::OpenHat) voice->decaySeconds = 0.31f;
+            break;
+        case DrumKit::ModernClub:
+            voice->tone = 0.52f;
+            voice->level *= 1.08f;
+            if (voice->kind == VoiceKind::Kick) { frequency = 46.0f; voice->decaySeconds = 0.39f; }
+            else if (voice->kind == VoiceKind::Snare || voice->kind == VoiceKind::Clap)
+                voice->decaySeconds *= 0.82f;
+            break;
+        case DrumKit::Organic:
+            voice->tone = 0.18f;
+            voice->level *= 0.88f;
+            if (voice->kind == VoiceKind::Kick) { frequency = 61.0f; voice->decaySeconds = 0.29f; }
+            else if (voice->kind == VoiceKind::LowPercussion) voice->decaySeconds = 0.31f;
+            else if (voice->kind == VoiceKind::HighPercussion) voice->decaySeconds = 0.16f;
+            break;
+        case DrumKit::Count: break;
+    }
+    const auto tuningSpread = selectedKit == DrumKit::TR808 ? 0.010f :
+                              selectedKit == DrumKit::TR909 ? 0.006f : 0.014f;
+    frequency *= 1.0f + voice->variant * tuningSpread;
+    voice->decaySeconds *= 1.0f + voice->variant * 0.055f;
     voice->phaseDelta = juce::MathConstants<double>::twoPi * frequency / sampleRate;
 }
 
@@ -290,6 +457,7 @@ float PreviewSynth::nextNoise(Voice& voice) noexcept {
 }
 
 float PreviewSynth::renderDrumSample(Voice& voice) noexcept {
+    const auto selectedKit = effectiveDrumKit(voice.kind);
     const auto noise = nextNoise(voice);
     const auto highNoise = noise - voice.previousNoise * 0.82f;
     voice.previousNoise = noise;
@@ -298,35 +466,84 @@ float PreviewSynth::renderDrumSample(Voice& voice) noexcept {
     auto sample = 0.0f;
     switch (voice.kind) {
         case VoiceKind::Kick: {
-            const auto sweep = std::exp(-t * 34.0f);
-            voice.phase += voice.phaseDelta * (1.0 + 4.8 * sweep);
-            sample = body * 0.90f + highNoise * sweep * (0.10f + voice.tone * 0.10f);
+            const auto sweepRate = selectedKit == DrumKit::TR808 ? 22.0f :
+                                   selectedKit == DrumKit::TR909 ? 46.0f : 34.0f;
+            const auto sweepDepth = selectedKit == DrumKit::TR808 ? 3.1f :
+                                    selectedKit == DrumKit::TR909 ? 6.4f : 4.6f;
+            const auto sweep = std::exp(-t * sweepRate);
+            voice.phase += voice.phaseDelta * (1.0 + sweepDepth * sweep);
+            const auto click = highNoise * std::exp(-t * 115.0f);
+            sample = body * (selectedKit == DrumKit::TR808 ? 0.97f : 0.88f) +
+                     click * (selectedKit == DrumKit::TR909 ? 0.24f : 0.08f);
+            if (selectedKit == DrumKit::ModernClub) sample = std::tanh(sample * 1.65f) * 0.78f;
             break;
         }
-        case VoiceKind::Snare:
+        case VoiceKind::Snare: {
             voice.phase += voice.phaseDelta;
-            sample = noise * (0.58f + voice.tone * 0.28f) + body * (0.34f - voice.tone * 0.10f); break;
+            const auto secondBody = sine(voice.phase * 1.57);
+            if (selectedKit == DrumKit::TR808)
+                sample = noise * (0.34f + voice.variant * 0.025f) +
+                         body * 0.44f + secondBody * 0.22f;
+            else if (selectedKit == DrumKit::TR909)
+                sample = highNoise * (0.79f + voice.variant * 0.035f) +
+                         body * 0.14f + secondBody * 0.07f;
+            else if (selectedKit == DrumKit::Organic)
+                sample = body * 0.64f + noise * 0.20f + secondBody * 0.16f;
+            else sample = std::tanh((highNoise * 0.68f + body * 0.26f) * 1.45f) * 0.78f;
+            break;
+        }
         case VoiceKind::Clap: {
             voice.phase += voice.phaseDelta;
-            const auto burst = std::fmod(t * 31.0f, 1.0f) < 0.30f || t > 0.09f ? 1.0f : 0.12f;
-            sample = highNoise * burst * 0.86f + body * 0.06f; break;
+            const auto rate = selectedKit == DrumKit::TR808 ? 27.0f : 34.0f;
+            const auto burst = std::fmod(t * rate, 1.0f) < 0.28f || t > 0.09f ? 1.0f : 0.10f;
+            sample = highNoise * burst * (selectedKit == DrumKit::TR909 ? 0.96f : 0.82f) + body * 0.05f;
+            break;
         }
         case VoiceKind::ClosedHat:
-        case VoiceKind::OpenHat:
+        case VoiceKind::OpenHat: {
             voice.phase += voice.phaseDelta; voice.secondaryPhase += voice.phaseDelta * 1.41421356;
-            sample = highNoise * 0.58f + sine(voice.phase) * sine(voice.secondaryPhase) * 0.42f; break;
+            const auto metallic = sine(voice.phase) * sine(voice.secondaryPhase) +
+                                  sine(voice.phase * 1.731) * 0.32f;
+            if (selectedKit == DrumKit::TR808)
+                sample = highNoise * 0.30f + metallic * (0.62f + voice.variant * 0.035f);
+            else if (selectedKit == DrumKit::TR909)
+                sample = highNoise * (0.91f + voice.variant * 0.025f) + metallic * 0.09f;
+            else if (selectedKit == DrumKit::Organic)
+                sample = highNoise * 0.66f + noise * 0.24f + body * 0.10f;
+            else sample = std::tanh((highNoise * 0.74f + metallic * 0.26f) * 1.35f) * 0.82f;
+            break;
+        }
         case VoiceKind::LowPercussion: {
             const auto sweep = std::exp(-t * 18.0f);
             voice.phase += voice.phaseDelta * (1.0 + 0.9 * sweep);
-            sample = body * 0.84f + noise * 0.16f; break;
+            if (selectedKit == DrumKit::TR808)
+                sample = body * 0.93f + noise * 0.07f;
+            else if (selectedKit == DrumKit::TR909)
+                sample = body * 0.72f + highNoise * std::exp(-t * 70.0f) * 0.28f;
+            else if (selectedKit == DrumKit::ModernClub)
+                sample = std::tanh((body * 0.80f + noise * 0.20f) * 1.75f) * 0.72f;
+            else sample = body * 0.68f + sine(voice.phase * 1.48) * 0.20f + noise * 0.12f;
+            break;
         }
-        case VoiceKind::HighPercussion:
-            voice.phase += voice.phaseDelta; sample = body * 0.32f + highNoise * 0.68f; break;
+        case VoiceKind::HighPercussion: {
+            voice.phase += voice.phaseDelta;
+            voice.secondaryPhase += voice.phaseDelta * 1.47;
+            if (selectedKit == DrumKit::TR808)
+                sample = (sine(voice.phase) + sine(voice.secondaryPhase) * 0.82f) * 0.52f;
+            else if (selectedKit == DrumKit::TR909)
+                sample = body * 0.30f + highNoise * std::exp(-t * 48.0f) * 0.70f;
+            else if (selectedKit == DrumKit::ModernClub)
+                sample = std::tanh((highNoise * 0.55f + sine(voice.secondaryPhase) * 0.45f) * 1.8f) * 0.70f;
+            else sample = body * 0.82f + noise * 0.18f;
+            break;
+        }
         case VoiceKind::Cymbal:
             voice.phase += voice.phaseDelta; voice.secondaryPhase += voice.phaseDelta * 1.6180339;
             sample = highNoise * 0.64f + (sine(voice.phase) + sine(voice.secondaryPhase)) * 0.18f; break;
         default: break;
     }
+    if (selectedKit == DrumKit::TR909 && voice.kind != VoiceKind::Kick)
+        sample = std::tanh(sample * 1.28f) * 0.88f;
     switch (soundWorld) {
         case SoundWorld::OrganicMotion: sample = sample * 0.78f + noise * 0.10f; break;
         case SoundWorld::AnalogWarmth: sample = std::tanh(sample * 1.55f) * 0.82f; break;
@@ -344,6 +561,9 @@ float PreviewSynth::renderDrumSample(Voice& voice) noexcept {
 
 float PreviewSynth::renderVoiceSample(Voice& voice) noexcept {
     const auto& world = profile();
+    const auto selectedBassTone = effectiveBassTone(voice.kind);
+    const auto selectedHarmonyTone = effectiveHarmonyTone(voice.kind);
+    const auto selectedMelodyTone = effectiveMelodyTone(voice.kind);
     const auto s1 = sine(voice.phase);
     const auto s2 = sine(voice.secondaryPhase);
     const auto tri1 = triangle(voice.phase);
@@ -375,19 +595,63 @@ float PreviewSynth::renderVoiceSample(Voice& voice) noexcept {
             colourA = std::tanh(saw1 * 2.4f); colourB = square1 * 0.48f + saw2 * 0.52f; break;
         default: break;
     }
+    auto bassSignal = 0.0f;
+    switch (selectedBassTone) {
+        case BassTone::DeepSub: bassSignal = s1 * 0.88f + s2 * 0.12f; break;
+        case BassTone::WarmAnalog: bassSignal = s1 * 0.42f + saw1 * 0.36f + tri2 * 0.22f; break;
+        case BassTone::RollingReese: bassSignal = saw1 * 0.46f + saw2 * 0.44f + s1 * 0.10f; break;
+        case BassTone::AcidPluck: bassSignal = saw1 * 0.72f + square1 * 0.18f + s1 * 0.10f; break;
+        case BassTone::Count: break;
+    }
+    auto harmonySignal = 0.0f;
+    switch (selectedHarmonyTone) {
+        case HarmonyTone::DeepPad:
+            harmonySignal = s1 * 0.40f + tri1 * 0.28f + tri2 * 0.32f; break;
+        case HarmonyTone::WarmPoly:
+            harmonySignal = saw1 * 0.42f + saw2 * 0.34f + s1 * 0.24f; break;
+        case HarmonyTone::HouseOrgan:
+            harmonySignal = s1 * 0.58f + sine(voice.phase * 2.0) * 0.24f +
+                             sine(voice.phase * 3.0) * 0.12f + sine(voice.phase * 4.0) * 0.06f; break;
+        case HarmonyTone::Glass:
+            harmonySignal = sine(voice.phase + s2 * 3.4f) * 0.76f + s2 * 0.24f; break;
+        case HarmonyTone::Count: break;
+    }
+    auto melodySignal = 0.0f;
+    switch (selectedMelodyTone) {
+        case MelodyTone::WarmMono:
+            melodySignal = s1 * 0.48f + tri1 * 0.24f + saw1 * 0.16f + tri2 * 0.12f; break;
+        case MelodyTone::SoftPluck:
+            melodySignal = tri1 * 0.56f + s1 * 0.32f + saw2 * 0.12f; break;
+        case MelodyTone::Air:
+            melodySignal = s1 * 0.60f + tri2 * 0.25f + noise * 0.15f; break;
+        case MelodyTone::Bell:
+            melodySignal = sine(voice.phase + s2 * 4.8f) * 0.78f + s2 * 0.22f; break;
+        case MelodyTone::Count: break;
+    }
+
+    // The world supplies a small common colour so a palette still belongs to the same room;
+    // instrument identity is controlled independently by the selectors above.
     auto raw = 0.0f;
     switch (voice.kind) {
-        case VoiceKind::SubBass: raw = s1 * 0.76f + colourA * 0.24f; break;
-        case VoiceKind::MovementBass: raw = colourA * 0.70f + colourB * 0.30f; break;
-        case VoiceKind::Foundation: raw = colourA * 0.44f + colourB * 0.41f + s1 * 0.15f; break;
-        case VoiceKind::Pulse: raw = colourA * 0.68f + colourB * 0.32f; break;
+        case VoiceKind::SubBass: raw = bassSignal * 0.94f + colourA * 0.06f; break;
+        case VoiceKind::MovementBass: raw = bassSignal * 0.88f + colourB * 0.12f; break;
+        case VoiceKind::Foundation: raw = harmonySignal * 0.90f + colourB * 0.10f; break;
+        case VoiceKind::Pulse: raw = harmonySignal * 0.86f + colourA * 0.14f; break;
         case VoiceKind::Upper:
-            raw = sine(voice.phase + colourB * (1.0f + world.brightness * 2.2f)) * 0.72f + colourB * 0.28f; break;
-        case VoiceKind::Lead: raw = colourA * 0.62f + colourB * 0.24f + s1 * 0.14f; break;
-        case VoiceKind::Counter: raw = tri1 * 0.42f + colourB * 0.42f + s1 * 0.16f; break;
-        case VoiceKind::Atmosphere: raw = (colourA + colourB) * 0.36f + noise * 0.20f; break;
+            raw = harmonySignal * 0.84f + melodySignal * 0.16f; break;
+        case VoiceKind::Lead: raw = melodySignal * 0.92f + colourA * 0.08f; break;
+        case VoiceKind::Counter: raw = melodySignal * 0.84f + harmonySignal * 0.16f; break;
+        case VoiceKind::Atmosphere: raw = harmonySignal * 0.62f + colourB * 0.22f + noise * 0.16f; break;
         case VoiceKind::Transition: {
-            raw = (noise - voice.previousNoise * 0.72f) * 0.72f + s1 * 0.18f;
+            const auto transitionIndex = static_cast<std::size_t>(VoiceId::Transitions);
+            const auto model = transitionIndex < voiceTimbres.size() ? voiceTimbres[transitionIndex] : 0;
+            const auto highNoise = noise - voice.previousNoise * 0.72f;
+            if (model == 1) raw = highNoise * 0.92f + s1 * 0.08f;
+            else if (model == 2) raw = s1 * 0.72f + noise *
+                static_cast<float>(std::exp(-voice.ageSeconds * 18.0)) * 0.28f;
+            else if (model == 3) raw = sine(voice.phase + s2 * 3.2f) * 0.76f + tri2 * 0.24f;
+            else if (model == 4) raw = s1 * 0.52f + tri1 * 0.30f + highNoise * 0.18f;
+            else raw = highNoise * 0.72f + s1 * 0.18f;
             voice.previousNoise = noise; break;
         }
         default: return renderDrumSample(voice);
@@ -404,12 +668,26 @@ float PreviewSynth::renderVoiceSample(Voice& voice) noexcept {
     if (soundWorld == SoundWorld::OrganicMotion) driftAmount = 0.00055;
     else if (soundWorld == SoundWorld::AnalogWarmth) driftAmount = 0.00115;
     else if (soundWorld == SoundWorld::CinematicArc) driftAmount = 0.00072;
+    if ((voice.kind == VoiceKind::Lead || voice.kind == VoiceKind::Counter) &&
+        selectedMelodyTone == MelodyTone::WarmMono)
+        driftAmount += 0.00085;
     const auto modulation = channelModulation[channelIndex] * 0.0018;
+    const auto warmVibrato = (voice.kind == VoiceKind::Lead || voice.kind == VoiceKind::Counter) &&
+                             selectedMelodyTone == MelodyTone::WarmMono
+        ? std::min(1.0, voice.ageSeconds / 0.32) * 0.00115 * std::sin(voice.ageSeconds * 5.15) : 0.0;
     const auto drift = 1.0 + driftAmount * std::sin(voice.ageSeconds * 1.7 + voice.note * 0.37) +
-                       modulation * std::sin(voice.ageSeconds * 5.1);
+                       modulation * std::sin(voice.ageSeconds * 5.1) + warmVibrato;
     voice.phase += voice.phaseDelta * drift;
-    const auto detune = voice.kind == VoiceKind::Foundation || voice.kind == VoiceKind::Atmosphere ?
+    auto detune = voice.kind == VoiceKind::Foundation || voice.kind == VoiceKind::Atmosphere ?
         1.0035 + world.stereo * 0.003 : 2.002;
+    if ((voice.kind == VoiceKind::SubBass || voice.kind == VoiceKind::MovementBass) &&
+        selectedBassTone == BassTone::RollingReese)
+        detune = 1.004 + world.stereo * 0.004;
+    else if (voice.kind == VoiceKind::Lead || voice.kind == VoiceKind::Counter) {
+        if (selectedMelodyTone == MelodyTone::WarmMono) detune = 1.0045 + world.stereo * 0.0015;
+        else if (selectedMelodyTone == MelodyTone::SoftPluck) detune = 1.0032;
+        else if (selectedMelodyTone == MelodyTone::Air) detune = 1.0025;
+    }
     voice.secondaryPhase += voice.phaseDelta * detune / drift;
     return raw;
 }

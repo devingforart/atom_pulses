@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/Orchestration.h"
+
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <array>
@@ -15,9 +17,19 @@ public:
         MinimalPulse, HypnoticNight, CinematicArc, DarkClub, Count
     };
 
+    enum class DrumKit : std::uint8_t { TR808 = 0, TR909, ModernClub, Organic, Count };
+    enum class BassTone : std::uint8_t { DeepSub = 0, WarmAnalog, RollingReese, AcidPluck, Count };
+    enum class HarmonyTone : std::uint8_t { DeepPad = 0, WarmPoly, HouseOrgan, Glass, Count };
+    enum class MelodyTone : std::uint8_t { WarmMono = 0, SoftPluck, Air, Bell, Count };
+
     void prepare(double newSampleRate) noexcept;
     void reset() noexcept;
     void setSoundWorld(int world) noexcept;
+    void setDrumKit(int kit) noexcept;
+    void setBassTone(int tone) noexcept;
+    void setHarmonyTone(int tone) noexcept;
+    void setMelodyTone(int tone) noexcept;
+    void setVoiceTimbre(VoiceId voice, int selection) noexcept;
     void allNotesOff(int midiChannel, bool allowTailOff) noexcept;
     void renderNextBlock(juce::AudioBuffer<float>&, const juce::MidiBuffer&,
                          int startSample, int numSamples) noexcept;
@@ -44,6 +56,7 @@ private:
         float sustain{1.0f};
         float releaseSeconds{0.08f};
         float tone{0.5f};
+        float variant{};
         float pan{};
         float previousNoise{};
         float filterLeft{};
@@ -81,6 +94,11 @@ private:
     [[nodiscard]] float renderDrumSample(Voice&) noexcept;
     [[nodiscard]] float nextNoise(Voice&) noexcept;
     [[nodiscard]] const WorldProfile& profile() const noexcept;
+    [[nodiscard]] VoiceId voiceForKind(VoiceKind) const noexcept;
+    [[nodiscard]] DrumKit effectiveDrumKit(VoiceKind) const noexcept;
+    [[nodiscard]] BassTone effectiveBassTone(VoiceKind) const noexcept;
+    [[nodiscard]] HarmonyTone effectiveHarmonyTone(VoiceKind) const noexcept;
+    [[nodiscard]] MelodyTone effectiveMelodyTone(VoiceKind) const noexcept;
 
     std::array<Voice, drumVoiceCount> drumVoices{};
     std::array<Voice, tonalVoiceCount> tonalVoices{};
@@ -95,6 +113,11 @@ private:
     std::array<float, 16> channelBrightness{};
     double sampleRate{44100.0};
     SoundWorld soundWorld{SoundWorld::DeepProgressive};
+    DrumKit drumKit{DrumKit::TR909};
+    BassTone bassTone{BassTone::WarmAnalog};
+    HarmonyTone harmonyTone{HarmonyTone::DeepPad};
+    MelodyTone melodyTone{MelodyTone::WarmMono};
+    std::array<int, static_cast<std::size_t>(VoiceId::Count)> voiceTimbres{};
     std::uint64_t ageCounter{};
 };
 

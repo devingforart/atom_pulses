@@ -55,6 +55,10 @@
 - [x] Doce voces con presencia variable por frase y sección.
 - [x] Diálogo entre lead y contrapunto, alternancia de bajos y drops coordinados.
 - [x] Ocho mundos sonoros multitimbrales con selección automática desde el prompt.
+- [x] Kits 808/909/Modern/Organic y modelos independientes de bajo, armonía y melodía.
+- [x] Variación analógica de snare/hats, hat choke y voz mono sin octava chiptune.
+- [x] Paleta individual persistente para las quince voces desde sus propias filas.
+- [x] Playhead de arrangement sincronizado con PPQ, sección, compás y tiempo musical.
 - [x] Osciladores band-limited, filtros, articulaciones y efectos espaciales.
 - Evaluaciones ciegas con productores y ajuste de vocabularios por familia musical.
 - Biblioteca factory opcional de samples propios con velocity layers y round-robin.

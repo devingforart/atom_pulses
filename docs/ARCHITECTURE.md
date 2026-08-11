@@ -60,6 +60,20 @@ limitador a -0.5 dBFS; las colas espaciales decaen de forma controlada al detene
 Cada mundo selecciona además una familia oscilatoria propia —orgánica, analógica, FM,
 minimal, cinematográfica o saturada— con saw y square PolyBLEP para reducir aliasing.
 
+Desde 0.13 la identidad instrumental es una capa ortogonal al mundo: `DrumKit`,
+`BassTone`, `HarmonyTone` y `MelodyTone` seleccionan modelos DSP independientes. El mundo
+conserva el ambiente compartido —brillo, drive, estéreo y espacio—, mientras la paleta
+elige la fuente. Los kits 808 y 909 difieren en barrido, cuerpo, transiente, ruido y
+envolvente; los grupos tonales difieren en osciladores, modulación, filtro y ADSR. Todos
+son parámetros persistentes del host y nunca mutan el patrón MIDI.
+
+`previewVoice00`–`previewVoice14` forman la capa de override por voz. Cero hereda la
+familia y uno a cuatro selecciona un modelo específico. El procesador conserva punteros
+atómicos pre-resueltos a esos parámetros; `processBlock` copia índices enteros al preview
+sin búsquedas, asignación ni locks. `PreviewSynth` resuelve kit o modelo por `VoiceId`, de
+modo que snare, closed hat y open hat pueden pertenecer a máquinas diferentes durante la
+misma escucha. La interfaz escribe mediante gestos de parámetro normales del host.
+
 ## Modelo de sincronización
 
 El host proporciona BPM, posición PPQ, estado de reproducción y compás. Cada patrón se

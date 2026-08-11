@@ -36,6 +36,39 @@ La franja superior muestra la forma completa. Pulsa una sección para selecciona
 después arrastra `SECTION` para convertirla en un clip MIDI independiente. `FULL SONG`
 exporta la obra completa con una pista por voz activa, hasta quince.
 
+Debajo del arreglo hay cuatro selectores de fuente sonora:
+
+- `KIT`: 808 Deep, 909 House, Modern Club u Organic. 808 y 909 poseen modelos propios
+  de kick, snare, clap y hats; no son una ecualización del mismo sonido. Snare y hats
+  incorporan variación analógica controlada por golpe y choke entre open/closed hat.
+- `BASS`: Deep Sub, Warm Analog, Rolling Reese o Acid Pluck.
+- `HARMONY`: Deep Pad, Warm Poly, House Organ o Glass.
+- `MELODY`: Warm Mono, Soft Pluck, Air o Bell.
+
+`Warm Mono` usa fase libre, dos osciladores apenas desafinados en la misma octava,
+filtro más cálido, ataque redondeado, drift y vibrato progresivo. Está diseñado para
+evitar ataques clonados y el carácter rígido de una onda chiptune.
+
+Los selectores se guardan en la sesión y cambian solamente el audio de referencia. El
+MIDI GM arrastrado, grabado o enviado a otros instrumentos permanece idéntico.
+
+## Sonido individual desde cada pista
+
+La columna izquierda de la partitura funciona como un banco de pestañas instrumentales.
+Haz clic sobre el nombre de cualquier voz para abrir su menú de sonidos. La fila muestra
+el modelo que está escuchándose; `AUTO` significa que sigue el selector de familia de la
+parte inferior. Una elección manual sólo reemplaza esa voz: elegir `808 Body Snare` para
+`SNARE / CLAP`, por ejemplo, no cambia kick, hats ni percusiones.
+
+Las quince selecciones son parámetros automatizables y persistentes del host. SOLO,
+MUTE, arrastre MIDI y selección tímbrica comparten una fila, pero el audio de preview y
+el contenido MIDI continúan siendo capas independientes.
+
+La línea cian sobre el arreglo es el playhead de PULSO. Sigue la posición PPQ de Ableton
+y muestra `PLAY` o `PAUSED`, el compás, la sección musical y el tiempo dentro de la obra.
+Al hacer seek, detener o reanudar Live, el indicador salta inmediatamente a la posición
+correcta. Si el host no ofrece transporte, muestra `PREVIEW` y utiliza el reloj interno.
+
 ## 3. Conservar y regenerar capas
 
 1. Genera una idea y escúchala completa.

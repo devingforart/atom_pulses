@@ -22,6 +22,8 @@ Este repositorio contiene un MVP funcional para Ableton Live en Windows:
   drops antes de fronteras y densidades que cambian sin perder el hilo temático.
 - Modos `Loop` y `Evolve`, con evolución gradual en cada vuelta de la frase.
 - Flujo sin perillas: describir, generar, bloquear capas, regenerar, avanzar y deshacer.
+- Paleta de audio independiente: kits 808/909/Modern/Organic y sonidos seleccionables
+  para bajo, armonía y melodía, sin alterar el MIDI.
 - Variaciones reproducibles y estado persistente en el proyecto del DAW.
 - Motor de tiempo real: generación en worker, panic MIDI y recuperación de seek/loop.
 - Preescucha multitimbral con ocho mundos sonoros, selección automática desde el prompt,
@@ -112,6 +114,11 @@ El selector inferior ofrece `AUTO` y ocho mundos: `DEEP PROGRESSIVE`, `ORGANIC M
 drums, filtros, envolventes, estéreo, delay y espacio. `AUTO` interpreta la dirección
 creativa. La monitorización nunca altera las notas ni el MIDI exportado.
 
+La fila de instrumentos desacopla la fuente sonora del ambiente: `KIT` permite elegir
+`808 DEEP`, `909 HOUSE`, `MODERN CLUB` u `ORGANIC`; `BASS`, `HARMONY` y `MELODY`
+ofrecen cuatro modelos de síntesis diferenciados cada uno. Los cambios son inmediatos,
+se guardan con el proyecto de Ableton y sólo afectan la preescucha.
+
 Las paletas no son etiquetas sobre el mismo oscilador: alternan familias band-limited,
 FM, triángulos orgánicos, capas analógicas, texturas, saturación y articulaciones. Los
 osciladores PolyBLEP reducen el aliasing áspero asociado a previews tipo chiptune.
@@ -153,7 +160,7 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 
 ## Estado del producto
 
-La versión 0.12.2 integra un arquitecto GPT de forma larga con una segunda pasada crítica,
+La versión 0.14.0 integra un arquitecto GPT de forma larga con una segunda pasada crítica,
 Structured Outputs, motivos rítmicos abiertos y mutaciones con propósito, renderizado
 jerárquico de hasta 512 compases, quince voces con entrada y salida dinámica, expresión
 CC interpretada, dirección previa de foreground/response/support, presupuestos de ataques,
@@ -162,6 +169,8 @@ SOLO/MUTE persistente por voz sin modificar el MIDI fuente,
 generación cancelable, deadlines de red y fallback automático al primer borrador válido,
 MIDI base cuantizado y una interpretación humana opcional no destructiva,
 preview multitimbral band-limited por mundos sonoros,
+playhead visual sincronizado con el PPQ de Ableton,
+paletas persistentes de sonido individual directamente en las quince filas,
 timeline de secciones, exportación por voz y fallback algorítmico. La red nunca se usa
 desde el callback de audio.
 

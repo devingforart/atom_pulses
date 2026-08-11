@@ -45,6 +45,10 @@ private:
     juce::ToggleButton previewButton{"PREVIEW AUDIO"};
     juce::ToggleButton performanceButton{"HUMAN PERFORMANCE"};
     juce::ComboBox soundWorld;
+    juce::ComboBox drumKit;
+    juce::ComboBox bassTone;
+    juce::ComboBox harmonyTone;
+    juce::ComboBox melodyTone;
     juce::ToggleButton thruButton{"MIDI THRU"};
     std::array<juce::ToggleButton, 4> lockButtons;
 
@@ -53,6 +57,10 @@ private:
     std::unique_ptr<ButtonAttachment> previewAttachment;
     std::unique_ptr<ButtonAttachment> performanceAttachment;
     std::unique_ptr<ChoiceAttachment> soundWorldAttachment;
+    std::unique_ptr<ChoiceAttachment> drumKitAttachment;
+    std::unique_ptr<ChoiceAttachment> bassToneAttachment;
+    std::unique_ptr<ChoiceAttachment> harmonyToneAttachment;
+    std::unique_ptr<ChoiceAttachment> melodyToneAttachment;
     std::unique_ptr<ButtonAttachment> thruAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PulsoAudioProcessorEditor)

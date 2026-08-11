@@ -28,6 +28,15 @@ constexpr auto mode = "mode";
 constexpr auto preview = "preview";
 constexpr auto performance = "performance";
 constexpr auto previewWorld = "previewWorld";
+constexpr auto previewDrumKit = "previewDrumKit";
+constexpr auto previewBassTone = "previewBassTone";
+constexpr auto previewHarmonyTone = "previewHarmonyTone";
+constexpr auto previewMelodyTone = "previewMelodyTone";
+constexpr std::array voiceTimbreIds{
+    "previewVoice00", "previewVoice01", "previewVoice02", "previewVoice03", "previewVoice04",
+    "previewVoice05", "previewVoice06", "previewVoice07", "previewVoice08", "previewVoice09",
+    "previewVoice10", "previewVoice11", "previewVoice12", "previewVoice13", "previewVoice14"
+};
 constexpr auto thru = "thru";
 constexpr auto gain = "gain";
 constexpr std::array generative{role, scale, root, follow, risk, space, repetition,
@@ -55,6 +64,29 @@ int previewWorldFromDirection(juce::String direction) {
 constexpr std::array previewWorldNames{"DEEP PROGRESSIVE", "ORGANIC MOTION", "ANALOG WARMTH",
                                        "DUB SPACE", "MINIMAL PULSE", "HYPNOTIC NIGHT",
                                        "CINEMATIC ARC", "DARK CLUB"};
+
+juce::StringArray timbreChoices(VoiceId voice) {
+    switch (voice) {
+        case VoiceId::CoreDrums: return {"Follow Kit", "808 Deep Kick", "909 House Kick", "Modern Club Kick", "Organic Kick"};
+        case VoiceId::SnareClap: return {"Follow Kit", "808 Body Snare", "909 Noise Snare", "Modern Tight Clap", "Organic Skin Snare"};
+        case VoiceId::ClosedHats: return {"Follow Kit", "808 Metallic Hat", "909 Air Hat", "Modern Tight Hat", "Organic Shaker"};
+        case VoiceId::OpenHatsShaker: return {"Follow Kit", "808 Open Hat", "909 Open Hat", "Modern Ride Hat", "Organic Shaker"};
+        case VoiceId::LowPercussion: return {"Follow Kit", "808 Toms", "909 Toms", "Modern Low Perc", "Organic Congas"};
+        case VoiceId::HighPercussion: return {"Follow Kit", "808 Cowbell", "909 Rim", "Modern Metallic", "Organic Claves"};
+        case VoiceId::SubBass: return {"Follow Bass", "Deep Sub", "Warm Analog", "Rolling Reese", "Acid Pluck"};
+        case VoiceId::MovementBass: return {"Follow Bass", "Deep Sub", "Warm Analog", "Rolling Reese", "Acid Pluck"};
+        case VoiceId::HarmonicFoundation: return {"Follow Harmony", "Deep Pad", "Warm Poly", "House Organ", "Glass"};
+        case VoiceId::HarmonicPulse: return {"Follow Harmony", "Deep Pad", "Warm Poly", "House Organ", "Glass"};
+        case VoiceId::HarmonicUpper: return {"Follow Harmony", "Deep Pad", "Warm Poly", "House Organ", "Glass"};
+        case VoiceId::Atmosphere: return {"Follow Harmony", "Deep Pad", "Warm Poly", "House Organ", "Glass"};
+        case VoiceId::Lead: return {"Follow Melody", "Warm Mono", "Soft Pluck", "Air", "Bell"};
+        case VoiceId::Countermelody: return {"Follow Melody", "Warm Mono", "Soft Pluck", "Air", "Bell"};
+        case VoiceId::Transitions: return {"Follow World", "Noise Sweep", "Deep Impact", "Tonal Riser", "Dub Hit"};
+        case VoiceId::Count:
+        case VoiceId::Unspecified: return {"Follow Family"};
+    }
+    return {"Follow Family"};
+}
 
 juce::String songPlanToJson(const SongPlan& plan) {
     auto* jsonRoot = new juce::DynamicObject();
@@ -160,6 +192,8 @@ PulsoAudioProcessor::PulsoAudioProcessor()
     songPlanSnapshot.store(std::make_shared<SongPlan>(), std::memory_order_release);
     retiredRealtimeSnapshot.store(nullptr, std::memory_order_release);
     ideaMetadata.store(std::make_shared<IdeaMetadata>(), std::memory_order_release);
+    for (std::size_t index = 0; index < voiceTimbreParameters.size(); ++index)
+        voiceTimbreParameters[index] = parameters.getRawParameterValue(ids::voiceTimbreIds[index]);
     for (const auto* parameterId : ids::generative) parameters.addParameterListener(parameterId, this);
     generationThread = std::jthread([this](const std::stop_token token) { generationThreadMain(token); });
 }
@@ -300,6 +334,51 @@ bool PulsoAudioProcessor::isVoiceAudible(VoiceId voice) const noexcept {
     return (muted & bit) == 0 && (solo == 0 || (solo & bit) != 0);
 }
 
+juce::StringArray PulsoAudioProcessor::voicePreviewTimbreChoices(VoiceId voice) {
+    return ids::timbreChoices(voice);
+}
+
+int PulsoAudioProcessor::voicePreviewTimbre(VoiceId voice) const noexcept {
+    const auto index = static_cast<std::size_t>(voice);
+    if (index >= voiceTimbreParameters.size() || voiceTimbreParameters[index] == nullptr) return 0;
+    return std::clamp(static_cast<int>(voiceTimbreParameters[index]->load(std::memory_order_relaxed)), 0, 4);
+}
+
+juce::String PulsoAudioProcessor::voicePreviewTimbreName(VoiceId voice) const {
+    const auto choices = voicePreviewTimbreChoices(voice);
+    const auto selected = std::clamp(voicePreviewTimbre(voice), 0, choices.size() - 1);
+    if (selected > 0) return choices[selected];
+    const auto family = voiceDefinition(voice).family;
+    if (family == VoiceFamily::Rhythm) {
+        const auto kit = std::clamp(static_cast<int>(parameters.getRawParameterValue(ids::previewDrumKit)->load()), 0, 3);
+        return "Auto: " + choices[std::min(kit + 1, choices.size() - 1)];
+    }
+    if (family == VoiceFamily::Bass) {
+        const auto tone = std::clamp(static_cast<int>(parameters.getRawParameterValue(ids::previewBassTone)->load()), 0, 3);
+        return "Auto: " + choices[std::min(tone + 1, choices.size() - 1)];
+    }
+    if (family == VoiceFamily::Harmony || voice == VoiceId::Atmosphere) {
+        const auto tone = std::clamp(static_cast<int>(parameters.getRawParameterValue(ids::previewHarmonyTone)->load()), 0, 3);
+        return "Auto: " + choices[std::min(tone + 1, choices.size() - 1)];
+    }
+    if (family == VoiceFamily::Melodic) {
+        const auto tone = std::clamp(static_cast<int>(parameters.getRawParameterValue(ids::previewMelodyTone)->load()), 0, 3);
+        return "Auto: " + choices[std::min(tone + 1, choices.size() - 1)];
+    }
+    return "Auto: " + currentPreviewWorldName();
+}
+
+void PulsoAudioProcessor::setVoicePreviewTimbre(VoiceId voice, int selection) {
+    const auto index = static_cast<std::size_t>(voice);
+    if (index >= ids::voiceTimbreIds.size()) return;
+    auto* parameter = parameters.getParameter(ids::voiceTimbreIds[index]);
+    if (parameter == nullptr) return;
+    const auto clamped = std::clamp(selection, 0, 4);
+    parameter->beginChangeGesture();
+    parameter->setValueNotifyingHost(parameter->convertTo0to1(static_cast<float>(clamped)));
+    parameter->endChangeGesture();
+}
+
 juce::String PulsoAudioProcessor::currentAiStatus() const {
     if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) return metadata->status;
     return {};
@@ -358,6 +437,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout PulsoAudioProcessor::createP
                                               juce::StringArray{"Auto", "Deep Progressive", "Organic Motion",
                                                   "Analog Warmth", "Dub Space", "Minimal Pulse",
                                                   "Hypnotic Night", "Cinematic Arc", "Dark Club"}, 0));
+    result.push_back(std::make_unique<Choice>(ids::previewDrumKit, "Preview Drum Kit",
+                                              juce::StringArray{"808 Deep", "909 House", "Modern Club", "Organic"}, 1));
+    result.push_back(std::make_unique<Choice>(ids::previewBassTone, "Preview Bass Instrument",
+                                              juce::StringArray{"Deep Sub", "Warm Analog", "Rolling Reese", "Acid Pluck"}, 1));
+    result.push_back(std::make_unique<Choice>(ids::previewHarmonyTone, "Preview Harmony Instrument",
+                                              juce::StringArray{"Deep Pad", "Warm Poly", "House Organ", "Glass"}, 0));
+    result.push_back(std::make_unique<Choice>(ids::previewMelodyTone, "Preview Melody Instrument",
+                                              juce::StringArray{"Warm Mono", "Soft Pluck", "Air", "Bell"}, 0));
+    for (std::size_t index = 0; index < ids::voiceTimbreIds.size(); ++index) {
+        const auto voice = static_cast<VoiceId>(index);
+        result.push_back(std::make_unique<Choice>(
+            ids::voiceTimbreIds[index],
+            "Preview " + juce::String(voiceDefinition(voice).name.data()),
+            ids::timbreChoices(voice), 0));
+    }
     result.push_back(std::make_unique<Bool>(ids::thru, "MIDI Thru", false));
     result.push_back(std::make_unique<Float>(ids::gain, "Output",
                                              juce::NormalisableRange<float>(-36.0f, 0.0f, 0.1f), -12.0f));
@@ -387,6 +481,8 @@ void PulsoAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) 
     recentSourceCount = 0;
     recentSourceWrite = 0;
     standaloneBeat = 0.0;
+    transportBeat.store(0.0, std::memory_order_relaxed);
+    hostTransportAvailable.store(false, std::memory_order_relaxed);
     previousTransportEnd = 0.0;
     observedBar = std::numeric_limits<std::int64_t>::min();
     lastPhraseIndex = std::numeric_limits<std::int64_t>::min();
@@ -438,6 +534,8 @@ PulsoAudioProcessor::Transport PulsoAudioProcessor::readTransport(int numSamples
     transport.endBeat = transport.startBeat + blockBeats;
     tempo.store(transport.bpm, std::memory_order_relaxed);
     playing.store(transport.isPlaying, std::memory_order_relaxed);
+    transportBeat.store(transport.startBeat, std::memory_order_relaxed);
+    hostTransportAvailable.store(transport.hostAvailable, std::memory_order_relaxed);
     return transport;
 }
 
@@ -1122,6 +1220,15 @@ void PulsoAudioProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::Mi
     const auto selectedPreviewWorld = static_cast<int>(parameters.getRawParameterValue(ids::previewWorld)->load());
     previewSynth.setSoundWorld(selectedPreviewWorld == 0
         ? automaticPreviewWorld.load(std::memory_order_relaxed) : selectedPreviewWorld - 1);
+    previewSynth.setDrumKit(static_cast<int>(parameters.getRawParameterValue(ids::previewDrumKit)->load()));
+    previewSynth.setBassTone(static_cast<int>(parameters.getRawParameterValue(ids::previewBassTone)->load()));
+    previewSynth.setHarmonyTone(static_cast<int>(parameters.getRawParameterValue(ids::previewHarmonyTone)->load()));
+    previewSynth.setMelodyTone(static_cast<int>(parameters.getRawParameterValue(ids::previewMelodyTone)->load()));
+    for (std::size_t index = 0; index < voiceTimbreParameters.size(); ++index) {
+        const auto* parameter = voiceTimbreParameters[index];
+        previewSynth.setVoiceTimbre(static_cast<VoiceId>(index),
+                                    parameter != nullptr ? static_cast<int>(parameter->load(std::memory_order_relaxed)) : 0);
+    }
     if (!previewEnabled && previewWasEnabled) silencePreview(true);
     if (previewEnabled) {
         previewMidi.addEvents(generatedMidi, 0, -1, 0);

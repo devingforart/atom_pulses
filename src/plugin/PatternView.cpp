@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace pulso::plugin {
 namespace {
@@ -16,6 +17,8 @@ constexpr auto harmonyTarget = -12;
 constexpr auto melodicTextureTarget = -13;
 constexpr auto voiceTargetBase = 100;
 constexpr auto noTarget = -999;
+constexpr auto laneLabelWidth = 210;
+constexpr auto laneButtonWidth = 20;
 
 VoiceId resolvedVoice(const NoteEvent& note) {
     return note.voice == VoiceId::Unspecified ? inferVoiceFromChannel(note.channel) : note.voice;
@@ -55,24 +58,27 @@ juce::Rectangle<int> PatternView::voiceTimelineBounds() const noexcept {
 int PatternView::voiceAt(juce::Point<int> point) const noexcept {
     const auto area = voiceTimelineBounds();
     const auto plan = processor.currentSongPlan();
-    if (!plan || plan->sections.empty() || !area.contains(point)) return -1;
-    const auto lane = std::clamp((point.y - area.getY()) * static_cast<int>(voiceDefinitions.size()) /
+    if (!area.contains(point)) return -1;
+    const auto fullArrangement = plan && !plan->sections.empty();
+    const auto laneCount = fullArrangement ? static_cast<int>(voiceDefinitions.size()) : 4;
+    const auto lane = std::clamp((point.y - area.getY()) * laneCount /
                                  std::max(1, area.getHeight()),
-                                 0, static_cast<int>(voiceDefinitions.size()) - 1);
-    return voiceTargetBase + lane;
+                                 0, laneCount - 1);
+    if (fullArrangement) return voiceTargetBase + static_cast<int>(voiceDefinitions[static_cast<std::size_t>(lane)].id);
+    constexpr std::array compactVoices{VoiceId::HarmonicFoundation, VoiceId::Lead,
+                                       VoiceId::SubBass, VoiceId::CoreDrums};
+    return voiceTargetBase + static_cast<int>(compactVoices[static_cast<std::size_t>(lane)]);
 }
 
 int PatternView::auditionAt(juce::Point<int> point) const noexcept {
-    constexpr auto labelWidth = 126;
-    constexpr auto buttonWidth = 20;
     const auto area = voiceTimelineBounds();
     if (!area.contains(point)) return 0;
     const auto voiceTarget = voiceAt(point);
     if (voiceTarget < voiceTargetBase) return 0;
     const auto relativeX = point.x - area.getX();
-    if (relativeX >= labelWidth - buttonWidth * 2 && relativeX < labelWidth - buttonWidth)
+    if (relativeX >= laneLabelWidth - laneButtonWidth * 2 && relativeX < laneLabelWidth - laneButtonWidth)
         return voiceTarget - voiceTargetBase + 1;
-    if (relativeX >= labelWidth - buttonWidth && relativeX < labelWidth)
+    if (relativeX >= laneLabelWidth - laneButtonWidth && relativeX < laneLabelWidth)
         return -(voiceTarget - voiceTargetBase + 1);
     return 0;
 }
@@ -191,6 +197,30 @@ juce::File PatternView::createExportFile(int channel) const {
     return writePatternToMidiFile(exportPattern, file, options) ? file : juce::File{};
 }
 
+void PatternView::showTimbreMenu(VoiceId voice, const juce::MouseEvent& event) {
+    juce::PopupMenu menu;
+    const auto choices = PulsoAudioProcessor::voicePreviewTimbreChoices(voice);
+    const auto selected = processor.voicePreviewTimbre(voice);
+    menu.addSectionHeader(juce::String(voiceDefinition(voice).name.data()).toUpperCase() + " - PREVIEW SOUND");
+    for (auto index = 0; index < choices.size(); ++index) {
+        if (index == 1) menu.addSeparator();
+        menu.addItem(index + 1, choices[index], true, index == selected);
+    }
+    const auto safeThis = juce::Component::SafePointer<PatternView>(this);
+    const auto screenPosition = event.getScreenPosition();
+    const auto options = juce::PopupMenu::Options{}
+        .withTargetScreenArea({screenPosition.x, screenPosition.y, 1, 1})
+        .withMinimumWidth(270);
+    menu.showMenuAsync(options,
+                       [safeThis, voice](int result) {
+        if (safeThis == nullptr || result <= 0) return;
+        safeThis->processor.setVoicePreviewTimbre(voice, result - 1);
+        safeThis->feedback = juce::String(voiceDefinition(voice).name.data()).toUpperCase() +
+                             " - " + safeThis->processor.voicePreviewTimbreName(voice).toUpperCase();
+        safeThis->repaint();
+    });
+}
+
 void PatternView::mouseDown(const juce::MouseEvent& event) {
     if (const auto audition = auditionAt(event.getPosition()); audition != 0) {
         const auto voice = static_cast<VoiceId>(std::abs(audition) - 1);
@@ -202,6 +232,15 @@ void PatternView::mouseDown(const juce::MouseEvent& event) {
         armedChannel = noTarget;
         repaint();
         return;
+    }
+    if (const auto voiceTarget = voiceAt(event.getPosition()); voiceTarget >= voiceTargetBase) {
+        const auto relativeX = event.x - voiceTimelineBounds().getX();
+        if (relativeX >= 0 && relativeX < laneLabelWidth - laneButtonWidth * 2) {
+            const auto voice = static_cast<VoiceId>(voiceTarget - voiceTargetBase);
+            showTimbreMenu(voice, event);
+            armedChannel = noTarget;
+            return;
+        }
     }
     if (const auto section = sectionAt(event.getPosition()); section >= 0) {
         selectedSection = section;
@@ -266,6 +305,11 @@ void PatternView::mouseMove(const juce::MouseEvent& event) {
     auto next = channelAt(event.getPosition());
     if (next == -1) next = voiceAt(event.getPosition());
     if (next == -1) next = noTarget;
+    const auto relativeX = event.x - voiceTimelineBounds().getX();
+    setMouseCursor(next >= voiceTargetBase && relativeX >= 0 &&
+                           relativeX < laneLabelWidth - laneButtonWidth * 2
+                       ? juce::MouseCursor::PointingHandCursor
+                       : juce::MouseCursor::DraggingHandCursor);
     if (next == hoverChannel) return;
     hoverChannel = next;
     repaint();
@@ -333,7 +377,7 @@ void PatternView::paint(juce::Graphics& graphics) {
         laneVoices = {VoiceId::HarmonicFoundation, VoiceId::Lead,
                       VoiceId::SubBass, VoiceId::CoreDrums};
     }
-    constexpr auto labelWidth = 126.0f;
+    constexpr auto labelWidth = static_cast<float>(laneLabelWidth);
     auto timeline = inner;
     timeline.removeFromLeft(labelWidth);
     const auto laneHeight = inner.getHeight() / static_cast<float>(laneVoices.size());
@@ -352,12 +396,19 @@ void PatternView::paint(juce::Graphics& graphics) {
         }
         const auto voiceTarget = voiceTargetBase + static_cast<int>(voice);
         const auto highlighted = armedChannel == voiceTarget || hoverChannel == voiceTarget;
+        auto timbreArea = laneBounds.withWidth(labelWidth - 40.0f).reduced(1.0f, 1.0f);
+        if (highlighted) {
+            graphics.setColour(colourForFamily(voiceDefinition(voice).family).withAlpha(0.10f));
+            graphics.fillRoundedRectangle(timbreArea, 3.0f);
+        }
         graphics.setColour((highlighted ? colourForFamily(voiceDefinition(voice).family) : colours::muted)
                                .withAlpha(activeInSelection ? 1.0f : 0.32f));
         graphics.setFont(juce::FontOptions(hasSongPlan ? 8.6f : 9.5f, juce::Font::bold));
-        graphics.drawText(juce::String("::  ") + juce::String(voiceDefinition(voice).name.data()).toUpperCase(),
-                          laneBounds.withWidth(labelWidth - 45.0f).toNearestInt(),
-                          juce::Justification::centredLeft);
+        const auto voiceName = juce::String(voiceDefinition(voice).name.data()).toUpperCase();
+        const auto soundName = processor.voicePreviewTimbreName(voice).toUpperCase();
+        graphics.drawFittedText(juce::String("::  ") + voiceName + "  >  " + soundName,
+                                timbreArea.toNearestInt().reduced(3, 0),
+                                juce::Justification::centredLeft, 1);
         auto soloButton = laneBounds.withX(laneBounds.getX() + labelWidth - 40.0f).withWidth(19.0f).reduced(1.0f);
         auto muteButton = laneBounds.withX(laneBounds.getX() + labelWidth - 20.0f).withWidth(19.0f).reduced(1.0f);
         const auto solo = processor.isVoiceSolo(voice);
@@ -418,6 +469,56 @@ void PatternView::paint(juce::Graphics& graphics) {
                 graphics.fillRoundedRectangle(x, y, width, std::max(2.0f, std::min(6.0f, laneHeight * 0.32f)), 2.0f);
             }
         }
+    }
+
+    // The audio thread publishes only atomic transport facts. Painting and text formatting
+    // stay here on the message thread, so the moving arrangement playhead is real-time safe.
+    const auto arrangementLength = pattern && pattern->lengthBeats > 0.0
+        ? pattern->lengthBeats : static_cast<double>(bars) * beatsPerBar;
+    if (arrangementLength > 0.0) {
+        auto arrangementBeat = std::fmod(processor.currentTransportBeat(), arrangementLength);
+        if (arrangementBeat < 0.0) arrangementBeat += arrangementLength;
+        const auto normalized = static_cast<float>(arrangementBeat / arrangementLength);
+        const auto playheadX = timeline.getX() + timeline.getWidth() * normalized;
+        const auto playheadTop = hasSongPlan ? sectionStripBounds().toFloat().getY() : timeline.getY();
+
+        graphics.setColour(colours::accent.withAlpha(0.16f));
+        graphics.fillRect(playheadX - 3.0f, playheadTop, 6.0f, timeline.getBottom() - playheadTop);
+        graphics.setColour(colours::accent);
+        graphics.drawVerticalLine(juce::roundToInt(playheadX), playheadTop, timeline.getBottom());
+        juce::Path marker;
+        marker.addTriangle(playheadX - 5.0f, playheadTop, playheadX + 5.0f, playheadTop,
+                           playheadX, playheadTop + 7.0f);
+        graphics.fillPath(marker);
+
+        const auto currentBar = std::clamp(static_cast<int>(arrangementBeat / beatsPerBar), 0, bars - 1);
+        juce::String sectionName;
+        if (hasSongPlan) {
+            for (const auto& section : plan->sections) {
+                if (currentBar >= section.startBar && currentBar < section.startBar + section.bars) {
+                    sectionName = juce::String::fromUTF8(section.name.c_str()).toUpperCase();
+                    break;
+                }
+            }
+        }
+        const auto seconds = static_cast<int>(std::floor(arrangementBeat * 60.0 /
+                                                          std::max(1.0, processor.currentTempo())));
+        auto readout = processor.hostIsPlaying() ? "PLAY" : "PAUSED";
+        if (!processor.hasHostTransport()) readout = "PREVIEW";
+        juce::String playheadText = juce::String(readout) + "  |  BAR " + juce::String(currentBar + 1);
+        if (sectionName.isNotEmpty()) playheadText += "  |  " + sectionName;
+        playheadText += "  |  " + juce::String(seconds / 60).paddedLeft('0', 2) + ":" +
+                        juce::String(seconds % 60).paddedLeft('0', 2);
+        constexpr auto readoutWidth = 210.0f;
+        const auto readoutX = std::clamp(playheadX - readoutWidth * 0.5f,
+                                         timeline.getX(), timeline.getRight() - readoutWidth);
+        auto readoutBounds = juce::Rectangle<float>{readoutX, timeline.getY(), readoutWidth, 16.0f};
+        graphics.setColour(colours::background.withAlpha(0.88f));
+        graphics.fillRoundedRectangle(readoutBounds, 3.0f);
+        graphics.setColour(colours::accent);
+        graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+        graphics.drawFittedText(playheadText, readoutBounds.toNearestInt().reduced(4, 0),
+                                juce::Justification::centred, 1);
     }
 
     constexpr std::array labels{"FULL SONG", "RHYTHM", "BASS", "HARMONY", "LEADS + FX", "SECTION"};

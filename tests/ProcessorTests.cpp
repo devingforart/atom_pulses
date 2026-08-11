@@ -152,6 +152,104 @@ int main(int argc, char** argv) {
     require(clearlyDifferentWorlds >= 6,
             "Sound worlds must switch oscillator families, not merely rename one Game Boy timbre");
 
+    const auto renderKitFingerprint = [&](int kit, int note) {
+        pulso::plugin::PreviewSynth synth;
+        synth.prepare(sampleRate);
+        synth.setDrumKit(kit);
+        juce::AudioBuffer<float> audio(2, 2048);
+        audio.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(10, note, static_cast<juce::uint8>(110)), 0);
+        synth.renderNextBlock(audio, midi, 0, audio.getNumSamples());
+        std::array<float, 512> fingerprint{};
+        for (std::size_t sample = 0; sample < fingerprint.size(); ++sample)
+            fingerprint[sample] = audio.getSample(0, static_cast<int>(sample + 32));
+        return fingerprint;
+    };
+    for (const auto note : {36, 38, 42}) {
+        const auto kit808 = renderKitFingerprint(0, note);
+        const auto kit909 = renderKitFingerprint(1, note);
+        auto kitDifference = 0.0f;
+        for (std::size_t sample = 0; sample < kit808.size(); ++sample)
+            kitDifference += std::abs(kit808[sample] - kit909[sample]);
+        require(kitDifference / static_cast<float>(kit808.size()) > 0.005f,
+                "808 and 909 kick, snare and hat must each use genuinely different models");
+    }
+
+    const auto renderVoiceOverride = [&](int note, pulso::VoiceId voice, int selection) {
+        pulso::plugin::PreviewSynth synth;
+        synth.prepare(sampleRate);
+        synth.setDrumKit(1);
+        synth.setVoiceTimbre(voice, selection);
+        juce::AudioBuffer<float> audio(2, 2048);
+        audio.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(10, note, static_cast<juce::uint8>(110)), 0);
+        synth.renderNextBlock(audio, midi, 0, audio.getNumSamples());
+        std::array<float, 512> fingerprint{};
+        for (std::size_t sample = 0; sample < fingerprint.size(); ++sample)
+            fingerprint[sample] = audio.getSample(0, static_cast<int>(sample + 32));
+        return fingerprint;
+    };
+    const auto snare909 = renderVoiceOverride(38, pulso::VoiceId::SnareClap, 0);
+    const auto snare808Override = renderVoiceOverride(38, pulso::VoiceId::SnareClap, 1);
+    const auto hatUnaffected = renderVoiceOverride(42, pulso::VoiceId::SnareClap, 1);
+    const auto hat909 = renderVoiceOverride(42, pulso::VoiceId::ClosedHats, 0);
+    auto snareOverrideDifference = 0.0f;
+    auto unrelatedHatDifference = 0.0f;
+    for (std::size_t sample = 0; sample < snare909.size(); ++sample) {
+        snareOverrideDifference += std::abs(snare909[sample] - snare808Override[sample]);
+        unrelatedHatDifference += std::abs(hatUnaffected[sample] - hat909[sample]);
+    }
+    require(snareOverrideDifference / 512.0f > 0.005f && unrelatedHatDifference < 0.000001f,
+            "A snare override must audibly change only snare while hats keep their own selection");
+
+    for (const auto note : {38, 42}) {
+        pulso::plugin::PreviewSynth roundRobinSynth;
+        roundRobinSynth.prepare(sampleRate);
+        roundRobinSynth.setDrumKit(1);
+        juce::AudioBuffer<float> audio(2, 4096);
+        audio.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(10, note, static_cast<juce::uint8>(105)), 0);
+        midi.addEvent(juce::MidiMessage::noteOn(10, note, static_cast<juce::uint8>(105)), 2048);
+        roundRobinSynth.renderNextBlock(audio, midi, 0, audio.getNumSamples());
+        auto repeatedHitDifference = 0.0f;
+        for (auto sample = 32; sample < 544; ++sample)
+            repeatedHitDifference += std::abs(audio.getSample(0, sample) -
+                                               audio.getSample(0, sample + 2048));
+        require(repeatedHitDifference / 512.0f > 0.0005f,
+                "Repeated snare and hat hits must have stable analog variation, not cloned attacks");
+    }
+
+    const auto renderInstrumentFingerprint = [&](int family, int tone) {
+        pulso::plugin::PreviewSynth synth;
+        synth.prepare(sampleRate);
+        const auto channel = family == 0 ? 1 : family == 1 ? 3 : 2;
+        if (family == 0) synth.setBassTone(tone);
+        else if (family == 1) synth.setHarmonyTone(tone);
+        else synth.setMelodyTone(tone);
+        juce::AudioBuffer<float> audio(2, 4096);
+        audio.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(channel, family == 0 ? 43 : 67,
+                                                 static_cast<juce::uint8>(108)), 0);
+        synth.renderNextBlock(audio, midi, 0, audio.getNumSamples());
+        std::array<float, 512> fingerprint{};
+        for (std::size_t sample = 0; sample < fingerprint.size(); ++sample)
+            fingerprint[sample] = audio.getSample(0, static_cast<int>(sample + 1024));
+        return fingerprint;
+    };
+    for (auto family = 0; family < 3; ++family) {
+        const auto first = renderInstrumentFingerprint(family, 0);
+        const auto last = renderInstrumentFingerprint(family, 3);
+        auto difference = 0.0f;
+        for (std::size_t sample = 0; sample < first.size(); ++sample)
+            difference += std::abs(first[sample] - last[sample]);
+        require(difference / static_cast<float>(first.size()) > 0.0005f,
+                "Every instrument family selector must audibly change its synthesis model");
+    }
+
     pulso::plugin::PreviewSynth switchedWorldSynth;
     pulso::plugin::PreviewSynth unchangedWorldSynth;
     switchedWorldSynth.prepare(sampleRate);
@@ -216,6 +314,19 @@ int main(int argc, char** argv) {
             "Retired Space and Groove controls must always default to zero");
     require(processor.parameters.getParameter("previewWorld") != nullptr,
             "The selectable preview sound world must be a persistent host parameter");
+    require(processor.parameters.getParameter("previewDrumKit") != nullptr &&
+                processor.parameters.getParameter("previewBassTone") != nullptr &&
+                processor.parameters.getParameter("previewHarmonyTone") != nullptr &&
+                processor.parameters.getParameter("previewMelodyTone") != nullptr &&
+                static_cast<int>(processor.parameters.getRawParameterValue("previewDrumKit")->load()) == 1,
+            "Drum and tonal instrument choices must be persistent, with 909 as the quality-first default");
+    for (std::size_t voice = 0; voice < static_cast<std::size_t>(pulso::VoiceId::Count); ++voice) {
+        const auto id = juce::String("previewVoice") + juce::String(static_cast<int>(voice)).paddedLeft('0', 2);
+        require(processor.parameters.getParameter(id) != nullptr &&
+                    pulso::plugin::PulsoAudioProcessor::voicePreviewTimbreChoices(
+                        static_cast<pulso::VoiceId>(voice)).size() == 5,
+                "Every visible lane must expose five persistent preview choices");
+    }
     require(processor.parameters.getParameter("performance") != nullptr &&
                 processor.parameters.getRawParameterValue("performance")->load() < 0.5f,
             "Human Performance must be a persistent button that defaults to exact timing");
@@ -253,6 +364,11 @@ int main(int argc, char** argv) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     require(producedPattern, "The worker must publish a playable pattern without blocking audio");
+    const auto processedTransportBeat = playHead.ppq -
+        static_cast<double>(blockSize) / sampleRate * playHead.bpm / 60.0;
+    require(processor.hasHostTransport() && processor.hostIsPlaying() &&
+                std::abs(processor.currentTransportBeat() - processedTransportBeat) < 0.000001,
+            "The UI playhead must receive the exact host PPQ position through lock-free state");
     require(peakMagnitude(audio) <= 1.0f, "Preview output must remain below digital full scale");
     const auto composedPattern = processor.currentPattern();
     require(composedPattern != nullptr, "The processor must expose its composed phrase");
@@ -546,6 +662,9 @@ int main(int argc, char** argv) {
     editor.reset();
 
     processor.parameters.getParameter("previewWorld")->setValueNotifyingHost(1.0f);
+    processor.setVoicePreviewTimbre(pulso::VoiceId::SnareClap, 1);
+    processor.setVoicePreviewTimbre(pulso::VoiceId::ClosedHats, 2);
+    processor.setVoicePreviewTimbre(pulso::VoiceId::Lead, 4);
     processor.toggleVoiceSolo(pulso::VoiceId::HarmonicPulse);
     processor.toggleVoiceMute(pulso::VoiceId::ClosedHats);
     juce::MemoryBlock savedState;
@@ -569,6 +688,10 @@ int main(int argc, char** argv) {
             "Reloading a project must keep retired controls fixed at zero");
     require(std::abs(restored.parameters.getRawParameterValue("previewWorld")->load() - 8.0f) < 0.0001f,
             "The selected preview sound world must survive a DAW project reload");
+    require(restored.voicePreviewTimbre(pulso::VoiceId::SnareClap) == 1 &&
+                restored.voicePreviewTimbre(pulso::VoiceId::ClosedHats) == 2 &&
+                restored.voicePreviewTimbre(pulso::VoiceId::Lead) == 4,
+            "Every per-lane preview sound must survive an Ableton project reload");
 
     ensembleFile.deleteFile();
     bassFile.deleteFile();

@@ -65,6 +65,10 @@ public:
     [[nodiscard]] bool isVoiceSolo(VoiceId) const noexcept;
     [[nodiscard]] bool isVoiceMuted(VoiceId) const noexcept;
     [[nodiscard]] bool isVoiceAudible(VoiceId) const noexcept;
+    void setVoicePreviewTimbre(VoiceId, int selection);
+    [[nodiscard]] int voicePreviewTimbre(VoiceId) const noexcept;
+    [[nodiscard]] juce::String voicePreviewTimbreName(VoiceId) const;
+    [[nodiscard]] static juce::StringArray voicePreviewTimbreChoices(VoiceId);
     [[nodiscard]] juce::String currentAiStatus() const;
     [[nodiscard]] juce::String currentIdeaTitle() const;
     [[nodiscard]] juce::String currentIdeaDescription() const;
@@ -94,6 +98,12 @@ public:
         return timeSignatureDenominator.load(std::memory_order_relaxed);
     }
     [[nodiscard]] bool hostIsPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
+    [[nodiscard]] double currentTransportBeat() const noexcept {
+        return transportBeat.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] bool hasHostTransport() const noexcept {
+        return hostTransportAvailable.load(std::memory_order_relaxed);
+    }
     [[nodiscard]] int currentPhraseBars() const noexcept;
     [[nodiscard]] std::uint64_t currentCompositionSeed() const noexcept {
         return compositionSeed.load(std::memory_order_relaxed);
@@ -265,6 +275,9 @@ private:
     std::atomic<int> timeSignatureNumerator{4};
     std::atomic<int> timeSignatureDenominator{4};
     std::atomic<bool> playing{false};
+    std::atomic<double> transportBeat{};
+    std::atomic<bool> hostTransportAvailable{false};
+    std::array<std::atomic<float>*, static_cast<std::size_t>(VoiceId::Count)> voiceTimbreParameters{};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PulsoAudioProcessor)
 };

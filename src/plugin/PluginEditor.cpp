@@ -31,7 +31,7 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     : AudioProcessorEditor(&owner), processor(owner), patternView(owner), tooltipWindow(this, 350) {
     setLookAndFeel(&pulsoLookAndFeel);
     setResizable(true, true);
-    setResizeLimits(920, 650, 1500, 980);
+    setResizeLimits(1080, 650, 1500, 980);
     setSize(1120, 760);
 
     title.setText("PULSO", juce::dontSendNotification);
@@ -92,6 +92,12 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
                             "ANALOG WARMTH", "DUB SPACE", "MINIMAL PULSE", "HYPNOTIC NIGHT",
                             "CINEMATIC ARC", "DARK CLUB"}, 1);
     soundWorld.setJustificationType(juce::Justification::centred);
+    drumKit.addItemList({"KIT - 808 DEEP", "KIT - 909 HOUSE", "KIT - MODERN CLUB", "KIT - ORGANIC"}, 1);
+    bassTone.addItemList({"BASS - DEEP SUB", "BASS - WARM ANALOG", "BASS - ROLLING REESE", "BASS - ACID PLUCK"}, 1);
+    harmonyTone.addItemList({"HARMONY - DEEP PAD", "HARMONY - WARM POLY", "HARMONY - HOUSE ORGAN", "HARMONY - GLASS"}, 1);
+    melodyTone.addItemList({"MELODY - WARM MONO", "MELODY - SOFT PLUCK", "MELODY - AIR", "MELODY - BELL"}, 1);
+    for (auto* selector : {&drumKit, &bassTone, &harmonyTone, &melodyTone})
+        selector->setJustificationType(juce::Justification::centred);
 
     configureLock(lockButtons[0], PulsoAudioProcessor::Layer::Harmony,
                   "HARMONY + FX · Preserve foundation, pulses, upper harmony, atmosphere and transitions while other families change.");
@@ -109,6 +115,10 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     previewButton.setTooltip("Enable the multitimbral reference ensemble and selected sound world. MIDI export and output are unaffected.");
     performanceButton.setTooltip("OFF keeps every onset on the exact sixteenth-note grid. ON adds one deterministic performance pass: stable backbeat, coherent hat lift and tiny voice-specific offsets. Dragged MIDI remains perfectly quantized; recording PULSO's MIDI output captures the performed timing.");
     soundWorld.setTooltip("Choose a complete preview sound world for all fifteen voices. AUTO reads the creative direction; manual choices audition the same MIDI through different instruments, drums, space and colour. Monitoring changes, composition does not.");
+    drumKit.setTooltip("Choose the preview drum instrument. 808 and 909 use different synthesized kick, snare, clap and hat models; Modern Club is tighter and Organic is rounder. The exported GM drum MIDI never changes.");
+    bassTone.setTooltip("Change Sub Bass and Movement Bass: pure deep sub, warm analog, detuned rolling Reese or short acid pluck. Preview only; MIDI remains unchanged.");
+    harmonyTone.setTooltip("Change foundations, harmonic pulses, upper harmony and atmospheres: deep pad, warm poly, house organ or glass.");
+    melodyTone.setTooltip("Change lead and countermelody: warm mono synth, soft pluck, airy voice or FM-style bell.");
     thruButton.setTooltip("Also pass incoming MIDI to the output alongside PULSO's composition.");
     prompt.setTooltip("Describe mood, movement, instrumentation or narrative in natural language. Leave empty for an autonomous idea.");
     promptLabel.setTooltip(prompt.getTooltip());
@@ -120,12 +130,13 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     aiBadge.setTooltip("GPT status is explicit. PULSO never labels local fallback output as AI-generated.");
     ideaTitle.setTooltip("Title and tonal centre proposed for the current composition.");
     ideaDescription.setTooltip("The compositional intention behind the current idea.");
-    patternView.setTooltip("Fifteen dynamically orchestrated voices. Click S or M beside any lane to solo or mute it during MIDI output and preview; this never changes exports. Drag a lane, family, SECTION or FULL SONG into Ableton.");
+    patternView.setTooltip("Each left-hand lane is an instrument tab: click its name to choose that voice's preview sound. The choice appears in the row and overrides the family default without changing MIDI. S/M audition voices; the cyan playhead follows Ableton; drag any lane, family, SECTION or FULL SONG into Live.");
 
-    for (auto* component : std::array<juce::Component*, 23>{
+    for (auto* component : std::array<juce::Component*, 27>{
              &title, &subtitle, &status, &aiBadge, &promptLabel, &durationLabel, &prompt, &duration, &ideaTitle,
              &ideaDescription, &generateButton, &nextButton, &regenerateButton, &undoButton,
-             &previewButton, &performanceButton, &soundWorld, &thruButton, &lockButtons[0], &lockButtons[1], &lockButtons[2],
+             &previewButton, &performanceButton, &soundWorld, &drumKit, &bassTone, &harmonyTone, &melodyTone,
+             &thruButton, &lockButtons[0], &lockButtons[1], &lockButtons[2],
              &lockButtons[3], &patternView})
         addAndMakeVisible(component);
 
@@ -134,6 +145,10 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     previewAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "preview", previewButton);
     performanceAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "performance", performanceButton);
     soundWorldAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "previewWorld", soundWorld);
+    drumKitAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "previewDrumKit", drumKit);
+    bassToneAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "previewBassTone", bassTone);
+    harmonyToneAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "previewHarmonyTone", harmonyTone);
+    melodyToneAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "previewMelodyTone", melodyTone);
     thruAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "thru", thruButton);
     startTimerHz(20);
 }
@@ -187,9 +202,17 @@ void PulsoAudioProcessorEditor::resized() {
                          static_cast<int>(&lockButtons.back() - &button + 1)).reduced(3, 0));
     }
     area.removeFromTop(8);
-    patternView.setBounds(area.removeFromTop(std::max(260, area.getHeight() - 62)));
+    patternView.setBounds(area.removeFromTop(std::max(230, area.getHeight() - 104)));
     compositionProgress.setBounds(patternView.getBounds());
     area.removeFromTop(10);
+
+    auto instruments = area.removeFromTop(34);
+    const auto selectorWidth = instruments.getWidth() / 4;
+    drumKit.setBounds(instruments.removeFromLeft(selectorWidth).reduced(3, 0));
+    bassTone.setBounds(instruments.removeFromLeft(selectorWidth).reduced(3, 0));
+    harmonyTone.setBounds(instruments.removeFromLeft(selectorWidth).reduced(3, 0));
+    melodyTone.setBounds(instruments.reduced(3, 0));
+    area.removeFromTop(8);
 
     auto actions = area;
     previewButton.setBounds(actions.removeFromLeft(130));

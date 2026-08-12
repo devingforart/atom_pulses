@@ -15,6 +15,10 @@ struct MidiExportOptions {
     int voiceFilter{-1}; // -1 exports every voice.
     int familyFilter{-1}; // -1 exports every family.
     juce::String clipName{"PULSO"};
+    bool includeKeySignature{};
+    int rootPitchClass{};
+    ScaleKind scale{ScaleKind::Minor};
+    std::vector<MarkerEvent> chordMarkers;
 };
 
 [[nodiscard]] bool writePatternToMidiFile(const Pattern&, const juce::File&,

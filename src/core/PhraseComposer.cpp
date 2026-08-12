@@ -138,8 +138,14 @@ bool active(const SongSection& section, VoiceId voice) {
            section.activeVoices.end();
 }
 
+const HarmonicMoment& momentAt(const std::vector<HarmonicMoment>& moments, double beat) {
+    auto found = std::upper_bound(moments.begin(), moments.end(), beat,
+        [](double candidate, const auto& moment) { return candidate < moment.beatOffset; });
+    return found == moments.begin() ? moments.front() : *std::prev(found);
+}
+
 void renderMelodyVoice(Pattern& chunk, const SongPlan& plan, const SongSection& section,
-                       const BarDirection& direction, const HarmonicMoment& harmony,
+                       const BarDirection& direction, const std::vector<HarmonicMoment>& moments,
                        VoiceId voice, int absoluteBar, int chunkBar,
                        PhrasePerformanceState& state) {
     const auto& instruction = direction.forVoice(voice);
@@ -153,6 +159,7 @@ void renderMelodyVoice(Pattern& chunk, const SongPlan& plan, const SongSection& 
     const auto& definition = voiceDefinition(voice);
     const auto registerCentre = voice == VoiceId::Lead ? 72 : 64;
     for (std::size_t ordinal = 0; ordinal < onsets.size(); ++ordinal) {
+        const auto& harmony = momentAt(moments, onsets[ordinal]);
         const auto motifIndex = voice == VoiceId::Lead ? cursor++ : cursor++ + 2;
         const auto sourceInterval = plan.motifIntervals[motifIndex % plan.motifIntervals.size()];
         auto degree = transformedDegree(plan, sourceInterval, direction.motifTransformation,
@@ -200,7 +207,7 @@ PhrasePerformanceState::PhrasePerformanceState() noexcept {
 void PhraseComposer::renderMelodicVoices(Pattern& chunk, const SongPlan& plan,
                                          const SongSection& section,
                                          const std::vector<BarDirection>& directions,
-                                         const std::vector<HarmonicMoment>& harmony,
+                                         const HarmonicTimeline& harmony,
                                          int sectionBar, int chunkBars,
                                          PhrasePerformanceState& state) {
     for (auto bar = 0; bar < chunkBars; ++bar) {
@@ -219,7 +226,7 @@ void PhraseComposer::renderMelodicVoices(Pattern& chunk, const SongPlan& plan,
 void PhraseComposer::renderBassVoices(Pattern& chunk, const SongPlan& plan,
                                       const SongSection& section,
                                       const std::vector<BarDirection>& directions,
-                                      const std::vector<HarmonicMoment>& harmony,
+                                      const HarmonicTimeline& harmony,
                                       int sectionBar, int chunkBars,
                                       PhrasePerformanceState& state) {
     chunk.notes.erase(std::remove_if(chunk.notes.begin(), chunk.notes.end(), [](const auto& note) {
@@ -228,24 +235,29 @@ void PhraseComposer::renderBassVoices(Pattern& chunk, const SongPlan& plan,
     for (auto bar = 0; bar < chunkBars; ++bar) {
         const auto localBar = sectionBar + bar;
         const auto& direction = directions[static_cast<std::size_t>(localBar)];
-        const auto& moment = harmony[static_cast<std::size_t>(localBar)];
+        const auto& moments = harmony[static_cast<std::size_t>(localBar)];
+        if (moments.empty()) continue;
         const auto barStart = bar * plan.beatsPerBar;
         const auto subBudget = direction.forVoice(VoiceId::SubBass).maximumOnsets;
         if (subBudget > 0 && active(section, VoiceId::SubBass)) {
             const auto& definition = voiceDefinition(VoiceId::SubBass);
             auto& previous = state.previousPitch[static_cast<std::size_t>(VoiceId::SubBass)];
-            const auto root = nearestPitchClass(moment.bassPitchClass, previous,
-                                                definition.minimumPitch, definition.maximumPitch);
             const auto count = std::clamp(subBudget, 1, direction.breath ? 1 : 2);
             for (auto onset = 0; onset < count; ++onset) {
-                const auto beat = onset == 0 ? 0.0 : plan.beatsPerBar * 0.5;
-                const auto end = onset + 1 == count ? direction.forVoice(VoiceId::SubBass).exitBeat
-                                                    : plan.beatsPerBar * 0.5;
+                const auto beat = onset < static_cast<int>(moments.size())
+                    ? moments[static_cast<std::size_t>(onset)].beatOffset
+                    : (onset == 0 ? 0.0 : plan.beatsPerBar * 0.5);
+                const auto& moment = momentAt(moments, beat);
+                const auto root = nearestPitchClass(moment.bassPitchClass, previous,
+                                                    definition.minimumPitch, definition.maximumPitch);
+                const auto end = onset + 1 < count && onset + 1 < static_cast<int>(moments.size())
+                    ? moments[static_cast<std::size_t>(onset + 1)].beatOffset
+                    : direction.forVoice(VoiceId::SubBass).exitBeat;
                 chunk.notes.push_back({barStart + beat, std::max(0.18, end - beat - 0.08), root,
                     std::clamp(static_cast<int>(67 + section.energy * 25 + (onset == 0 ? 5 : -3)), 1, 127),
                     definition.midiChannel, VoiceId::SubBass});
+                previous = root;
             }
-            previous = root;
         }
 
         const auto movementBudget = direction.forVoice(VoiceId::MovementBass).maximumOnsets;
@@ -258,6 +270,7 @@ void PhraseComposer::renderBassVoices(Pattern& chunk, const SongPlan& plan,
                 const auto step = positiveModulo(3 + static_cast<int>(identity % 3) + ordinal * 3, 8);
                 const auto beat = step * plan.beatsPerBar / 8.0;
                 if (beat >= direction.forVoice(VoiceId::MovementBass).exitBeat - 0.12) continue;
+                const auto& moment = momentAt(moments, beat);
                 auto pitchClass = ordinal == 0 && moment.pitchClasses.size() > 2
                     ? moment.pitchClasses[2] : moment.pitchClasses[static_cast<std::size_t>(
                         positiveModulo(ordinal + direction.phraseIndex, moment.voiceCount))];

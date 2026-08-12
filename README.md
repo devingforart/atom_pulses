@@ -16,8 +16,9 @@ Este repositorio contiene un MVP funcional para Ableton Live en Windows:
 - Un `CompositionPlan` global con motivo, contorno, secciones, función armónica y tensión.
 - Modo `IDEA` para frases y modo canción de 30 segundos a 30 minutos.
 - Arquitectura jerárquica con secciones, ADN temático, curva dramática y cadencia final.
-- Contrato tonal E2E: tonalidad canónica, ADN diatónico, apoyos de acorde, resolución del
-  cromatismo, control de colisiones verticales y recorte de notas sobre cambios armónicos.
+- Contrato tonal E2E por beat: cada evento armónico conserva su ventana exacta, los apoyos
+  se validan contra el acorde realmente activo y los sustains incompatibles terminan antes
+  del cambio, incluso cuando ocurre dentro del compás.
 - Dramaturgia de presencia por frase: entradas tardías, diálogo, compases de respiración,
   drops antes de fronteras y densidades que cambian sin perder el hilo temático.
 - Modos `Loop` y `Evolve`, con evolución gradual en cada vuelta de la frase.
@@ -87,8 +88,10 @@ falla o la respuesta no supera la validación, mostrará `LOCAL ENGINE` o
 `LOCAL FALLBACK`; nunca presenta el fallback como IA.
 
 La dirección creativa y la duración se envían a OpenAI. Para canciones largas GPT
-diseña una partitura estructural compacta; el motor local la desarrolla y valida sin
-enviar audio. El uso de la API puede tener coste según tu cuenta.
+diseña una partitura estructural compacta. El motor local renderiza un primer MIDI,
+calcula métricas de cromatismo, apoyos, sustains y colisiones con ubicaciones exactas, y
+entrega ese informe simbólico a la segunda pasada crítica. No se envía audio. El uso de
+la API puede tener coste según tu cuenta.
 
 ## Primera prueba sin Ableton
 
@@ -126,8 +129,8 @@ También puedes arrastrar desde la franja inferior de la partitura: `FULL SONG` 
 archivo multitrack completo; `RHYTHM`, `BASS`, `HARMONY` y `LEADS+FX` crean familias independientes.
 Selecciona un bloque de la forma y arrastra `SECTION` para exportar sólo esa parte.
 También puedes arrastrar directamente cualquiera de las quince filas. PULSO escribe una
-pista MIDI por voz, tempo, compás, marcadores de sección, CC expresivos, nombres,
-canales y velocidades en el archivo.
+pista MIDI por voz, tempo, compás, armadura tonal, marcadores de sección y acorde, CC
+expresivos, nombres, canales y velocidades en el archivo.
 
 ## Interpretación MIDI instrumental
 
@@ -169,7 +172,7 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 
 ## Estado del producto
 
-La versión 0.19.0 integra un arquitecto GPT de forma larga con razonamiento medio y una segunda pasada crítica,
+La versión 0.21.0 integra un arquitecto GPT de forma larga con razonamiento medio y una segunda pasada crítica,
 Structured Outputs, motivos rítmicos abiertos y mutaciones con propósito, renderizado
 jerárquico de hasta 512 compases, quince voces con entrada y salida dinámica, expresión
 instrumental dirigida por IA con CC, bends, pressure, aftertouch y pedal, dirección previa de foreground/response/support, presupuestos de ataques,
@@ -179,7 +182,8 @@ generación cancelable, deadlines de red y fallback automático al primer borrad
 transporte WinHTTP nativo en Windows con proxy automático y cancelación inmediata,
 un plan narrativo de frases variables, transformación temática semántica, armonía extendida
 con conducción de cuatro voces, bajo sub y bajo móvil compuestos independientemente,
-crítica simbólica posterior al render, ataques MIDI exactos con releases expresivos y una
+crítica simbólica alimentada por una auditoría del primer render, contrato armónico exacto
+por beat, reparación vertical iterativa, ataques MIDI exactos con releases expresivos y una
 interpretación humana opcional no destructiva,
 preview multitimbral band-limited por mundos sonoros,
 playhead visual sincronizado con el PPQ de Ableton,

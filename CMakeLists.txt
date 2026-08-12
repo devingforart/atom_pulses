@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.19.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.21.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +19,8 @@ add_library(pulso_core STATIC
     src/core/Generator.h
     src/core/HarmonyEngine.cpp
     src/core/HarmonyEngine.h
+    src/core/HarmonyPlan.cpp
+    src/core/HarmonyPlan.h
     src/core/MusicTypes.h
     src/core/MusicalCritic.cpp
     src/core/MusicalCritic.h

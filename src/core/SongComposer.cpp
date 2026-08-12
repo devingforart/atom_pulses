@@ -278,8 +278,58 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
     Random random(seed ^ 0x534F4E47504C414EULL);
     const auto third = plan.scale == ScaleKind::Major ? 4 : 3;
     plan.motifIntervals = {0, third, 7, 5, third, random.range(0, 1) == 0 ? 10 : 12};
-    plan.chordDegrees = plan.scale == ScaleKind::Major ? std::vector<int>{0, 4, 5, 3}
-                                                       : std::vector<int>{0, 5, 3, 6};
+    Random harmonyRandom(seed ^ textIdentity(direction) ^ 0x4841524d4f4e59ULL);
+    const auto makeChord = [&](std::string id, std::string label, int rootOffset,
+                               std::initializer_list<int> intervals, HarmonicFunction function,
+                               VoicingStrategy voicing, double tension) {
+        HarmonicChord chord;
+        chord.id = std::move(id);
+        chord.label = std::move(label);
+        chord.rootPitchClass = positiveModulo(plan.rootPitchClass + rootOffset, 12);
+        chord.bassPitchClass = chord.rootPitchClass;
+        for (const auto interval : intervals)
+            chord.pitchClasses.push_back(positiveModulo(chord.rootPitchClass + interval, 12));
+        chord.function = function;
+        chord.voicing = voicing;
+        chord.tension = tension;
+        return chord;
+    };
+    const auto minor = plan.scale != ScaleKind::Major;
+    plan.chordPalette = {
+        makeChord("home", "Home with colour", 0,
+                  {0, minor ? 3 : 4, 7, minor ? 10 : 11, harmonyRandom.chance(0.5) ? 2 : 9},
+                  HarmonicFunction::Tonic, VoicingStrategy::Open, 0.14),
+        makeChord("departure", "Open departure", harmonyRandom.chance(0.5) ? 5 : 2,
+                  {0, minor ? 4 : 3, 7, 10, harmonyRandom.chance(0.5) ? 2 : 9},
+                  HarmonicFunction::Predominant, VoicingStrategy::Drop2, 0.42),
+        makeChord("shadow", "Borrowed shadow", minor ? harmonyRandom.range(1, 8) : harmonyRandom.range(1, 6),
+                  {0, harmonyRandom.chance(0.5) ? 3 : 4, 7, harmonyRandom.chance(0.5) ? 10 : 11},
+                  HarmonicFunction::Chromatic, VoicingStrategy::Mixed, 0.56),
+        makeChord("suspension", "Suspended field", harmonyRandom.chance(0.72) ? 7 : 11,
+                  {0, 5, 7, 10, harmonyRandom.chance(0.5) ? 2 : 9},
+                  HarmonicFunction::Dominant, VoicingStrategy::Quartal, 0.76),
+        makeChord("colour", "Ambiguous colour", minor ? harmonyRandom.range(3, 10) : harmonyRandom.range(2, 9),
+                  {0, 2, harmonyRandom.chance(0.5) ? 6 : 7, 9},
+                  HarmonicFunction::Colour, VoicingStrategy::Open, 0.48),
+        makeChord("pedal", "Tonic pedal tension", 2, {0, 3, 7, 10},
+                  HarmonicFunction::Pedal, VoicingStrategy::Cluster, 0.64),
+        makeChord("threshold", "Chromatic threshold", harmonyRandom.chance(0.5) ? 1 : 6,
+                  {0, 4, 7, harmonyRandom.chance(0.5) ? 10 : 11},
+                  HarmonicFunction::Transitional, VoicingStrategy::Shell, 0.82),
+        makeChord("arrival", "Final arrival", 0, {0, minor ? 3 : 4, 7, minor ? 10 : 11},
+                  HarmonicFunction::Tonic, VoicingStrategy::Close, 0.08)
+    };
+    plan.harmonicLanguage.description = "Open local harmony derived from the full creative direction";
+    plan.harmonicLanguage.tonalGravity = 0.38 + harmonyRandom.unit() * 0.52;
+    plan.harmonicLanguage.modalFluidity = 0.10 + harmonyRandom.unit() * 0.70;
+    plan.harmonicLanguage.chromaticism = 0.08 + harmonyRandom.unit() * 0.58;
+    plan.harmonicLanguage.extensionRichness = 0.28 + harmonyRandom.unit() * 0.65;
+    plan.harmonicLanguage.inversionMotion = 0.20 + harmonyRandom.unit() * 0.68;
+    plan.harmonicLanguage.voiceLeadingSmoothness = 0.45 + harmonyRandom.unit() * 0.50;
+    plan.harmonicLanguage.harmonicRhythmActivity = 0.18 + harmonyRandom.unit() * 0.66;
+    plan.harmonicLanguage.pedalToneAffinity = 0.08 + harmonyRandom.unit() * 0.62;
+    plan.harmonicLanguage.ambiguity = 0.12 + harmonyRandom.unit() * 0.66;
+    plan.harmonicLanguage.cadenceStrength = 0.38 + harmonyRandom.unit() * 0.56;
     plan.voices = defaultVoicePlan();
     Random rhythmRandom(seed ^ textIdentity(direction) ^ 0x525954484dULL);
     plan.rhythmLanguage.description = "Open local rhythm derived from the creative direction and composition DNA";
@@ -336,12 +386,38 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
             item.density, item.motif});
         plan.sections.back().activeVoices = defaultActiveVoices(plan.sections.back());
         auto& rhythm = plan.sections.back().rhythm;
+        auto& harmonicSection = plan.sections.back();
+        harmonicSection.tonalCenterPitchClass = positiveModulo(
+            plan.rootPitchClass + (index > selectedFormIndices.size() / 2 && item.tension > 0.68
+                ? (harmonyRandom.chance(0.5) ? 5 : 7) : 0), 12);
+        harmonicSection.modeHint = minor ? "minor with modal and borrowed colour"
+                                         : "major with modal and borrowed colour";
+        const auto harmonicStride = std::clamp(4 - static_cast<int>(std::lround(
+            plan.harmonicLanguage.harmonicRhythmActivity * 3.0)), 1, 4);
+        for (auto harmonicBar = 0; harmonicBar < bars; harmonicBar += harmonicStride) {
+            const auto phrase = harmonicBar / harmonicStride;
+            auto paletteIndex = positiveModulo(phrase * 2 + static_cast<int>(index) +
+                harmonyRandom.range(0, 2), static_cast<int>(plan.chordPalette.size()) - 1);
+            if (harmonicBar == 0 && index == 0) paletteIndex = 0;
+            if (harmonicBar + harmonicStride >= bars)
+                paletteIndex = index + 1 == selectedFormIndices.size() ? 7 : 3;
+            harmonicSection.harmonicEvents.push_back({harmonicBar, 0.0,
+                plan.chordPalette[static_cast<std::size_t>(paletteIndex)].id,
+                std::clamp(0.35 + item.tension * 0.45, 0.0, 1.0),
+                "Develop the section's harmonic argument"});
+            if (item.tension > 0.72 && harmonicStride > 1 && harmonicBar + 1 < bars &&
+                harmonyRandom.chance(0.32))
+                harmonicSection.harmonicEvents.push_back({harmonicBar, plan.beatsPerBar * 0.5,
+                    plan.chordPalette[static_cast<std::size_t>((paletteIndex + 1) %
+                        static_cast<int>(plan.chordPalette.size()))].id, 0.72,
+                    "Create an internal harmonic turn"});
+        }
         rhythm.authored = true;
         rhythm.motifId = plan.rhythmMotifs[static_cast<std::size_t>(item.motif %
             static_cast<int>(plan.rhythmMotifs.size()))].id;
         rhythm.percussionDensity = item.density;
         rhythm.syncopation = std::clamp(0.22 + item.tension * 0.42, 0.0, 1.0);
-        rhythm.swing = containsCaseInsensitive(direction, "organic") ? 0.16 : 0.08;
+        rhythm.swing = std::clamp(0.03 + plan.rhythmLanguage.timingFreedom * 0.20, 0.0, 0.24);
         rhythm.kickState = containsCaseInsensitive(item.name, "breakdown") ? KickState::Muted
             : containsCaseInsensitive(item.name, "prologue") || containsCaseInsensitive(item.name, "coda")
                 ? KickState::Reduced : KickState::FourOnFloor;
@@ -381,12 +457,6 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
                 }), section.rhythm.gestures.end());
         }
     }
-    if (containsCaseInsensitive(direction, "ambient")) {
-        for (auto& section : plan.sections) {
-            section.density *= 0.65;
-            section.energy *= 0.82;
-        }
-    }
     normalizePlan(plan);
     return plan;
 }
@@ -398,11 +468,60 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     plan.totalBars = std::clamp(plan.totalBars, 8, 512);
     plan.rootPitchClass = positiveModulo(plan.rootPitchClass, 12);
     if (plan.motifIntervals.size() < 3) plan.motifIntervals = {0, 3, 7, 5};
-    if (plan.chordDegrees.size() < 2) plan.chordDegrees = {0, 5, 3, 6};
     for (auto& value : plan.motifIntervals) value = std::clamp(value, -24, 24);
     canonicalizeMotif(plan.motifIntervals, plan.scale);
     plan.key = canonicalKeyName(plan.rootPitchClass, plan.scale);
-    for (auto& value : plan.chordDegrees) value = positiveModulo(value, 7);
+    if (plan.chordPalette.size() < 2) {
+        plan.chordPalette = {{"home", "Home", plan.rootPitchClass, plan.rootPitchClass,
+                              {plan.rootPitchClass, positiveModulo(plan.rootPitchClass + 3, 12),
+                               positiveModulo(plan.rootPitchClass + 7, 12)},
+                              HarmonicFunction::Tonic, VoicingStrategy::Open, 0.15},
+                             {"motion", "Motion", positiveModulo(plan.rootPitchClass + 7, 12),
+                              positiveModulo(plan.rootPitchClass + 7, 12),
+                              {positiveModulo(plan.rootPitchClass + 7, 12),
+                               positiveModulo(plan.rootPitchClass + 11, 12),
+                               positiveModulo(plan.rootPitchClass + 2, 12)},
+                              HarmonicFunction::Dominant, VoicingStrategy::Mixed, 0.70}};
+    }
+    if (plan.chordPalette.size() > 24) plan.chordPalette.resize(24);
+    if (plan.harmonicLanguage.description.empty())
+        plan.harmonicLanguage.description = "Open harmonic narrative";
+    if (plan.harmonicLanguage.description.size() > 320)
+        plan.harmonicLanguage.description.resize(320);
+    for (auto* value : {&plan.harmonicLanguage.tonalGravity,
+                        &plan.harmonicLanguage.modalFluidity,
+                        &plan.harmonicLanguage.chromaticism,
+                        &plan.harmonicLanguage.extensionRichness,
+                        &plan.harmonicLanguage.inversionMotion,
+                        &plan.harmonicLanguage.voiceLeadingSmoothness,
+                        &plan.harmonicLanguage.harmonicRhythmActivity,
+                        &plan.harmonicLanguage.pedalToneAffinity,
+                        &plan.harmonicLanguage.ambiguity,
+                        &plan.harmonicLanguage.cadenceStrength})
+        *value = std::clamp(std::isfinite(*value) ? *value : 0.5, 0.0, 1.0);
+    std::vector<std::string> chordIds;
+    for (std::size_t index = 0; index < plan.chordPalette.size(); ++index) {
+        auto& chord = plan.chordPalette[index];
+        if (chord.id.empty()) chord.id = "H" + std::to_string(index + 1);
+        if (std::find(chordIds.begin(), chordIds.end(), chord.id) != chordIds.end())
+            chord.id += "_" + std::to_string(index + 1);
+        chordIds.push_back(chord.id);
+        if (chord.label.empty()) chord.label = chord.id;
+        if (chord.label.size() > 96) chord.label.resize(96);
+        chord.rootPitchClass = positiveModulo(chord.rootPitchClass, 12);
+        chord.bassPitchClass = positiveModulo(chord.bassPitchClass, 12);
+        for (auto& pitchClass : chord.pitchClasses) pitchClass = positiveModulo(pitchClass, 12);
+        std::vector<int> uniquePitchClasses;
+        for (const auto pitchClass : chord.pitchClasses)
+            if (std::find(uniquePitchClasses.begin(), uniquePitchClasses.end(), pitchClass) ==
+                uniquePitchClasses.end())
+                uniquePitchClasses.push_back(pitchClass);
+        chord.pitchClasses = std::move(uniquePitchClasses);
+        if (chord.pitchClasses.size() < 2)
+            chord.pitchClasses = {chord.rootPitchClass, positiveModulo(chord.rootPitchClass + 7, 12)};
+        if (chord.pitchClasses.size() > 8) chord.pitchClasses.resize(8);
+        chord.tension = std::clamp(std::isfinite(chord.tension) ? chord.tension : 0.5, 0.0, 1.0);
+    }
     if (plan.voices.empty()) plan.voices = defaultVoicePlan();
     if (plan.rhythmLanguage.description.empty())
         plan.rhythmLanguage.description = "Open rhythmic conversation";
@@ -550,6 +669,39 @@ void SongComposer::normalizePlan(SongPlan& plan) {
         section.bars = index + 1 == plan.sections.size()
                            ? plan.totalBars - cursor
                            : std::clamp(section.bars, 1, plan.totalBars - cursor - remainingSections);
+        section.tonalCenterPitchClass = positiveModulo(section.tonalCenterPitchClass, 12);
+        if (section.modeHint.empty()) section.modeHint = "open";
+        if (section.modeHint.size() > 96) section.modeHint.resize(96);
+        if (section.harmonicEvents.empty()) {
+            section.tonalCenterPitchClass = plan.rootPitchClass;
+            section.harmonicEvents.push_back({0, 0.0, plan.chordPalette.front().id, 0.5,
+                                              "Establish harmonic ground"});
+        }
+        if (section.harmonicEvents.size() > 64) section.harmonicEvents.resize(64);
+        for (auto& event : section.harmonicEvents) {
+            event.barOffset = std::clamp(event.barOffset, 0, section.bars - 1);
+            event.beatOffset = std::clamp(std::isfinite(event.beatOffset) ? event.beatOffset : 0.0,
+                                          0.0, plan.beatsPerBar - 0.05);
+            if (std::find(chordIds.begin(), chordIds.end(), event.chordId) == chordIds.end())
+                event.chordId = plan.chordPalette.front().id;
+            event.emphasis = std::clamp(std::isfinite(event.emphasis) ? event.emphasis : 0.5,
+                                        0.0, 1.0);
+            if (event.purpose.size() > 180) event.purpose.resize(180);
+        }
+        std::sort(section.harmonicEvents.begin(), section.harmonicEvents.end(), [](const auto& left,
+                                                                                   const auto& right) {
+            return left.barOffset != right.barOffset ? left.barOffset < right.barOffset
+                                                     : left.beatOffset < right.beatOffset;
+        });
+        section.harmonicEvents.erase(std::unique(section.harmonicEvents.begin(),
+            section.harmonicEvents.end(), [](const auto& left, const auto& right) {
+                return left.barOffset == right.barOffset &&
+                       std::abs(left.beatOffset - right.beatOffset) < 0.01;
+            }), section.harmonicEvents.end());
+        if (section.harmonicEvents.front().barOffset != 0 ||
+            section.harmonicEvents.front().beatOffset > 0.001)
+            section.harmonicEvents.insert(section.harmonicEvents.begin(),
+                {0, 0.0, plan.chordPalette.front().id, 0.45, "Establish section harmony"});
         for (auto& gesture : section.rhythm.gestures)
             gesture.barOffset = std::clamp(gesture.barOffset, 0, section.bars - 1);
         const auto* rhythmMotif = plan.rhythmMotifs.empty() ? nullptr : &*std::find_if(
@@ -585,7 +737,8 @@ void SongComposer::normalizePlan(SongPlan& plan) {
 }
 
 Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext& foundation,
-                             const ProgressCallback& progress) const {
+                             const ProgressCallback& progress,
+                             CompositionRenderReport* renderReport) const {
     auto plan = sourcePlan;
     normalizePlan(plan);
     Pattern song;
@@ -600,6 +753,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     HarmonyState harmonyState;
     PhrasePerformanceState phraseState;
     std::vector<std::vector<int>> songHarmony(static_cast<std::size_t>(plan.totalBars));
+    std::vector<HarmonicWindow> harmonicWindows;
 
     for (const auto& section : plan.sections) {
         const auto directions = PhraseDirector::create(plan, section);
@@ -607,9 +761,25 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
                                                                    harmonyState);
         for (auto localBar = 0; localBar < section.bars; ++localBar) {
             const auto absoluteBar = section.startBar + localBar;
-            if (absoluteBar >= 0 && absoluteBar < plan.totalBars)
-                songHarmony[static_cast<std::size_t>(absoluteBar)] =
-                    sectionHarmony[static_cast<std::size_t>(localBar)].pitchClasses;
+            if (absoluteBar >= 0 && absoluteBar < plan.totalBars) {
+                auto& pitchClasses = songHarmony[static_cast<std::size_t>(absoluteBar)];
+                for (const auto& moment : sectionHarmony[static_cast<std::size_t>(localBar)]) {
+                    pitchClasses.insert(pitchClasses.end(), moment.pitchClasses.begin(),
+                                        moment.pitchClasses.end());
+                    pitchClasses.push_back(moment.bassPitchClass);
+                }
+                std::sort(pitchClasses.begin(), pitchClasses.end());
+                pitchClasses.erase(std::unique(pitchClasses.begin(), pitchClasses.end()),
+                                   pitchClasses.end());
+                for (const auto& moment : sectionHarmony[static_cast<std::size_t>(localBar)]) {
+                    const auto startBeat = absoluteBar * plan.beatsPerBar + moment.beatOffset;
+                    harmonicWindows.push_back({startBeat,
+                        std::min(song.lengthBeats, startBeat + moment.durationBeats),
+                        moment.rootPitchClass, moment.bassPitchClass, moment.pitchClasses,
+                        moment.function, moment.voicingStrategy, moment.tension,
+                        moment.chordId, moment.label});
+                }
+            }
         }
         song.markers.push_back({section.startBar * plan.beatsPerBar, section.name});
         auto sectionBar = 0;
@@ -711,12 +881,32 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         }
     }
 
+    std::sort(harmonicWindows.begin(), harmonicWindows.end(), [](const auto& left, const auto& right) {
+        return left.startBeat < right.startBeat;
+    });
+    harmonicWindows.erase(std::unique(harmonicWindows.begin(), harmonicWindows.end(), [](const auto& left,
+                                                                                         const auto& right) {
+        return std::abs(left.startBeat - right.startBeat) < 0.001;
+    }), harmonicWindows.end());
+    for (std::size_t index = 0; index < harmonicWindows.size(); ++index) {
+        const auto nextStart = index + 1 < harmonicWindows.size()
+            ? harmonicWindows[index + 1].startBeat : song.lengthBeats;
+        harmonicWindows[index].endBeat = std::max(harmonicWindows[index].startBeat + 0.01,
+                                                   nextStart);
+    }
+
     [[maybe_unused]] const auto rhythmReport = RhythmEngine::enforceContract(song, plan);
-    [[maybe_unused]] const auto tonalReport = repairTonalContract(
-        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, songHarmony);
-    [[maybe_unused]] const auto qualityReport = MusicalCritic::reviewAndRefine(song, plan);
-    [[maybe_unused]] const auto finalTonalReport = repairTonalContract(
-        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, songHarmony);
+    const auto tonalReport = repairTonalContract(
+        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows);
+    const auto qualityReport = MusicalCritic::reviewAndRefine(song, plan);
+    const auto finalTonalReport = repairTonalContract(
+        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows);
+    if (renderReport != nullptr) {
+        renderReport->firstTonalPass = tonalReport;
+        renderReport->finalTonalPass = finalTonalReport;
+        renderReport->musical = qualityReport;
+        renderReport->harmonicWindows = harmonicWindows.size();
+    }
     for (auto& note : song.notes) {
         if (note.voice == VoiceId::Unspecified ||
             isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||

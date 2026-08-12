@@ -23,6 +23,11 @@ void addEndOfTrack(juce::MidiMessageSequence& sequence, double timestamp) {
     sequence.addEvent(end);
 }
 
+int majorKeySignature(int rootPitchClass) noexcept {
+    constexpr std::array signatures{0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5};
+    return signatures[static_cast<std::size_t>(positiveModulo(rootPitchClass, 12))];
+}
+
 } // namespace
 
 bool writePatternToMidiFile(const Pattern& pattern, const juce::File& destination,
@@ -48,11 +53,30 @@ bool writePatternToMidiFile(const Pattern& pattern, const juce::File& destinatio
         options.timeSignatureNumerator, options.timeSignatureDenominator);
     signature.setTimeStamp(0.0);
     conductor.addEvent(signature);
+    if (options.includeKeySignature) {
+        const auto relativeMajor = options.scale == ScaleKind::Minor
+            ? positiveModulo(options.rootPitchClass + 3, 12)
+            : options.scale == ScaleKind::Dorian ? positiveModulo(options.rootPitchClass - 2, 12)
+            : options.scale == ScaleKind::Mixolydian ? positiveModulo(options.rootPitchClass - 7, 12)
+            : options.rootPitchClass;
+        auto key = juce::MidiMessage::keySignatureMetaEvent(
+            majorKeySignature(relativeMajor), options.scale == ScaleKind::Minor);
+        key.setTimeStamp(0.0);
+        conductor.addEvent(key);
+    }
     for (const auto& marker : pattern.markers) {
         if (!std::isfinite(marker.beat) || marker.beat < 0.0 || marker.beat >= pattern.lengthBeats)
             continue;
         auto message = juce::MidiMessage::textMetaEvent(
             6, juce::String::fromUTF8(marker.name.c_str()));
+        message.setTimeStamp(marker.beat * ticksPerQuarterNote);
+        conductor.addEvent(message);
+    }
+    for (const auto& marker : options.chordMarkers) {
+        if (!std::isfinite(marker.beat) || marker.beat < 0.0 || marker.beat >= pattern.lengthBeats)
+            continue;
+        auto message = juce::MidiMessage::textMetaEvent(
+            6, "Chord: " + juce::String::fromUTF8(marker.name.c_str()));
         message.setTimeStamp(marker.beat * ticksPerQuarterNote);
         conductor.addEvent(message);
     }

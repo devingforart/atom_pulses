@@ -78,6 +78,8 @@
 - [x] Validación horizontal de escala, apoyos fuertes, cromatismo preparado y resolución.
 - [x] Validación vertical de choques ásperos y solapamientos sobre cambios armónicos.
 - [x] El mismo contrato se aplica a GPT, compositor local, preview y MIDI exportado.
+- [x] Contrato armónico exacto por beat, auditoría vertical y feedback del render a GPT.
+- [x] Armadura tonal y marcadores de acorde en exportaciones MIDI completas o por sección.
 
 ## 0.11 — Dirección rítmica
 
@@ -127,7 +129,19 @@
 - [x] Dos a seis motivos contrastantes escritos por GPT, sin patrón house obligatorio.
 - [x] Orquestación extensible con kicks alternativos, toms, platos y percusiones GM.
 - [x] Fallback sensible al texto completo y pruebas anti-colapso entre intenciones distintas.
-- [ ] Lenguaje armónico abierto con acordes, inversiones, extensiones y modulación por sección.
+- [x] Lenguaje armónico abierto con acordes, inversiones, extensiones y modulación por sección.
+
+## 0.20 — Arquitecto armónico abierto
+
+- [x] Eliminación de la progresión global cerrada de grados.
+- [x] Paleta GPT de pitch classes libres, bajo independiente, función, tensión y voicing.
+- [x] Centros tonales y modos propios por sección.
+- [x] Cambios armónicos dentro del compás con propósito musical explícito.
+- [x] Una misma línea temporal para armonías, bajos y apoyos melódicos.
+- [x] Voice leading con memoria interseccional y estrategias close/open/drop-2/quartal/cluster/shell.
+- [x] Contrato tonal compatible con intercambio modal y cromatismo estructural autorizado.
+- [x] Persistencia completa del lenguaje, paleta y eventos en proyectos de Ableton.
+- [ ] Evaluación perceptual ciega de narrativa armónica con músicos y productores.
 
 ## 0.17 — Interfaz localizada y compacta (actual)
 

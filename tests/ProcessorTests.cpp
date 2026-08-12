@@ -91,18 +91,20 @@ int main(int argc, char** argv) {
         require(error.isEmpty(), "Live OpenAI song-plan request failed: " + error.toStdString());
         require(plan.sections.size() >= 3 && plan.voices.size() >= 7 && plan.totalBars == 30 &&
                     plan.rhythmMotifs.size() >= 2 && !plan.rhythmLanguage.description.empty() &&
+                    plan.chordPalette.size() >= 4 && !plan.harmonicLanguage.description.empty() &&
                     std::all_of(plan.voices.begin(), plan.voices.end(), [](const auto& voice) {
                         return voice.performance.authored &&
                                voice.performance.expressionDepth >= 0.0 &&
                                voice.performance.expressionDepth <= 1.0;
                     }) &&
                     std::all_of(plan.sections.begin(), plan.sections.end(), [](const auto& section) {
-                        return !section.rhythm.motifId.empty();
+                        return !section.rhythm.motifId.empty() && section.harmonicEvents.size() >= 2;
                     }),
                 "Live OpenAI response did not satisfy the dynamic-orchestration contract");
         std::cout << "[PASS] Live structured song plan | voices=" << plan.voices.size()
                   << " sections=" << plan.sections.size()
-                  << " rhythm_motifs=" << plan.rhythmMotifs.size() << '\n';
+                  << " rhythm_motifs=" << plan.rhythmMotifs.size()
+                  << " chords=" << plan.chordPalette.size() << '\n';
         return 0;
     }
     constexpr auto sampleRate = 48000.0;
@@ -547,8 +549,14 @@ int main(int argc, char** argv) {
 
     const auto songPlanExample = juce::String(R"json({
       "title":"The Long Return","key":"F# major","summary":"A complete dramatic arc",
-      "root_pitch_class":2,"mode":"minor","rhythm_language":{"description":"A displaced acoustic-electric dialogue","pulse_stability":0.42,"backbeat_gravity":0.78,"syncopation":0.64,"ghost_density":0.32,"velocity_contrast":0.71,"timing_freedom":0.28,"orchestration_motion":0.67,"silence_bias":0.35,"call_response":0.74},"motif_intervals":[0,3,7,5],
-      "chord_degrees":[0,5,3,6],"rhythm_motifs":[{
+      "root_pitch_class":2,"mode":"minor","rhythm_language":{"description":"A displaced acoustic-electric dialogue","pulse_stability":0.42,"backbeat_gravity":0.78,"syncopation":0.64,"ghost_density":0.32,"velocity_contrast":0.71,"timing_freedom":0.28,"orchestration_motion":0.67,"silence_bias":0.35,"call_response":0.74},
+      "harmonic_language":{"description":"Dark gravity with one luminous modal pivot","tonal_gravity":0.68,"modal_fluidity":0.52,"chromaticism":0.41,"extension_richness":0.76,"inversion_motion":0.64,"voice_leading_smoothness":0.84,"harmonic_rhythm_activity":0.46,"pedal_tone_affinity":0.58,"ambiguity":0.61,"cadence_strength":0.72},
+      "chord_palette":[
+        {"id":"dm9","label":"D minor ninth","root_pitch_class":2,"bass_pitch_class":2,"pitch_classes":[0,2,5,9],"function":"tonic","voicing":"open","tension":0.18},
+        {"id":"ebmaj7_g","label":"Eb major seven over G","root_pitch_class":3,"bass_pitch_class":7,"pitch_classes":[2,3,7,10],"function":"chromatic","voicing":"drop_2","tension":0.62},
+        {"id":"a7sus","label":"A suspended dominant","root_pitch_class":9,"bass_pitch_class":9,"pitch_classes":[2,4,7,9],"function":"dominant","voicing":"quartal","tension":0.81},
+        {"id":"gpedal","label":"G pedal colour","root_pitch_class":5,"bass_pitch_class":7,"pitch_classes":[0,5,7,10],"function":"pedal","voicing":"cluster","tension":0.54}
+      ],"motif_intervals":[0,3,7,5],"rhythm_motifs":[{
         "id":"A","bars":1,"steps_per_bar":16,"kick":"1000100010001000","snare_clap":"0000200000002000",
         "closed_hats":"0010001000100010","open_hats_shaker":"0000001000000020",
         "low_percussion":"0000010000010000","high_percussion":"0001000000100000",
@@ -562,9 +570,9 @@ int main(int argc, char** argv) {
         {"id":"lead","function":"Carries the motif","interaction":"Alternates with countermelody","activity":0.6,"syncopation":0.4,"minimum_pitch":55,"maximum_pitch":92,"performance_intent":"Sing with a restrained late bloom","articulation":"legato","dynamic_contour":"phrase_arc","vibrato":"late_expressive","pitch_gesture":"gentle_bends","expression_depth":0.72,"brightness":0.61,"humanization":0.48,"sustain_pedal":false},
         {"id":"atmosphere","function":"Long-range depth","interaction":"Bridges sparse sections","activity":0.4,"syncopation":0.0,"minimum_pitch":42,"maximum_pitch":92}
       ],"sections":[
-        {"name":"Prologue","function":"Introduce motif fragments","harmonic_direction":"Tonic ambiguity","motif_treatment":"Fragment","bars":8,"energy":0.2,"tension":0.2,"density":0.3,"motif_variant":0,"active_voices":["harmonic_foundation","lead","atmosphere"],"kick_state":"reduced","kick_continuity":"sectional","percussion_density":0.2,"rhythmic_syncopation":0.2,"swing":0.08,"rhythm_motif_id":"A","rhythm_mutations":[],"rhythm_gestures":[]},
-        {"name":"Development","function":"Transform the theme","harmonic_direction":"Move away from tonic","motif_treatment":"Sequence","bars":16,"energy":0.7,"tension":0.8,"density":0.7,"motif_variant":2,"active_voices":["core_drums","sub_bass","harmonic_foundation","harmonic_pulse","lead"],"kick_state":"four_on_floor","kick_continuity":"required","percussion_density":0.7,"rhythmic_syncopation":0.5,"swing":0.1,"rhythm_motif_id":"A","rhythm_mutations":[{"bar_offset":6,"lane":"low_percussion","operation":"shift","step":5,"amount":1,"velocity":72,"purpose":"Answer the phrase"}],"rhythm_gestures":[{"bar_offset":7,"type":"drop_last_kick","beat":3,"intensity":0.6},{"bar_offset":15,"type":"double_kick","beat":3.75,"intensity":0.75}]},
-        {"name":"Coda","function":"Resolve the argument","harmonic_direction":"Final tonic","motif_treatment":"Cadential recall","bars":8,"energy":0.3,"tension":0.1,"density":0.3,"motif_variant":0,"active_voices":["sub_bass","harmonic_foundation","lead","atmosphere"],"kick_state":"muted","kick_continuity":"sectional","percussion_density":0.2,"rhythmic_syncopation":0.1,"swing":0.05,"rhythm_motif_id":"A","rhythm_mutations":[],"rhythm_gestures":[]}
+        {"name":"Prologue","function":"Introduce motif fragments","harmonic_direction":"Tonic ambiguity","motif_treatment":"Fragment","bars":8,"energy":0.2,"tension":0.2,"density":0.3,"motif_variant":0,"tonal_center_pitch_class":2,"mode_hint":"D minor with suspended colour","harmonic_events":[{"bar_offset":0,"beat_offset":0,"chord_id":"dm9","emphasis":0.4,"purpose":"Establish home"},{"bar_offset":4,"beat_offset":0,"chord_id":"gpedal","emphasis":0.55,"purpose":"Open ambiguity"}],"active_voices":["harmonic_foundation","lead","atmosphere"],"kick_state":"reduced","kick_continuity":"sectional","percussion_density":0.2,"rhythmic_syncopation":0.2,"swing":0.08,"rhythm_motif_id":"A","rhythm_mutations":[],"rhythm_gestures":[]},
+        {"name":"Development","function":"Transform the theme","harmonic_direction":"Move away from tonic","motif_treatment":"Sequence","bars":16,"energy":0.7,"tension":0.8,"density":0.7,"motif_variant":2,"tonal_center_pitch_class":3,"mode_hint":"Eb luminous pivot","harmonic_events":[{"bar_offset":0,"beat_offset":0,"chord_id":"ebmaj7_g","emphasis":0.72,"purpose":"Pivot chromatically"},{"bar_offset":7,"beat_offset":2,"chord_id":"a7sus","emphasis":0.86,"purpose":"Create dominant suspension"}],"active_voices":["core_drums","sub_bass","harmonic_foundation","harmonic_pulse","lead"],"kick_state":"four_on_floor","kick_continuity":"required","percussion_density":0.7,"rhythmic_syncopation":0.5,"swing":0.1,"rhythm_motif_id":"A","rhythm_mutations":[{"bar_offset":6,"lane":"low_percussion","operation":"shift","step":5,"amount":1,"velocity":72,"purpose":"Answer the phrase"}],"rhythm_gestures":[{"bar_offset":7,"type":"drop_last_kick","beat":3,"intensity":0.6},{"bar_offset":15,"type":"double_kick","beat":3.75,"intensity":0.75}]},
+        {"name":"Coda","function":"Resolve the argument","harmonic_direction":"Final tonic","motif_treatment":"Cadential recall","bars":8,"energy":0.3,"tension":0.1,"density":0.3,"motif_variant":0,"tonal_center_pitch_class":2,"mode_hint":"D minor home","harmonic_events":[{"bar_offset":0,"beat_offset":0,"chord_id":"a7sus","emphasis":0.58,"purpose":"Prepare resolution"},{"bar_offset":4,"beat_offset":0,"chord_id":"dm9","emphasis":0.9,"purpose":"Resolve home"}],"active_voices":["sub_bass","harmonic_foundation","lead","atmosphere"],"kick_state":"muted","kick_continuity":"sectional","percussion_density":0.2,"rhythmic_syncopation":0.1,"swing":0.05,"rhythm_motif_id":"A","rhythm_mutations":[],"rhythm_gestures":[]}
       ]
     })json");
     pulso::SongPlan parsedSongPlan;
@@ -580,6 +588,14 @@ int main(int argc, char** argv) {
                 parsedSongPlan.rhythmLanguage.description == "A displaced acoustic-electric dialogue" &&
                 parsedSongPlan.rhythmMotifs.front().ornaments.size() == 1 &&
                 parsedSongPlan.rhythmMotifs.front().ornaments.front().instrument == pulso::RhythmInstrument::TomMid &&
+                parsedSongPlan.harmonicLanguage.description == "Dark gravity with one luminous modal pivot" &&
+                parsedSongPlan.chordPalette.size() == 4 &&
+                parsedSongPlan.chordPalette[1].pitchClasses == std::vector<int>({2, 3, 7, 10}) &&
+                parsedSongPlan.chordPalette[1].bassPitchClass == 7 &&
+                parsedSongPlan.chordPalette[1].voicing == pulso::VoicingStrategy::Drop2 &&
+                parsedSongPlan.sections[1].tonalCenterPitchClass == 3 &&
+                parsedSongPlan.sections[1].harmonicEvents.size() == 2 &&
+                std::abs(parsedSongPlan.sections[1].harmonicEvents[1].beatOffset - 2.0) < 0.001 &&
                 parsedSongPlan.sections[1].rhythm.mutations.size() == 1 &&
                 parsedSongPlan.sections[1].rhythm.gestures.size() == 2 &&
                 std::any_of(parsedSongPlan.voices.begin(), parsedSongPlan.voices.end(), [](const auto& voice) {
@@ -604,17 +620,37 @@ int main(int argc, char** argv) {
                            event.type == pulso::ExpressionEventType::PolyAftertouch;
                 }),
             "AI-authored performance intent must reach note-level bends and aftertouch");
+    const auto authoredSubBarBeat = (8.0 + 7.0) * 4.0 + 2.0;
+    require(std::any_of(authoredPerformance.notes.begin(), authoredPerformance.notes.end(),
+                [&](const auto& note) {
+                    return note.voice == pulso::VoiceId::HarmonicFoundation &&
+                           std::abs(note.startBeat - authoredSubBarBeat) < 0.001 &&
+                           std::find(parsedSongPlan.chordPalette[2].pitchClasses.begin(),
+                                     parsedSongPlan.chordPalette[2].pitchClasses.end(),
+                                     pulso::positiveModulo(note.pitch, 12)) !=
+                               parsedSongPlan.chordPalette[2].pitchClasses.end();
+                }),
+            "A GPT-authored sub-bar chord must survive rendering and tonal validation into exported MIDI notes");
 
     const auto orchestrationPlan = pulso::SongComposer::createLocalPlan(
         "Deep progressive long-form test", 120, 120.0, 4.0, 8841, 2, pulso::ScaleKind::Minor);
     pulso::GenerationContext orchestrationFoundation;
     orchestrationFoundation.role = pulso::Role::Ensemble;
     orchestrationFoundation.seed = orchestrationPlan.seed;
+    pulso::CompositionRenderReport orchestrationReport;
     const auto orchestration = pulso::SongComposer{}.render(orchestrationPlan,
-                                                             orchestrationFoundation);
+                                                             orchestrationFoundation, {},
+                                                             &orchestrationReport);
+    require(orchestrationReport.harmonicWindows >= orchestrationPlan.sections.size() &&
+                orchestrationReport.productionReady(),
+            "A full arrangement must pass the exact-timeline tonal audit before publication");
     const auto orchestrationFile = exportFolder.getNonexistentChildFile("orchestration", ".mid", false);
     exportOptions.channelFilter = 0;
     exportOptions.clipName = "PULSO Orchestration Test";
+    exportOptions.includeKeySignature = true;
+    exportOptions.rootPitchClass = orchestrationPlan.rootPitchClass;
+    exportOptions.scale = orchestrationPlan.scale;
+    exportOptions.chordMarkers = {{0.0, orchestrationPlan.chordPalette.front().label}};
     require(pulso::plugin::writePatternToMidiFile(orchestration, orchestrationFile, exportOptions),
             "A dynamically orchestrated song must export as standard multitrack MIDI");
     juce::FileInputStream orchestrationInput(orchestrationFile);
@@ -630,6 +666,8 @@ int main(int argc, char** argv) {
     auto exportedPressure = false;
     auto exportedAftertouch = false;
     auto exportedSustain = false;
+    auto exportedKeySignature = false;
+    auto exportedChordMarker = false;
     for (auto track = 0; track < orchestrationMidi.getNumTracks(); ++track) {
         const auto* sequence = orchestrationMidi.getTrack(track);
         if (sequence == nullptr) continue;
@@ -640,13 +678,19 @@ int main(int argc, char** argv) {
             exportedAftertouch = exportedAftertouch || message.isAftertouch();
             exportedSustain = exportedSustain || (message.isController() &&
                                                    message.getControllerNumber() == 64);
+            exportedKeySignature = exportedKeySignature || message.isKeySignatureMetaEvent();
+            exportedChordMarker = exportedChordMarker || (message.isTextMetaEvent() &&
+                message.getTextFromTextMetaEvent().startsWith("Chord: "));
         }
     }
     require(exportedPitchBend && exportedPressure && exportedAftertouch && exportedSustain,
             "Exported MIDI must contain bends, pressure, per-note aftertouch and sustain pedal");
+    require(exportedKeySignature && exportedChordMarker,
+            "Full-song MIDI must expose its key signature and exact chord markers to the DAW");
 
     const auto bassFile = exportFolder.getNonexistentChildFile("bass", ".mid", false);
     exportOptions.channelFilter = 1;
+    exportOptions.chordMarkers.clear();
     require(pulso::plugin::writePatternToMidiFile(*composedPattern, bassFile, exportOptions),
             "A role-specific MIDI clip must export independently");
     juce::FileInputStream bassInput(bassFile);
@@ -833,6 +877,17 @@ int main(int argc, char** argv) {
                 restoredPatternSnapshot->controls == originalPatternSnapshot->controls &&
                 restoredPatternSnapshot->expressions == originalPatternSnapshot->expressions,
             "The complete approved AI composition must survive a DAW project reload exactly");
+    const auto restoredPlan = restored.currentSongPlan();
+    const auto originalPlan = processor.currentSongPlan();
+    if (originalPlan != nullptr && !originalPlan->sections.empty())
+        require(restoredPlan != nullptr &&
+                    restoredPlan->chordPalette.size() == originalPlan->chordPalette.size() &&
+                    restoredPlan->harmonicLanguage.description == originalPlan->harmonicLanguage.description &&
+                    restoredPlan->sections.size() == originalPlan->sections.size() &&
+                    !restoredPlan->sections.empty() &&
+                    restoredPlan->sections.front().harmonicEvents.size() ==
+                        originalPlan->sections.front().harmonicEvents.size(),
+                "HarmonicLanguage, chord palette and section timeline must survive a DAW project reload");
     require(std::abs(restored.parameters.getRawParameterValue("space")->load()) < 0.0001f &&
                 std::abs(restored.parameters.getRawParameterValue("groove")->load()) < 0.0001f,
             "Reloading a project must keep retired controls fixed at zero");

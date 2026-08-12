@@ -321,6 +321,14 @@ void runGeneratorTests() {
                  std::abs(liveDrumPlan.rhythmLanguage.syncopation -
                           machinePulsePlan.rhythmLanguage.syncopation) > 0.001),
             "Different musical intentions must not collapse onto the same hidden genre template");
+    require(liveDrumPlan.chordPalette.size() >= 4 && machinePulsePlan.chordPalette.size() >= 4 &&
+                (liveDrumPlan.chordPalette[2].rootPitchClass !=
+                     machinePulsePlan.chordPalette[2].rootPitchClass ||
+                 liveDrumPlan.chordPalette[2].pitchClasses !=
+                     machinePulsePlan.chordPalette[2].pitchClasses ||
+                 std::abs(liveDrumPlan.harmonicLanguage.chromaticism -
+                          machinePulsePlan.harmonicLanguage.chromaticism) > 0.001),
+            "The offline safety composer must derive harmonic vocabulary from full direction, not one fixed progression");
     require(longPlan.sections.front().startBar == 0 &&
                 longPlan.sections.back().startBar + longPlan.sections.back().bars == longPlan.totalBars,
             "Song sections must cover the entire target duration without gaps");
@@ -362,9 +370,44 @@ void runGeneratorTests() {
     HarmonyState harmonyState;
     const auto richHarmony = HarmonyEngine::composeSection(longPlan, tenseSection,
                                                             tenseDirections, harmonyState);
-    require(std::any_of(richHarmony.begin(), richHarmony.end(), [](const auto& moment) {
-                return moment.voiceCount == 4 && moment.pitchClasses.size() >= 4;
+    require(std::any_of(richHarmony.begin(), richHarmony.end(), [](const auto& bar) {
+                return std::any_of(bar.begin(), bar.end(), [](const auto& moment) {
+                    return moment.voiceCount == 4 && moment.pitchClasses.size() >= 4;
+                });
             }), "High-tension harmony must expose seventh/colour tones and four-part voice leading");
+    auto authoredHarmonyPlan = longPlan;
+    auto& authoredHarmonySection = authoredHarmonyPlan.sections.front();
+    authoredHarmonySection.tonalCenterPitchClass = positiveModulo(longPlan.rootPitchClass + 5, 12);
+    authoredHarmonySection.modeHint = "temporary modal centre with chromatic threshold";
+    authoredHarmonyPlan.chordPalette.push_back({"slash_chromatic", "Chromatic slash colour",
+        positiveModulo(longPlan.rootPitchClass + 1, 12), positiveModulo(longPlan.rootPitchClass + 8, 12),
+        {positiveModulo(longPlan.rootPitchClass + 1, 12), positiveModulo(longPlan.rootPitchClass + 5, 12),
+         positiveModulo(longPlan.rootPitchClass + 8, 12), positiveModulo(longPlan.rootPitchClass + 11, 12)},
+        HarmonicFunction::Chromatic, VoicingStrategy::Drop2, 0.82});
+    authoredHarmonySection.harmonicEvents = {
+        {0, 0.0, authoredHarmonyPlan.chordPalette.front().id, 0.45, "Establish"},
+        {0, authoredHarmonyPlan.beatsPerBar * 0.5, "slash_chromatic", 0.88, "Pivot inside the bar"},
+        {1, 0.0, authoredHarmonyPlan.chordPalette.back().id, 0.72, "Confirm the new colour"}};
+    SongComposer::normalizePlan(authoredHarmonyPlan);
+    const auto authoredDirections = PhraseDirector::create(authoredHarmonyPlan,
+                                                            authoredHarmonyPlan.sections.front());
+    HarmonyState authoredHarmonyState;
+    const auto authoredTimeline = HarmonyEngine::composeSection(authoredHarmonyPlan,
+        authoredHarmonyPlan.sections.front(), authoredDirections, authoredHarmonyState);
+    require(authoredTimeline.front().size() == 2 &&
+                std::abs(authoredTimeline.front()[1].beatOffset - authoredHarmonyPlan.beatsPerBar * 0.5) < 0.001 &&
+                authoredTimeline.front()[1].bassPitchClass == positiveModulo(longPlan.rootPitchClass + 8, 12) &&
+                authoredHarmonyPlan.sections.front().tonalCenterPitchClass ==
+                    positiveModulo(longPlan.rootPitchClass + 5, 12),
+            "HarmonicLanguage must preserve sub-bar changes, slash bass and section-level modulation");
+    Pattern authoredHarmonyBar;
+    authoredHarmonyBar.lengthBeats = authoredHarmonyPlan.beatsPerBar;
+    HarmonyEngine::renderBar(authoredHarmonyBar, authoredHarmonyPlan,
+        authoredHarmonyPlan.sections.front(), authoredDirections.front(), authoredTimeline.front(), 0, 1);
+    require(std::any_of(authoredHarmonyBar.notes.begin(), authoredHarmonyBar.notes.end(), [&](const auto& note) {
+                return note.voice == VoiceId::HarmonicFoundation &&
+                       std::abs(note.startBeat - authoredHarmonyPlan.beatsPerBar * 0.5) < 0.001;
+            }), "A sub-bar AI harmonic event must become an audible foundation chord, not metadata only");
     GenerationContext songFoundation = phraseContext();
     songFoundation.role = Role::Ensemble;
     SongComposer longFormComposer;
@@ -433,9 +476,14 @@ void runGeneratorTests() {
                 if (isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
                     note.voice == VoiceId::Transitions) return true;
                 if (isPitchClassInScale(note.pitch, longPlan.rootPitchClass, longPlan.scale)) return true;
+                if (std::any_of(longPlan.chordPalette.begin(), longPlan.chordPalette.end(), [&](const auto& chord) {
+                        return std::find(chord.pitchClasses.begin(), chord.pitchClasses.end(),
+                                         positiveModulo(note.pitch, 12)) != chord.pitchClasses.end() ||
+                               chord.bassPitchClass == positiveModulo(note.pitch, 12);
+                    })) return true;
                 if (note.voice != VoiceId::Lead && note.voice != VoiceId::Countermelody) return false;
                 return note.durationBeats <= 0.36;
-            }), "A rendered song may only leave its scale through brief melodic passing motion");
+            }), "A rendered song may leave its home scale only through authored harmony or brief melodic passing motion");
 
     std::vector<std::set<VoiceId>> voicesByBar(static_cast<std::size_t>(longPlan.totalBars));
     std::vector<bool> leadByBar(static_cast<std::size_t>(longPlan.totalBars));
@@ -596,6 +644,69 @@ void runGeneratorTests() {
             "Tonal validation must repair structural errors while preserving prepared passing notes");
     require(isPitchClassInScale(brokenHarmony.notes.front().pitch, 0, ScaleKind::Major),
             "An unsupported chromatic note on a strong beat must be repaired into the declared key");
+
+    Pattern exactHarmony;
+    exactHarmony.lengthBeats = 4.0;
+    exactHarmony.notes = {
+        {0.0, 4.0, 64, 76, 3, VoiceId::HarmonicFoundation}, // E cannot sustain into D minor/Bb.
+        {2.0, 1.0, 62, 82, 2, VoiceId::Lead},
+        {2.0, 1.0, 58, 60, 5, VoiceId::HarmonicUpper}
+    };
+    const std::vector<HarmonicWindow> exactWindows{
+        {0.0, 2.0, 0, 0, {0, 4, 7}, HarmonicFunction::Tonic,
+         VoicingStrategy::Open, 0.20, "c", "C"},
+        {2.0, 4.0, 2, 2, {2, 5, 10}, HarmonicFunction::Predominant,
+         VoicingStrategy::Open, 0.42, "dm_borrowed", "Dm/Bb"}
+    };
+    const auto exactRepair = repairTonalContract(
+        exactHarmony, 0, ScaleKind::Major, 4.0, exactWindows);
+    require(exactRepair.exactBoundaryTrims == 1 &&
+                exactHarmony.notes.front().endBeat() <= 2.0 + 0.001 &&
+                exactRepair.after.productionReady(),
+            "The tonal contract must cut incompatible sustains at the exact sub-bar chord boundary");
+
+    Pattern forbiddenCluster;
+    forbiddenCluster.lengthBeats = 2.0;
+    forbiddenCluster.notes = {
+        {0.0, 1.0, 69, 84, 3, VoiceId::HarmonicFoundation},
+        {0.0, 1.0, 70, 62, 5, VoiceId::HarmonicUpper}
+    };
+    const std::vector<HarmonicWindow> openVoicing{
+        {0.0, 2.0, 5, 5, {5, 9, 10, 0}, HarmonicFunction::Colour,
+         VoicingStrategy::Open, 0.70, "colour", "Colour"}
+    };
+    const auto forbiddenRepair = repairTonalContract(
+        forbiddenCluster, 5, ScaleKind::Major, 4.0, openVoicing);
+    require(forbiddenRepair.verticalCollisionsRepaired >= 1 &&
+                forbiddenRepair.after.unintendedHarshOverlaps == 0,
+            "Undeclared vertical semitones must be retuned, trimmed or removed");
+
+    Pattern declaredCluster;
+    declaredCluster.lengthBeats = 2.0;
+    declaredCluster.notes = {
+        {0.0, 1.0, 69, 84, 3, VoiceId::HarmonicFoundation},
+        {0.0, 1.0, 70, 62, 5, VoiceId::HarmonicUpper}
+    };
+    auto clusterVoicing = openVoicing;
+    clusterVoicing.front().voicing = VoicingStrategy::Cluster;
+    const auto clusterRepair = repairTonalContract(
+        declaredCluster, 5, ScaleKind::Major, 4.0, clusterVoicing);
+    require(clusterRepair.notesRemoved == 0 && clusterRepair.notesRetunedForVoicing == 0 &&
+                clusterRepair.after.intentionalClusters >= 1,
+            "An explicit high-register cluster must survive as intentional harmonic colour");
+
+    Pattern borrowedLeadingTone;
+    borrowedLeadingTone.lengthBeats = 2.0;
+    borrowedLeadingTone.notes = {{0.0, 1.0, 61, 80, 3, VoiceId::HarmonicFoundation}};
+    const std::vector<HarmonicWindow> borrowedWindow{
+        {0.0, 2.0, 9, 1, {1, 4, 9}, HarmonicFunction::Dominant,
+         VoicingStrategy::Close, 0.75, "a7", "A7/C#"}
+    };
+    const auto borrowedRepair = repairTonalContract(
+        borrowedLeadingTone, 2, ScaleKind::Minor, 4.0, borrowedWindow);
+    require(borrowedLeadingTone.notes.front().pitch == 61 &&
+                borrowedRepair.outOfScaleRepaired == 0 && borrowedRepair.after.productionReady(),
+            "An AI-declared borrowed chord tone must remain legal even outside the home scale");
     const auto compactPlan = SongComposer::createLocalPlan(
         "A slow compact song", 30, 30.0, 4.0, 31, 5, ScaleKind::Dorian);
     require(compactPlan.totalBars == 8 && !compactPlan.sections.empty() &&

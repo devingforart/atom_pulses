@@ -11,6 +11,9 @@
 namespace pulso {
 namespace {
 
+constexpr double timingTolerance = 0.02;
+constexpr double minimumDuration = 1.0 / 64.0;
+
 bool pitchedVoice(VoiceId voice) noexcept {
     return voice != VoiceId::Unspecified && !isVoiceInFamily(voice, VoiceFamily::Rhythm) &&
            voice != VoiceId::Transitions;
@@ -29,6 +32,10 @@ bool bassVoice(VoiceId voice) noexcept {
     return voice == VoiceId::SubBass || voice == VoiceId::MovementBass;
 }
 
+bool sustainedVoice(VoiceId voice) noexcept {
+    return harmonicVoice(voice) || bassVoice(voice) || voice == VoiceId::Atmosphere;
+}
+
 bool containsPitchClass(std::span<const int> pitchClasses, int pitch) {
     return std::any_of(pitchClasses.begin(), pitchClasses.end(), [pitch](int pitchClass) {
         return positiveModulo(pitchClass, 12) == positiveModulo(pitch, 12);
@@ -36,7 +43,7 @@ bool containsPitchClass(std::span<const int> pitchClasses, int pitch) {
 }
 
 int nearestAllowed(int pitch, std::span<const int> pitchClasses, int minimum, int maximum) {
-    for (auto distance = 0; distance < 24; ++distance) {
+    for (auto distance = 0; distance < 36; ++distance) {
         const auto down = pitch - distance;
         if (down >= minimum && containsPitchClass(pitchClasses, down)) return down;
         const auto up = pitch + distance;
@@ -47,26 +54,38 @@ int nearestAllowed(int pitch, std::span<const int> pitchClasses, int minimum, in
 
 std::vector<int> scalePitchClasses(int root, ScaleKind scale) {
     std::vector<int> result;
-    for (const auto interval : intervalsFor(scale)) result.push_back(positiveModulo(root + interval, 12));
+    for (const auto interval : intervalsFor(scale))
+        result.push_back(positiveModulo(root + interval, 12));
     return result;
 }
 
-bool strongMetricPosition(double beatInBar, double beatsPerBar) noexcept {
-    if (beatInBar < 0.10) return true;
-    const auto secondaryAccent = beatsPerBar * 0.5;
-    return std::abs(beatInBar - secondaryAccent) < 0.09;
+const HarmonicWindow* windowAt(std::span<const HarmonicWindow> windows, double beat) {
+    if (windows.empty()) return nullptr;
+    const auto after = std::upper_bound(windows.begin(), windows.end(), beat + timingTolerance,
+        [](double position, const HarmonicWindow& window) {
+            return position < window.startBeat;
+        });
+    if (after == windows.begin()) return nullptr;
+    return &*std::prev(after);
+}
+
+bool strongMetricPosition(double beat, double beatsPerBar,
+                          const HarmonicWindow* window) noexcept {
+    const auto beatInBar = beat - std::floor(beat / beatsPerBar) * beatsPerBar;
+    if (beatInBar < 0.10 || std::abs(beatInBar - beatsPerBar * 0.5) < 0.09) return true;
+    return window != nullptr && std::abs(beat - window->startBeat) < 0.09;
 }
 
 int collisionPriority(VoiceId voice) noexcept {
     switch (voice) {
-        case VoiceId::SubBass: return 9;
-        case VoiceId::HarmonicFoundation: return 8;
-        case VoiceId::Lead: return 7;
-        case VoiceId::MovementBass: return 6;
-        case VoiceId::HarmonicPulse: return 5;
-        case VoiceId::Countermelody: return 4;
-        case VoiceId::HarmonicUpper: return 3;
-        case VoiceId::Atmosphere: return 2;
+        case VoiceId::SubBass: return 10;
+        case VoiceId::HarmonicFoundation: return 9;
+        case VoiceId::Lead: return 8;
+        case VoiceId::MovementBass: return 7;
+        case VoiceId::HarmonicPulse: return 6;
+        case VoiceId::Countermelody: return 5;
+        case VoiceId::HarmonicUpper: return 4;
+        case VoiceId::Atmosphere: return 3;
         default: return 1;
     }
 }
@@ -74,6 +93,83 @@ int collisionPriority(VoiceId voice) noexcept {
 bool harshInterval(int leftPitch, int rightPitch) noexcept {
     const auto interval = positiveModulo(std::abs(leftPitch - rightPitch), 12);
     return interval == 1 || interval == 6 || interval == 11;
+}
+
+bool intentionalVerticalColour(const NoteEvent& left, const NoteEvent& right,
+                               const HarmonicWindow* window) noexcept {
+    if (window == nullptr || left.pitch < 55 || right.pitch < 55 ||
+        bassVoice(left.voice) || bassVoice(right.voice)) return false;
+    const auto compatibleVoices = [](VoiceId voice) {
+        return harmonicVoice(voice) || voice == VoiceId::Atmosphere;
+    };
+    if (!compatibleVoices(left.voice) || !compatibleVoices(right.voice)) return false;
+    if (window->voicing == VoicingStrategy::Cluster) return window->tension >= 0.45;
+    return window->voicing == VoicingStrategy::Quartal && window->tension >= 0.72 &&
+           positiveModulo(std::abs(left.pitch - right.pitch), 12) == 6;
+}
+
+bool overlaps(const NoteEvent& left, const NoteEvent& right) noexcept {
+    return left.startBeat < right.endBeat() - timingTolerance &&
+           right.startBeat < left.endBeat() - timingTolerance;
+}
+
+void addIssue(TonalAuditReport& report, double beat, VoiceId voice, int pitch,
+              std::string kind, VoiceId otherVoice = VoiceId::Unspecified,
+              int otherPitch = 0) {
+    if (report.issues.size() < 16)
+        report.issues.push_back({beat, voice, otherVoice, pitch, otherPitch, std::move(kind)});
+}
+
+std::vector<HarmonicWindow> legacyWindows(std::span<const std::vector<int>> harmonyByBar,
+                                          double beatsPerBar, int rootPitchClass,
+                                          ScaleKind scale, double lengthBeats) {
+    std::vector<HarmonicWindow> result;
+    const auto fallback = scalePitchClasses(rootPitchClass, scale);
+    const auto bars = std::max<std::size_t>(1, harmonyByBar.size());
+    result.reserve(bars);
+    for (std::size_t bar = 0; bar < bars; ++bar) {
+        auto pitches = harmonyByBar.empty() ? fallback : harmonyByBar[bar];
+        if (pitches.empty()) pitches = fallback;
+        result.push_back({bar * beatsPerBar,
+                          std::min(lengthBeats, (bar + 1) * beatsPerBar),
+                          rootPitchClass, rootPitchClass, std::move(pitches),
+                          HarmonicFunction::Tonic, VoicingStrategy::Mixed, 0.25,
+                          "legacy", "Legacy harmony"});
+    }
+    if (!result.empty()) result.back().endBeat = std::max(result.back().endBeat, lengthBeats);
+    return result;
+}
+
+bool validPassingTone(const Pattern& pattern, std::size_t index, int rootPitchClass,
+                      ScaleKind scale, double maximumDuration) {
+    const auto& note = pattern.notes[index];
+    if (!melodicVoice(note.voice) || note.durationBeats > maximumDuration) return false;
+    const NoteEvent* previous = nullptr;
+    const NoteEvent* next = nullptr;
+    for (auto before = index; before-- > 0;)
+        if (pattern.notes[before].voice == note.voice) { previous = &pattern.notes[before]; break; }
+    for (auto after = index + 1; after < pattern.notes.size(); ++after)
+        if (pattern.notes[after].voice == note.voice) { next = &pattern.notes[after]; break; }
+    return previous != nullptr && next != nullptr &&
+           note.startBeat - previous->startBeat <= 1.5 &&
+           next->startBeat - note.startBeat <= 1.0 &&
+           isPitchClassInScale(previous->pitch, rootPitchClass, scale) &&
+           isPitchClassInScale(next->pitch, rootPitchClass, scale) &&
+           std::abs(next->pitch - note.pitch) == 1;
+}
+
+bool intentionalPassingCollision(const Pattern& pattern, std::size_t passingIndex,
+                                 std::size_t otherIndex, int rootPitchClass, ScaleKind scale,
+                                 double beatsPerBar,
+                                 std::span<const HarmonicWindow> harmony) {
+    const auto& passing = pattern.notes[passingIndex];
+    const auto& other = pattern.notes[otherIndex];
+    const auto* window = windowAt(harmony, passing.startBeat);
+    return melodicVoice(passing.voice) && !bassVoice(other.voice) &&
+           !strongMetricPosition(passing.startBeat, beatsPerBar, window) &&
+           passing.durationBeats <= 0.36 && validPassingTone(pattern, passingIndex,
+                                                             rootPitchClass, scale, 0.36) &&
+           positiveModulo(std::abs(passing.pitch - other.pitch), 12) != 6;
 }
 
 } // namespace
@@ -100,9 +196,8 @@ std::optional<std::pair<int, ScaleKind>> parseKeyName(std::string_view source) {
         {"e", 4}, {"f", 5}, {"g", 7}, {"a", 9}, {"b", 11}
     }};
     auto root = -1;
-    for (const auto& [name, pitchClass] : roots) {
+    for (const auto& [name, pitchClass] : roots)
         if (text.starts_with(name)) { root = pitchClass; break; }
-    }
     if (root < 0) return std::nullopt;
     auto scale = ScaleKind::Major;
     if (text.find("minor") != std::string::npos || text.find(" min") != std::string::npos)
@@ -125,18 +220,82 @@ void canonicalizeMotif(std::vector<int>& intervals, ScaleKind scale) {
     }
 }
 
+TonalAuditReport auditTonalContract(const Pattern& pattern, int rootPitchClass, ScaleKind scale,
+                                    double beatsPerBar,
+                                    std::span<const HarmonicWindow> harmony) {
+    TonalAuditReport report;
+    if (beatsPerBar <= 0.0) return report;
+    for (std::size_t noteIndex = 0; noteIndex < pattern.notes.size(); ++noteIndex) {
+        const auto& note = pattern.notes[noteIndex];
+        if (!pitchedVoice(note.voice)) continue;
+        ++report.pitchedNotes;
+        const auto* window = windowAt(harmony, note.startBeat);
+        const auto chord = window == nullptr ? std::span<const int>{} :
+            std::span<const int>(window->pitchClasses);
+        const auto strong = strongMetricPosition(note.startBeat, beatsPerBar, window);
+        const auto inChord = containsPitchClass(chord, note.pitch);
+        const auto inScale = scale == ScaleKind::Chromatic ||
+            isPitchClassInScale(note.pitch, rootPitchClass, scale);
+        if ((harmonicVoice(note.voice) || ((bassVoice(note.voice) || melodicVoice(note.voice)) && strong)) &&
+            !inChord) {
+            ++report.strongNonChordNotes;
+            addIssue(report, note.startBeat, note.voice, note.pitch, "strong_non_chord");
+        } else if (!inScale && !inChord &&
+                   !validPassingTone(pattern, noteIndex, rootPitchClass, scale, 0.36)) {
+            ++report.unsupportedChromaticNotes;
+            addIssue(report, note.startBeat, note.voice, note.pitch, "unsupported_chromatic");
+        }
+        if (sustainedVoice(note.voice)) {
+            for (const auto& next : harmony) {
+                if (next.startBeat <= note.startBeat + timingTolerance ||
+                    next.startBeat >= note.endBeat() - timingTolerance) continue;
+                if (!containsPitchClass(next.pitchClasses, note.pitch)) {
+                    ++report.invalidSustains;
+                    addIssue(report, next.startBeat, note.voice, note.pitch, "invalid_sustain");
+                    break;
+                }
+            }
+        }
+    }
+    for (std::size_t leftIndex = 0; leftIndex < pattern.notes.size(); ++leftIndex) {
+        const auto& left = pattern.notes[leftIndex];
+        if (!pitchedVoice(left.voice)) continue;
+        for (auto rightIndex = leftIndex + 1; rightIndex < pattern.notes.size(); ++rightIndex) {
+            const auto& right = pattern.notes[rightIndex];
+            if (right.startBeat >= left.endBeat() - timingTolerance) break;
+            if (!pitchedVoice(right.voice) || !overlaps(left, right) ||
+                !harshInterval(left.pitch, right.pitch)) continue;
+            const auto conflictBeat = std::max(left.startBeat, right.startBeat);
+            if (intentionalVerticalColour(left, right, windowAt(harmony, conflictBeat))) {
+                ++report.intentionalClusters;
+                continue;
+            }
+            if (intentionalPassingCollision(pattern, leftIndex, rightIndex, rootPitchClass, scale,
+                                            beatsPerBar, harmony) ||
+                intentionalPassingCollision(pattern, rightIndex, leftIndex, rootPitchClass, scale,
+                                            beatsPerBar, harmony))
+                continue;
+            ++report.unintendedHarshOverlaps;
+            addIssue(report, conflictBeat, right.voice, right.pitch, "harsh_overlap",
+                     left.voice, left.pitch);
+        }
+    }
+    return report;
+}
+
 TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, ScaleKind scale,
                                       double beatsPerBar,
-                                      std::span<const std::vector<int>> harmonyByBar,
+                                      std::span<const HarmonicWindow> harmony,
                                       double maximumChromaticRatio) {
     TonalRepairReport report;
-    if (pattern.notes.empty() || scale == ScaleKind::Chromatic || beatsPerBar <= 0.0) return report;
+    if (pattern.notes.empty() || beatsPerBar <= 0.0) return report;
     const auto scalePitches = scalePitchClasses(rootPitchClass, scale);
     std::sort(pattern.notes.begin(), pattern.notes.end(), [](const auto& left, const auto& right) {
         if (left.startBeat != right.startBeat) return left.startBeat < right.startBeat;
         if (left.voice != right.voice) return left.voice < right.voice;
         return left.pitch < right.pitch;
     });
+    report.before = auditTonalContract(pattern, rootPitchClass, scale, beatsPerBar, harmony);
 
     const auto maximumChromatic = std::max(1, static_cast<int>(std::lround(
         std::count_if(pattern.notes.begin(), pattern.notes.end(), [](const auto& note) {
@@ -146,100 +305,134 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
     for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
         auto& note = pattern.notes[index];
         if (!pitchedVoice(note.voice)) continue;
-        const auto bar = std::clamp(static_cast<int>(std::floor(note.startBeat / beatsPerBar)), 0,
-                                    std::max(0, static_cast<int>(harmonyByBar.size()) - 1));
-        const auto beatInBar = note.startBeat - bar * beatsPerBar;
-        const auto chord = harmonyByBar.empty() ? std::span<const int>(scalePitches) :
-            std::span<const int>(harmonyByBar[static_cast<std::size_t>(bar)]);
-        const auto inScale = isPitchClassInScale(note.pitch, rootPitchClass, scale);
-        const auto strong = strongMetricPosition(beatInBar, beatsPerBar);
-        auto intentionalChromatic = false;
-        if (!inScale && melodicVoice(note.voice) && !strong && note.durationBeats <= 0.36 &&
-            acceptedChromatic < maximumChromatic) {
-            const NoteEvent* previous = nullptr;
-            const NoteEvent* next = nullptr;
-            for (auto before = index; before-- > 0;) {
-                if (pattern.notes[before].voice == note.voice) { previous = &pattern.notes[before]; break; }
-            }
-            for (auto after = index + 1; after < pattern.notes.size(); ++after) {
-                if (pattern.notes[after].voice == note.voice) { next = &pattern.notes[after]; break; }
-            }
-            intentionalChromatic = previous != nullptr && next != nullptr &&
-                note.startBeat - previous->startBeat <= 1.5 && next->startBeat - note.startBeat <= 1.0 &&
-                isPitchClassInScale(previous->pitch, rootPitchClass, scale) &&
-                isPitchClassInScale(next->pitch, rootPitchClass, scale) &&
-                std::abs(next->pitch - note.pitch) == 1;
-        }
-        if (intentionalChromatic) {
+        const auto* window = windowAt(harmony, note.startBeat);
+        auto allowed = window == nullptr || window->pitchClasses.empty()
+            ? std::span<const int>(scalePitches) : std::span<const int>(window->pitchClasses);
+        const auto inScale = scale == ScaleKind::Chromatic ||
+            isPitchClassInScale(note.pitch, rootPitchClass, scale);
+        const auto inChord = containsPitchClass(allowed, note.pitch);
+        const auto strong = strongMetricPosition(note.startBeat, beatsPerBar, window);
+        if (!inScale && !inChord && !strong && acceptedChromatic < maximumChromatic &&
+            validPassingTone(pattern, index, rootPitchClass, scale, 0.36)) {
             ++acceptedChromatic;
             ++report.intentionalChromaticNotes;
             continue;
         }
-
         const auto requireChordTone = harmonicVoice(note.voice) ||
             ((bassVoice(note.voice) || melodicVoice(note.voice)) && strong);
-        const auto valid = inScale && (!requireChordTone || containsPitchClass(chord, note.pitch));
-        if (valid) continue;
+        if ((requireChordTone && inChord) || (!requireChordTone && (inScale || inChord))) continue;
         const auto& definition = voiceDefinition(note.voice);
-        const auto repaired = nearestAllowed(note.pitch, requireChordTone ? chord : std::span<const int>(scalePitches),
-                                             definition.minimumPitch, definition.maximumPitch);
+        note.pitch = nearestAllowed(note.pitch, requireChordTone ? allowed : std::span<const int>(scalePitches),
+                                    definition.minimumPitch, definition.maximumPitch);
         if (!inScale) ++report.outOfScaleRepaired;
         if (strong && requireChordTone) ++report.strongBeatRepaired;
-        if (!inScale && !intentionalChromatic) ++report.unsupportedChromaticRepaired;
-        note.pitch = repaired;
+        if (!inScale && !inChord) ++report.unsupportedChromaticRepaired;
     }
 
-    for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
-        auto& note = pattern.notes[index];
-        if (!pitchedVoice(note.voice)) continue;
-        for (auto otherIndex = std::size_t{}; otherIndex < index; ++otherIndex) {
-            auto& other = pattern.notes[otherIndex];
-            if (!pitchedVoice(other.voice) || other.endBeat() <= note.startBeat + 0.02 ||
-                other.startBeat > note.startBeat + 0.02 || !harshInterval(other.pitch, note.pitch)) continue;
-            if (collisionPriority(note.voice) > collisionPriority(other.voice)) {
-                if (other.startBeat + 0.05 < note.startBeat) {
-                    other.durationBeats = std::max(0.03, note.startBeat - other.startBeat - 0.025);
-                    ++report.verticalCollisionsRepaired;
-                }
-                continue;
-            }
-            if (collisionPriority(note.voice) == collisionPriority(other.voice) || note.durationBeats < 0.24)
-                continue;
-            const auto bar = std::clamp(static_cast<int>(note.startBeat / beatsPerBar), 0,
-                                        std::max(0, static_cast<int>(harmonyByBar.size()) - 1));
-            const auto allowed = harmonyByBar.empty() ? std::span<const int>(scalePitches) :
-                std::span<const int>(harmonyByBar[static_cast<std::size_t>(bar)]);
-            const auto& definition = voiceDefinition(note.voice);
-            for (auto distance = 1; distance <= 4; ++distance) {
-                const auto up = nearestAllowed(note.pitch + distance, allowed,
-                                               definition.minimumPitch, definition.maximumPitch);
-                const auto down = nearestAllowed(note.pitch - distance, allowed,
-                                                 definition.minimumPitch, definition.maximumPitch);
-                if (!harshInterval(other.pitch, up)) { note.pitch = up; ++report.verticalCollisionsRepaired; break; }
-                if (!harshInterval(other.pitch, down)) { note.pitch = down; ++report.verticalCollisionsRepaired; break; }
+    for (auto& note : pattern.notes) {
+        if (!sustainedVoice(note.voice)) continue;
+        for (const auto& next : harmony) {
+            if (next.startBeat <= note.startBeat + timingTolerance ||
+                next.startBeat >= note.endBeat() - timingTolerance) continue;
+            if (!containsPitchClass(next.pitchClasses, note.pitch)) {
+                note.durationBeats = std::max(minimumDuration,
+                    next.startBeat - note.startBeat - minimumDuration);
+                ++report.harmonicOverlapsTrimmed;
+                ++report.exactBoundaryTrims;
+                break;
             }
         }
     }
 
-    if (!harmonyByBar.empty()) {
-        for (auto& note : pattern.notes) {
-            if (!harmonicVoice(note.voice) && !bassVoice(note.voice)) continue;
-            const auto startBar = std::clamp(static_cast<int>(note.startBeat / beatsPerBar), 0,
-                                             static_cast<int>(harmonyByBar.size()) - 1);
-            for (auto bar = startBar + 1; bar < static_cast<int>(harmonyByBar.size()); ++bar) {
-                const auto boundary = bar * beatsPerBar;
-                if (boundary >= note.endBeat() - 0.01) break;
-                if (harmonyByBar[static_cast<std::size_t>(bar)] ==
-                    harmonyByBar[static_cast<std::size_t>(bar - 1)]) continue;
-                if (!containsPitchClass(harmonyByBar[static_cast<std::size_t>(bar)], note.pitch)) {
-                    note.durationBeats = std::max(0.03, boundary - note.startBeat - 0.025);
-                    ++report.harmonicOverlapsTrimmed;
-                    break;
+    std::vector<bool> removed(pattern.notes.size());
+    for (auto pass = 0; pass < 4; ++pass) {
+        auto changed = false;
+        for (std::size_t leftIndex = 0; leftIndex < pattern.notes.size(); ++leftIndex) {
+            if (removed[leftIndex] || !pitchedVoice(pattern.notes[leftIndex].voice)) continue;
+            for (auto rightIndex = leftIndex + 1; rightIndex < pattern.notes.size(); ++rightIndex) {
+                if (pattern.notes[rightIndex].startBeat >=
+                    pattern.notes[leftIndex].endBeat() - timingTolerance) break;
+                if (removed[rightIndex] || !pitchedVoice(pattern.notes[rightIndex].voice)) continue;
+                auto& left = pattern.notes[leftIndex];
+                auto& right = pattern.notes[rightIndex];
+                if (!overlaps(left, right) || !harshInterval(left.pitch, right.pitch)) continue;
+                const auto conflictBeat = std::max(left.startBeat, right.startBeat);
+                const auto* window = windowAt(harmony, conflictBeat);
+                if (intentionalVerticalColour(left, right, window)) {
+                    ++report.intentionalClusters;
+                    continue;
                 }
+                if (intentionalPassingCollision(pattern, leftIndex, rightIndex, rootPitchClass, scale,
+                                                beatsPerBar, harmony) ||
+                    intentionalPassingCollision(pattern, rightIndex, leftIndex, rootPitchClass, scale,
+                                                beatsPerBar, harmony))
+                    continue;
+                auto targetIndex = collisionPriority(left.voice) < collisionPriority(right.voice)
+                    ? leftIndex : rightIndex;
+                if (collisionPriority(left.voice) == collisionPriority(right.voice)) {
+                    targetIndex = left.velocity <= right.velocity ? leftIndex : rightIndex;
+                }
+                auto& target = pattern.notes[targetIndex];
+                if (target.startBeat + 0.05 < conflictBeat) {
+                    const auto duration = conflictBeat - target.startBeat - minimumDuration;
+                    if (duration >= minimumDuration) {
+                        target.durationBeats = duration;
+                        ++report.verticalCollisionsRepaired;
+                        changed = true;
+                        continue;
+                    }
+                }
+                const auto* targetWindow = windowAt(harmony, target.startBeat);
+                const auto allowed = targetWindow == nullptr || targetWindow->pitchClasses.empty()
+                    ? std::span<const int>(scalePitches) : std::span<const int>(targetWindow->pitchClasses);
+                const auto& definition = voiceDefinition(target.voice);
+                auto replacement = -1;
+                auto bestDistance = std::numeric_limits<int>::max();
+                for (auto candidate = definition.minimumPitch; candidate <= definition.maximumPitch; ++candidate) {
+                    if (!containsPitchClass(allowed, candidate)) continue;
+                    auto safe = true;
+                    for (std::size_t check = 0; check < pattern.notes.size(); ++check) {
+                        if (pattern.notes[check].startBeat >= target.endBeat() - timingTolerance) break;
+                        if (check == targetIndex || removed[check] ||
+                            collisionPriority(pattern.notes[check].voice) < collisionPriority(target.voice) ||
+                            !overlaps(target, pattern.notes[check])) continue;
+                        if (harshInterval(candidate, pattern.notes[check].pitch)) { safe = false; break; }
+                    }
+                    const auto distance = std::abs(candidate - target.pitch);
+                    if (safe && distance < bestDistance) { replacement = candidate; bestDistance = distance; }
+                }
+                if (replacement >= 0 && replacement != target.pitch) {
+                    target.pitch = replacement;
+                    ++report.notesRetunedForVoicing;
+                } else {
+                    removed[targetIndex] = true;
+                    ++report.notesRemoved;
+                }
+                ++report.verticalCollisionsRepaired;
+                changed = true;
             }
         }
+        if (!changed) break;
     }
+    if (std::any_of(removed.begin(), removed.end(), [](bool value) { return value; })) {
+        std::vector<NoteEvent> kept;
+        kept.reserve(pattern.notes.size() - static_cast<std::size_t>(report.notesRemoved));
+        for (std::size_t index = 0; index < pattern.notes.size(); ++index)
+            if (!removed[index]) kept.push_back(pattern.notes[index]);
+        pattern.notes = std::move(kept);
+    }
+    report.after = auditTonalContract(pattern, rootPitchClass, scale, beatsPerBar, harmony);
     return report;
+}
+
+TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, ScaleKind scale,
+                                      double beatsPerBar,
+                                      std::span<const std::vector<int>> harmonyByBar,
+                                      double maximumChromaticRatio) {
+    const auto windows = legacyWindows(harmonyByBar, beatsPerBar, rootPitchClass, scale,
+                                       pattern.lengthBeats);
+    return repairTonalContract(pattern, rootPitchClass, scale, beatsPerBar, windows,
+                               maximumChromaticRatio);
 }
 
 } // namespace pulso

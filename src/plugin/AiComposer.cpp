@@ -121,8 +121,25 @@ const juce::String songPlanSchema = R"json({
       "orchestration_motion":{"type":"number"},"silence_bias":{"type":"number"},
       "call_response":{"type":"number"}
     },"required":["description","pulse_stability","backbeat_gravity","syncopation","ghost_density","velocity_contrast","timing_freedom","orchestration_motion","silence_bias","call_response"],"additionalProperties":false},
+    "harmonic_language":{"type":"object","properties":{
+      "description":{"type":"string"},
+      "tonal_gravity":{"type":"number"},"modal_fluidity":{"type":"number"},
+      "chromaticism":{"type":"number"},"extension_richness":{"type":"number"},
+      "inversion_motion":{"type":"number"},"voice_leading_smoothness":{"type":"number"},
+      "harmonic_rhythm_activity":{"type":"number"},"pedal_tone_affinity":{"type":"number"},
+      "ambiguity":{"type":"number"},"cadence_strength":{"type":"number"}
+    },"required":["description","tonal_gravity","modal_fluidity","chromaticism","extension_richness","inversion_motion","voice_leading_smoothness","harmonic_rhythm_activity","pedal_tone_affinity","ambiguity","cadence_strength"],"additionalProperties":false},
+    "chord_palette":{"type":"array","minItems":4,"maxItems":24,"items":{
+      "type":"object","properties":{
+        "id":{"type":"string"},"label":{"type":"string"},
+        "root_pitch_class":{"type":"integer"},"bass_pitch_class":{"type":"integer"},
+        "pitch_classes":{"type":"array","items":{"type":"integer"},"minItems":2,"maxItems":8},
+        "function":{"type":"string","enum":["tonic","predominant","dominant","modal","chromatic","pedal","transitional","colour"]},
+        "voicing":{"type":"string","enum":["close","open","drop_2","quartal","cluster","shell","mixed"]},
+        "tension":{"type":"number"}
+      },"required":["id","label","root_pitch_class","bass_pitch_class","pitch_classes","function","voicing","tension"],"additionalProperties":false
+    }},
     "motif_intervals":{"type":"array","items":{"type":"integer"},"minItems":3,"maxItems":8},
-    "chord_degrees":{"type":"array","items":{"type":"integer"},"minItems":2,"maxItems":12},
     "rhythm_motifs":{"type":"array","minItems":2,"maxItems":6,"items":{
       "type":"object","properties":{
         "id":{"type":"string"},"bars":{"type":"integer"},
@@ -174,6 +191,14 @@ const juce::String songPlanSchema = R"json({
         "tension":{"type":"number"},
         "density":{"type":"number"},
         "motif_variant":{"type":"integer"},
+        "tonal_center_pitch_class":{"type":"integer"},
+        "mode_hint":{"type":"string"},
+        "harmonic_events":{"type":"array","minItems":2,"maxItems":64,"items":{
+          "type":"object","properties":{
+            "bar_offset":{"type":"integer"},"beat_offset":{"type":"number"},
+            "chord_id":{"type":"string"},"emphasis":{"type":"number"},"purpose":{"type":"string"}
+          },"required":["bar_offset","beat_offset","chord_id","emphasis","purpose"],"additionalProperties":false
+        }},
         "active_voices":{"type":"array","items":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]}},
         "kick_state":{"type":"string","enum":["muted","reduced","sparse","four_on_floor"]},
         "kick_continuity":{"type":"string","enum":["required","sectional","free"]},
@@ -201,11 +226,11 @@ const juce::String songPlanSchema = R"json({
           },"required":["bar_offset","type","beat","intensity"],"additionalProperties":false
         }}
       },
-      "required":["name","function","harmonic_direction","motif_treatment","bars","energy","tension","density","motif_variant","active_voices","kick_state","kick_continuity","percussion_density","rhythmic_syncopation","swing","rhythm_motif_id","rhythm_mutations","rhythm_gestures"],
+      "required":["name","function","harmonic_direction","motif_treatment","bars","energy","tension","density","motif_variant","tonal_center_pitch_class","mode_hint","harmonic_events","active_voices","kick_state","kick_continuity","percussion_density","rhythmic_syncopation","swing","rhythm_motif_id","rhythm_mutations","rhythm_gestures"],
       "additionalProperties":false
     }}
   },
-  "required":["title","key","summary","root_pitch_class","mode","rhythm_language","motif_intervals","chord_degrees","rhythm_motifs","voices","sections"],
+  "required":["title","key","summary","root_pitch_class","mode","rhythm_language","harmonic_language","chord_palette","motif_intervals","rhythm_motifs","voices","sections"],
   "additionalProperties":false
 })json";
 
@@ -426,7 +451,7 @@ juce::String requestRevisedSongPlan(const juce::String& prompt, const juce::Stri
                                     std::stop_token token, std::chrono::milliseconds budget) {
     if (token.stop_requested()) return {};
     const auto body = juce::String("{\"model\":\"") + model +
-        "\",\"reasoning\":{\"effort\":\"low\"},\"max_output_tokens\":9000,\"input\":" +
+        "\",\"reasoning\":{\"effort\":\"low\"},\"max_output_tokens\":16000,\"input\":" +
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_plan_critic\","
         "\"strict\":true,\"schema\":" + songPlanSchema + "}}}";
@@ -646,8 +671,19 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "Treat active_voices as an available cast, not a command to play continuously: design implied entrances, "
         "responses, withdrawals, breath before arrivals, tension plateaus and genuine low-density descents. "
         "Harmonic tension must follow the dramatic curve. minimum_pitch and maximum_pitch are MIDI pitches. "
-        "The key label, root_pitch_class and mode MUST describe exactly the same tonal centre. Chromatic notes are "
-        "reserved for brief prepared passing motion that resolves by semitone; structural notes remain diatonic. "
+        "The key label, root_pitch_class and mode describe the opening/home identity, not a prison for the song. "
+        "Invent one open harmonic_language from the full creative direction. Its dimensions are 0 to 1 and describe "
+        "gravity, modal mobility, structural chromaticism, extensions, inversion movement, voice-leading smoothness, "
+        "harmonic rhythm, pedals, ambiguity and cadence force. Build a chord_palette of explicit pitch-class sets; "
+        "pitch classes are integers 0-11. root_pitch_class identifies perceived root, while bass_pitch_class may differ "
+        "for inversions, slash chords and pedal bass. pitch_classes define the actual sounding collection and may include "
+        "extensions, omissions, modal interchange, secondary dominants, chromatic mediants, quartal structures or clusters "
+        "when the narrative justifies them. Do not decorate every chord or modulate merely to appear sophisticated. "
+        "Give each section its own tonal centre and mode hint, then write harmonic_events at exact zero-based bar and beat "
+        "offsets. Events reference the palette and must cover the section from bar 0, with purposeful holds, anticipations, "
+        "turns, pedals, departures and arrivals. Reuse chords for identity but transform ordering, bass, voicing and rhythm; "
+        "do not repeat one four-chord cycle through the entire song. Every non-diatonic structural chord must have perceptual "
+        "logic in its purpose. The final cadence should resolve the global argument without requiring a conventional V-I. "
         "Invent the rhythmic language from the creative direction itself; there are no preset genre families and "
         "you must not default unrelated requests to house, four-on-the-floor or the same backbeat. Describe the "
         "language semantically, then set its continuous behavioural dimensions from 0 to 1. Write a deliberate "
@@ -676,18 +712,18 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "must never remain maximal or mechanically identical. The macro kick contract still wins when "
         "the user explicitly requests constant quarter-note kick or when a section deliberately mutes it. "
         "The section bars MUST sum exactly to ") + juce::String(totalBars) + ". Use between 5 and 14 sections. Energy, tension "
-        "and density are values from 0 to 1. Chord degrees use 0-6. Motif intervals are semitones relative to the "
+        "and density are values from 0 to 1. Motif intervals are semitones relative to the "
         "tonic and form the immutable thematic DNA. Target duration: " + juce::String(targetSeconds) +
         " seconds; tempo: " + juce::String(bpm, 1) + " BPM; meter: " + juce::String(beatsPerBar, 2) +
         " quarter-note beats per bar. Creative direction: " + direction;
 
     const auto body = juce::String("{\"model\":\"") + model +
-        "\",\"reasoning\":{\"effort\":\"medium\"},\"max_output_tokens\":9000,\"input\":" +
+        "\",\"reasoning\":{\"effort\":\"medium\"},\"max_output_tokens\":16000,\"input\":" +
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_plan\","
         "\"strict\":true,\"schema\":" + songPlanSchema + "}}}";
 
-    constexpr auto totalAiBudget = std::chrono::seconds(90);
+    constexpr auto totalAiBudget = std::chrono::seconds(180);
     const auto aiStarted = std::chrono::steady_clock::now();
     if (progress) progress(AiSongStage::Architecture);
     const auto http = performRequest(body, apiKey, token, totalAiBudget);
@@ -707,6 +743,46 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         error = "Generation cancelled";
         return {};
     }
+    GenerationContext auditFoundation;
+    auditFoundation.role = Role::Ensemble;
+    auditFoundation.rootPitchClass = result.rootPitchClass;
+    auditFoundation.scale = result.scale;
+    auditFoundation.beatsPerBar = result.beatsPerBar;
+    auditFoundation.seed = result.seed;
+    auditFoundation.humanize = 0.0;
+    CompositionRenderReport draftReport;
+    [[maybe_unused]] const auto auditedDraft = SongComposer{}.render(
+        result, auditFoundation, {}, &draftReport);
+    juce::String auditSummary;
+    auditSummary << "\nDeterministic MIDI render audit (the critic must reduce these causes, not merely rename them):\n"
+                 << "harmonic_windows=" << static_cast<int>(draftReport.harmonicWindows)
+                 << ", pitched_notes=" << draftReport.firstTonalPass.before.pitchedNotes
+                 << ", unsupported_chromatic=" << draftReport.firstTonalPass.before.unsupportedChromaticNotes
+                 << ", strong_non_chord=" << draftReport.firstTonalPass.before.strongNonChordNotes
+                 << ", invalid_sustains=" << draftReport.firstTonalPass.before.invalidSustains
+                 << ", unintended_harsh_overlaps=" << draftReport.firstTonalPass.before.unintendedHarshOverlaps
+                 << ", intentional_clusters=" << draftReport.firstTonalPass.before.intentionalClusters
+                 << ", boundary_trims=" << draftReport.firstTonalPass.exactBoundaryTrims
+                 << ", voicing_retunes=" << draftReport.firstTonalPass.notesRetunedForVoicing
+                 << ", removed_notes=" << draftReport.firstTonalPass.notesRemoved
+                 << ", post_repair_unresolved="
+                 << draftReport.finalTonalPass.after.unintendedHarshOverlaps
+                 << ", musical_quality=" << juce::String(draftReport.musical.overall, 3) << ".\n";
+    if (!draftReport.firstTonalPass.before.issues.empty()) {
+        auditSummary << "Representative exact-timeline issues:\n";
+        for (const auto& issue : draftReport.firstTonalPass.before.issues) {
+            auditSummary << "- beat " << juce::String(issue.beat, 3) << ", "
+                         << juce::String(issue.kind) << ", voice="
+                         << juce::String(voiceDefinition(issue.voice).key.data())
+                         << ", pitch=" << issue.pitch;
+            if (issue.otherVoice != VoiceId::Unspecified)
+                auditSummary << ", against="
+                             << juce::String(voiceDefinition(issue.otherVoice).key.data())
+                             << ":" << issue.otherPitch;
+            auditSummary << "\n";
+        }
+    }
+
     const auto elapsed = std::chrono::steady_clock::now() - aiStarted;
     const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(totalAiBudget - elapsed);
     if (remaining < std::chrono::seconds(3)) {
@@ -718,14 +794,16 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     const auto criticPrompt = juce::String(
         "Act as PULSO's independent composer-critic. Return a complete revised plan using the same schema. "
         "Preserve the exact requested bar count, tempo, meter, tonal centre and all explicit user constraints. "
-        "Before selecting the revision, silently compare at least three plausible rhythmic developments. Audit "
-        "dance-floor foundation, motif lineage, kick-bass interlock, meaningful silence, phrase-level cause and "
-        "effect, orchestral breathing, contrast and climax. Repair generic repetition or arbitrary novelty. Use "
+        "Before selecting the revision, silently compare at least three plausible rhythmic and harmonic developments. "
+        "Audit tonal narrative, palette identity, inversions, bass motion, structural chromatic logic, harmonic rhythm, "
+        "voice-leading continuity, section-level centres, cadence consequence, dance-floor foundation, motif lineage, "
+        "kick-bass interlock, meaningful silence, phrase-level cause and effect, orchestral breathing, contrast and "
+        "climax. Repair four-chord cycling, decorative complexity, generic repetition or arbitrary novelty. Use "
         "rhythm masks as musical cells and sparse mutations as development; do not merely add density. The final "
         "JSON must be self-contained. Original creative direction: ") + direction +
-        "\nCandidate plan to critique and revise:\n" + outputText;
+        auditSummary + "\nCandidate plan to critique and revise:\n" + outputText;
     if (const auto revisedText = requestRevisedSongPlan(criticPrompt, apiKey, token,
-            std::min(remaining, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(10))));
+            std::min(remaining, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(45))));
         revisedText.isNotEmpty()) {
         SongPlan revised;
         juce::String criticError;
@@ -773,10 +851,43 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
         result.rhythmLanguage.silenceBias = static_cast<double>(language->getProperty("silence_bias"));
         result.rhythmLanguage.callResponse = static_cast<double>(language->getProperty("call_response"));
     }
+    if (const auto* language = object->getProperty("harmonic_language").getDynamicObject()) {
+        result.harmonicLanguage.description = language->getProperty("description").toString().trim().toStdString();
+        result.harmonicLanguage.tonalGravity = static_cast<double>(language->getProperty("tonal_gravity"));
+        result.harmonicLanguage.modalFluidity = static_cast<double>(language->getProperty("modal_fluidity"));
+        result.harmonicLanguage.chromaticism = static_cast<double>(language->getProperty("chromaticism"));
+        result.harmonicLanguage.extensionRichness = static_cast<double>(language->getProperty("extension_richness"));
+        result.harmonicLanguage.inversionMotion = static_cast<double>(language->getProperty("inversion_motion"));
+        result.harmonicLanguage.voiceLeadingSmoothness = static_cast<double>(language->getProperty("voice_leading_smoothness"));
+        result.harmonicLanguage.harmonicRhythmActivity = static_cast<double>(language->getProperty("harmonic_rhythm_activity"));
+        result.harmonicLanguage.pedalToneAffinity = static_cast<double>(language->getProperty("pedal_tone_affinity"));
+        result.harmonicLanguage.ambiguity = static_cast<double>(language->getProperty("ambiguity"));
+        result.harmonicLanguage.cadenceStrength = static_cast<double>(language->getProperty("cadence_strength"));
+    }
+    if (const auto* palette = object->getProperty("chord_palette").getArray()) {
+        for (const auto& item : *palette) {
+            const auto* chord = item.getDynamicObject();
+            if (chord == nullptr) continue;
+            HarmonicChord parsedChord;
+            parsedChord.id = chord->getProperty("id").toString().trim().toStdString();
+            parsedChord.label = chord->getProperty("label").toString().trim().toStdString();
+            parsedChord.rootPitchClass = static_cast<int>(chord->getProperty("root_pitch_class"));
+            parsedChord.bassPitchClass = static_cast<int>(chord->getProperty("bass_pitch_class"));
+            if (const auto* pitchClasses = chord->getProperty("pitch_classes").getArray())
+                for (const auto& pitchClass : *pitchClasses)
+                    parsedChord.pitchClasses.push_back(static_cast<int>(pitchClass));
+            if (const auto function = harmonicFunctionFromKey(
+                    chord->getProperty("function").toString().toStdString()))
+                parsedChord.function = *function;
+            if (const auto voicing = voicingStrategyFromKey(
+                    chord->getProperty("voicing").toString().toStdString()))
+                parsedChord.voicing = *voicing;
+            parsedChord.tension = static_cast<double>(chord->getProperty("tension"));
+            result.chordPalette.push_back(std::move(parsedChord));
+        }
+    }
     if (const auto* motif = object->getProperty("motif_intervals").getArray())
         for (const auto& value : *motif) result.motifIntervals.push_back(static_cast<int>(value));
-    if (const auto* chords = object->getProperty("chord_degrees").getArray())
-        for (const auto& value : *chords) result.chordDegrees.push_back(static_cast<int>(value));
     if (const auto* motifs = object->getProperty("rhythm_motifs").getArray()) {
         for (const auto& item : *motifs) {
             const auto* motif = item.getDynamicObject();
@@ -864,6 +975,20 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
         parsedSection.tension = static_cast<double>(section->getProperty("tension"));
         parsedSection.density = static_cast<double>(section->getProperty("density"));
         parsedSection.motifVariant = static_cast<int>(section->getProperty("motif_variant"));
+        parsedSection.tonalCenterPitchClass = static_cast<int>(
+            section->getProperty("tonal_center_pitch_class"));
+        parsedSection.modeHint = section->getProperty("mode_hint").toString().trim().toStdString();
+        if (const auto* events = section->getProperty("harmonic_events").getArray())
+            for (const auto& eventItem : *events) {
+                const auto* event = eventItem.getDynamicObject();
+                if (event == nullptr) continue;
+                parsedSection.harmonicEvents.push_back({
+                    static_cast<int>(event->getProperty("bar_offset")),
+                    static_cast<double>(event->getProperty("beat_offset")),
+                    event->getProperty("chord_id").toString().trim().toStdString(),
+                    static_cast<double>(event->getProperty("emphasis")),
+                    event->getProperty("purpose").toString().trim().toStdString()});
+            }
         if (const auto state = kickStateFromKey(
                 section->getProperty("kick_state").toString().toStdString()))
             parsedSection.rhythm.kickState = *state;

@@ -143,12 +143,38 @@ juce::String songPlanToJson(const SongPlan& plan) {
     rhythmLanguage->setProperty("silence_bias", plan.rhythmLanguage.silenceBias);
     rhythmLanguage->setProperty("call_response", plan.rhythmLanguage.callResponse);
     jsonRoot->setProperty("rhythm_language", juce::var(rhythmLanguage));
+    auto* harmonicLanguage = new juce::DynamicObject();
+    harmonicLanguage->setProperty("description", juce::String::fromUTF8(plan.harmonicLanguage.description.c_str()));
+    harmonicLanguage->setProperty("tonal_gravity", plan.harmonicLanguage.tonalGravity);
+    harmonicLanguage->setProperty("modal_fluidity", plan.harmonicLanguage.modalFluidity);
+    harmonicLanguage->setProperty("chromaticism", plan.harmonicLanguage.chromaticism);
+    harmonicLanguage->setProperty("extension_richness", plan.harmonicLanguage.extensionRichness);
+    harmonicLanguage->setProperty("inversion_motion", plan.harmonicLanguage.inversionMotion);
+    harmonicLanguage->setProperty("voice_leading_smoothness", plan.harmonicLanguage.voiceLeadingSmoothness);
+    harmonicLanguage->setProperty("harmonic_rhythm_activity", plan.harmonicLanguage.harmonicRhythmActivity);
+    harmonicLanguage->setProperty("pedal_tone_affinity", plan.harmonicLanguage.pedalToneAffinity);
+    harmonicLanguage->setProperty("ambiguity", plan.harmonicLanguage.ambiguity);
+    harmonicLanguage->setProperty("cadence_strength", plan.harmonicLanguage.cadenceStrength);
+    jsonRoot->setProperty("harmonic_language", juce::var(harmonicLanguage));
+    juce::Array<juce::var> chordPalette;
+    for (const auto& chord : plan.chordPalette) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("id", juce::String::fromUTF8(chord.id.c_str()));
+        item->setProperty("label", juce::String::fromUTF8(chord.label.c_str()));
+        item->setProperty("root_pitch_class", chord.rootPitchClass);
+        item->setProperty("bass_pitch_class", chord.bassPitchClass);
+        juce::Array<juce::var> pitchClasses;
+        for (const auto value : chord.pitchClasses) pitchClasses.add(value);
+        item->setProperty("pitch_classes", pitchClasses);
+        item->setProperty("function", juce::String(harmonicFunctionKey(chord.function).data()));
+        item->setProperty("voicing", juce::String(voicingStrategyKey(chord.voicing).data()));
+        item->setProperty("tension", chord.tension);
+        chordPalette.add(juce::var(item));
+    }
+    jsonRoot->setProperty("chord_palette", chordPalette);
     juce::Array<juce::var> motif;
     for (const auto value : plan.motifIntervals) motif.add(value);
     jsonRoot->setProperty("motif_intervals", motif);
-    juce::Array<juce::var> chords;
-    for (const auto value : plan.chordDegrees) chords.add(value);
-    jsonRoot->setProperty("chord_degrees", chords);
     juce::Array<juce::var> rhythmMotifs;
     for (const auto& motifPattern : plan.rhythmMotifs) {
         auto* item = new juce::DynamicObject();
@@ -208,6 +234,19 @@ juce::String songPlanToJson(const SongPlan& plan) {
         item->setProperty("tension", section.tension);
         item->setProperty("density", section.density);
         item->setProperty("motif_variant", section.motifVariant);
+        item->setProperty("tonal_center_pitch_class", section.tonalCenterPitchClass);
+        item->setProperty("mode_hint", juce::String::fromUTF8(section.modeHint.c_str()));
+        juce::Array<juce::var> harmonicEvents;
+        for (const auto& event : section.harmonicEvents) {
+            auto* eventObject = new juce::DynamicObject();
+            eventObject->setProperty("bar_offset", event.barOffset);
+            eventObject->setProperty("beat_offset", event.beatOffset);
+            eventObject->setProperty("chord_id", juce::String::fromUTF8(event.chordId.c_str()));
+            eventObject->setProperty("emphasis", event.emphasis);
+            eventObject->setProperty("purpose", juce::String::fromUTF8(event.purpose.c_str()));
+            harmonicEvents.add(juce::var(eventObject));
+        }
+        item->setProperty("harmonic_events", harmonicEvents);
         item->setProperty("kick_state", juce::String(kickStateKey(section.rhythm.kickState).data()));
         item->setProperty("kick_continuity", juce::String(kickContinuityKey(section.rhythm.continuity).data()));
         item->setProperty("percussion_density", section.rhythm.percussionDensity);

@@ -143,8 +143,19 @@ std::vector<BarDirection> PhraseDirector::create(const SongPlan& plan,
                cell == 3 ? 0 : highEnergy ? 3 : 2, 0.0, exit, expression);
         assign(bar, section, VoiceId::MovementBass, Participation::Response,
                cell == 1 || (highEnergy && cell == 2) ? 2 : 0, 0.45, exit, expression * 0.84);
+        const auto authoredHarmonicChanges = static_cast<int>(std::count_if(
+            section.harmonicEvents.begin(), section.harmonicEvents.end(), [localBar](const auto& event) {
+                return event.barOffset == localBar;
+            }));
+        const auto hasChangeAtBarStart = std::any_of(section.harmonicEvents.begin(),
+            section.harmonicEvents.end(), [localBar](const auto& event) {
+                return event.barOffset == localBar && event.beatOffset < 0.001;
+            });
+        const auto realisedHarmonicMoments = authoredHarmonicChanges +
+            (authoredHarmonicChanges > 0 && !hasChangeAtBarStart ? 1 : 0);
         assign(bar, section, VoiceId::HarmonicFoundation, Participation::Support,
-               bar.harmonicAttack ? 4 : 0, 0.0, plan.beatsPerBar, expression * 0.80);
+               std::max(bar.harmonicAttack ? 4 : 0, realisedHarmonicMoments * 4),
+               0.0, plan.beatsPerBar, expression * 0.80);
         assign(bar, section, VoiceId::HarmonicPulse, Participation::Support,
                cell == 1 || cell == 2 ? (highEnergy ? 4 : 2) : 0,
                0.25, exit, expression * 0.76);

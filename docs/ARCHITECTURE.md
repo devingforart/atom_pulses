@@ -174,11 +174,13 @@ entrante durante la reproducción.
 produce un plan jerárquico con título, tonalidad, intención, voces, funciones, registros,
 interacciones y presencia por sección. No se aceptan identificadores de voz libres: el
 esquema limita la respuesta al catálogo conocido por el renderer.
-Una segunda llamada actúa como compositor-crítico: compara alternativas de desarrollo,
-revisa linaje, respiración, interlock kick–bass y causalidad formal, y devuelve un plan
-completo revisado. Si esa revisión falla, la primera respuesta validada permanece utilizable.
-Arquitectura y crítica comparten un deadline total de 90 segundos. La arquitectura tiene
-prioridad y la crítica opcional recibe como máximo 10 segundos del tiempo restante.
+Una segunda llamada actúa como compositor-crítico. Antes de invocarla, el core renderiza
+el primer plan y produce un informe compacto con ventanas armónicas, notas cromáticas no
+justificadas, apoyos fuera del acorde, sustains inválidos, colisiones verticales, reparaciones
+y ubicaciones exactas. GPT revisa linaje, respiración, interlock kick–bass, causalidad formal
+y también las causas medidas en el MIDI. Si esa revisión falla, la primera respuesta validada
+permanece utilizable. Arquitectura y crítica comparten un deadline total de 180 segundos;
+la arquitectura tiene prioridad y la crítica recibe como máximo 45 segundos del remanente.
 En Windows, `AiComposer` usa WinHTTP nativo con TLS, configuración automática de proxy y
 timeouts por etapa. Un watchdog cierra el request activo desde el botón `CANCEL` o al vencer
 el deadline; en las demás plataformas se usa `WebInputStream::cancel`. La operación es
@@ -189,12 +191,19 @@ El parser rechaza longitud incorrecta, capas vacías, valores no finitos, pitche
 velocidades o tiempos inválidos. Los locks se aplican nuevamente después de validar,
 por lo que una capa bloqueada nunca depende de que el modelo obedezca la instrucción.
 
-`TonalContract` es la última autoridad musical antes de publicar un patrón. Deriva el
-nombre de tonalidad de raíz y modo, ajusta el motivo a la escala, exige tonos del acorde
-en apoyos estructurales y conserva cromatismo únicamente como paso breve preparado y
-resuelto. Después evalúa las voces simultáneamente, desplaza colisiones ásperas de menor
-prioridad y termina bajos o armonías incompatibles antes del cambio de acorde. Esta
-pasada es determinista y se ejecuta en el worker, nunca en el callback de audio.
+`TonalContract` es la última autoridad musical antes de publicar un patrón. Consume una
+secuencia de `HarmonicWindow` con inicio y final en beats, raíz, bajo, colección sonora,
+función, voicing y tensión. Los acordes prestados declarados son legales; el cromatismo no
+declarado sólo sobrevive como paso breve preparado y resuelto. Los apoyos se comparan con
+el acorde activo, no con la unión de todo el compás. Las notas sostenidas se cortan en la
+frontera exacta si dejan de ser comunes. La reparación vertical itera, protege bajo y voces
+estructurales, retunea o elimina la voz secundaria y sólo conserva semitonos/tritonos como
+cluster o color cuartal explícito, tenso y en registro superior. Una auditoría final exige
+cero conflictos no intencionales. Todo ocurre en el worker, nunca en el callback de audio.
+
+El exportador escribe además armadura tonal y marcadores de acorde en el conductor MIDI.
+Esto no obliga a Ableton a interpretar la armonía, pero mantiene el contexto legible para
+DAWs y herramientas que soportan esos metaeventos.
 
 Ante ausencia de credencial, error HTTP, timeout o composición inválida se ejecuta el
 motor local. El callback continúa reproduciendo la última idea durante toda la llamada.
@@ -254,6 +263,27 @@ El renderer no elige un género: convierte esa partitura en eventos, aplica desa
 seccional y valida solamente seguridad, rango e invariantes pedidos expresamente. El
 fallback sin red es reproducible, pero deriva sus motivos de la dirección completa y la
 semilla; no selecciona una familia estilística cerrada.
+
+## Lenguaje armónico abierto 0.20
+
+`HarmonicLanguage` reemplaza la progresión global de grados. GPT define gravedad tonal,
+movilidad modal, cromatismo estructural, riqueza de extensiones, movimiento de inversiones,
+suavidad de voice leading, actividad del ritmo armónico, afinidad por pedales, ambigüedad y
+fuerza cadencial. Son dimensiones continuas, no presets ni nombres de género.
+
+La `chordPalette` contiene hasta 24 identidades con raíz percibida, bajo independiente,
+pitch classes explícitas, función, tensión y estrategia de voicing (`close`, `open`,
+`drop_2`, `quartal`, `cluster`, `shell` o `mixed`). Esto admite inversiones, slash chords,
+extensiones, omisiones, intercambio modal, dominantes secundarios, mediantes cromáticas,
+pedales y estructuras no terciales sin codificar progresiones concretas en el motor.
+
+Cada sección declara centro tonal, indicación modal y hasta 64 eventos armónicos con compás
+y beat exactos. `HarmonyEngine` los convierte en una línea temporal, conduce hasta cuatro
+voces preservando memoria entre secciones y distribuye el resultado entre foundation,
+pulse, upper y atmosphere. `PhraseComposer` consulta esa misma línea temporal para el bajo
+y las notas estructurales de melodía. `TonalContract` acepta pitch classes armónicas
+explícitamente autorizadas aunque estén fuera de la escala inicial, pero sigue reparando
+cromatismo accidental y colisiones verticales.
 
 `RhythmPlan` separa identidad, estructura y gesto. `RhythmMotif` conserva celdas de 1–4
 compases en seis máscaras independientes (`0` silencio, `1` golpe, `2` acento), y cada

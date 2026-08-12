@@ -263,12 +263,16 @@ juce::File PatternView::createExportFile(int channel) const {
                             .getChildFile("PULSO MIDI Exports");
     Pattern exportPattern = *pattern;
     juce::String role;
+    auto exportStartBeat = 0.0;
+    auto exportEndBeat = pattern->lengthBeats;
     if (channel == sectionTarget) {
         const auto plan = processor.currentSongPlan();
         if (!plan || selectedSection < 0 || selectedSection >= static_cast<int>(plan->sections.size())) return {};
         const auto& section = plan->sections[static_cast<std::size_t>(selectedSection)];
         const auto start = section.startBar * plan->beatsPerBar;
         const auto end = (section.startBar + section.bars) * plan->beatsPerBar;
+        exportStartBeat = start;
+        exportEndBeat = end;
         exportPattern.notes.clear();
         for (const auto& note : pattern->notes) {
             if (note.startBeat >= end || note.endBeat() <= start) continue;
@@ -331,6 +335,23 @@ juce::File PatternView::createExportFile(int channel) const {
     options.timeSignatureDenominator = processor.currentTimeSignatureDenominator();
     options.channelFilter = 0;
     options.clipName = stem;
+    if (const auto plan = processor.currentSongPlan()) {
+        options.includeKeySignature = true;
+        options.rootPitchClass = plan->rootPitchClass;
+        options.scale = plan->scale;
+        for (const auto& section : plan->sections) {
+            for (const auto& event : section.harmonicEvents) {
+                const auto absoluteBeat = (section.startBar + event.barOffset) * plan->beatsPerBar +
+                                          event.beatOffset;
+                if (absoluteBeat < exportStartBeat || absoluteBeat >= exportEndBeat) continue;
+                const auto chord = std::find_if(plan->chordPalette.begin(), plan->chordPalette.end(),
+                    [&](const auto& candidate) { return candidate.id == event.chordId; });
+                const auto label = chord == plan->chordPalette.end() || chord->label.empty()
+                    ? event.chordId : chord->label;
+                options.chordMarkers.push_back({absoluteBeat - exportStartBeat, label});
+            }
+        }
+    }
     return writePatternToMidiFile(exportPattern, file, options) ? file : juce::File{};
 }
 

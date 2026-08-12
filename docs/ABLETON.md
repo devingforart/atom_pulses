@@ -162,6 +162,16 @@ el lenguaje rítmico y sus motivos a partir de la descripción completa. Pedidos
 como un bombo constante en negras, siguen actuando como restricciones porque forman parte
 de la intención del usuario, no porque pertenezcan a una plantilla de género.
 
+Desde 0.20 tampoco existe una progresión armónica global de cuatro grados. GPT escribe una
+paleta de acordes y una línea temporal distinta para cada sección, incluyendo inversiones,
+bajos pedal, extensiones, acordes prestados y cambios de centro tonal cuando tienen función
+narrativa. Las pistas `Harmonic Foundation`, `Harmonic Pulse`, `Harmonic Upper`, los bajos y
+los apoyos de melodía reciben el mismo mapa, por lo que exportarlas por separado conserva
+una composición armónicamente coordinada.
+
+El archivo `FULL SONG` incluye armadura tonal y marcadores `Chord: ...` en la pista
+conductora. Cada nota sigue siendo MIDI estándar y puede editarse normalmente en Live.
+
 ## Limitaciones conocidas
 
 - Live no ofrece a un VST acceso general al contenido de todas las pistas.

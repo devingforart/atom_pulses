@@ -22,13 +22,13 @@ class PhraseComposer final {
 public:
     static void renderMelodicVoices(Pattern&, const SongPlan&, const SongSection&,
                                     const std::vector<BarDirection>&,
-                                    const std::vector<HarmonicMoment>&,
+                                    const HarmonicTimeline&,
                                     int sectionBar, int chunkBars,
                                     PhrasePerformanceState&);
 
     static void renderBassVoices(Pattern&, const SongPlan&, const SongSection&,
                                  const std::vector<BarDirection>&,
-                                 const std::vector<HarmonicMoment>&,
+                                 const HarmonicTimeline&,
                                  int sectionBar, int chunkBars,
                                  PhrasePerformanceState&);
 };

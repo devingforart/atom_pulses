@@ -1,8 +1,11 @@
 #pragma once
 
 #include "Generator.h"
+#include "HarmonyPlan.h"
+#include "MusicalCritic.h"
 #include "PerformanceExpression.h"
 #include "RhythmPlan.h"
+#include "TonalContract.h"
 
 #include <functional>
 #include <string>
@@ -32,6 +35,9 @@ struct SongSection {
     double tension{0.5};
     double density{0.5};
     int motifVariant{};
+    int tonalCenterPitchClass{};
+    std::string modeHint{"minor"};
+    std::vector<HarmonicEvent> harmonicEvents;
     std::vector<VoiceId> activeVoices;
     SectionRhythmPlan rhythm;
 };
@@ -47,12 +53,24 @@ struct SongPlan {
     int rootPitchClass{};
     ScaleKind scale{ScaleKind::Minor};
     RhythmLanguage rhythmLanguage;
+    HarmonicLanguage harmonicLanguage;
     std::uint64_t seed{1};
     std::vector<int> motifIntervals{0, 3, 5, 7, 3};
-    std::vector<int> chordDegrees{0, 5, 3, 6};
+    std::vector<HarmonicChord> chordPalette;
     std::vector<RhythmMotif> rhythmMotifs;
     std::vector<PlannedVoice> voices;
     std::vector<SongSection> sections;
+};
+
+struct CompositionRenderReport {
+    TonalRepairReport firstTonalPass;
+    TonalRepairReport finalTonalPass;
+    MusicalQualityReport musical;
+    std::size_t harmonicWindows{};
+
+    [[nodiscard]] bool productionReady() const noexcept {
+        return finalTonalPass.after.productionReady();
+    }
 };
 
 class SongComposer final {
@@ -65,7 +83,8 @@ public:
                                                   int rootPitchClass, ScaleKind scale);
     static void normalizePlan(SongPlan&);
     [[nodiscard]] Pattern render(const SongPlan&, const GenerationContext& foundation,
-                                 const ProgressCallback& = {}) const;
+                                 const ProgressCallback& = {},
+                                 CompositionRenderReport* report = nullptr) const;
 };
 
 } // namespace pulso

@@ -158,11 +158,12 @@ def _rank_item(name, path, intent, requested_device, catalog_id=""):
     return score
 
 
-def select_track_sound(items, spec):
-    """Return (name, path, opaque_item, quality) or None for one track spec."""
+def select_track_sound(items, spec, used_paths=None):
+    """Return (name, path, opaque_item, quality, shared) or None for one track spec."""
     catalog_id = str(spec.get("catalog_id", "")).strip().casefold()
     intent = str(spec.get("preset_intent", ""))
     requested_device = str(spec.get("native_device", ""))
+    used = set(str(path).casefold() for path in (used_paths or ()))
     tiered = []
     for name, path, item in items:
         if not is_playable_item(name):
@@ -173,12 +174,13 @@ def select_track_sound(items, spec):
         haystack = set(tokens(str(name) + " " + str(path)))
         tier = _identity_tier(catalog_id, haystack)
         if tier is not None:
-            tiered.append((tier, -_rank_item(name, path, intent, requested_device, catalog_id),
+            tiered.append((tier, str(path).casefold() in used,
+                           -_rank_item(name, path, intent, requested_device, catalog_id),
                            str(path).casefold(), name, path, item))
     if tiered:
-        tiered.sort(key=lambda value: value[:3])
-        tier, _, _, name, path, item = tiered[0]
-        return name, path, item, "identity" if tier == 0 else "family_fallback"
+        tiered.sort(key=lambda value: value[:4])
+        tier, shared, _, _, name, path, item = tiered[0]
+        return name, path, item, "identity" if tier == 0 else "family_fallback", shared
 
     # Only explicit audible native instruments may rescue an unavailable family.
     # Empty Rack/Sampler containers never qualify.
@@ -190,8 +192,32 @@ def select_track_sound(items, spec):
             continue
         for name, path, item in items:
             if is_playable_item(name) and candidate.casefold() == str(name).strip().casefold():
-                return name, path, item, "device_fallback"
+                return name, path, item, "device_fallback", str(path).casefold() in used
     return None
+
+
+def catalog_capabilities(items):
+    """Summarize exact and family-only playback identities in the installed inventory."""
+    exact = []
+    family = []
+    unavailable = []
+    for catalog_id in sorted(IDENTITY_TIERS):
+        if catalog_id in ("production_drums", "harmonic_ensemble", "foreground_voice"):
+            continue
+        tiers = []
+        for name, path, _ in items:
+            if not is_playable_item(name):
+                continue
+            tier = _identity_tier(catalog_id, set(tokens(str(name) + " " + str(path))))
+            if tier is not None:
+                tiers.append(tier)
+        if 0 in tiers:
+            exact.append(catalog_id)
+        elif tiers:
+            family.append(catalog_id)
+        else:
+            unavailable.append(catalog_id)
+    return {"exact": exact, "family_fallback": family, "unavailable": unavailable}
 
 
 def best_inventory_match(items, query, preferred_device=""):

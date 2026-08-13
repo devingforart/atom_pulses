@@ -145,6 +145,9 @@ public:
     [[nodiscard]] juce::String currentLiveNativeInventorySummary() const {
         return readLiveNativeInventorySummary();
     }
+    [[nodiscard]] juce::String currentLiveDeploymentReport() const {
+        return readLiveDeploymentReport();
+    }
 
     juce::AudioProcessorValueTreeState parameters;
 

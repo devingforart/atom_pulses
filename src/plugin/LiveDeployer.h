@@ -20,6 +20,8 @@ struct LiveDeploymentOptions {
 [[nodiscard]] juce::String readLiveDeploymentStatus();
 [[nodiscard]] bool liveBridgeIsAvailable();
 [[nodiscard]] juce::String readLiveNativeInventorySummary();
+[[nodiscard]] juce::String readLiveNativeCapabilitiesSummary();
+[[nodiscard]] juce::String readLiveDeploymentReport();
 [[nodiscard]] bool liveNativeInventoryIsReady();
 
 } // namespace pulso::plugin

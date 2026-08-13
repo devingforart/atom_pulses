@@ -1,6 +1,8 @@
 import unittest
 
-from ableton.PulsoDeployRemote.sound_matcher import _rank_item, best_inventory_match, select_track_sound, tokens
+from ableton.PulsoDeployRemote.sound_matcher import (
+    _rank_item, best_inventory_match, catalog_capabilities, select_track_sound, tokens,
+)
 
 
 class SoundMatcherTests(unittest.TestCase):
@@ -23,6 +25,7 @@ class SoundMatcherTests(unittest.TestCase):
             ("Violin Strings.adv", "sounds/Sounds/Strings/Violin Strings.adv", "violin"),
             ("Cello Strings.adv", "sounds/Sounds/Strings/Cello Strings.adv", "cello"),
             ("Flute Mellow.adv", "sounds/Sounds/Winds/Flute Mellow.adv", "flute"),
+            ("Basic Synth Flute.adg", "sounds/Sounds/Winds/Basic Synth Flute.adg", "flute-2"),
             ("Horns Mellow.adg", "sounds/Sounds/Brass/Horns Mellow.adg", "horns"),
             ("Warm Analog Pad.adg", "sounds/Sounds/Pad/Warm Analog Pad.adg", "analog-pad"),
             ("Wavetable", "instruments/Instruments/Wavetable", "wavetable"),
@@ -51,11 +54,26 @@ class SoundMatcherTests(unittest.TestCase):
         self.assertEqual(viola[3], "family_fallback")
 
     def test_winds_and_brass_stay_in_family(self):
-        self.assertEqual(self.select("flute", "soft solo flute")[2], "flute")
+        self.assertIn(self.select("flute", "soft solo flute")[2], ("flute", "flute-2"))
         self.assertEqual(self.select("french_horns", "soft french horn ensemble")[2], "horns")
 
     def test_timbre_ranks_only_after_identity(self):
         self.assertEqual(self.select("analog_pad", "dark warm analog pad", "Analog")[2], "analog-pad")
+
+    def test_reuse_is_avoided_within_the_same_identity_tier(self):
+        first = self.select("flute", "soft flute")
+        second = select_track_sound(self.items, {
+            "catalog_id": "flute", "preset_intent": "soft flute", "native_device": "Sampler",
+            "device_candidates": [],
+        }, {first[1]})
+        self.assertIsNotNone(second)
+        assert second is not None
+        self.assertNotEqual(second[1], first[1])
+
+    def test_inventory_capabilities_distinguish_exact_and_family_only(self):
+        capabilities = catalog_capabilities(self.items)
+        self.assertIn("violin_1", capabilities["exact"])
+        self.assertIn("viola", capabilities["family_fallback"])
 
     def test_percussion_identity_cannot_resolve_to_pad_bass_or_brass(self):
         self.assertEqual(self.select("timpani", "orchestral timpani")[2], "timpani")
@@ -73,7 +91,7 @@ class SoundMatcherTests(unittest.TestCase):
 
     def test_missing_orchestral_identity_uses_its_family(self):
         result = self.select("oboe", "expressive solo oboe", "Sampler", ("Wavetable",))
-        self.assertEqual(result[2], "flute")
+        self.assertIn(result[2], ("flute", "flute-2"))
         self.assertEqual(result[3], "family_fallback")
 
     def test_raw_synth_is_an_explicit_audible_last_resort(self):

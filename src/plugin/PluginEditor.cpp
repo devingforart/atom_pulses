@@ -353,7 +353,8 @@ void PulsoAudioProcessorEditor::timerCallback() {
                                 !processor.currentPattern()->notes.empty());
     if (processor.currentLiveDeployStatus().isNotEmpty())
         deployLiveButton.setTooltip(tr(language, TextId::DeployLiveTip) + "\n" +
-                                    processor.currentLiveDeployStatus());
+                                    processor.currentLiveDeployStatus() + "\n\n" +
+                                    processor.currentLiveDeploymentReport());
     patternView.repaint();
 }
 

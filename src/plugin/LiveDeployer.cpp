@@ -40,6 +40,10 @@ void addNativeSoundProperties(juce::DynamicObject& track, const juce::String& de
         (department == ScoreDepartment::Rhythm ? "Drum Rack" : "Drift");
     track.setProperty("native_device", requestedDevice);
     track.setProperty("preset_intent", intent);
+    track.setProperty("playback_mode", department == ScoreDepartment::Rhythm
+        ? "adaptive_percussion" : "chromatic_instrument");
+    track.setProperty("same_pitch_overlap_policy", "trim_previous");
+    track.setProperty("articulation_duration_policy", "instrument_bound");
     juce::Array<juce::var> candidates;
     addCandidate(candidates, intent);
     addCandidate(candidates, catalogId.replaceCharacter('_', ' ') +
@@ -207,6 +211,44 @@ juce::String readLiveNativeInventorySummary() {
         return juce::String(count) + " LIVE SOUNDS INDEXED";
     }
     return "NATIVE INVENTORY PENDING";
+}
+
+juce::String readLiveNativeCapabilitiesSummary() {
+    const auto parsed = juce::JSON::parse(bridgeDirectory().getChildFile("inventory.json"));
+    const auto* root = parsed.getDynamicObject();
+    const auto* capabilities = root != nullptr
+        ? root->getProperty("capabilities").getDynamicObject() : nullptr;
+    if (capabilities == nullptr) return {};
+    const auto join = [capabilities](const char* property) {
+        juce::StringArray values;
+        if (const auto* array = capabilities->getProperty(property).getArray())
+            for (const auto& value : *array) values.add(value.toString());
+        return values.joinIntoString(", ");
+    };
+    return "Ableton playback inventory. Prefer exact installed identities: " + join("exact") +
+        ". Family-only substitutions (use intentionally and sparingly): " + join("family_fallback") +
+        ". Unavailable identities (do not assign unless structurally essential): " + join("unavailable") + ".";
+}
+
+juce::String readLiveDeploymentReport() {
+    const auto parsed = juce::JSON::parse(bridgeDirectory().getChildFile("status.json"));
+    const auto* root = parsed.getDynamicObject();
+    const auto* details = root != nullptr ? root->getProperty("details").getDynamicObject() : nullptr;
+    if (details == nullptr) return {};
+    juce::StringArray lines;
+    if (const auto* sounds = details->getProperty("sounds").getArray()) {
+        for (const auto& value : *sounds) {
+            const auto* sound = value.getDynamicObject();
+            if (sound == nullptr) continue;
+            auto line = sound->getProperty("track").toString() + " -> " +
+                        sound->getProperty("matched").toString() + " [" +
+                        sound->getProperty("quality").toString() + "] " +
+                        sound->getProperty("state").toString();
+            if (static_cast<bool>(sound->getProperty("shared_sound"))) line += " (shared)";
+            lines.add(std::move(line));
+        }
+    }
+    return lines.joinIntoString("\n");
 }
 
 bool liveNativeInventoryIsReady() {

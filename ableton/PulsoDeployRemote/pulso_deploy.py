@@ -10,7 +10,8 @@ import traceback
 
 from _Framework.ControlSurface import ControlSurface  # pyright: ignore[reportMissingImports]
 from .request_guard import RequestGuard
-from .sound_matcher import select_track_sound
+from .playback_adapter import adapt_notes, build_drum_pitch_map, expand_percussion_specs, is_one_shot_path
+from .sound_matcher import catalog_capabilities, select_track_sound
 
 
 class PulsoDeployRemote(ControlSurface):
@@ -31,6 +32,7 @@ class PulsoDeployRemote(ControlSurface):
         # replay an old command. Only CREATE IN LIVE writes a different UUID.
         self._request_guard = RequestGuard(self._request_file)
         self._deployed_tracks = []
+        self._previous_deployed_tracks = []
         self._device_queue = []
         self._native_items = []
         self._inventory_queue = []
@@ -39,6 +41,8 @@ class PulsoDeployRemote(ControlSurface):
         self._fallback_devices = 0
         self._missing_devices = []
         self._sound_report = []
+        self._deployment_total = 0
+        self._deployment_busy = False
         self._running = True
         self.schedule_message(2, self._start_inventory)
         self.schedule_message(10, self._poll)
@@ -100,11 +104,12 @@ class PulsoDeployRemote(ControlSurface):
         try:
             os.makedirs(self._bridge_dir, exist_ok=True)
             payload = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "source": "ableton_live_native",
                 "complete": self._inventory_complete,
                 "loadable_count": len(self._native_items),
                 "items": [{"name": name, "path": path} for name, path, _ in self._native_items],
+                "capabilities": catalog_capabilities(self._native_items),
             }
             temp = self._inventory_file + ".pending"
             with open(temp, "w", encoding="utf-8") as target:
@@ -114,66 +119,103 @@ class PulsoDeployRemote(ControlSurface):
             pass
 
     def _deploy(self, request):
-        tracks = request.get("tracks", [])
+        if self._deployment_busy:
+            self._write_status("busy", "LIVE DEPLOYMENT ALREADY IN PROGRESS")
+            return
+        tracks = expand_percussion_specs(request.get("tracks", []))
         if request.get("schema_version") not in (2, 3) or not tracks:
             raise RuntimeError("invalid or empty deployment request")
         if request.get("sound_engine", "ableton_live_native") != "ableton_live_native":
             raise RuntimeError("unsupported sound engine")
+        # Resolve the complete playback contract before touching the Set. This catches
+        # unavailable identities and empty-container fallbacks without creating tracks.
+        resolved = []
+        used_paths = set()
+        unresolved = []
+        for spec in tracks:
+            match = select_track_sound(self._native_items, spec, used_paths)
+            if match is None:
+                unresolved.append(str(spec.get("name", "PULSO Part")))
+                continue
+            used_paths.add(str(match[1]).casefold())
+            resolved.append((spec, match))
+        if unresolved:
+            self._write_status("rejected", "LIVE PREFLIGHT REJECTED - {} SOUNDS MISSING".format(len(unresolved)),
+                               {"missing": unresolved, "committed_tracks": 0})
+            return
         song = self.song()
-        self._remove_previous_deployment(song)
+        self._previous_deployed_tracks = list(self._deployed_tracks)
         self._device_queue = []
         self._deployed_tracks = []
         self._loaded_devices = 0
         self._fallback_devices = 0
         self._missing_devices = []
         self._sound_report = []
+        self._deployment_total = len(resolved)
+        self._deployment_busy = True
         if hasattr(song, "tempo"):
             song.tempo = max(20.0, min(999.0, float(request.get("bpm", song.tempo))))
-        for spec in tracks:
+        for spec, match in resolved:
             song.create_midi_track(-1)
             track = song.tracks[-1]
             track.name = str(spec.get("name", "PULSO Part"))[:120]
             track.mute = False
             self._deployed_tracks.append(track)
-            self._create_arrangement_clip(track, spec, float(request.get("length_beats", 4.0)))
-            self._device_queue.append((track, spec))
-        self._write_status("loading", "CREATED {} TRACKS - MATCHING LIVE SOUNDS".format(len(tracks)))
+            self._device_queue.append((track, spec, match, float(request.get("length_beats", 4.0))))
+        self._write_status("loading", "STAGING {} TRACKS - LOADING VERIFIED SOUNDS".format(len(resolved)))
         self.schedule_message(2, self._load_next_device)
 
     def _load_next_device(self):
         if not self._running:
             return
-        total = len(self._deployed_tracks)
+        total = self._deployment_total
         if not self._device_queue:
-            message = "LIVE NATIVE COMPLETE - {}/{} SOUNDS LOADED".format(self._loaded_devices, total)
+            details = {"loaded": self._loaded_devices, "fallbacks": self._fallback_devices,
+                       "missing": self._missing_devices, "sounds": self._sound_report}
+            if self._missing_devices:
+                self._remove_tracks(self.song(), self._deployed_tracks)
+                self._deployed_tracks = self._previous_deployed_tracks
+                self._previous_deployed_tracks = []
+                self._deployment_busy = False
+                details["committed_tracks"] = 0
+                details["previous_deployment_preserved"] = bool(self._deployed_tracks)
+                message = "LIVE DEPLOYMENT REJECTED - {} INVALID - 0 TRACKS COMMITTED".format(
+                    len(self._missing_devices))
+                self._write_status("rejected", message, details)
+                return
+            message = "LIVE NATIVE COMPLETE - {}/{} PLAYBACK CONTRACTS VERIFIED".format(
+                self._loaded_devices, total)
             if self._fallback_devices:
                 message += " - {} FALLBACKS".format(self._fallback_devices)
-            if self._missing_devices:
-                message += " - {} MISSING".format(len(self._missing_devices))
-            self._write_status("complete" if not self._missing_devices else "partial", message,
-                               {"loaded": self._loaded_devices, "fallbacks": self._fallback_devices,
-                                "missing": self._missing_devices, "sounds": self._sound_report})
+            details["committed_tracks"] = total
+            self._remove_tracks(self.song(), self._previous_deployed_tracks)
+            self._previous_deployed_tracks = []
+            self._deployment_busy = False
+            self._write_status("complete", message, details)
             return
-        track, spec = self._device_queue.pop(0)
+        track, spec, match, length_beats = self._device_queue.pop(0)
         self.song().view.selected_track = track
-        matched = self._load_native_sound(spec)
+        matched = self._load_native_sound(match)
         if matched is None:
             self._missing_devices.append(str(spec.get("name", "PULSO Part")))
             self._sound_report.append({"track": str(spec.get("name", "PULSO Part")),
                                        "state": "no_playable_match"})
             self.schedule_message(2, self._load_next_device)
             return
-        quality, matched_name, matched_path, before_count = matched
+        quality, shared, matched_name, matched_path, before_count = matched
         # Browser loads are asynchronous. Verify the new track actually received a device
         # instead of treating load_item() returning as proof of audible sound.
         self.schedule_message(8, lambda: self._verify_loaded_sound(
-            track, spec, quality, matched_name, matched_path, before_count))
+            track, spec, quality, shared, matched_name, matched_path, before_count, length_beats))
 
-    def _verify_loaded_sound(self, track, spec, quality, matched_name, matched_path, before_count):
+    def _verify_loaded_sound(self, track, spec, quality, shared, matched_name, matched_path,
+                             before_count, length_beats):
         if not self._running:
             return
         valid = False
         reason = "device_not_created"
+        notes = []
+        adaptation = None
         try:
             devices = list(track.devices)
             valid = len(devices) > before_count
@@ -183,18 +225,35 @@ class PulsoDeployRemote(ControlSurface):
                     valid = False
                     reason = "empty_rack"
                 if valid and bool(getattr(device, "can_have_drum_pads", False)):
-                    requested = set(int(note.get("pitch", 60)) for note in spec.get("notes", []))
-                    populated = set(int(pad.note) for pad in device.drum_pads if len(list(pad.chains)) > 0)
-                    unmapped = sorted(requested.difference(populated))
-                    if unmapped:
+                    populated = []
+                    for pad in device.drum_pads:
+                        chains = list(pad.chains)
+                        if not chains:
+                            continue
+                        label = str(getattr(pad, "name", "")) + " " + " ".join(
+                            str(getattr(chain, "name", "")) for chain in chains)
+                        populated.append((int(pad.note), label))
+                    pitch_map = build_drum_pitch_map(spec, populated)
+                    if pitch_map is None:
                         valid = False
-                        reason = "unmapped_drum_notes:" + ",".join(str(note) for note in unmapped)
-        except (RuntimeError, AttributeError):
+                        reason = "no_semantic_drum_pad"
+                    else:
+                        notes, adaptation = adapt_notes(spec, "drum_rack", pitch_map=pitch_map)
+                elif valid and is_one_shot_path(matched_path):
+                    notes, adaptation = adapt_notes(spec, "one_shot", root_note=60)
+                elif valid:
+                    notes, adaptation = adapt_notes(spec, "chromatic")
+                if valid:
+                    adapted_spec = dict(spec)
+                    adapted_spec["notes"] = notes
+                    self._create_arrangement_clip(track, adapted_spec, length_beats)
+        except Exception as error:
             valid = False
-            reason = "track_unavailable"
+            reason = "playback_adaptation_error:" + str(error)[:120]
         report = {"track": str(spec.get("name", "PULSO Part")),
                   "catalog_id": str(spec.get("catalog_id", "")), "matched": matched_name,
-                  "path": matched_path, "quality": quality,
+                  "path": matched_path, "quality": quality, "shared_sound": bool(shared),
+                  "adaptation": adaptation,
                   "state": "verified" if valid else reason}
         self._sound_report.append(report)
         if valid:
@@ -210,16 +269,15 @@ class PulsoDeployRemote(ControlSurface):
             completed, len(self._deployed_tracks)), {"sounds": self._sound_report})
         self.schedule_message(2, self._load_next_device)
 
-    def _load_native_sound(self, spec):
+    def _load_native_sound(self, item):
         browser = getattr(self.application(), "browser", None)
         if browser is None or not hasattr(browser, "load_item"):
             return None
-        item = select_track_sound(self._native_items, spec)
         if item is not None:
             try:
                 before_count = len(list(self.song().view.selected_track.devices))
                 browser.load_item(item[2])
-                return item[3], item[0], item[1], before_count
+                return item[3], item[4], item[0], item[1], before_count
             except Exception:
                 return None
         return None
@@ -235,9 +293,14 @@ class PulsoDeployRemote(ControlSurface):
             pass
 
     def _remove_previous_deployment(self, song):
+        self._remove_tracks(song, self._deployed_tracks)
+        self._deployed_tracks = []
+
+    @staticmethod
+    def _remove_tracks(song, tracks):
         current_tracks = list(song.tracks)
         indices = []
-        for deployed in self._deployed_tracks:
+        for deployed in tracks:
             try:
                 indices.append(current_tracks.index(deployed))
             except (ValueError, RuntimeError):
@@ -247,7 +310,6 @@ class PulsoDeployRemote(ControlSurface):
                 song.delete_track(index)
             except RuntimeError:
                 pass
-        self._deployed_tracks = []
 
     @staticmethod
     def _create_arrangement_clip(track, spec, length_beats):
@@ -265,7 +327,7 @@ class PulsoDeployRemote(ControlSurface):
             clip.set_notes(tuple(notes))
             if hasattr(clip, "deselect_all_notes"):
                 clip.deselect_all_notes()
-            return
+            return clip
         if notes:
             raise RuntimeError("this Live version does not expose MIDI note insertion")
 

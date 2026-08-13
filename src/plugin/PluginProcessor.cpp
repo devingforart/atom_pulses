@@ -1208,6 +1208,8 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 const std::scoped_lock lock(creativeDirectionMutex);
                 songDirection = creativeDirection;
             }
+            if (const auto capabilities = readLiveNativeCapabilitiesSummary(); capabilities.isNotEmpty())
+                songDirection += "\n" + capabilities;
             if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::DeepProduction))
                 songDirection += "\nOrchestration mode: deep production. Build a detailed hybrid acoustic/electronic ensemble with independent harmonic families, controlled counterpoint, automation and production-ready negative space.";
             else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Symphonic))

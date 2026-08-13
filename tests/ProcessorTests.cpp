@@ -1308,6 +1308,8 @@ int main(int argc, char** argv) {
                 const auto* track = value.getDynamicObject();
                 return track != nullptr && track->getProperty("sound_source").toString() == "live_native" &&
                        track->getProperty("native_device").toString().isNotEmpty() &&
+                       track->getProperty("playback_mode").toString().isNotEmpty() &&
+                       track->getProperty("same_pitch_overlap_policy").toString() == "trim_previous" &&
                        track->getProperty("device_candidates").getArray() != nullptr;
             }), "Every deployed part must carry a validated Live-native sound contract without VST identifiers");
     const auto* kickDeployment = (*nativeTracks)[0].getDynamicObject();

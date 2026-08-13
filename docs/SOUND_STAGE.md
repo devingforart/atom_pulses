@@ -43,6 +43,25 @@ sólo a sus identidades o familias de percusión. Adjetivos como `solo`, `sectio
 `orchestral` únicamente ordenan candidatos ya compatibles y nunca permiten cruzar familias.
 En Drum Racks, cada nota MIDI utilizada debe corresponder además a un pad poblado.
 
+## Playback adaptation y commit transaccional
+
+La composición conserva su semántica musical; el clip que recibe Live se adapta al
+instrumento verificado. Los one-shots rítmicos se disparan en su nota raíz para evitar
+transposición accidental, los Drum Racks remapean cada articulación por nombre de pad y
+las articulaciones incompatibles (por ejemplo snare/clap o closed/pedal hat) se separan en
+pistas reproducibles independientes. Marimba, bells, winds, brass y percusión aplican
+límites de duración instrumentales, y toda repetición del mismo pitch recorta la nota
+anterior para que su note-off no silencie el ataque siguiente.
+
+El despliegue es transaccional: preflight resuelve todas las identidades antes de crear
+staging; las pistas anteriores sólo se eliminan después de verificar cada dispositivo,
+pad, remapeo y clip nuevo. Un fallo elimina el staging y conserva el despliegue previo.
+El reporte del botón `CREATE IN LIVE` muestra preset, calidad, adaptación y estado por pista.
+
+El inventario publica además identidades exactas, sustituciones familiares y ausencias.
+PULSO incluye ese resumen en el contexto de GPT para que la orquestación nazca ejecutable
+con el contenido instalado, sin convertir el inventario en una plantilla creativa fija.
+
 ## Flujo
 
 ```text

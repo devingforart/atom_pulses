@@ -139,7 +139,34 @@ const juce::String songPlanSchema = R"json({
         "tension":{"type":"number"}
       },"required":["id","label","root_pitch_class","bass_pitch_class","pitch_classes","function","voicing","tension"],"additionalProperties":false
     }},
+    "orchestration_language":{"type":"object","properties":{
+      "description":{"type":"string"},
+      "ensemble_scale":{"type":"number"},"timbral_motion":{"type":"number"},
+      "foreground_rotation":{"type":"number"},"doubling_restraint":{"type":"number"},
+      "register_separation":{"type":"number"},"chamber_contrast":{"type":"number"},
+      "tutti_rarity":{"type":"number"},"harmonic_depth":{"type":"number"},
+      "counterpoint_activity":{"type":"number"},"divisi_depth":{"type":"number"},
+      "articulation_contrast":{"type":"number"},"family_dialogue":{"type":"number"},
+      "hybrid_production":{"type":"number"}
+    },"required":["description","ensemble_scale","timbral_motion","foreground_rotation","doubling_restraint","register_separation","chamber_contrast","tutti_rarity","harmonic_depth","counterpoint_activity","divisi_depth","articulation_contrast","family_dialogue","hybrid_production"],"additionalProperties":false},
     "motif_intervals":{"type":"array","items":{"type":"integer"},"minItems":3,"maxItems":8},
+    "instruments":{"type":"array","minItems":12,"maxItems":36,"items":{
+      "type":"object","properties":{
+        "id":{"type":"string"},
+        "instrument":{"type":"string","enum":["kick_drum","snare_clap","hi_hats","timpani","taiko_ensemble","latin_percussion","shakers","cymbals","orchestral_percussion","piano","harp","violin_1","violin_2","viola","cello","contrabass","string_ensemble","chamber_strings","flute","piccolo","alto_flute","oboe","english_horn","clarinet","bass_clarinet","bassoon","contrabassoon","french_horns","trumpets","trombones","bass_trombone","tuba","brass_ensemble","woodwind_ensemble","choir","mallets","celesta","vibraphone","marimba","tubular_bells","electric_bass","sub_synth","analog_pad","poly_synth","lead_synth","guitar","ambient_texture"]},
+        "name":{"type":"string"},
+        "source_voice":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]},
+        "role":{"type":"string"},"minimum_pitch":{"type":"integer"},"maximum_pitch":{"type":"integer"},
+        "octave_shift":{"type":"integer"},"activity":{"type":"number"},
+        "prominence":{"type":"number"},"doubling":{"type":"number"},
+        "orchestral_function":{"type":"string","enum":["foundation","body","extension","counterpoint","color","transition"]},
+        "articulation_intent":{"type":"string","enum":["natural","legato","staccato","detached","sustained","swelling","tremolo","pizzicato","ostinato"]},
+        "divisi_voices":{"type":"integer"},
+        "live_device":{"type":"string","enum":["auto","Drum Rack","Instrument Rack","Simpler","Sampler","Drift","Meld","Wavetable","Operator","Analog","Electric","Tension","Collision","Granulator III"]},
+        "live_preset_intent":{"type":"string"},
+        "active_sections":{"type":"array","maxItems":20,"items":{"type":"string"}}
+      },"required":["id","instrument","name","source_voice","role","minimum_pitch","maximum_pitch","octave_shift","activity","prominence","doubling","orchestral_function","articulation_intent","divisi_voices","live_device","live_preset_intent","active_sections"],"additionalProperties":false
+    }},
     "rhythm_motifs":{"type":"array","minItems":2,"maxItems":6,"items":{
       "type":"object","properties":{
         "id":{"type":"string"},"bars":{"type":"integer"},
@@ -230,7 +257,7 @@ const juce::String songPlanSchema = R"json({
       "additionalProperties":false
     }}
   },
-  "required":["title","key","summary","root_pitch_class","mode","rhythm_language","harmonic_language","chord_palette","motif_intervals","rhythm_motifs","voices","sections"],
+  "required":["title","key","summary","root_pitch_class","mode","rhythm_language","harmonic_language","orchestration_language","chord_palette","motif_intervals","instruments","rhythm_motifs","voices","sections"],
   "additionalProperties":false
 })json";
 
@@ -451,7 +478,7 @@ juce::String requestRevisedSongPlan(const juce::String& prompt, const juce::Stri
                                     std::stop_token token, std::chrono::milliseconds budget) {
     if (token.stop_requested()) return {};
     const auto body = juce::String("{\"model\":\"") + model +
-        "\",\"reasoning\":{\"effort\":\"low\"},\"max_output_tokens\":16000,\"input\":" +
+        "\",\"reasoning\":{\"effort\":\"low\"},\"max_output_tokens\":20000,\"input\":" +
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_plan_critic\","
         "\"strict\":true,\"schema\":" + songPlanSchema + "}}}";
@@ -663,22 +690,51 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "Create a narratively inevitable form with introduction, thematic statements, contrast, development, "
         "a true climax and a conclusive ending. Recurring sections must share a recognisable motif while changing "
         "orchestration, register, harmony or rhythm. Design a variable ensemble rather than four fixed layers. "
-        "Choose 7-15 voices from the supplied IDs; give every voice an independent function, interaction rule, "
+        "Choose 7-15 execution voices from the supplied IDs; give every voice an independent function, interaction rule, "
         "activity and register. Use core_drums plus low_percussion and high_percussion as distinct rhythmic strata, "
         "multiple complementary harmonic voices, independent bass functions, melodic dialogue, atmosphere and "
-        "transitions when musically justified. Do not activate every voice in every section. Complexity must come "
+        "transitions when musically justified. Do not activate every voice in every section. "
+        "Above those execution voices, design an orchestra of 12-36 instrument instances from the supplied catalog. "
+        "The orchestra has three coordinated departments: rhythm/percussion, harmony/orchestral fabric and melodic "
+        "speakers. source_voice is the playable archetype feeding an instrument, not its identity, and MUST reference "
+        "an id present in the voices array. Assign each instance "
+        "a distinct role, playable register, prominence, restrained doubling probability and optional named sections. "
+        "For every instrument, author orchestral_function, articulation_intent and divisi_voices. The functions "
+        "foundation, body, extension, counterpoint, color and transition are compositional responsibilities: distribute "
+        "them across harmonic families so strings, winds, brass, keys and hybrid layers contribute independent, "
+        "voice-led material rather than cloning one chord track. Use harmonic_depth, counterpoint_activity, divisi_depth, "
+        "articulation_contrast, family_dialogue and hybrid_production to define how that ensemble thinks. "
+        "Choose live_device only from the supplied Ableton-native device enum and describe the desired installed sound "
+        "in live_preset_intent with concise English browser-search nouns, even when the user writes in another language "
+        "(for example: solo cello, closed hi-hat, chamber strings, warm analog pad). Never invent a factory preset name. "
+        "The local Live resolver matches that intent against installed content and will never treat an empty Rack, "
+        "Sampler or Simpler container as a playable sound. "
+        "Use strings, winds, brass, keyboards, electronics and percussion only when the creative direction benefits. "
+        "Rotate foreground ownership between instruments and families; a lead source may become flute, cello, violin, "
+        "oboe or synth in different phrases without losing thematic identity. Build chamber reductions, antiphonal "
+        "answers, divisi, octave doublings and rare tutti arrivals. Never make every instrument play continuously and "
+        "never turn orchestration into indiscriminate unison doubling. Bass remains an independent bridge between "
+        "harmony and rhythm. Write orchestration_language as the global timbral argument and use active_sections to "
+        "reserve colours for meaningful moments. Instrument names must be clear DAW track names. Complexity must come "
         "from coordinated independence, negative space and long-range development, never indiscriminate density. "
         "Treat active_voices as an available cast, not a command to play continuously: design implied entrances, "
         "responses, withdrawals, breath before arrivals, tension plateaus and genuine low-density descents. "
         "Harmonic tension must follow the dramatic curve. minimum_pitch and maximum_pitch are MIDI pitches. "
-        "The key label, root_pitch_class and mode describe the opening/home identity, not a prison for the song. "
-        "Invent one open harmonic_language from the full creative direction. Its dimensions are 0 to 1 and describe "
+        "The key label, root_pitch_class and mode define the binding perceptual tonal centre for ordinary requests. "
+        "Use consolidated tonality by default: structural notes, chord roots, basses and pitch-class sets remain in "
+        "the home scale, while extensions, inversions and voice leading create richness inside it. A chromatic melodic "
+        "passing or neighbour note must be short, weak, approached stepwise and immediately resolve stepwise. Never let "
+        "a label such as colour, cluster or dominant legalise an otherwise unsupported pitch. Use limited modal "
+        "interchange, secondary dominants or brief modulation only when the creative direction explicitly requests "
+        "that harmonic device, and prepare and resolve every departure back to the home centre. Use free chromatic or "
+        "atonal language only when the user explicitly asks for atonality, deliberate dissonance, serialism or "
+        "polytonality. Invent one harmonic_language within that boundary. Its dimensions are 0 to 1 and describe "
         "gravity, modal mobility, structural chromaticism, extensions, inversion movement, voice-leading smoothness, "
         "harmonic rhythm, pedals, ambiguity and cadence force. Build a chord_palette of explicit pitch-class sets; "
         "pitch classes are integers 0-11. root_pitch_class identifies perceived root, while bass_pitch_class may differ "
         "for inversions, slash chords and pedal bass. pitch_classes define the actual sounding collection and may include "
-        "extensions, omissions, modal interchange, secondary dominants, chromatic mediants, quartal structures or clusters "
-        "when the narrative justifies them. Do not decorate every chord or modulate merely to appear sophisticated. "
+        "extensions and omissions. Non-diatonic structures are unavailable under consolidated tonality and remain rare, "
+        "prepared and resolved under an explicitly expanded request. Do not decorate every chord or modulate merely to appear sophisticated. "
         "Give each section its own tonal centre and mode hint, then write harmonic_events at exact zero-based bar and beat "
         "offsets. Events reference the palette and must cover the section from bar 0, with purposeful holds, anticipations, "
         "turns, pedals, departures and arrivals. Reuse chords for identity but transform ordering, bass, voicing and rhythm; "
@@ -718,12 +774,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         " quarter-note beats per bar. Creative direction: " + direction;
 
     const auto body = juce::String("{\"model\":\"") + model +
-        "\",\"reasoning\":{\"effort\":\"medium\"},\"max_output_tokens\":16000,\"input\":" +
+        "\",\"reasoning\":{\"effort\":\"medium\"},\"max_output_tokens\":20000,\"input\":" +
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_plan\","
         "\"strict\":true,\"schema\":" + songPlanSchema + "}}}";
 
-    constexpr auto totalAiBudget = std::chrono::seconds(180);
+    constexpr auto totalAiBudget = std::chrono::seconds(210);
     const auto aiStarted = std::chrono::steady_clock::now();
     if (progress) progress(AiSongStage::Architecture);
     const auto http = performRequest(body, apiKey, token, totalAiBudget);
@@ -738,7 +794,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         return result;
     }
     if (!parseSongPlanJson(outputText, targetSeconds, totalBars, bpm, beatsPerBar,
-                           seed, result, error)) return {};
+                           seed, result, error,
+                           tonalPolicyForDirection(direction.toStdString()))) return {};
     if (token.stop_requested()) {
         error = "Generation cancelled";
         return {};
@@ -756,21 +813,29 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     juce::String auditSummary;
     auditSummary << "\nDeterministic MIDI render audit (the critic must reduce these causes, not merely rename them):\n"
                  << "harmonic_windows=" << static_cast<int>(draftReport.harmonicWindows)
-                 << ", pitched_notes=" << draftReport.firstTonalPass.before.pitchedNotes
-                 << ", unsupported_chromatic=" << draftReport.firstTonalPass.before.unsupportedChromaticNotes
-                 << ", strong_non_chord=" << draftReport.firstTonalPass.before.strongNonChordNotes
-                 << ", invalid_sustains=" << draftReport.firstTonalPass.before.invalidSustains
-                 << ", unintended_harsh_overlaps=" << draftReport.firstTonalPass.before.unintendedHarshOverlaps
-                 << ", intentional_clusters=" << draftReport.firstTonalPass.before.intentionalClusters
-                 << ", boundary_trims=" << draftReport.firstTonalPass.exactBoundaryTrims
-                 << ", voicing_retunes=" << draftReport.firstTonalPass.notesRetunedForVoicing
-                 << ", removed_notes=" << draftReport.firstTonalPass.notesRemoved
+                 << ", pitched_notes=" << draftReport.finalTonalPass.before.pitchedNotes
+                 << ", unsupported_chromatic=" << draftReport.finalTonalPass.before.unsupportedChromaticNotes
+                 << ", strong_non_chord=" << draftReport.finalTonalPass.before.strongNonChordNotes
+                 << ", invalid_sustains=" << draftReport.finalTonalPass.before.invalidSustains
+                 << ", unintended_harsh_overlaps=" << draftReport.finalTonalPass.before.unintendedHarshOverlaps
+                 << ", intentional_colours=" << draftReport.finalTonalPass.before.intentionalClusters
+                 << ", performance_boundary_trims=" << draftReport.finalTonalPass.exactBoundaryTrims
+                 << ", voicing_retunes=" << draftReport.finalTonalPass.notesRetunedForVoicing
+                 << ", removed_notes=" << draftReport.finalTonalPass.notesRemoved
                  << ", post_repair_unresolved="
                  << draftReport.finalTonalPass.after.unintendedHarshOverlaps
+                 << ", orchestral_parts=" << static_cast<int>(draftReport.orchestration.parts)
+                 << ", rhythm_parts=" << static_cast<int>(draftReport.orchestration.rhythmParts)
+                 << ", harmony_parts=" << static_cast<int>(draftReport.orchestration.harmonyParts)
+                 << ", melody_parts=" << static_cast<int>(draftReport.orchestration.melodyParts)
+                 << ", foreground_changes=" << static_cast<int>(draftReport.orchestration.foregroundChanges)
+                 << ", restrained_doublings=" << static_cast<int>(draftReport.orchestration.notesDoubled)
+                 << ", chamber_sections=" << static_cast<int>(draftReport.orchestration.chamberSections)
+                 << ", tutti_sections=" << static_cast<int>(draftReport.orchestration.tuttiSections)
                  << ", musical_quality=" << juce::String(draftReport.musical.overall, 3) << ".\n";
-    if (!draftReport.firstTonalPass.before.issues.empty()) {
+    if (!draftReport.finalTonalPass.before.issues.empty()) {
         auditSummary << "Representative exact-timeline issues:\n";
-        for (const auto& issue : draftReport.firstTonalPass.before.issues) {
+        for (const auto& issue : draftReport.finalTonalPass.before.issues) {
             auditSummary << "- beat " << juce::String(issue.beat, 3) << ", "
                          << juce::String(issue.kind) << ", voice="
                          << juce::String(voiceDefinition(issue.voice).key.data())
@@ -798,20 +863,25 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "Audit tonal narrative, palette identity, inversions, bass motion, structural chromatic logic, harmonic rhythm, "
         "voice-leading continuity, section-level centres, cadence consequence, dance-floor foundation, motif lineage, "
         "kick-bass interlock, meaningful silence, phrase-level cause and effect, orchestral breathing, contrast and "
-        "climax. Repair four-chord cycling, decorative complexity, generic repetition or arbitrary novelty. Use "
+        "climax. Audit the orchestration as a real score: foreground rotation, playable ranges, family contrast, "
+        "chamber-to-tutti development, independent inner voices, restrained doubling and meaningful instrumental rests. "
+        "Repair soloist monopoly, fake symphonic density, four-chord cycling, decorative complexity, generic repetition or arbitrary novelty. Use "
         "rhythm masks as musical cells and sparse mutations as development; do not merely add density. The final "
         "JSON must be self-contained. Original creative direction: ") + direction +
         auditSummary + "\nCandidate plan to critique and revise:\n" + outputText;
     if (const auto revisedText = requestRevisedSongPlan(criticPrompt, apiKey, token,
-            std::min(remaining, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(45))));
+            std::min(remaining, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(50))));
         revisedText.isNotEmpty()) {
         SongPlan revised;
         juce::String criticError;
         if (parseSongPlanJson(revisedText, targetSeconds, totalBars, bpm, beatsPerBar,
-                              seed, revised, criticError))
+                              seed, revised, criticError,
+                              tonalPolicyForDirection(direction.toStdString()))) {
             result = std::move(revised);
+        }
     }
     applyExplicitRhythmRequest(result, direction);
+    result.harmonicLanguage.tonalPolicy = tonalPolicyForDirection(direction.toStdString());
     SongComposer::normalizePlan(result);
     return result;
 }
@@ -819,7 +889,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
 bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
                                    int requestedBars, double bpm, double beatsPerBar,
                                    std::uint64_t seed, SongPlan& result,
-                                   juce::String& error) {
+                                   juce::String& error, TonalPolicy tonalPolicy) {
     const auto parsed = juce::JSON::parse(text);
     const auto* object = parsed.getDynamicObject();
     if (object == nullptr || requestedBars < 8 || requestedBars > 512) {
@@ -827,6 +897,7 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
         return false;
     }
     result = {};
+    result.harmonicLanguage.tonalPolicy = tonalPolicy;
     result.title = object->getProperty("title").toString().trim().toStdString();
     result.key = object->getProperty("key").toString().trim().toStdString();
     result.summary = object->getProperty("summary").toString().trim().toStdString();
@@ -864,6 +935,22 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
         result.harmonicLanguage.ambiguity = static_cast<double>(language->getProperty("ambiguity"));
         result.harmonicLanguage.cadenceStrength = static_cast<double>(language->getProperty("cadence_strength"));
     }
+    if (const auto* language = object->getProperty("orchestration_language").getDynamicObject()) {
+        result.orchestrationLanguage.description = language->getProperty("description").toString().trim().toStdString();
+        result.orchestrationLanguage.ensembleScale = static_cast<double>(language->getProperty("ensemble_scale"));
+        result.orchestrationLanguage.timbralMotion = static_cast<double>(language->getProperty("timbral_motion"));
+        result.orchestrationLanguage.foregroundRotation = static_cast<double>(language->getProperty("foreground_rotation"));
+        result.orchestrationLanguage.doublingRestraint = static_cast<double>(language->getProperty("doubling_restraint"));
+        result.orchestrationLanguage.registerSeparation = static_cast<double>(language->getProperty("register_separation"));
+        result.orchestrationLanguage.chamberContrast = static_cast<double>(language->getProperty("chamber_contrast"));
+        result.orchestrationLanguage.tuttiRarity = static_cast<double>(language->getProperty("tutti_rarity"));
+        result.orchestrationLanguage.harmonicDepth = static_cast<double>(language->getProperty("harmonic_depth"));
+        result.orchestrationLanguage.counterpointActivity = static_cast<double>(language->getProperty("counterpoint_activity"));
+        result.orchestrationLanguage.divisiDepth = static_cast<double>(language->getProperty("divisi_depth"));
+        result.orchestrationLanguage.articulationContrast = static_cast<double>(language->getProperty("articulation_contrast"));
+        result.orchestrationLanguage.familyDialogue = static_cast<double>(language->getProperty("family_dialogue"));
+        result.orchestrationLanguage.hybridProduction = static_cast<double>(language->getProperty("hybrid_production"));
+    }
     if (const auto* palette = object->getProperty("chord_palette").getArray()) {
         for (const auto& item : *palette) {
             const auto* chord = item.getDynamicObject();
@@ -888,6 +975,36 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
     }
     if (const auto* motif = object->getProperty("motif_intervals").getArray())
         for (const auto& value : *motif) result.motifIntervals.push_back(static_cast<int>(value));
+    if (const auto* instruments = object->getProperty("instruments").getArray()) {
+        for (const auto& item : *instruments) {
+            const auto* instrument = item.getDynamicObject();
+            if (instrument == nullptr) continue;
+            const auto sourceVoice = voiceIdFromKey(
+                instrument->getProperty("source_voice").toString().toStdString());
+            if (!sourceVoice) continue;
+            InstrumentAssignment assignment;
+            assignment.id = instrument->getProperty("id").toString().trim().toStdString();
+            assignment.instrumentId = instrument->getProperty("instrument").toString().trim().toStdString();
+            assignment.name = instrument->getProperty("name").toString().trim().toStdString();
+            assignment.sourceVoice = *sourceVoice;
+            assignment.role = instrument->getProperty("role").toString().trim().toStdString();
+            assignment.minimumPitch = static_cast<int>(instrument->getProperty("minimum_pitch"));
+            assignment.maximumPitch = static_cast<int>(instrument->getProperty("maximum_pitch"));
+            assignment.octaveShift = static_cast<int>(instrument->getProperty("octave_shift"));
+            assignment.activity = static_cast<double>(instrument->getProperty("activity"));
+            assignment.prominence = static_cast<double>(instrument->getProperty("prominence"));
+            assignment.doubling = static_cast<double>(instrument->getProperty("doubling"));
+            assignment.orchestralFunction = instrument->getProperty("orchestral_function").toString().trim().toStdString();
+            assignment.articulation = instrument->getProperty("articulation_intent").toString().trim().toStdString();
+            assignment.divisiVoices = static_cast<int>(instrument->getProperty("divisi_voices"));
+            assignment.liveDevice = instrument->getProperty("live_device").toString().trim().toStdString();
+            assignment.livePresetIntent = instrument->getProperty("live_preset_intent").toString().trim().toStdString();
+            if (const auto* sections = instrument->getProperty("active_sections").getArray())
+                for (const auto& section : *sections)
+                    assignment.activeSections.push_back(section.toString().trim().toStdString());
+            result.instruments.push_back(std::move(assignment));
+        }
+    }
     if (const auto* motifs = object->getProperty("rhythm_motifs").getArray()) {
         for (const auto& item : *motifs) {
             const auto* motif = item.getDynamicObject();

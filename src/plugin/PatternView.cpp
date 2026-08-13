@@ -20,6 +20,27 @@ constexpr auto noTarget = -999;
 constexpr auto laneLabelWidth = 210;
 constexpr auto laneButtonWidth = 20;
 
+constexpr std::array<std::string_view, 29> instrumentSoundNames{
+    "AI / Generic", "Kick", "Snare / Clap", "Hi-Hats", "Timpani", "Taiko",
+    "Latin Percussion", "Shaker", "Cymbal", "Piano", "Harp", "High Strings",
+    "Mid Strings", "Low Strings", "Flute", "Oboe", "Clarinet", "Bassoon",
+    "French Horns", "Brass", "Choir", "Mallets", "Electric Bass", "Sub Synth",
+    "Analog Pad", "Poly Synth", "Lead Synth", "Guitar", "Texture"
+};
+
+juce::String soundModelName(InstrumentSoundModel model) {
+    const auto index = std::clamp(static_cast<std::size_t>(model), std::size_t{},
+                                  instrumentSoundNames.size() - 1);
+    return juce::String(instrumentSoundNames[index].data());
+}
+
+bool soundCompatible(ScoreDepartment department, InstrumentSoundModel model) {
+    const auto value = static_cast<int>(model);
+    const auto rhythmic = value >= static_cast<int>(InstrumentSoundModel::Kick) &&
+                          value <= static_cast<int>(InstrumentSoundModel::Cymbal);
+    return department == ScoreDepartment::Rhythm ? rhythmic : !rhythmic;
+}
+
 VoiceId resolvedVoice(const NoteEvent& note) {
     return note.voice == VoiceId::Unspecified ? inferVoiceFromChannel(note.channel) : note.voice;
 }
@@ -357,8 +378,94 @@ juce::File PatternView::createExportFile(int channel) const {
 
 void PatternView::showTimbreMenu(VoiceId voice, const juce::MouseEvent& event) {
     const auto target = juce::Rectangle<int>{event.getPosition().x, event.getPosition().y, 1, 1};
-    juce::CallOutBox::launchAsynchronously(std::make_unique<VoiceInspector>(processor, voice),
-                                           target, this);
+    const auto pattern = processor.currentPattern();
+    std::vector<InstrumentPart> parts;
+    if (pattern != nullptr)
+        for (const auto& part : pattern->parts)
+            if (part.sourceVoice == voice) parts.push_back(part);
+    if (parts.empty()) {
+        juce::CallOutBox::launchAsynchronously(std::make_unique<VoiceInspector>(processor, voice),
+                                               target, this);
+        return;
+    }
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader(processor.uiLanguage() == UiLanguage::Spanish
+        ? "SONIDO POR PISTA" : "SOUND PER TRACK");
+    menu.addItem(1, processor.uiLanguage() == UiLanguage::Spanish
+        ? "CONTROLES DE LA VOZ..." : "VOICE CONTROLS...");
+    menu.addSeparator();
+    for (std::size_t partIndex = 0; partIndex < parts.size(); ++partIndex) {
+        const auto& part = parts[partIndex];
+        const auto current = processor.partPreviewSound(part.id);
+        const auto aiModel = instrumentSoundModel(part.catalogId);
+        juce::PopupMenu sounds;
+        const auto base = 100 + static_cast<int>(partIndex) * 64;
+        sounds.addItem(base, (processor.uiLanguage() == UiLanguage::Spanish ? "IA: " : "AI: ") +
+                       soundModelName(aiModel), true, current == aiModel);
+        sounds.addSeparator();
+        for (auto modelIndex = 1; modelIndex <= static_cast<int>(InstrumentSoundModel::Texture); ++modelIndex) {
+            const auto model = static_cast<InstrumentSoundModel>(modelIndex);
+            if (!soundCompatible(part.department, model)) continue;
+            sounds.addItem(base + modelIndex + 1, soundModelName(model), true, current == model);
+        }
+        juce::PopupMenu liveSounds;
+        const auto liveBase = 5000 + static_cast<int>(partIndex) * 32;
+        liveSounds.addItem(liveBase, (processor.uiLanguage() == UiLanguage::Spanish ? "IA: " : "AI: ") +
+                           juce::String::fromUTF8(part.liveDevice.c_str()), true, true);
+        liveSounds.addSeparator();
+        const auto devices = PulsoAudioProcessor::liveNativeDeviceChoices();
+        for (auto deviceIndex = 0; deviceIndex < devices.size(); ++deviceIndex)
+            liveSounds.addItem(liveBase + deviceIndex + 1, devices[deviceIndex], true,
+                               devices[deviceIndex] == juce::String::fromUTF8(part.liveDevice.c_str()));
+        juce::PopupMenu partMenu;
+        partMenu.addSubMenu(processor.uiLanguage() == UiLanguage::Spanish ? "PREVIEW INTERNO" :
+                            "INTERNAL PREVIEW", sounds);
+        partMenu.addSubMenu(processor.uiLanguage() == UiLanguage::Spanish ? "INSTRUMENTO NATIVO LIVE" :
+                            "LIVE NATIVE INSTRUMENT", liveSounds);
+        menu.addSubMenu(juce::String::fromUTF8(part.name.c_str()) + "  >  " +
+                        juce::String::fromUTF8(part.liveDevice.c_str()), partMenu);
+    }
+    const auto safe = juce::Component::SafePointer<PatternView>(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(target.translated(
+        getScreenPosition().x, getScreenPosition().y)),
+        [safe, parts = std::move(parts), voice, target](int result) {
+            if (safe == nullptr || result == 0) return;
+            if (result == 1) {
+                juce::CallOutBox::launchAsynchronously(
+                    std::make_unique<VoiceInspector>(safe->processor, voice), target, safe.getComponent());
+                return;
+            }
+            if (result >= 5000) {
+                const auto partIndex = (result - 5000) / 32;
+                const auto choice = (result - 5000) % 32;
+                if (partIndex < 0 || partIndex >= static_cast<int>(parts.size())) return;
+                if (choice == 0)
+                    safe->processor.setPartLiveDevice(parts[static_cast<std::size_t>(partIndex)].id, {}, true);
+                else {
+                    const auto devices = PulsoAudioProcessor::liveNativeDeviceChoices();
+                    if (choice <= devices.size())
+                        safe->processor.setPartLiveDevice(parts[static_cast<std::size_t>(partIndex)].id,
+                                                          devices[choice - 1]);
+                }
+                safe->feedback = safe->processor.uiLanguage() == UiLanguage::Spanish
+                    ? "INSTRUMENTO LIVE ACTUALIZADO" : "LIVE INSTRUMENT UPDATED";
+                safe->repaint();
+                return;
+            }
+            const auto partIndex = (result - 100) / 64;
+            const auto choice = (result - 100) % 64;
+            if (partIndex < 0 || partIndex >= static_cast<int>(parts.size())) return;
+            if (choice == 0)
+                safe->processor.setPartPreviewSound(parts[static_cast<std::size_t>(partIndex)].id,
+                                                     InstrumentSoundModel::Generic, true);
+            else if (choice >= 2 && choice <= static_cast<int>(InstrumentSoundModel::Texture) + 1)
+                safe->processor.setPartPreviewSound(parts[static_cast<std::size_t>(partIndex)].id,
+                    static_cast<InstrumentSoundModel>(choice - 1));
+            safe->feedback = safe->processor.uiLanguage() == UiLanguage::Spanish
+                ? "SONIDO DE PISTA ACTUALIZADO" : "TRACK SOUND UPDATED";
+            safe->repaint();
+        });
 }
 
 void PatternView::mouseDown(const juce::MouseEvent& event) {
@@ -547,11 +654,27 @@ void PatternView::paint(juce::Graphics& graphics) {
         graphics.setColour((highlighted ? colourForFamily(voiceDefinition(voice).family) : colours::muted)
                                .withAlpha(activeInSelection ? 1.0f : 0.32f));
         graphics.setFont(juce::FontOptions(hasSongPlan ? 8.6f : 9.5f, juce::Font::bold));
-        const auto voiceName = voiceDisplayName(language, voice).toUpperCase();
+        auto voiceName = voiceDisplayName(language, voice).toUpperCase();
+        juce::String assignedPartSounds;
+        if (pattern && !pattern->parts.empty()) {
+            juce::String partNames;
+            auto shown = 0;
+            for (const auto& part : pattern->parts) {
+                if (part.sourceVoice != voice) continue;
+                if (shown++ > 0) partNames += " / ";
+                partNames += juce::String::fromUTF8(part.name.c_str()).toUpperCase();
+                if (assignedPartSounds.isNotEmpty()) assignedPartSounds += " + ";
+                assignedPartSounds += soundModelName(processor.partPreviewSound(part.id)).toUpperCase() + " > " +
+                    juce::String::fromUTF8(part.liveDevice.c_str()).toUpperCase();
+                if (shown == 3) break;
+            }
+            if (shown > 0) voiceName = partNames;
+        }
         const auto timbres = localizedTimbreChoices(language, voice);
         const auto timbreIndex = std::clamp(processor.voicePreviewTimbre(voice), 0,
                                             std::max(0, timbres.size() - 1));
         auto soundName = timbres[timbreIndex].toUpperCase();
+        if (assignedPartSounds.isNotEmpty()) soundName = assignedPartSounds;
         const auto octave = processor.voicePreviewOctave(voice);
         const auto levelDb = processor.voicePreviewLevelDb(voice);
         if (octave != 0) soundName += octave > 0 ? "  +12" : "  -12";

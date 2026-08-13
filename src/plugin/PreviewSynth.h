@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/Orchestration.h"
+#include "core/MusicTypes.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -38,7 +38,9 @@ public:
 
 private:
     static constexpr std::size_t drumVoiceCount = 24;
-    static constexpr std::size_t tonalVoiceCount = 48;
+    // The preview is a sketch instrument, while exported MIDI retains the full score.
+    // A 24-voice ceiling keeps dense orchestration inside a 256-sample host deadline.
+    static constexpr std::size_t tonalVoiceCount = 24;
 
     enum class VoiceKind : std::uint8_t {
         SubBass, MovementBass, Foundation, Pulse, Upper, Lead, Counter,
@@ -75,6 +77,7 @@ private:
         bool heldByPedal{};
         bool oneShot{};
         VoiceKind kind{VoiceKind::Lead};
+        InstrumentSoundModel soundModel{InstrumentSoundModel::Generic};
         std::uint32_t noiseState{1};
         std::uint64_t age{};
         float outputGain{1.0f};
@@ -124,6 +127,7 @@ private:
     std::array<float, 16> channelPitchBend{};
     std::array<float, 16> channelPressure{};
     std::array<bool, 16> channelSustain{};
+    std::array<InstrumentSoundModel, 16> channelInstrument{};
     std::array<std::array<float, 128>, 16> polyAftertouch{};
     double sampleRate{44100.0};
     SoundWorld soundWorld{SoundWorld::DeepProgressive};

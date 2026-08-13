@@ -85,6 +85,7 @@ void PreviewSynth::reset() noexcept {
     channelPitchBend.fill(0.0f);
     channelPressure.fill(0.0f);
     channelSustain.fill(false);
+    channelInstrument.fill(InstrumentSoundModel::Generic);
     polyAftertouch = {};
     ageCounter = 0;
 }
@@ -248,6 +249,7 @@ void PreviewSynth::noteOn(int channel, int note, float velocity) noexcept {
     voice->level = std::clamp(velocity, 0.0f, 1.0f) * 0.095f;
     voice->age = ++ageCounter;
     voice->kind = kindForChannel(voice->channel);
+    voice->soundModel = channelInstrument[expressiveChannel];
     voice->note = std::clamp(voice->sourceNote + voiceTranspose(voice->kind), 0, 127);
     voice->outputGain = voiceLevelGain(voice->kind);
     voice->noiseState = 0x85ebca6bu ^ static_cast<std::uint32_t>(voice->note * 2246822519u) ^
@@ -364,6 +366,25 @@ void PreviewSynth::noteOn(int channel, int note, float velocity) noexcept {
         default: break;
     }
 
+    switch (voice->soundModel) {
+        case InstrumentSoundModel::Piano: voice->attackSeconds = 0.002f; voice->decaySeconds = 0.72f; voice->sustain = 0.18f; voice->releaseSeconds = 0.24f; cutoff *= 1.35f; break;
+        case InstrumentSoundModel::Harp: voice->attackSeconds = 0.001f; voice->decaySeconds = 0.48f; voice->sustain = 0.08f; voice->releaseSeconds = 0.42f; cutoff *= 1.55f; break;
+        case InstrumentSoundModel::HighStrings: voice->attackSeconds = 0.11f; voice->sustain = 0.84f; voice->releaseSeconds = 0.62f; cutoff *= 0.86f; break;
+        case InstrumentSoundModel::MidStrings: voice->attackSeconds = 0.085f; voice->sustain = 0.86f; voice->releaseSeconds = 0.56f; cutoff *= 0.72f; break;
+        case InstrumentSoundModel::LowStrings: voice->attackSeconds = 0.065f; voice->sustain = 0.88f; voice->releaseSeconds = 0.48f; cutoff *= 0.58f; break;
+        case InstrumentSoundModel::Flute: voice->attackSeconds = 0.045f; voice->sustain = 0.82f; voice->releaseSeconds = 0.28f; cutoff *= 0.92f; break;
+        case InstrumentSoundModel::Oboe: voice->attackSeconds = 0.028f; voice->sustain = 0.78f; voice->releaseSeconds = 0.24f; cutoff *= 0.78f; break;
+        case InstrumentSoundModel::Clarinet: voice->attackSeconds = 0.032f; voice->sustain = 0.84f; voice->releaseSeconds = 0.30f; cutoff *= 0.68f; break;
+        case InstrumentSoundModel::Bassoon: voice->attackSeconds = 0.038f; voice->sustain = 0.82f; voice->releaseSeconds = 0.30f; cutoff *= 0.52f; break;
+        case InstrumentSoundModel::Horns: voice->attackSeconds = 0.07f; voice->sustain = 0.88f; voice->releaseSeconds = 0.46f; cutoff *= 0.66f; break;
+        case InstrumentSoundModel::Brass: voice->attackSeconds = 0.024f; voice->sustain = 0.82f; voice->releaseSeconds = 0.27f; cutoff *= 1.08f; break;
+        case InstrumentSoundModel::Choir: voice->attackSeconds = 0.20f; voice->sustain = 0.90f; voice->releaseSeconds = 0.82f; cutoff *= 0.54f; break;
+        case InstrumentSoundModel::Mallets: voice->attackSeconds = 0.001f; voice->decaySeconds = 0.55f; voice->sustain = 0.04f; voice->releaseSeconds = 0.44f; cutoff *= 1.48f; break;
+        case InstrumentSoundModel::Guitar: voice->attackSeconds = 0.002f; voice->decaySeconds = 0.38f; voice->sustain = 0.16f; voice->releaseSeconds = 0.30f; cutoff *= 1.18f; break;
+        case InstrumentSoundModel::Texture: voice->attackSeconds = 0.42f; voice->sustain = 0.72f; voice->releaseSeconds = 1.25f; cutoff *= 0.52f; break;
+        default: break;
+    }
+
     const auto frequency = juce::MidiMessage::getMidiNoteInHertz(voice->note);
     voice->phaseDelta = juce::MathConstants<double>::twoPi * frequency / sampleRate;
     voice->filterAlpha = std::clamp(1.0f - std::exp(-juce::MathConstants<float>::twoPi * cutoff /
@@ -382,6 +403,7 @@ void PreviewSynth::drumNoteOn(int note, float velocity) noexcept {
     voice->oneShot = true;
     voice->channel = 10;
     voice->sourceNote = std::clamp(note, 0, 127);
+    voice->soundModel = channelInstrument[9];
     voice->note = voice->sourceNote;
     voice->level = std::clamp(velocity, 0.0f, 1.0f) * profile().drumWeight;
     voice->envelope = 1.0f;
@@ -457,6 +479,14 @@ void PreviewSynth::drumNoteOn(int note, float velocity) noexcept {
             break;
         case DrumKit::Count: break;
     }
+    switch (voice->soundModel) {
+        case InstrumentSoundModel::Timpani: voice->kind = VoiceKind::LowPercussion; frequency = 72.0f + (note - 36) * 5.5f; voice->decaySeconds = 0.72f; voice->tone = 0.12f; break;
+        case InstrumentSoundModel::Taiko: voice->kind = VoiceKind::LowPercussion; frequency = 82.0f + (note - 36) * 4.0f; voice->decaySeconds = 0.38f; voice->tone = 0.24f; break;
+        case InstrumentSoundModel::LatinPercussion: voice->kind = VoiceKind::HighPercussion; frequency = 330.0f + (note - 56) * 18.0f; voice->decaySeconds = 0.19f; voice->tone = 0.32f; break;
+        case InstrumentSoundModel::Shaker: voice->kind = VoiceKind::HighPercussion; frequency = 7200.0f; voice->decaySeconds = 0.075f; voice->tone = 0.92f; break;
+        case InstrumentSoundModel::Cymbal: voice->kind = VoiceKind::Cymbal; frequency = 4300.0f; voice->decaySeconds = 0.68f; voice->tone = 0.86f; break;
+        default: break;
+    }
     const auto tuningSpread = selectedKit == DrumKit::TR808 ? 0.010f :
                               selectedKit == DrumKit::TR909 ? 0.006f : 0.014f;
     frequency *= (1.0f + voice->variant * tuningSpread) *
@@ -496,6 +526,10 @@ void PreviewSynth::handleMessage(const juce::MidiMessage& message) noexcept {
                         voice.heldByPedal = false;
                         voice.releasing = true;
                     }
+        } else if (message.getControllerNumber() == 119) {
+            const auto model = message.getControllerValue();
+            channelInstrument[channel] = model >= 0 && model <= static_cast<int>(InstrumentSoundModel::Texture)
+                ? static_cast<InstrumentSoundModel>(model) : InstrumentSoundModel::Generic;
         }
     }
     else if (message.isPitchWheel()) {
@@ -716,6 +750,50 @@ float PreviewSynth::renderVoiceSample(Voice& voice) noexcept {
             voice.previousNoise = noise; break;
         }
         default: return renderDrumSample(voice);
+    }
+
+    switch (voice.soundModel) {
+        case InstrumentSoundModel::Piano:
+            raw = s1 * 0.46f + sine(voice.phase * 2.0) * 0.30f + sine(voice.phase * 3.01) * 0.16f + noise * 0.08f; break;
+        case InstrumentSoundModel::Harp:
+            raw = tri1 * 0.46f + sine(voice.phase * 2.0) * 0.32f + sine(voice.phase * 4.02) * 0.18f + noise * 0.04f; break;
+        case InstrumentSoundModel::HighStrings:
+            raw = saw1 * 0.44f + saw2 * 0.34f + tri1 * 0.22f; break;
+        case InstrumentSoundModel::MidStrings:
+            raw = saw1 * 0.36f + tri1 * 0.38f + saw2 * 0.26f; break;
+        case InstrumentSoundModel::LowStrings:
+            raw = saw1 * 0.30f + tri1 * 0.40f + s1 * 0.30f; break;
+        case InstrumentSoundModel::Flute:
+            raw = s1 * 0.78f + sine(voice.phase * 2.0) * 0.12f + noise * 0.10f; break;
+        case InstrumentSoundModel::Oboe:
+            raw = saw1 * 0.42f + square1 * 0.24f + s1 * 0.34f; break;
+        case InstrumentSoundModel::Clarinet:
+            raw = square1 * 0.42f + s1 * 0.48f + sine(voice.phase * 3.0) * 0.10f; break;
+        case InstrumentSoundModel::Bassoon:
+            raw = square1 * 0.30f + tri1 * 0.38f + s1 * 0.32f; break;
+        case InstrumentSoundModel::Horns:
+            raw = saw1 * 0.32f + tri1 * 0.38f + s1 * 0.30f; break;
+        case InstrumentSoundModel::Brass:
+            raw = std::tanh((saw1 * 0.58f + square1 * 0.22f + s1 * 0.20f) * 1.45f) * 0.76f; break;
+        case InstrumentSoundModel::Choir:
+            raw = s1 * 0.38f + s2 * 0.28f + tri1 * 0.20f + noise * 0.14f; break;
+        case InstrumentSoundModel::Mallets:
+            raw = sine(voice.phase + s2 * 3.8f) * 0.68f + sine(voice.phase * 3.0) * 0.22f + noise * 0.10f; break;
+        case InstrumentSoundModel::ElectricBass:
+            raw = saw1 * 0.34f + square1 * 0.24f + s1 * 0.42f; break;
+        case InstrumentSoundModel::SubSynth:
+            raw = s1 * 0.88f + tri2 * 0.12f; break;
+        case InstrumentSoundModel::AnalogPad:
+            raw = saw1 * 0.38f + saw2 * 0.34f + s1 * 0.28f; break;
+        case InstrumentSoundModel::PolySynth:
+            raw = square1 * 0.32f + saw1 * 0.42f + tri2 * 0.26f; break;
+        case InstrumentSoundModel::LeadSynth:
+            raw = std::tanh((saw1 * 0.54f + square1 * 0.26f + s1 * 0.20f) * 1.35f) * 0.82f; break;
+        case InstrumentSoundModel::Guitar:
+            raw = tri1 * 0.44f + saw1 * 0.24f + sine(voice.phase * 2.0) * 0.24f + noise * 0.08f; break;
+        case InstrumentSoundModel::Texture:
+            raw = colourB * 0.44f + s1 * 0.22f + noise * 0.34f; break;
+        default: break;
     }
 
     const auto channelIndex = static_cast<std::size_t>(std::clamp(voice.channel, 1, 16) - 1);

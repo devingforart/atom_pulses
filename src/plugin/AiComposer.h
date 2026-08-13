@@ -41,7 +41,8 @@ public:
     [[nodiscard]] static bool parseSongPlanJson(const juce::String&, int targetSeconds,
                                                 int requestedBars, double bpm,
                                                 double beatsPerBar, std::uint64_t seed,
-                                                SongPlan&, juce::String& error);
+                                                SongPlan&, juce::String& error,
+                                                TonalPolicy = TonalPolicy::Consolidated);
 };
 
 } // namespace pulso::plugin

@@ -9,10 +9,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <cmath>
 #include <iostream>
 #include <memory>
+#include <map>
+#include <set>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -56,11 +60,133 @@ void advance(TestPlayHead& playHead, int samples, double sampleRate) {
         playHead.ppq += static_cast<double>(samples) / sampleRate * playHead.bpm / 60.0;
 }
 
+std::vector<float> renderPreviewWithBlockSize(int blockSize) {
+    constexpr auto totalSamples = 8192;
+    pulso::plugin::PreviewSynth synth;
+    synth.prepare(44100.0);
+    synth.setSoundWorld(2);
+    synth.setDrumKit(2);
+    std::vector<std::pair<int, juce::MidiMessage>> timeline{
+        {0, juce::MidiMessage::controllerEvent(3, 11, 104)},
+        {0, juce::MidiMessage::noteOn(3, 48, static_cast<juce::uint8>(94))},
+        {173, juce::MidiMessage::noteOn(10, 36, static_cast<juce::uint8>(112))},
+        {907, juce::MidiMessage::noteOn(10, 42, static_cast<juce::uint8>(82))},
+        {1201, juce::MidiMessage::noteOn(2, 67, static_cast<juce::uint8>(88))},
+        {2231, juce::MidiMessage::noteOff(3, 48)},
+        {3107, juce::MidiMessage::pitchWheel(2, 8576)},
+        {4099, juce::MidiMessage::noteOff(2, 67)},
+        {6003, juce::MidiMessage::allNotesOff(2)},
+    };
+    std::vector<float> rendered(static_cast<std::size_t>(totalSamples) * 2u);
+    for (auto start = 0; start < totalSamples; start += blockSize) {
+        const auto count = std::min(blockSize, totalSamples - start);
+        juce::AudioBuffer<float> block(2, count);
+        block.clear();
+        juce::MidiBuffer midi;
+        for (const auto& [absoluteSample, message] : timeline)
+            if (absoluteSample >= start && absoluteSample < start + count)
+                midi.addEvent(message, absoluteSample - start);
+        synth.renderNextBlock(block, midi, 0, count);
+        for (auto sample = 0; sample < count; ++sample) {
+            rendered[static_cast<std::size_t>(start + sample) * 2u] = block.getSample(0, sample);
+            rendered[static_cast<std::size_t>(start + sample) * 2u + 1u] = block.getSample(1, sample);
+        }
+    }
+    return rendered;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     try {
     juce::ScopedJuceInitialiser_GUI initialiseJuce;
+    const auto preview64 = renderPreviewWithBlockSize(64);
+    const auto preview511 = renderPreviewWithBlockSize(511);
+    require(preview64.size() == preview511.size(), "Preview block-size test produced inconsistent output sizes");
+    auto maximumBlockDelta = 0.0f;
+    for (std::size_t index = 0; index < preview64.size(); ++index)
+        maximumBlockDelta = std::max(maximumBlockDelta, std::abs(preview64[index] - preview511[index]));
+    require(maximumBlockDelta < 1.0e-6f,
+            "Preview audio must be sample-identical across host buffer sizes; max delta=" +
+                std::to_string(maximumBlockDelta));
+    if (argc > 2 && juce::String(argv[1]) == "--audit-midi") {
+        juce::File file(juce::String::fromUTF8(argv[2]));
+        juce::FileInputStream input(file);
+        juce::MidiFile midi;
+        require(input.openedOk() && midi.readFrom(input), "Could not read MIDI audit target");
+        const auto division = std::max(1, static_cast<int>(midi.getTimeFormat()));
+        std::cout << "[MIDI] file=" << file.getFullPathName() << " tracks=" << midi.getNumTracks()
+                  << " division=" << division << '\n';
+        for (auto trackIndex = 0; trackIndex < midi.getNumTracks(); ++trackIndex) {
+            const auto* track = midi.getTrack(trackIndex);
+            std::map<std::pair<int, int>, std::vector<double>> active;
+            auto noteOns = 0, orphanOffs = 0, overlaps = 0, controls = 0, sustainEvents = 0;
+            auto sustain = 0, minimumPitch = 128, maximumPitch = -1;
+            auto maximumDuration = 0.0, lastNote = 0.0, end = 0.0;
+            auto notesReleasedUnderSustain = 0;
+            auto maximumPedalExtension = 0.0;
+            std::vector<double> pendingSustainReleases;
+            std::vector<std::pair<double, int>> sustainTimeline;
+            juce::String trackName{"Track " + juce::String(trackIndex)};
+            for (auto eventIndex = 0; eventIndex < track->getNumEvents(); ++eventIndex) {
+                const auto message = track->getEventPointer(eventIndex)->message;
+                const auto tick = message.getTimeStamp();
+                end = std::max(end, tick);
+                if (message.isTrackNameEvent()) {
+                    trackName = message.getTextFromTextMetaEvent();
+                } else if (message.isNoteOn()) {
+                    const auto key = std::pair{message.getChannel(), message.getNoteNumber()};
+                    if (!active[key].empty()) ++overlaps;
+                    active[key].push_back(tick);
+                    ++noteOns;
+                    minimumPitch = std::min(minimumPitch, message.getNoteNumber());
+                    maximumPitch = std::max(maximumPitch, message.getNoteNumber());
+                    lastNote = std::max(lastNote, tick);
+                } else if (message.isNoteOff()) {
+                    const auto key = std::pair{message.getChannel(), message.getNoteNumber()};
+                    if (active[key].empty()) ++orphanOffs;
+                    else {
+                        maximumDuration = std::max(maximumDuration, tick - active[key].front());
+                        active[key].erase(active[key].begin());
+                    }
+                    if (sustain >= 64) {
+                        ++notesReleasedUnderSustain;
+                        pendingSustainReleases.push_back(tick);
+                    }
+                } else if (message.isController()) {
+                    ++controls;
+                    if (message.getControllerNumber() == 64) {
+                        ++sustainEvents;
+                        sustain = message.getControllerValue();
+                        sustainTimeline.emplace_back(tick, sustain);
+                        if (sustain < 64) {
+                            for (const auto release : pendingSustainReleases)
+                                maximumPedalExtension = std::max(maximumPedalExtension, tick - release);
+                            pendingSustainReleases.clear();
+                        }
+                    }
+                }
+            }
+            auto dangling = std::size_t{};
+            for (const auto& [key, values] : active) dangling += values.size();
+            std::cout << "[TRACK] index=" << trackIndex << " name=\"" << trackName
+                      << "\" notes=" << noteOns << " pitch="
+                      << (maximumPitch < 0 ? "-" : std::to_string(minimumPitch) + "-" + std::to_string(maximumPitch))
+                      << " overlaps=" << overlaps << " orphan_off=" << orphanOffs
+                      << " dangling_on=" << dangling << " max_duration_beats="
+                      << maximumDuration / division << " controls=" << controls
+                      << " cc64=" << sustainEvents << " sustain_left_on=" << (sustain >= 64)
+                      << " last_note_beat=" << lastNote / division << " end_beat=" << end / division << '\n';
+            if (trackName.containsIgnoreCase("Low Horn")) {
+                std::cout << "[SUSTAIN] released_under_pedal=" << notesReleasedUnderSustain
+                          << " max_extension_beats=" << maximumPedalExtension / division << " timeline=";
+                for (const auto& [tick, value] : sustainTimeline)
+                    std::cout << tick / division << ':' << value << ',';
+                std::cout << '\n';
+            }
+        }
+        return 0;
+    }
     if (argc > 1 && juce::String(argv[1]) == "--live-cancel") {
         juce::String error;
         pulso::SongPlan plan;
@@ -88,8 +214,20 @@ int main(int argc, char** argv) {
         const auto plan = pulso::plugin::AiComposer::planSong(
             "An evolving instrumental journey with restraint, thematic recall and a decisive resolution",
             60, 30, 120.0, 4.0, 424242, stopSource.get_token(), error);
+        const auto authoredVoices = std::count_if(plan.voices.begin(), plan.voices.end(), [](const auto& voice) {
+            return voice.performance.authored;
+        });
+        const auto sectionsWithTwoChords = std::count_if(plan.sections.begin(), plan.sections.end(), [](const auto& section) {
+            return section.harmonicEvents.size() >= 2;
+        });
+        std::cout << "[INFO] Live plan | error=" << error << " voices=" << plan.voices.size()
+                  << " authored_voices=" << authoredVoices << " instruments=" << plan.instruments.size()
+                  << " sections=" << plan.sections.size() << " sections_with_2_chords=" << sectionsWithTwoChords
+                  << " bars=" << plan.totalBars << " motifs=" << plan.rhythmMotifs.size()
+                  << " chords=" << plan.chordPalette.size() << '\n';
         require(error.isEmpty(), "Live OpenAI song-plan request failed: " + error.toStdString());
-        require(plan.sections.size() >= 3 && plan.voices.size() >= 7 && plan.totalBars == 30 &&
+        require(plan.sections.size() >= 3 && plan.voices.size() >= 7 && plan.instruments.size() >= 12 &&
+                    plan.totalBars == 30 &&
                     plan.rhythmMotifs.size() >= 2 && !plan.rhythmLanguage.description.empty() &&
                     plan.chordPalette.size() >= 4 && !plan.harmonicLanguage.description.empty() &&
                     std::all_of(plan.voices.begin(), plan.voices.end(), [](const auto& voice) {
@@ -102,11 +240,19 @@ int main(int argc, char** argv) {
                     }),
                 "Live OpenAI response did not satisfy the dynamic-orchestration contract");
         std::cout << "[PASS] Live structured song plan | voices=" << plan.voices.size()
+                  << " instruments=" << plan.instruments.size()
                   << " sections=" << plan.sections.size()
                   << " rhythm_motifs=" << plan.rhythmMotifs.size()
                   << " chords=" << plan.chordPalette.size() << '\n';
         return 0;
     }
+    // The deterministic regression suite must never inherit a developer/user API key.
+    // Network behavior is covered only by the explicit --live-ai and --live-cancel modes.
+   #if JUCE_WINDOWS
+    _putenv_s("OPENAI_API_KEY", "");
+   #else
+    unsetenv("OPENAI_API_KEY");
+   #endif
     constexpr auto sampleRate = 48000.0;
     constexpr auto blockSize = 256;
 
@@ -210,6 +356,19 @@ int main(int argc, char** argv) {
     }
     require(snareOverrideDifference / 512.0f > 0.005f && unrelatedHatDifference < 0.000001f,
             "A snare override must audibly change only snare while hats keep their own selection");
+
+    {
+        pulso::plugin::PreviewSynth denseSynth;
+        denseSynth.prepare(sampleRate);
+        juce::AudioBuffer<float> denseAudio(2, 4096);
+        denseAudio.clear();
+        juce::MidiBuffer denseMidi;
+        for (auto note = 36; note < 96; ++note)
+            denseMidi.addEvent(juce::MidiMessage::noteOn(3, note, static_cast<juce::uint8>(96)), 0);
+        denseSynth.renderNextBlock(denseAudio, denseMidi, 0, denseAudio.getNumSamples());
+        require(peakMagnitude(denseAudio) < 2.0f,
+                "Dense orchestration must be gain-staged before the master limiter, not crushed by it");
+    }
 
     const auto renderProcessorAudition = [&](int selection) {
         pulso::plugin::PulsoAudioProcessor auditionProcessor;
@@ -395,8 +554,29 @@ int main(int argc, char** argv) {
     require(ensemblePreviewAudio.getMagnitude(0, 0, ensemblePreviewAudio.getNumSamples()) > 0.001f &&
                 ensemblePreviewAudio.getMagnitude(1, 0, ensemblePreviewAudio.getNumSamples()) > 0.001f,
             "All nine tonal roles must render through the multitimbral stereo preview");
+    const auto renderInstrumentModel = [&](pulso::InstrumentSoundModel model, int channel, int note) {
+        pulso::plugin::PreviewSynth synth;
+        synth.prepare(sampleRate);
+        juce::AudioBuffer<float> output(2, 4096);
+        output.clear();
+        juce::MidiBuffer events;
+        events.addEvent(juce::MidiMessage::controllerEvent(channel, 119, static_cast<int>(model)), 0);
+        events.addEvent(juce::MidiMessage::noteOn(channel, note, static_cast<juce::uint8>(108)), 1);
+        synth.renderNextBlock(output, events, 0, output.getNumSamples());
+        return output;
+    };
+    const auto pianoPreview = renderInstrumentModel(pulso::InstrumentSoundModel::Piano, 3, 64);
+    const auto stringPreview = renderInstrumentModel(pulso::InstrumentSoundModel::HighStrings, 3, 64);
+    auto instrumentDifference = 0.0f;
+    for (auto sample = 0; sample < pianoPreview.getNumSamples(); ++sample)
+        instrumentDifference += std::abs(pianoPreview.getSample(0, sample) - stringPreview.getSample(0, sample));
+    require(instrumentDifference / pianoPreview.getNumSamples() > 0.0005f,
+            "InstrumentPart identities must create audibly distinct preview models on the same role and pitch");
 
     pulso::plugin::PulsoAudioProcessor processor;
+    require(processor.liveDeploymentMode() ==
+                pulso::plugin::PulsoAudioProcessor::LiveDeploymentMode::FullOrchestration,
+            "Full orchestration must be the default Live deployment mode");
     require(std::abs(processor.parameters.getRawParameterValue("space")->load()) < 0.0001f &&
                 std::abs(processor.parameters.getRawParameterValue("groove")->load()) < 0.0001f,
             "Retired Space and Groove controls must always default to zero");
@@ -432,6 +612,27 @@ int main(int argc, char** argv) {
                 accentedTranslation.toStdString());
     require(pulso::plugin::bullet().length() == 1 && pulso::plugin::bullet()[0] == 0x00b7,
             "The middle-dot separator must be one U+00B7 code point");
+    {
+        pulso::plugin::PulsoAudioProcessor continuityProcessor;
+        TestPlayHead stoppedPlayHead;
+        stoppedPlayHead.playing = false;
+        continuityProcessor.setPlayHead(&stoppedPlayHead);
+        continuityProcessor.prepareToPlay(sampleRate, blockSize);
+        continuityProcessor.parameters.getParameter("preview")->setValueNotifyingHost(0.0f);
+        continuityProcessor.auditionVoicePreview(pulso::VoiceId::Lead);
+        juce::AudioBuffer<float> firstBlock(2, blockSize);
+        juce::AudioBuffer<float> eventFreeBlock(2, blockSize);
+        juce::MidiBuffer noMidi;
+        firstBlock.clear();
+        continuityProcessor.processBlock(firstBlock, noMidi);
+        noMidi.clear();
+        eventFreeBlock.clear();
+        continuityProcessor.processBlock(eventFreeBlock, noMidi);
+        require(peakMagnitude(firstBlock) > 0.0001f && peakMagnitude(eventFreeBlock) > 0.0001f,
+                "The VST audio callback must render sustained voices through MIDI-empty host blocks");
+        continuityProcessor.releaseResources();
+        continuityProcessor.setPlayHead(nullptr);
+    }
     processor.toggleVoiceSolo(pulso::VoiceId::Lead);
     require(processor.isVoiceSolo(pulso::VoiceId::Lead) &&
                 processor.isVoiceAudible(pulso::VoiceId::Lead) &&
@@ -578,10 +779,12 @@ int main(int argc, char** argv) {
     pulso::SongPlan parsedSongPlan;
     require(pulso::plugin::AiComposer::songPlanSchemaIsValid() &&
                 pulso::plugin::AiComposer::parseSongPlanJson(songPlanExample, 64, 32, 120.0,
-                                                              4.0, 77, parsedSongPlan, parseError),
+                                                              4.0, 77, parsedSongPlan, parseError,
+                                                              pulso::TonalPolicy::Expanded),
             "Structured GPT song architecture must validate independently from MIDI rendering");
-    require(parsedSongPlan.sections.size() == 3 && parsedSongPlan.voices.size() == 10 &&
-                parsedSongPlan.sections[1].activeVoices.size() == 8 && parsedSongPlan.totalBars == 32 &&
+    require(parsedSongPlan.sections.size() == 3 && parsedSongPlan.voices.size() >= 10 &&
+                parsedSongPlan.instruments.size() >= 12 &&
+                parsedSongPlan.sections[1].activeVoices.size() >= 8 && parsedSongPlan.totalBars == 32 &&
                 parsedSongPlan.sections.back().startBar == 24 && parsedSongPlan.key == "D minor" &&
                 parsedSongPlan.sections[1].rhythm.kickState == pulso::KickState::FourOnFloor &&
                 parsedSongPlan.rhythmMotifs.size() == 1 &&
@@ -655,9 +858,33 @@ int main(int argc, char** argv) {
             "A dynamically orchestrated song must export as standard multitrack MIDI");
     juce::FileInputStream orchestrationInput(orchestrationFile);
     juce::MidiFile orchestrationMidi;
+    std::set<std::uint16_t> populatedParts;
+    std::set<pulso::VoiceId> populatedLegacyVoices;
+    for (const auto& note : orchestration.notes) {
+        if (note.partId > 0) populatedParts.insert(note.partId);
+        else populatedLegacyVoices.insert(note.voice);
+    }
+    const auto expectedOrchestralTracks = 1 + static_cast<int>(populatedParts.size() +
+                                                               populatedLegacyVoices.size());
     require(orchestrationInput.openedOk() && orchestrationMidi.readFrom(orchestrationInput) &&
-                orchestrationMidi.getNumTracks() == 16,
-            "Full-song export must contain a conductor plus fifteen independently named voice tracks");
+                orchestrationMidi.getNumTracks() == expectedOrchestralTracks &&
+                expectedOrchestralTracks > 16 && populatedLegacyVoices.empty(),
+            "Full-song export must create one DAW track per populated orchestral instrument");
+    require(orchestrationFile.withFileExtension(".pulso.json").existsAsFile(),
+            "Every orchestral MIDI export must include a companion Ableton rack-assignment manifest");
+    std::set<std::uint16_t> melodicParts;
+    std::set<std::uint16_t> harmonicParts;
+    for (const auto& note : orchestration.notes) {
+        const auto part = std::find_if(orchestration.parts.begin(), orchestration.parts.end(),
+            [&](const auto& candidate) { return candidate.id == note.partId; });
+        if (part == orchestration.parts.end()) continue;
+        if (part->department == pulso::ScoreDepartment::Melody) melodicParts.insert(part->id);
+        if (part->department == pulso::ScoreDepartment::Harmony) harmonicParts.insert(part->id);
+    }
+    require(melodicParts.size() >= 2 && harmonicParts.size() >= 4 &&
+                orchestrationReport.orchestration.foregroundChanges >= orchestrationPlan.sections.size() &&
+                orchestrationReport.orchestration.chamberSections > 0,
+            "The orchestral score must distribute real material, rotate foreground and include chamber breathing");
     require(!orchestration.controls.empty() &&
                 !orchestration.expressions.empty() &&
                 orchestration.markers.size() == orchestrationPlan.sections.size(),
@@ -668,16 +895,51 @@ int main(int argc, char** argv) {
     auto exportedSustain = false;
     auto exportedKeySignature = false;
     auto exportedChordMarker = false;
+    auto orphanNoteOffs = 0;
+    auto invalidInstrumentPedals = 0;
+    auto excessivePedalWindows = 0;
     for (auto track = 0; track < orchestrationMidi.getNumTracks(); ++track) {
         const auto* sequence = orchestrationMidi.getTrack(track);
         if (sequence == nullptr) continue;
+        std::map<std::pair<int, int>, int> activeNotes;
+        juce::String exportedTrackName;
         for (auto event = 0; event < sequence->getNumEvents(); ++event) {
             const auto message = sequence->getEventPointer(event)->message;
+            if (message.isTrackNameEvent()) exportedTrackName = message.getTextFromTextMetaEvent();
+        }
+        const auto sourcePart = std::find_if(orchestration.parts.begin(), orchestration.parts.end(),
+            [&](const auto& part) {
+                return exportedTrackName == "PULSO " + juce::String::fromUTF8(part.name.c_str());
+            });
+        const auto pedalCapable = sourcePart != orchestration.parts.end() &&
+            (sourcePart->soundModel == pulso::InstrumentSoundModel::Piano ||
+             sourcePart->soundModel == pulso::InstrumentSoundModel::Harp ||
+             sourcePart->soundModel == pulso::InstrumentSoundModel::AnalogPad ||
+             sourcePart->soundModel == pulso::InstrumentSoundModel::PolySynth);
+        auto pedalOnTick = -1.0;
+        for (auto event = 0; event < sequence->getNumEvents(); ++event) {
+            const auto message = sequence->getEventPointer(event)->message;
+            const auto key = std::pair{message.getChannel(), message.getNoteNumber()};
+            if (message.isNoteOn()) ++activeNotes[key];
+            else if (message.isNoteOff()) {
+                if (activeNotes[key] == 0) ++orphanNoteOffs;
+                else --activeNotes[key];
+            }
             exportedPitchBend = exportedPitchBend || message.isPitchWheel();
             exportedPressure = exportedPressure || message.isChannelPressure();
             exportedAftertouch = exportedAftertouch || message.isAftertouch();
             exportedSustain = exportedSustain || (message.isController() &&
                                                    message.getControllerNumber() == 64);
+            if (message.isController() && message.getControllerNumber() == 64) {
+                if (message.getControllerValue() >= 64) {
+                    if (!pedalCapable) ++invalidInstrumentPedals;
+                    pedalOnTick = message.getTimeStamp();
+                } else if (pedalOnTick >= 0.0) {
+                    if ((message.getTimeStamp() - pedalOnTick) / 960.0 > 4.001)
+                        ++excessivePedalWindows;
+                    pedalOnTick = -1.0;
+                }
+            }
             exportedKeySignature = exportedKeySignature || message.isKeySignatureMetaEvent();
             exportedChordMarker = exportedChordMarker || (message.isTextMetaEvent() &&
                 message.getTextFromTextMetaEvent().startsWith("Chord: "));
@@ -685,8 +947,75 @@ int main(int argc, char** argv) {
     }
     require(exportedPitchBend && exportedPressure && exportedAftertouch && exportedSustain,
             "Exported MIDI must contain bends, pressure, per-note aftertouch and sustain pedal");
+    require(orphanNoteOffs == 0,
+            "Exported orchestral tracks must never contain synthetic or orphan note-offs");
+    require(invalidInstrumentPedals == 0 && excessivePedalWindows == 0,
+            "Sustain pedal must be instrument-aware and every exported pedal window must be bounded");
     require(exportedKeySignature && exportedChordMarker,
             "Full-song MIDI must expose its key signature and exact chord markers to the DAW");
+
+    pulso::Pattern unsafePedalPattern;
+    unsafePedalPattern.lengthBeats = 128.0;
+    unsafePedalPattern.parts = {
+        {1, "french_horns", "Pedal Policy Horn", pulso::VoiceId::HarmonicFoundation,
+         pulso::ScoreDepartment::Harmony, "horizon", 40, 76, 0.8, pulso::InstrumentSoundModel::Horns},
+        {2, "flute", "Pedal Policy Flute", pulso::VoiceId::HarmonicFoundation,
+         pulso::ScoreDepartment::Harmony, "air", 55, 96, 0.7, pulso::InstrumentSoundModel::Flute},
+        {3, "piano", "Pedal Policy Piano", pulso::VoiceId::HarmonicFoundation,
+         pulso::ScoreDepartment::Harmony, "keys", 36, 96, 0.8, pulso::InstrumentSoundModel::Piano}};
+    unsafePedalPattern.notes = {
+        {0.0, 1.0, 48, 80, 3, pulso::VoiceId::HarmonicFoundation, 1},
+        {0.0, 1.0, 72, 80, 3, pulso::VoiceId::HarmonicFoundation, 2},
+        {0.0, 1.0, 60, 80, 3, pulso::VoiceId::HarmonicFoundation, 3},
+        {1.25, 0.5, 64, 76, 3, pulso::VoiceId::HarmonicFoundation, 3}};
+    unsafePedalPattern.controls = {
+        {0.0, 64, 96, 3, pulso::VoiceId::HarmonicFoundation},
+        {96.0, 64, 0, 3, pulso::VoiceId::HarmonicFoundation}};
+    const auto pedalPolicyFile = exportFolder.getNonexistentChildFile("pedal-policy", ".mid", false);
+    require(pulso::plugin::writePatternToMidiFile(unsafePedalPattern, pedalPolicyFile, exportOptions),
+            "Instrument-aware pedal policy fixture must export");
+    juce::FileInputStream pedalPolicyInput(pedalPolicyFile);
+    juce::MidiFile pedalPolicyMidi;
+    require(pedalPolicyInput.openedOk() && pedalPolicyMidi.readFrom(pedalPolicyInput),
+            "Instrument-aware pedal policy fixture must be readable");
+    auto forbiddenPedalDowns = 0;
+    auto pianoPedalDowns = 0;
+    auto pianoMaximumPedalTicks = 0.0;
+    for (auto trackIndex = 0; trackIndex < pedalPolicyMidi.getNumTracks(); ++trackIndex) {
+        const auto* sequence = pedalPolicyMidi.getTrack(trackIndex);
+        juce::String name;
+        for (auto event = 0; sequence != nullptr && event < sequence->getNumEvents(); ++event)
+            if (sequence->getEventPointer(event)->message.isTrackNameEvent())
+                name = sequence->getEventPointer(event)->message.getTextFromTextMetaEvent();
+        auto downTick = -1.0;
+        for (auto event = 0; sequence != nullptr && event < sequence->getNumEvents(); ++event) {
+            const auto message = sequence->getEventPointer(event)->message;
+            if (!message.isController() || message.getControllerNumber() != 64) continue;
+            if (message.getControllerValue() >= 64) {
+                if (name.contains("Horn") || name.contains("Flute")) ++forbiddenPedalDowns;
+                if (name.contains("Piano")) { ++pianoPedalDowns; downTick = message.getTimeStamp(); }
+            } else if (name.contains("Piano") && downTick >= 0.0) {
+                pianoMaximumPedalTicks = std::max(pianoMaximumPedalTicks,
+                                                  message.getTimeStamp() - downTick);
+                downTick = -1.0;
+            }
+        }
+    }
+    require(forbiddenPedalDowns == 0 && pianoPedalDowns > 0 &&
+                pianoMaximumPedalTicks <= 2.001 * 960.0,
+            "Legacy section-wide CC64 must be removed from winds/brass and bounded for piano");
+    pedalPolicyFile.deleteFile();
+    pedalPolicyFile.withFileExtension(".pulso.json").deleteFile();
+    require(std::all_of(orchestration.expressions.begin(), orchestration.expressions.end(),
+        [&](const auto& expression) {
+            if (expression.type != pulso::ExpressionEventType::PolyAftertouch) return true;
+            return std::any_of(orchestration.notes.begin(), orchestration.notes.end(),
+                [&](const auto& note) {
+                    return note.voice == expression.voice && note.pitch == expression.note &&
+                           note.startBeat <= expression.beat + 0.0001 &&
+                           note.endBeat() >= expression.beat - 0.0001;
+                });
+        }), "Poly-aftertouch must reference a final audible note after tonal repair");
 
     const auto bassFile = exportFolder.getNonexistentChildFile("bass", ".mid", false);
     exportOptions.channelFilter = 1;
@@ -817,6 +1146,8 @@ int main(int argc, char** argv) {
 
     preview->setValueNotifyingHost(1.0f);
     auto longestCallback = std::chrono::microseconds::zero();
+    std::vector<std::chrono::microseconds> callbackDurations;
+    callbackDurations.reserve(2000);
     for (auto block = 0; block < 2000; ++block) {
         playHead.playing = block % 97 != 0;
         if (block % 113 == 0) playHead.ppq = std::fmod(block * 0.137, 16.0);
@@ -824,9 +1155,10 @@ int main(int argc, char** argv) {
         midi.clear();
         const auto started = std::chrono::steady_clock::now();
         processor.processBlock(audio, midi);
-        longestCallback = std::max(longestCallback,
-                                   std::chrono::duration_cast<std::chrono::microseconds>(
-                                       std::chrono::steady_clock::now() - started));
+        const auto callbackDuration = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - started);
+        longestCallback = std::max(longestCallback, callbackDuration);
+        callbackDurations.push_back(callbackDuration);
         for (auto channel = 0; channel < audio.getNumChannels(); ++channel)
             for (auto sample = 0; sample < audio.getNumSamples(); ++sample)
                 require(std::isfinite(audio.getSample(channel, sample)),
@@ -834,10 +1166,22 @@ int main(int argc, char** argv) {
         require(peakMagnitude(audio) <= 1.0f, "Limiter must contain every stress-test block");
         advance(playHead, blockSize, sampleRate);
     }
-    require(longestCallback < std::chrono::milliseconds(50),
-            "The audio callback must not wait for asynchronous generation");
+    std::sort(callbackDurations.begin(), callbackDurations.end());
+    const auto callbackP99 = callbackDurations[callbackDurations.size() * 99 / 100];
+    // This executable is not launched by an ASIO real-time thread, so Windows may
+    // occasionally deschedule it for Defender/GUI work. Require the distribution to
+    // meet the real 5.33 ms budget and separately reject catastrophic host stalls.
+    require(callbackP99 < std::chrono::milliseconds(5) && longestCallback < std::chrono::milliseconds(50),
+            "At 48 kHz/256 samples the callback distribution must fit its 5.33 ms deadline; p99=" +
+            std::to_string(callbackP99.count()) + " us max=" + std::to_string(longestCallback.count()) + " us");
 
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    require(editor != nullptr && editor->getWidth() == 1120 && editor->getHeight() == 760,
+            "The VST editor must open at the Ableton-compatible fallback geometry");
+    const auto editorSnapshot = editor->createComponentSnapshot(editor->getLocalBounds(), true);
+    require(editorSnapshot.isValid() && editorSnapshot.getWidth() == 1120 &&
+                editorSnapshot.getHeight() == 760,
+            "The VST editor must produce a visible rendered frame before host attachment");
     auto tooltipCount = 0;
     for (auto index = 0; index < editor->getNumChildComponents(); ++index) {
         if (auto* tooltip = dynamic_cast<juce::TooltipClient*>(editor->getChildComponent(index))) {
@@ -859,6 +1203,10 @@ int main(int argc, char** argv) {
         processor.parameters.getParameter("previewLevel12")->convertTo0to1(-7.5f));
     processor.toggleVoiceSolo(pulso::VoiceId::HarmonicPulse);
     processor.toggleVoiceMute(pulso::VoiceId::ClosedHats);
+    processor.setLiveDeploymentMode(
+        pulso::plugin::PulsoAudioProcessor::LiveDeploymentMode::QuickThreeStem);
+    if (const auto pattern = processor.currentPattern(); pattern != nullptr && !pattern->parts.empty())
+        processor.setPartLiveDevice(pattern->parts.front().id, "Instrument Rack");
     juce::MemoryBlock savedState;
     processor.getStateInformation(savedState);
     pulso::plugin::PulsoAudioProcessor restored;
@@ -866,6 +1214,9 @@ int main(int argc, char** argv) {
     require(restored.currentCompositionSeed() == processor.currentCompositionSeed() &&
                 restored.currentVariationIndex() == processor.currentVariationIndex(),
             "Composition DNA and lineage must survive a DAW project reload");
+    require(restored.liveDeploymentMode() ==
+                pulso::plugin::PulsoAudioProcessor::LiveDeploymentMode::QuickThreeStem,
+            "The explicit Live deployment mode must survive a DAW project reload");
     require(restored.isVoiceSolo(pulso::VoiceId::HarmonicPulse) &&
                 restored.isVoiceMuted(pulso::VoiceId::ClosedHats) &&
                 !restored.isVoiceAudible(pulso::VoiceId::ClosedHats),
@@ -875,8 +1226,12 @@ int main(int argc, char** argv) {
     require(restoredPatternSnapshot != nullptr && originalPatternSnapshot != nullptr &&
                 restoredPatternSnapshot->notes == originalPatternSnapshot->notes &&
                 restoredPatternSnapshot->controls == originalPatternSnapshot->controls &&
-                restoredPatternSnapshot->expressions == originalPatternSnapshot->expressions,
+                restoredPatternSnapshot->expressions == originalPatternSnapshot->expressions &&
+                restoredPatternSnapshot->parts == originalPatternSnapshot->parts,
             "The complete approved AI composition must survive a DAW project reload exactly");
+    require(restoredPatternSnapshot->parts.empty() ||
+                restoredPatternSnapshot->parts.front().liveDevice == "Instrument Rack",
+            "A manual Live-native instrument choice must survive a DAW project reload");
     const auto restoredPlan = restored.currentSongPlan();
     const auto originalPlan = processor.currentSongPlan();
     if (originalPlan != nullptr && !originalPlan->sections.empty())
@@ -903,6 +1258,86 @@ int main(int argc, char** argv) {
                 std::abs(restored.voicePreviewLevelDb(pulso::VoiceId::SnareClap) + 7.5f) < 0.01f,
             "Per-lane octave and level must survive an Ableton project reload");
 
+    const auto bridgeTestDirectory = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("PULSO Live Bridge Test", {}, false);
+    bridgeTestDirectory.createDirectory();
+    pulso::plugin::LiveDeploymentOptions deployment;
+    deployment.title = "Processor Test Deployment";
+    deployment.bpm = 123.0;
+    pulso::Pattern deploymentPattern;
+    deploymentPattern.lengthBeats = 8.0;
+    deploymentPattern.parts = {
+        {1, "kick_drum", "Kick Drum", pulso::VoiceId::CoreDrums,
+         pulso::ScoreDepartment::Rhythm, "pulse", 35, 36, 1.0,
+         pulso::InstrumentSoundModel::Kick},
+        {2, "piano", "Piano", pulso::VoiceId::HarmonicFoundation,
+         pulso::ScoreDepartment::Harmony, "foundation", 36, 96, 0.8,
+         pulso::InstrumentSoundModel::Piano},
+        {3, "violin_1", "Violin I", pulso::VoiceId::Lead,
+         pulso::ScoreDepartment::Melody, "lead", 55, 103, 0.9,
+         pulso::InstrumentSoundModel::HighStrings}};
+    deploymentPattern.notes = {
+        {0.0, 0.25, 36, 110, 10, pulso::VoiceId::CoreDrums, 1},
+        {0.0, 4.0, 60, 82, 3, pulso::VoiceId::HarmonicFoundation, 2},
+        {1.0, 1.0, 67, 96, 2, pulso::VoiceId::Lead, 3}};
+    deploymentPattern.parts[0].liveDevice = "Drum Rack";
+    deploymentPattern.parts[0].livePresetIntent = "tight modern acoustic kick";
+    deploymentPattern.parts[1].liveDevice = "Electric";
+    deploymentPattern.parts[1].livePresetIntent = "warm intimate keys";
+    deploymentPattern.parts[2].liveDevice = "Instrument Rack";
+    deploymentPattern.parts[2].livePresetIntent = "lyrical orchestral violin";
+    juce::String deploymentStatus;
+    const auto deploymentWritten = pulso::plugin::writeLiveDeploymentRequest(
+        deploymentPattern, deployment, deploymentStatus, bridgeTestDirectory);
+    require(deploymentWritten,
+            "A complete orchestral pattern must produce a Live deployment request: " +
+                deploymentStatus.toStdString() + " directory=" +
+                bridgeTestDirectory.getFullPathName().toStdString());
+    const auto deploymentJson = juce::JSON::parse(
+        bridgeTestDirectory.getChildFile("request.json").loadFileAsString());
+    auto* deploymentObject = deploymentJson.getDynamicObject();
+    require(deploymentObject != nullptr &&
+                static_cast<int>(deploymentObject->getProperty("schema_version")) == 3 &&
+                deploymentObject->getProperty("sound_engine").toString() == "ableton_live_native" &&
+                deploymentObject->getProperty("deployment_mode").toString() == "full_orchestration" &&
+                deploymentObject->getProperty("tracks").getArray() != nullptr &&
+                deploymentObject->getProperty("tracks").getArray()->size() == 3,
+            "Full orchestration must create one versioned editable Live track per populated instrument");
+    const auto* nativeTracks = deploymentObject->getProperty("tracks").getArray();
+    require(nativeTracks != nullptr && std::all_of(nativeTracks->begin(), nativeTracks->end(), [](const auto& value) {
+                const auto* track = value.getDynamicObject();
+                return track != nullptr && track->getProperty("sound_source").toString() == "live_native" &&
+                       track->getProperty("native_device").toString().isNotEmpty() &&
+                       track->getProperty("device_candidates").getArray() != nullptr;
+            }), "Every deployed part must carry a validated Live-native sound contract without VST identifiers");
+    const auto* kickDeployment = (*nativeTracks)[0].getDynamicObject();
+    require(kickDeployment != nullptr && kickDeployment->getProperty("native_device").toString() == "Drum Rack" &&
+                kickDeployment->getProperty("preset_intent").toString() == "tight modern acoustic kick" &&
+                !kickDeployment->hasProperty("plugin_identifier") && !kickDeployment->hasProperty("plugin_name"),
+            "AI-selected native device and timbral intent must reach Live without any legacy plug-in contract");
+    const auto* kickCandidates = kickDeployment->getProperty("device_candidates").getArray();
+    require(kickCandidates != nullptr && kickCandidates->contains("909 Core Kit.adg") &&
+                kickCandidates->contains("808 Core Kit.adg") && !kickCandidates->contains("Drum Rack"),
+            "Rhythm deployment must fall back to populated kits, never an empty Drum Rack container");
+    const auto* violinDeployment = (*nativeTracks)[2].getDynamicObject();
+    const auto* violinCandidates = violinDeployment->getProperty("device_candidates").getArray();
+    require(violinCandidates != nullptr && violinCandidates->contains("violin 1 orchestral") &&
+                !violinCandidates->contains("Instrument Rack") && violinCandidates->contains("Wavetable"),
+            "Orchestral deployment must search by instrument identity and end on an audible synth fallback");
+    deployment.aggregateDepartmentStems = true;
+    require(pulso::plugin::writeLiveDeploymentRequest(
+                deploymentPattern, deployment, deploymentStatus, bridgeTestDirectory),
+            "Quick deployment must produce a three-stem request");
+    const auto quickDeploymentJson = juce::JSON::parse(
+        bridgeTestDirectory.getChildFile("request.json").loadFileAsString());
+    auto* quickDeploymentObject = quickDeploymentJson.getDynamicObject();
+    require(quickDeploymentObject != nullptr &&
+                quickDeploymentObject->getProperty("deployment_mode").toString() == "quick_3_stem" &&
+                quickDeploymentObject->getProperty("tracks").getArray() != nullptr &&
+                quickDeploymentObject->getProperty("tracks").getArray()->size() == 3,
+            "Quick 3-stem must remain an explicit lightweight deployment option");
+    bridgeTestDirectory.deleteRecursively();
+
     ensembleFile.deleteFile();
     bassFile.deleteFile();
     orchestrationFile.deleteFile();
@@ -910,7 +1345,8 @@ int main(int argc, char** argv) {
     processor.releaseResources();
     processor.setPlayHead(nullptr);
     std::cout << "[PASS] Processor transport, panic, recovery and preview ceiling"
-              << " | stress_max_callback_us=" << longestCallback.count() << '\n';
+              << " | stress_p99_callback_us=" << callbackP99.count()
+              << " max_us=" << longestCallback.count() << '\n';
     return 0;
     } catch (const std::exception& exception) {
         std::cerr << "[FAIL] Processor: " << exception.what() << '\n';

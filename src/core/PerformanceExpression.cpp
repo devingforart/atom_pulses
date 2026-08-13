@@ -231,7 +231,7 @@ std::optional<DynamicContour> dynamicContourFromKey(std::string_view key) noexce
 std::optional<VibratoStyle> vibratoStyleFromKey(std::string_view key) noexcept { return fromKey(key, vibratoKeys); }
 std::optional<PitchGesture> pitchGestureFromKey(std::string_view key) noexcept { return fromKey(key, pitchKeys); }
 
-void PerformanceExpression::apply(Pattern& pattern, const SongPlan& plan) {
+void PerformanceExpression::apply(Pattern& pattern, const SongPlan& plan, bool shapeNotes) {
     if (pattern.notes.empty() || pattern.lengthBeats <= 0.0) return;
 
     // Idempotent replacement of PULSO-owned expressive controllers.
@@ -266,23 +266,25 @@ void PerformanceExpression::apply(Pattern& pattern, const SongPlan& plan) {
             for (std::size_t ordinal = 0; ordinal < voiceNotes.size(); ++ordinal) {
                 auto& note = pattern.notes[voiceNotes[ordinal]];
                 const auto human = humanValue(plan.seed, note, ordinal) * profile.humanization;
-                const auto velocityScale = 1.0 + human * 0.075;
-                note.velocity = std::clamp(static_cast<int>(std::lround(note.velocity * velocityScale)), 1, 127);
+                if (shapeNotes) {
+                    const auto velocityScale = 1.0 + human * 0.075;
+                    note.velocity = std::clamp(static_cast<int>(std::lround(note.velocity * velocityScale)), 1, 127);
 
-                auto durationScale = 1.0;
-                switch (profile.articulation) {
-                    case ArticulationStyle::Percussive: durationScale = 0.88; break;
-                    case ArticulationStyle::Staccato: durationScale = 0.46; break;
-                    case ArticulationStyle::Detached: durationScale = 0.72; break;
-                    case ArticulationStyle::Natural: durationScale = 0.94; break;
-                    case ArticulationStyle::Legato: durationScale = 1.04; break;
-                    case ArticulationStyle::Sustained: durationScale = 1.10; break;
-                    case ArticulationStyle::Swelling: durationScale = 1.06; break;
+                    auto durationScale = 1.0;
+                    switch (profile.articulation) {
+                        case ArticulationStyle::Percussive: durationScale = 0.88; break;
+                        case ArticulationStyle::Staccato: durationScale = 0.46; break;
+                        case ArticulationStyle::Detached: durationScale = 0.72; break;
+                        case ArticulationStyle::Natural: durationScale = 0.94; break;
+                        case ArticulationStyle::Legato: durationScale = 1.04; break;
+                        case ArticulationStyle::Sustained: durationScale = 1.10; break;
+                        case ArticulationStyle::Swelling: durationScale = 1.06; break;
+                    }
+                    note.durationBeats = std::max(1.0 / 64.0,
+                        std::min(sectionEnd - note.startBeat,
+                                 note.durationBeats * durationScale * (1.0 + human * 0.025)));
                 }
-                note.durationBeats = std::max(1.0 / 64.0,
-                    std::min(sectionEnd - note.startBeat,
-                             note.durationBeats * durationScale * (1.0 + human * 0.025)));
-                if (monophonicPitchVoice(voice)) {
+                if (shapeNotes && monophonicPitchVoice(voice)) {
                     const auto next = std::find_if(voiceNotes.begin() + static_cast<std::ptrdiff_t>(ordinal + 1),
                         voiceNotes.end(), [&](std::size_t nextIndex) {
                             return pattern.notes[nextIndex].startBeat > note.startBeat + 0.0001;
@@ -325,9 +327,35 @@ void PerformanceExpression::apply(Pattern& pattern, const SongPlan& plan) {
             if (profile.sustainPedal && (voice == VoiceId::HarmonicFoundation ||
                                           voice == VoiceId::HarmonicUpper ||
                                           voice == VoiceId::Atmosphere)) {
-                pattern.controls.push_back({sectionStart, 64, 96, channel, voice});
-                pattern.controls.push_back({std::max(sectionStart, sectionEnd - 1.0 / 32.0),
-                                            64, 0, channel, voice});
+                // Pedal follows played phrases, never an entire section. Long section-wide
+                // CC64 windows retained every released note and could accumulate nearly a
+                // minute of harmony in a receiving instrument.
+                constexpr auto maximumPedalBeats = 2.0;
+                constexpr auto pedalTailBeats = 0.125;
+                constexpr auto phraseGapBeats = 0.25;
+                for (std::size_t first = 0; first < voiceNotes.size();) {
+                    const auto pedalOn = pattern.notes[voiceNotes[first]].startBeat;
+                    auto phraseEnd = pattern.notes[voiceNotes[first]].endBeat();
+                    const auto hardEnd = std::min(sectionEnd - 1.0 / 32.0,
+                                                  pedalOn + maximumPedalBeats);
+                    auto next = first + 1;
+                    while (next < voiceNotes.size()) {
+                        const auto& candidate = pattern.notes[voiceNotes[next]];
+                        if (candidate.startBeat >= hardEnd ||
+                            candidate.startBeat > phraseEnd + phraseGapBeats) break;
+                        phraseEnd = std::max(phraseEnd, candidate.endBeat());
+                        ++next;
+                    }
+                    const auto pedalOff = std::min(hardEnd, phraseEnd + pedalTailBeats);
+                    if (pedalOff > pedalOn + 1.0 / 64.0) {
+                        pattern.controls.push_back({pedalOn, 64, 96, channel, voice});
+                        pattern.controls.push_back({pedalOff, 64, 0, channel, voice});
+                    }
+                    while (next < voiceNotes.size() &&
+                           pattern.notes[voiceNotes[next]].startBeat < pedalOff - 0.0001)
+                        ++next;
+                    first = std::max(first + 1, next);
+                }
             }
 
             if (monophonicPitchVoice(voice) && profile.pitchGesture != PitchGesture::Stable) {
@@ -382,22 +410,24 @@ void PerformanceExpression::apply(Pattern& pattern, const SongPlan& plan) {
 
     std::sort(pattern.controls.begin(), pattern.controls.end(), [](const auto& left, const auto& right) {
         if (left.beat != right.beat) return left.beat < right.beat;
+        if (left.partId != right.partId) return left.partId < right.partId;
         if (left.channel != right.channel) return left.channel < right.channel;
         if (left.controller != right.controller) return left.controller < right.controller;
         return left.value < right.value;
     });
     pattern.controls.erase(std::unique(pattern.controls.begin(), pattern.controls.end(), [](const auto& a, const auto& b) {
-        return std::abs(a.beat - b.beat) < 0.0001 && a.channel == b.channel &&
+        return std::abs(a.beat - b.beat) < 0.0001 && a.partId == b.partId && a.channel == b.channel &&
                a.controller == b.controller && a.value == b.value;
     }), pattern.controls.end());
     std::sort(pattern.expressions.begin(), pattern.expressions.end(), [](const auto& left, const auto& right) {
         if (left.beat != right.beat) return left.beat < right.beat;
+        if (left.partId != right.partId) return left.partId < right.partId;
         if (left.channel != right.channel) return left.channel < right.channel;
         if (left.type != right.type) return left.type < right.type;
         return left.note < right.note;
     });
     pattern.expressions.erase(std::unique(pattern.expressions.begin(), pattern.expressions.end(), [](const auto& a, const auto& b) {
-        return std::abs(a.beat - b.beat) < 0.0001 && a.type == b.type && a.channel == b.channel &&
+        return std::abs(a.beat - b.beat) < 0.0001 && a.partId == b.partId && a.type == b.type && a.channel == b.channel &&
                a.note == b.note && a.value == b.value;
     }), pattern.expressions.end());
     constexpr auto maximumExpressionEvents = std::size_t{65536};

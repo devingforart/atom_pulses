@@ -7,6 +7,15 @@
 #include <chrono>
 #include <cmath>
 #include <initializer_list>
+#include <map>
+#include <numeric>
+
+#if JUCE_WINDOWS
+#ifndef NOMINMAX
+#define NOMINMAX 1
+#endif
+#include <windows.h>
+#endif
 
 namespace pulso::plugin {
 namespace ids {
@@ -145,6 +154,8 @@ juce::String songPlanToJson(const SongPlan& plan) {
     jsonRoot->setProperty("rhythm_language", juce::var(rhythmLanguage));
     auto* harmonicLanguage = new juce::DynamicObject();
     harmonicLanguage->setProperty("description", juce::String::fromUTF8(plan.harmonicLanguage.description.c_str()));
+    harmonicLanguage->setProperty("tonal_policy",
+        juce::String(tonalPolicyKey(plan.harmonicLanguage.tonalPolicy).data()));
     harmonicLanguage->setProperty("tonal_gravity", plan.harmonicLanguage.tonalGravity);
     harmonicLanguage->setProperty("modal_fluidity", plan.harmonicLanguage.modalFluidity);
     harmonicLanguage->setProperty("chromaticism", plan.harmonicLanguage.chromaticism);
@@ -156,6 +167,22 @@ juce::String songPlanToJson(const SongPlan& plan) {
     harmonicLanguage->setProperty("ambiguity", plan.harmonicLanguage.ambiguity);
     harmonicLanguage->setProperty("cadence_strength", plan.harmonicLanguage.cadenceStrength);
     jsonRoot->setProperty("harmonic_language", juce::var(harmonicLanguage));
+    auto* orchestrationLanguage = new juce::DynamicObject();
+    orchestrationLanguage->setProperty("description", juce::String::fromUTF8(plan.orchestrationLanguage.description.c_str()));
+    orchestrationLanguage->setProperty("ensemble_scale", plan.orchestrationLanguage.ensembleScale);
+    orchestrationLanguage->setProperty("timbral_motion", plan.orchestrationLanguage.timbralMotion);
+    orchestrationLanguage->setProperty("foreground_rotation", plan.orchestrationLanguage.foregroundRotation);
+    orchestrationLanguage->setProperty("doubling_restraint", plan.orchestrationLanguage.doublingRestraint);
+    orchestrationLanguage->setProperty("register_separation", plan.orchestrationLanguage.registerSeparation);
+    orchestrationLanguage->setProperty("chamber_contrast", plan.orchestrationLanguage.chamberContrast);
+    orchestrationLanguage->setProperty("tutti_rarity", plan.orchestrationLanguage.tuttiRarity);
+    orchestrationLanguage->setProperty("harmonic_depth", plan.orchestrationLanguage.harmonicDepth);
+    orchestrationLanguage->setProperty("counterpoint_activity", plan.orchestrationLanguage.counterpointActivity);
+    orchestrationLanguage->setProperty("divisi_depth", plan.orchestrationLanguage.divisiDepth);
+    orchestrationLanguage->setProperty("articulation_contrast", plan.orchestrationLanguage.articulationContrast);
+    orchestrationLanguage->setProperty("family_dialogue", plan.orchestrationLanguage.familyDialogue);
+    orchestrationLanguage->setProperty("hybrid_production", plan.orchestrationLanguage.hybridProduction);
+    jsonRoot->setProperty("orchestration_language", juce::var(orchestrationLanguage));
     juce::Array<juce::var> chordPalette;
     for (const auto& chord : plan.chordPalette) {
         auto* item = new juce::DynamicObject();
@@ -175,6 +202,32 @@ juce::String songPlanToJson(const SongPlan& plan) {
     juce::Array<juce::var> motif;
     for (const auto value : plan.motifIntervals) motif.add(value);
     jsonRoot->setProperty("motif_intervals", motif);
+    juce::Array<juce::var> instruments;
+    for (const auto& instrument : plan.instruments) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("id", juce::String::fromUTF8(instrument.id.c_str()));
+        item->setProperty("instrument", juce::String::fromUTF8(instrument.instrumentId.c_str()));
+        item->setProperty("name", juce::String::fromUTF8(instrument.name.c_str()));
+        item->setProperty("source_voice", juce::String(voiceDefinition(instrument.sourceVoice).key.data()));
+        item->setProperty("role", juce::String::fromUTF8(instrument.role.c_str()));
+        item->setProperty("minimum_pitch", instrument.minimumPitch);
+        item->setProperty("maximum_pitch", instrument.maximumPitch);
+        item->setProperty("octave_shift", instrument.octaveShift);
+        item->setProperty("activity", instrument.activity);
+        item->setProperty("prominence", instrument.prominence);
+        item->setProperty("doubling", instrument.doubling);
+        item->setProperty("orchestral_function", juce::String::fromUTF8(instrument.orchestralFunction.c_str()));
+        item->setProperty("articulation_intent", juce::String::fromUTF8(instrument.articulation.c_str()));
+        item->setProperty("divisi_voices", instrument.divisiVoices);
+        item->setProperty("live_device", juce::String::fromUTF8(instrument.liveDevice.c_str()));
+        item->setProperty("live_preset_intent", juce::String::fromUTF8(instrument.livePresetIntent.c_str()));
+        juce::Array<juce::var> activeSections;
+        for (const auto& section : instrument.activeSections)
+            activeSections.add(juce::String::fromUTF8(section.c_str()));
+        item->setProperty("active_sections", activeSections);
+        instruments.add(juce::var(item));
+    }
+    jsonRoot->setProperty("instruments", instruments);
     juce::Array<juce::var> rhythmMotifs;
     for (const auto& motifPattern : plan.rhythmMotifs) {
         auto* item = new juce::DynamicObject();
@@ -295,6 +348,7 @@ PulsoAudioProcessor::PulsoAudioProcessor()
     songPlanSnapshot.store(std::make_shared<SongPlan>(), std::memory_order_release);
     retiredRealtimeSnapshot.store(nullptr, std::memory_order_release);
     ideaMetadata.store(std::make_shared<IdeaMetadata>(), std::memory_order_release);
+    for (auto& sound : partSoundOverrides) sound.store(-1, std::memory_order_relaxed);
     languageParameter = parameters.getRawParameterValue(ids::language);
     for (std::size_t index = 0; index < voiceTimbreParameters.size(); ++index) {
         voiceTimbreParameters[index] = parameters.getRawParameterValue(ids::voiceTimbreIds[index]);
@@ -328,6 +382,39 @@ juce::String PulsoAudioProcessor::currentPreviewWorldName() const {
     const auto selected = static_cast<int>(parameters.getRawParameterValue(ids::previewWorld)->load());
     const auto resolved = selected == 0 ? automaticPreviewWorld.load(std::memory_order_relaxed) : selected - 1;
     return ids::previewWorldNames[static_cast<std::size_t>(std::clamp(resolved, 0, 7))];
+}
+
+bool PulsoAudioProcessor::deployCurrentSongToLive(bool aggregateDepartmentStems) {
+    const auto pattern = currentPattern();
+    if (pattern == nullptr) return false;
+    if (!liveBridgeIsAvailable()) {
+        const std::scoped_lock lock(liveDeployStatusMutex);
+        liveDeployStatus = "ENABLE PulsoDeployRemote IN LIVE SETTINGS";
+        return false;
+    }
+    if (!liveNativeInventoryIsReady()) {
+        const std::scoped_lock lock(liveDeployStatusMutex);
+        liveDeployStatus = "WAIT FOR LIVE NATIVE INVENTORY";
+        return false;
+    }
+    LiveDeploymentOptions options;
+    options.title = currentIdeaTitle();
+    options.bpm = currentTempo();
+    options.numerator = currentTimeSignatureNumerator();
+    options.denominator = currentTimeSignatureDenominator();
+    options.aggregateDepartmentStems = aggregateDepartmentStems;
+    juce::String message;
+    const auto success = writeLiveDeploymentRequest(*pattern, options, message);
+    const std::scoped_lock lock(liveDeployStatusMutex);
+    liveDeployStatus = std::move(message);
+    return success;
+}
+
+juce::String PulsoAudioProcessor::currentLiveDeployStatus() const {
+    const auto bridge = readLiveDeploymentStatus();
+    if (bridge.isNotEmpty()) return bridge;
+    const std::scoped_lock lock(liveDeployStatusMutex);
+    return liveDeployStatus;
 }
 
 void PulsoAudioProcessor::setTargetSongDurationSeconds(int seconds) noexcept {
@@ -520,6 +607,79 @@ void PulsoAudioProcessor::auditionVoicePreview(VoiceId voice) noexcept {
         pendingPreviewAudition.store(index, std::memory_order_release);
 }
 
+InstrumentSoundModel PulsoAudioProcessor::partPreviewSound(std::uint16_t partId) const noexcept {
+    if (partId < partSoundOverrides.size()) {
+        const auto override = partSoundOverrides[partId].load(std::memory_order_relaxed);
+        if (override >= 0 && override <= static_cast<int>(InstrumentSoundModel::Texture))
+            return static_cast<InstrumentSoundModel>(override);
+    }
+    const auto pattern = currentPattern();
+    if (pattern != nullptr) {
+        const auto part = std::find_if(pattern->parts.begin(), pattern->parts.end(), [partId](const auto& item) {
+            return item.id == partId;
+        });
+        if (part != pattern->parts.end()) return part->soundModel;
+    }
+    return InstrumentSoundModel::Generic;
+}
+
+void PulsoAudioProcessor::setPartPreviewSound(std::uint16_t partId, InstrumentSoundModel model,
+                                               bool restoreAiChoice) {
+    if (partId == 0 || partId >= partSoundOverrides.size()) return;
+    const auto current = currentPattern();
+    if (current == nullptr) return;
+    const auto source = std::find_if(current->parts.begin(), current->parts.end(), [partId](const auto& part) {
+        return part.id == partId;
+    });
+    if (source == current->parts.end()) return;
+    const auto selected = restoreAiChoice ? instrumentSoundModel(source->catalogId) : model;
+    partSoundOverrides[partId].store(static_cast<int>(selected), std::memory_order_release);
+    auto updated = std::make_shared<Pattern>(*current);
+    if (auto part = std::find_if(updated->parts.begin(), updated->parts.end(), [partId](const auto& item) {
+            return item.id == partId;
+        }); part != updated->parts.end())
+        part->soundModel = selected;
+    uiPatternSnapshot.store(std::move(updated), std::memory_order_release);
+    auditionRevision.fetch_add(1, std::memory_order_release);
+    updateHostDisplay(juce::AudioProcessorListener::ChangeDetails{}
+                          .withNonParameterStateChanged(true));
+}
+
+juce::StringArray PulsoAudioProcessor::liveNativeDeviceChoices() {
+    return {"Drum Rack", "Instrument Rack", "Simpler", "Sampler", "Drift", "Meld",
+            "Wavetable", "Operator", "Analog", "Electric", "Tension", "Collision",
+            "Granulator III"};
+}
+
+void PulsoAudioProcessor::setPartLiveDevice(std::uint16_t partId, const juce::String& requested,
+                                            bool restoreAiChoice) {
+    if (partId == 0) return;
+    const auto current = currentPattern();
+    if (current == nullptr) return;
+    auto updatedPattern = std::make_shared<Pattern>(*current);
+    const auto part = std::find_if(updatedPattern->parts.begin(), updatedPattern->parts.end(),
+        [partId](const auto& item) { return item.id == partId; });
+    if (part == updatedPattern->parts.end()) return;
+    auto selected = requested.trim().substring(0, 48).toStdString();
+    auto intent = part->livePresetIntent;
+    if (const auto currentPlan = songPlanSnapshot.load(std::memory_order_acquire)) {
+        if (partId <= currentPlan->instruments.size()) {
+            const auto& assignment = currentPlan->instruments[partId - 1];
+            if (restoreAiChoice) {
+                selected = assignment.liveDevice;
+                intent = assignment.livePresetIntent;
+            } else {
+                intent = assignment.instrumentId + " " + assignment.articulation;
+            }
+        }
+    }
+    part->liveDevice = selected.empty() ? "Instrument Rack" : selected;
+    part->livePresetIntent = intent;
+    uiPatternSnapshot.store(std::move(updatedPattern), std::memory_order_release);
+    updateHostDisplay(juce::AudioProcessorListener::ChangeDetails{}
+                          .withNonParameterStateChanged(true));
+}
+
 float PulsoAudioProcessor::voicePreviewLevelDb(VoiceId voice) const noexcept {
     const auto index = static_cast<std::size_t>(voice);
     if (index >= voiceLevelParameters.size() || voiceLevelParameters[index] == nullptr) return 0.0f;
@@ -662,7 +822,9 @@ void PulsoAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) 
     processingEpoch.fetch_add(1, std::memory_order_acq_rel);
 }
 
-void PulsoAudioProcessor::releaseResources() { silencePreview(false); }
+void PulsoAudioProcessor::releaseResources() {
+    silencePreview(false);
+}
 
 bool PulsoAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
     const auto output = layouts.getMainOutputChannelSet();
@@ -796,6 +958,7 @@ PulsoAudioProcessor::GenerationRequest PulsoAudioProcessor::makeGenerationReques
     request.action = static_cast<std::uint8_t>(pendingIdeaAction.load(std::memory_order_acquire));
     request.lockedLayers = lockedLayers.load(std::memory_order_relaxed);
     request.targetSongSeconds = songDurationSeconds.load(std::memory_order_relaxed);
+    request.orchestrationIntent = static_cast<std::uint8_t>(orchestrationIntent());
     return request;
 }
 
@@ -873,6 +1036,31 @@ void PulsoAudioProcessor::preserveLockedLayers(Pattern& generated, const Pattern
         if (family == VoiceFamily::Texture) family = VoiceFamily::Harmony;
         return family;
     };
+    std::map<std::uint16_t, std::uint16_t> remappedParts;
+    auto remapPart = [&](std::uint16_t previousId) {
+        if (previousId == 0) return std::uint16_t{};
+        if (const auto known = remappedParts.find(previousId); known != remappedParts.end())
+            return known->second;
+        const auto source = std::find_if(previous.parts.begin(), previous.parts.end(),
+            [previousId](const auto& part) { return part.id == previousId; });
+        if (source == previous.parts.end()) return std::uint16_t{};
+        const auto same = std::find_if(generated.parts.begin(), generated.parts.end(), [&](const auto& part) {
+            return part.catalogId == source->catalogId && part.name == source->name &&
+                   part.sourceVoice == source->sourceVoice;
+        });
+        if (same != generated.parts.end()) {
+            remappedParts[previousId] = same->id;
+            return same->id;
+        }
+        auto copy = *source;
+        const auto nextId = generated.parts.empty() ? 1 :
+            static_cast<int>(std::max_element(generated.parts.begin(), generated.parts.end(),
+                [](const auto& left, const auto& right) { return left.id < right.id; })->id) + 1;
+        copy.id = static_cast<std::uint16_t>(std::clamp(nextId, 1, 65535));
+        generated.parts.push_back(copy);
+        remappedParts[previousId] = copy.id;
+        return copy.id;
+    };
     for (std::size_t layer = 0; layer < families.size(); ++layer) {
         if ((mask & (1u << layer)) == 0) continue;
         const auto family = families[layer];
@@ -883,8 +1071,11 @@ void PulsoAudioProcessor::preserveLockedLayers(Pattern& generated, const Pattern
                               generated.notes.end());
         for (const auto& note : previous.notes)
             if (familyForVoice(note.voice, note.channel) == family &&
-                note.startBeat < generated.lengthBeats)
-                generated.notes.push_back(note);
+                note.startBeat < generated.lengthBeats) {
+                auto preserved = note;
+                preserved.partId = remapPart(note.partId);
+                generated.notes.push_back(preserved);
+            }
         generated.controls.erase(std::remove_if(generated.controls.begin(), generated.controls.end(),
                                                  [&](const auto& control) {
                                                      return familyForVoice(control.voice, control.channel) == family;
@@ -943,6 +1134,11 @@ bool PulsoAudioProcessor::popGeneratedPattern(RealtimePattern& pattern) noexcept
 }
 
 void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
+#if JUCE_WINDOWS
+    // Composition can burst across thousands of symbolic events. Keep that worker below
+    // the host audio thread so deeper orchestration cannot steal a 256-sample deadline.
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
+#endif
     while (!token.stop_requested()) {
         retiredRealtimeSnapshot.exchange(nullptr, std::memory_order_acq_rel);
         GenerationRequest request;
@@ -1012,6 +1208,10 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 const std::scoped_lock lock(creativeDirectionMutex);
                 songDirection = creativeDirection;
             }
+            if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::DeepProduction))
+                songDirection += "\nOrchestration mode: deep production. Build a detailed hybrid acoustic/electronic ensemble with independent harmonic families, controlled counterpoint, automation and production-ready negative space.";
+            else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Symphonic))
+                songDirection += "\nOrchestration mode: symphonic. Treat the orchestra as multiple independent choirs with divisi strings, woodwind and brass dialogue, orchestral percussion, register-aware counterpoint, articulation contrast and a long-range chamber-to-tutti arc.";
             if (isSongRequest) {
                 const auto totalBars = std::clamp(static_cast<int>(std::lround(
                     newest.targetSongSeconds * currentTempo() / 60.0 / newest.beatsPerBar)), 8, 512);
@@ -1072,6 +1272,21 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 }
                 plan.seed = newest.seed;
                 plan.targetSeconds = newest.targetSongSeconds;
+                if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::DeepProduction)) {
+                    plan.orchestrationLanguage.ensembleScale = std::max(plan.orchestrationLanguage.ensembleScale, 0.78);
+                    plan.orchestrationLanguage.harmonicDepth = std::max(plan.orchestrationLanguage.harmonicDepth, 0.84);
+                    plan.orchestrationLanguage.counterpointActivity = std::max(plan.orchestrationLanguage.counterpointActivity, 0.66);
+                    plan.orchestrationLanguage.familyDialogue = std::max(plan.orchestrationLanguage.familyDialogue, 0.78);
+                    plan.orchestrationLanguage.hybridProduction = std::max(plan.orchestrationLanguage.hybridProduction, 0.72);
+                } else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Symphonic)) {
+                    plan.orchestrationLanguage.ensembleScale = std::max(plan.orchestrationLanguage.ensembleScale, 0.92);
+                    plan.orchestrationLanguage.harmonicDepth = std::max(plan.orchestrationLanguage.harmonicDepth, 0.92);
+                    plan.orchestrationLanguage.counterpointActivity = std::max(plan.orchestrationLanguage.counterpointActivity, 0.80);
+                    plan.orchestrationLanguage.divisiDepth = std::max(plan.orchestrationLanguage.divisiDepth, 0.84);
+                    plan.orchestrationLanguage.articulationContrast = std::max(plan.orchestrationLanguage.articulationContrast, 0.82);
+                    plan.orchestrationLanguage.familyDialogue = std::max(plan.orchestrationLanguage.familyDialogue, 0.88);
+                    plan.orchestrationLanguage.hybridProduction = std::min(plan.orchestrationLanguage.hybridProduction, 0.28);
+                }
                 SongComposer::normalizePlan(plan);
                 songPlanSnapshot.store(std::make_shared<SongPlan>(plan), std::memory_order_release);
                 generationProgress.store(0.14f, std::memory_order_relaxed);
@@ -1172,10 +1387,13 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->controls = generated.controls;
         playbackPattern->expressions = generated.expressions;
         playbackPattern->markers = generated.markers;
+        playbackPattern->parts = generated.parts;
         playbackPattern->lengthBeats = generated.lengthBeats;
         playbackPattern->seed = generated.seed;
         realtime.pattern = std::move(playbackPattern);
         realtime.lengthBeats = generated.lengthBeats;
+        realtime.maximumNoteDuration = std::accumulate(generated.notes.begin(), generated.notes.end(), 0.25,
+            [](double maximum, const auto& note) { return std::max(maximum, note.durationBeats); });
         realtime.seed = generated.seed;
         realtime.serial = newest.serial;
         realtime.epoch = newest.epoch;
@@ -1186,8 +1404,11 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         } else if (current && !current->notes.empty()) {
             previousPatternSnapshot.store(current, std::memory_order_release);
         }
+        for (auto& sound : partSoundOverrides) sound.store(-1, std::memory_order_relaxed);
         uiPatternSnapshot.store(std::make_shared<Pattern>(generated), std::memory_order_release);
         ideaMetadata.store(metadata, std::memory_order_release);
+        updateHostDisplay(juce::AudioProcessorListener::ChangeDetails{}
+                              .withNonParameterStateChanged(true));
         while (!token.stop_requested() && !pushGeneratedPattern(realtime))
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         if (action != IdeaAction::None)
@@ -1276,12 +1497,12 @@ void PulsoAudioProcessor::schedulePattern(const RealtimePattern& pattern, const 
         std::array<const ExpressionEvent*, 16> latestPitch{};
         std::array<const ExpressionEvent*, 16> latestPressure{};
         for (const auto& control : pattern.pattern->controls) {
-            if (control.beat > localBeat || !audible(control.voice, control.channel)) continue;
+            if (control.partId != 0 || control.beat > localBeat || !audible(control.voice, control.channel)) continue;
             latestControls[static_cast<std::size_t>(std::clamp(control.channel, 1, 16) - 1)]
                           [static_cast<std::size_t>(std::clamp(control.controller, 0, 127))] = &control;
         }
         for (const auto& expression : pattern.pattern->expressions) {
-            if (expression.beat > localBeat || !audible(expression.voice, expression.channel)) continue;
+            if (expression.partId != 0 || expression.beat > localBeat || !audible(expression.voice, expression.channel)) continue;
             const auto channel = static_cast<std::size_t>(std::clamp(expression.channel, 1, 16) - 1);
             if (expression.type == ExpressionEventType::PitchBend) latestPitch[channel] = &expression;
             else if (expression.type == ExpressionEventType::ChannelPressure) latestPressure[channel] = &expression;
@@ -1302,8 +1523,17 @@ void PulsoAudioProcessor::schedulePattern(const RealtimePattern& pattern, const 
 
     for (auto cycle = firstCycle; cycle <= lastCycle; ++cycle) {
         const auto cycleStart = static_cast<double>(cycle) * pattern.lengthBeats;
-        for (std::size_t noteIndex = 0; noteIndex < pattern.pattern->notes.size(); ++noteIndex) {
-            const auto& note = pattern.pattern->notes[noteIndex];
+        constexpr auto performanceMarginBeats = 0.025;
+        const auto localWindowStart = transport.startBeat - cycleStart -
+                                      pattern.maximumNoteDuration - performanceMarginBeats;
+        const auto localWindowEnd = transport.endBeat - cycleStart + performanceMarginBeats;
+        const auto noteBegin = std::lower_bound(pattern.pattern->notes.begin(), pattern.pattern->notes.end(),
+            localWindowStart, [](const auto& note, double beat) { return note.startBeat < beat; });
+        const auto noteEnd = std::upper_bound(noteBegin, pattern.pattern->notes.end(),
+            localWindowEnd, [](double beat, const auto& note) { return beat < note.startBeat; });
+        for (auto iterator = noteBegin; iterator != noteEnd; ++iterator) {
+            const auto noteIndex = static_cast<std::size_t>(iterator - pattern.pattern->notes.begin());
+            const auto& note = *iterator;
             if (!audible(note.voice, note.channel)) continue;
             const auto expressive = performanceEnabled
                 ? performanceOffsetBeats(note, pattern.seed, noteIndex, transport.bpm) : 0.0;
@@ -1319,16 +1549,28 @@ void PulsoAudioProcessor::schedulePattern(const RealtimePattern& pattern, const 
                                                 static_cast<juce::uint8>(note.velocity)), noteStart);
             addAtBeat(juce::MidiMessage::noteOff(note.channel, note.pitch), noteEnd);
         }
-        for (const auto& control : pattern.pattern->controls) {
-            if (!audible(control.voice, control.channel)) continue;
+        const auto localBlockStart = transport.startBeat - cycleStart;
+        const auto localBlockEnd = transport.endBeat - cycleStart;
+        const auto controlBegin = std::lower_bound(pattern.pattern->controls.begin(), pattern.pattern->controls.end(),
+            localBlockStart, [](const auto& event, double beat) { return event.beat < beat; });
+        const auto controlEnd = std::lower_bound(controlBegin, pattern.pattern->controls.end(),
+            localBlockEnd, [](const auto& event, double beat) { return event.beat < beat; });
+        for (auto iterator = controlBegin; iterator != controlEnd; ++iterator) {
+            const auto& control = *iterator;
+            if (control.partId != 0 || !audible(control.voice, control.channel)) continue;
             addAtBeat(juce::MidiMessage::controllerEvent(
                           std::clamp(control.channel, 1, 16),
                           std::clamp(control.controller, 0, 127),
                           std::clamp(control.value, 0, 127)),
                       cycleStart + control.beat);
         }
-        for (const auto& expression : pattern.pattern->expressions) {
-            if (!audible(expression.voice, expression.channel)) continue;
+        const auto expressionBegin = std::lower_bound(pattern.pattern->expressions.begin(), pattern.pattern->expressions.end(),
+            localBlockStart, [](const auto& event, double beat) { return event.beat < beat; });
+        const auto expressionEnd = std::lower_bound(expressionBegin, pattern.pattern->expressions.end(),
+            localBlockEnd, [](const auto& event, double beat) { return event.beat < beat; });
+        for (auto iterator = expressionBegin; iterator != expressionEnd; ++iterator) {
+            const auto& expression = *iterator;
+            if (expression.partId != 0 || !audible(expression.voice, expression.channel)) continue;
             const auto channel = std::clamp(expression.channel, 1, 16);
             switch (expression.type) {
                 case ExpressionEventType::PitchBend:
@@ -1367,9 +1609,10 @@ void PulsoAudioProcessor::scheduleOverlappingPreviewNotes(const RealtimePattern&
             const auto expressive = performanceEnabled
                 ? performanceOffsetBeats(note, pattern.seed, noteIndex, transport.bpm) : 0.0;
             const auto start = cycleStart + note.startBeat + expressive;
-            if (start < transport.startBeat && cycleStart + note.endBeat() + expressive > transport.startBeat)
+            if (start < transport.startBeat && cycleStart + note.endBeat() + expressive > transport.startBeat) {
                 output.addEvent(juce::MidiMessage::noteOn(note.channel, note.pitch,
                                                           static_cast<juce::uint8>(note.velocity)), 0);
+            }
         }
     }
 }
@@ -1441,6 +1684,7 @@ void PulsoAudioProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::Mi
         sendGeneratedPanic(generatedMidi, 0);
 
     const auto retrigger = transportStarted || transportDiscontinuity || patternChanged || auditionChanged;
+    const auto previewEnabled = parameters.getRawParameterValue(ids::preview)->load() > 0.5f;
     if (playbackActive)
         schedulePattern(activePattern, transport, audio.getNumSamples(), generatedMidi, retrigger);
 
@@ -1449,7 +1693,6 @@ void PulsoAudioProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::Mi
     if (thruEnabled) midi.addEvents(thruMidi, 0, -1, 0);
     midi.addEvents(generatedMidi, 0, -1, 0);
 
-    const auto previewEnabled = parameters.getRawParameterValue(ids::preview)->load() > 0.5f;
     const auto selectedPreviewWorld = static_cast<int>(parameters.getRawParameterValue(ids::previewWorld)->load());
     previewSynth.setSoundWorld(selectedPreviewWorld == 0
         ? automaticPreviewWorld.load(std::memory_order_relaxed) : selectedPreviewWorld - 1);
@@ -1470,6 +1713,8 @@ void PulsoAudioProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::Mi
     }
     if (!previewEnabled && previewWasEnabled) silencePreview(true);
     if (previewEnabled) {
+        // Monitor exactly the ordered stream emitted by PULSO. A separately-built
+        // stream reordered resets/controllers after note-ons at block boundaries.
         previewMidi.addEvents(generatedMidi, 0, -1, 0);
         if (!previewWasEnabled && playbackActive && !retrigger)
             scheduleOverlappingPreviewNotes(activePattern, transport, previewMidi);
@@ -1499,8 +1744,10 @@ void PulsoAudioProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::Mi
     } else if (previewAuditionChannel == 10) {
         activePreviewAudition = -1;
     }
+    // Never gate an audio renderer on MidiBuffer::isEmpty(). A sustained note may span
+    // hundreds of event-free ASIO blocks. Live-native instruments are deployed in the
+    // host; PULSO's internal synth remains the lightweight composition preview.
     previewSynth.renderNextBlock(audio, previewMidi, 0, audio.getNumSamples());
-
     const auto targetGain = juce::Decibels::decibelsToGain(parameters.getRawParameterValue(ids::gain)->load());
     previewGain.setTargetValue(targetGain);
     if (audio.getNumSamples() > 0) {
@@ -1527,6 +1774,8 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     state.setProperty("soloVoices", static_cast<juce::int64>(soloVoices.load(std::memory_order_relaxed)), nullptr);
     state.setProperty("mutedVoices", static_cast<juce::int64>(mutedVoices.load(std::memory_order_relaxed)), nullptr);
     state.setProperty("songDurationSeconds", songDurationSeconds.load(std::memory_order_relaxed), nullptr);
+    state.setProperty("liveDeploymentMode", static_cast<int>(liveDeploymentMode()), nullptr);
+    state.setProperty("orchestrationIntent", static_cast<int>(orchestrationIntent()), nullptr);
     {
         const std::scoped_lock lock(creativeDirectionMutex);
         state.setProperty("creativeDirection", creativeDirection, nullptr);
@@ -1540,7 +1789,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(3); // Binary composition state version.
+        composition.writeInt(7); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -1551,6 +1800,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
             composition.writeInt(note.velocity);
             composition.writeInt(note.channel);
             composition.writeInt(static_cast<int>(note.voice));
+            composition.writeInt(static_cast<int>(note.partId));
         }
         composition.writeInt(static_cast<int>(pattern->controls.size()));
         for (const auto& control : pattern->controls) {
@@ -1559,6 +1809,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
             composition.writeInt(control.value);
             composition.writeInt(control.channel);
             composition.writeInt(static_cast<int>(control.voice));
+            composition.writeInt(static_cast<int>(control.partId));
         }
         composition.writeInt(static_cast<int>(pattern->expressions.size()));
         for (const auto& expression : pattern->expressions) {
@@ -1568,11 +1819,30 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
             composition.writeInt(expression.note);
             composition.writeInt(expression.channel);
             composition.writeInt(static_cast<int>(expression.voice));
+            composition.writeInt(static_cast<int>(expression.partId));
         }
         composition.writeInt(static_cast<int>(pattern->markers.size()));
         for (const auto& marker : pattern->markers) {
             composition.writeDouble(marker.beat);
             composition.writeString(juce::String::fromUTF8(marker.name.c_str()));
+        }
+        composition.writeInt(static_cast<int>(pattern->parts.size()));
+        for (const auto& part : pattern->parts) {
+            composition.writeInt(static_cast<int>(part.id));
+            composition.writeString(juce::String::fromUTF8(part.catalogId.c_str()));
+            composition.writeString(juce::String::fromUTF8(part.name.c_str()));
+            composition.writeInt(static_cast<int>(part.sourceVoice));
+            composition.writeInt(static_cast<int>(part.department));
+            composition.writeString(juce::String::fromUTF8(part.role.c_str()));
+            composition.writeInt(part.minimumPitch);
+            composition.writeInt(part.maximumPitch);
+            composition.writeDouble(part.prominence);
+            composition.writeInt(static_cast<int>(part.soundModel));
+            composition.writeString(juce::String::fromUTF8(part.orchestralFunction.c_str()));
+            composition.writeString(juce::String::fromUTF8(part.articulation.c_str()));
+            composition.writeInt(part.divisiVoices);
+            composition.writeString(juce::String::fromUTF8(part.liveDevice.c_str()));
+            composition.writeString(juce::String::fromUTF8(part.livePresetIntent.c_str()));
         }
         state.setProperty("compositionData", composition.getMemoryBlock().toBase64Encoding(), nullptr);
         if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) {
@@ -1610,6 +1880,14 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
             songDurationSeconds.store(std::clamp(static_cast<int>(
                                           state.getProperty("songDurationSeconds", 0)), 0, 1800),
                                       std::memory_order_relaxed);
+            liveDeploymentModeValue.store(
+                static_cast<int>(state.getProperty("liveDeploymentMode", 0)) == 1
+                    ? LiveDeploymentMode::QuickThreeStem
+                    : LiveDeploymentMode::FullOrchestration,
+                std::memory_order_release);
+            orchestrationIntentValue.store(static_cast<OrchestrationIntent>(std::clamp(
+                static_cast<int>(state.getProperty("orchestrationIntent", 0)), 0, 2)),
+                std::memory_order_release);
             {
                 const std::scoped_lock lock(creativeDirectionMutex);
                 creativeDirection = state.getProperty("creativeDirection", {}).toString().substring(0, 600);
@@ -1625,7 +1903,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version != 1 && version != 2 && version != 3) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 7) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -1641,6 +1919,9 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                         note.voice = voice >= 0 && voice < static_cast<int>(VoiceId::Count)
                             ? static_cast<VoiceId>(voice) : VoiceId::Unspecified;
                     }
+                    if (version >= 4)
+                        note.partId = static_cast<std::uint16_t>(
+                            std::clamp(composition.readInt(), 0, 65535));
                     if (std::isfinite(note.startBeat) && std::isfinite(note.durationBeats) &&
                         note.startBeat >= 0.0 && note.startBeat < restoredPattern->lengthBeats &&
                         note.durationBeats > 0.0 && note.pitch >= 0 && note.pitch <= 127 &&
@@ -1660,6 +1941,9 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                             const auto voice = composition.readInt();
                             control.voice = voice >= 0 && voice < static_cast<int>(VoiceId::Count)
                                 ? static_cast<VoiceId>(voice) : VoiceId::Unspecified;
+                            if (version >= 5)
+                                control.partId = static_cast<std::uint16_t>(
+                                    std::clamp(composition.readInt(), 0, 65535));
                             if (std::isfinite(control.beat) && control.beat >= 0.0 &&
                                 control.beat < restoredPattern->lengthBeats &&
                                 control.controller >= 0 && control.controller <= 127 &&
@@ -1683,6 +1967,9 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                 const auto voice = composition.readInt();
                                 expression.voice = voice >= 0 && voice < static_cast<int>(VoiceId::Count)
                                     ? static_cast<VoiceId>(voice) : VoiceId::Unspecified;
+                                if (version >= 5)
+                                    expression.partId = static_cast<std::uint16_t>(
+                                        std::clamp(composition.readInt(), 0, 65535));
                                 const auto maximum = expression.type == ExpressionEventType::PitchBend ? 16383 : 127;
                                 if (std::isfinite(expression.beat) && expression.beat >= 0.0 &&
                                     expression.beat < restoredPattern->lengthBeats &&
@@ -1703,6 +1990,53 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                 marker.beat < restoredPattern->lengthBeats)
                                 restoredPattern->markers.push_back(std::move(marker));
                         }
+                    }
+                    if (version >= 4) {
+                        const auto partCount = composition.readInt();
+                        if (partCount >= 0 && partCount <= 64) {
+                            for (auto index = 0; index < partCount; ++index) {
+                                InstrumentPart part;
+                                part.id = static_cast<std::uint16_t>(std::clamp(composition.readInt(), 0, 65535));
+                                part.catalogId = composition.readString().substring(0, 64).toStdString();
+                                part.name = composition.readString().substring(0, 96).toStdString();
+                                const auto voice = composition.readInt();
+                                part.sourceVoice = voice >= 0 && voice < static_cast<int>(VoiceId::Count)
+                                    ? static_cast<VoiceId>(voice) : VoiceId::Unspecified;
+                                const auto department = composition.readInt();
+                                part.department = department >= 0 && department <= static_cast<int>(ScoreDepartment::Melody)
+                                    ? static_cast<ScoreDepartment>(department) : ScoreDepartment::Harmony;
+                                part.role = composition.readString().substring(0, 180).toStdString();
+                                part.minimumPitch = std::clamp(composition.readInt(), 0, 127);
+                                part.maximumPitch = std::clamp(composition.readInt(), part.minimumPitch, 127);
+                                part.prominence = std::clamp(composition.readDouble(), 0.0, 1.0);
+                                if (version >= 5) {
+                                    const auto sound = composition.readInt();
+                                    part.soundModel = sound >= 0 && sound <= static_cast<int>(InstrumentSoundModel::Texture)
+                                        ? static_cast<InstrumentSoundModel>(sound) : InstrumentSoundModel::Generic;
+                                } else {
+                                    part.soundModel = instrumentSoundModel(part.catalogId);
+                                }
+                                if (version >= 6) {
+                                    part.orchestralFunction = composition.readString().substring(0, 32).toStdString();
+                                    part.articulation = composition.readString().substring(0, 32).toStdString();
+                                    part.divisiVoices = std::clamp(composition.readInt(), 1, 4);
+                                }
+                                if (version >= 7) {
+                                    part.liveDevice = composition.readString().substring(0, 48).toStdString();
+                                    part.livePresetIntent = composition.readString().substring(0, 96).toStdString();
+                                }
+                                if (part.id > 0 && !part.name.empty()) restoredPattern->parts.push_back(std::move(part));
+                            }
+                        }
+                    }
+                    if (version == 4 && !restoredPattern->parts.empty()) {
+                        restoredPattern->notes.erase(std::remove_if(restoredPattern->notes.begin(),
+                            restoredPattern->notes.end(), [&](const auto& note) {
+                                return note.partId == 0 && std::any_of(restoredPattern->parts.begin(),
+                                    restoredPattern->parts.end(), [&](const auto& part) {
+                                        return part.sourceVoice == note.voice;
+                                    });
+                            }), restoredPattern->notes.end());
                     }
                 }
                 if (!restoredPattern->notes.empty()) {

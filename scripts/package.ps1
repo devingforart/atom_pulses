@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $preset = if ($Configuration -eq 'Debug') { 'windows-debug' } else { 'windows-release' }
-$version = '0.21.0'
+$version = '0.23.0'
 $packageName = "PULSO-$version-windows-x64"
 $distRoot = Join-Path $projectRoot 'dist'
 $stage = Join-Path $distRoot $packageName
@@ -35,11 +35,14 @@ if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force 
 New-Item -ItemType Directory -Path (Join-Path $stage 'VST3') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $stage 'Standalone') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $stage 'Documentation') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $stage 'AbletonBridge') -Force | Out-Null
 Copy-Item -LiteralPath $vstSource -Destination (Join-Path $stage 'VST3\PULSO.vst3') -Recurse
 Copy-Item -LiteralPath $appSource -Destination (Join-Path $stage 'Standalone\PULSO.exe')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-Path $stage 'README.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE.md') -Destination (Join-Path $stage 'LICENSE.md')
 Copy-Item -Path (Join-Path $projectRoot 'docs\*.md') -Destination (Join-Path $stage 'Documentation')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'ableton\PulsoDeployRemote') -Destination (Join-Path $stage 'AbletonBridge\PulsoDeployRemote') -Recurse
+Copy-Item -LiteralPath (Join-Path $projectRoot 'scripts\install-ableton-bridge.ps1') -Destination (Join-Path $stage 'AbletonBridge\install-ableton-bridge.ps1')
 
 Compress-Archive -LiteralPath $stage -DestinationPath $archive -CompressionLevel Optimal
 $hash = Get-FileHash -LiteralPath $archive -Algorithm SHA256

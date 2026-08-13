@@ -9,7 +9,8 @@ Este repositorio contiene un MVP funcional para Ableton Live en Windows:
 
 - Plugin VST3 y aplicación standalone construidos con JUCE.
 - Generador musical C++20 desacoplado y cubierto por pruebas.
-- Orquestación dinámica de quince voces: kick, clap/snare, closed hats, open hats/shaker,
+- Orquestación dinámica en dos niveles: quince roles de ejecución alimentan entre 12 y 36
+  instrumentos independientes de ritmo, armonía y melodía; kick, clap/snare, hats,
   dos percusiones, dos bajos, tres capas armónicas, lead, contramelodía, atmósfera y transiciones.
 - `RhythmPlan` dirigido por GPT con estados de kick, continuidad, swing y gestos estructurales
   como drops, dobles golpes, pickups, silencios y fills.
@@ -29,6 +30,8 @@ Este repositorio contiene un MVP funcional para Ableton Live en Windows:
 - Motor de tiempo real: generación en worker, panic MIDI y recuperación de seek/loop.
 - Preescucha multitimbral con ocho mundos sonoros, selección automática desde el prompt,
   polifonía rítmica reservada, espacio estéreo y limitador a -0.5 dBFS.
+- `Live Native Sound Director`: GPT elige dispositivos nativos e intención tímbrica;
+  el puente valida contra el Browser instalado, crea las pistas y carga sonidos reales.
 - Ayuda contextual en toda la interfaz: deja el cursor sobre cualquier elemento durante 0.35 s.
 - Salida MIDI para grabar o alimentar cualquier instrumento.
 - Arrastre directo de la canción, una sección, una familia o una voz individual como `.mid`.
@@ -72,6 +75,13 @@ VST3 oficial orientada a desarrollo. Para una instalación global, ejecuta una c
 elevada y usa `-Destination 'C:\Program Files\Common Files\VST3'`.
 
 Después abre Ableton Live, entra en `Settings > Plug-Ins` y pulsa `Rescan`.
+
+Para activar el despliegue automático, instala además el puente desde una PowerShell
+elevada, reinicia Live y selecciónalo como Control Surface:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-ableton-bridge.ps1
+```
 
 ### Activar composición con GPT
 
@@ -172,11 +182,13 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 
 ## Estado del producto
 
-La versión 0.21.0 integra un arquitecto GPT de forma larga con razonamiento medio y una segunda pasada crítica,
+La versión 0.25.0 integra un arquitecto GPT de forma larga con razonamiento medio y una segunda pasada crítica,
 Structured Outputs, motivos rítmicos abiertos y mutaciones con propósito, renderizado
-jerárquico de hasta 512 compases, quince voces con entrada y salida dinámica, expresión
+jerárquico de hasta 512 compases, quince roles compositivos y una plantilla dinámica de
+12–36 instrumentos con rotación de foreground, contraste cámara–tutti, divisi y doblajes restringidos, expresión
 instrumental dirigida por IA con CC, bends, pressure, aftertouch y pedal, dirección previa de foreground/response/support, presupuestos de ataques,
-respiración coordinada por frase, contrato tonal E2E, dirección rítmica por estados y gestos,
+respiración coordinada por frase, contrato tonal E2E consolidado por defecto (acorde y escala
+deben coincidir en cada apoyo estructural), expansión sólo por pedido explícito, dirección rítmica por estados y gestos,
 SOLO/MUTE persistente por voz sin modificar el MIDI fuente,
 generación cancelable, deadlines de red y fallback automático al primer borrador válido,
 transporte WinHTTP nativo en Windows con proxy automático y cancelación inmediata,
@@ -189,10 +201,32 @@ preview multitimbral band-limited por mundos sonoros,
 playhead visual sincronizado con el PPQ de Ableton,
 paletas persistentes de sonido individual directamente en las quince filas,
 inspectores por voz con octava -12/0/+12, nivel en dB y audition instantáneo,
+selección manual por cada parte orquestal con retorno inmediato al instrumento elegido por IA,
 interfaz completa español/inglés con cambio persistente dentro del VST y tooltips localizados,
 codificación UTF-8 explícita y layout inferior simplificado sin selectores globales redundantes,
 timeline de secciones, exportación por voz y fallback algorítmico. La red nunca se usa
 desde el callback de audio.
+
+### Orquestación profunda
+
+El selector `AUTO ORCHESTRA / DEEP PRODUCTION / SYMPHONIC` define la escala de pensamiento
+instrumental antes de componer. GPT asigna a cada parte una función —fundamento, cuerpo,
+extensión, contrapunto, color o transición— además de registro, articulación, divisi y
+presencia por secciones. El realizador escribe líneas independientes para contrapunto y
+color, conserva los materiales estructurales, añade CC11/CC1/CC74 por instrumento y pasa
+el MIDI final por un crítico de tesitura, polifonía y claridad grave. `FULL ORCHESTRATION`
+conserva cada parte como pista editable independiente al desplegar en Live.
+
+Desde 0.22.1, las partes orquestales poseen modelos sonoros reales en el preview; una
+partitura completa no vuelve a emitir pistas legacy duplicadas. El exportador recorta
+retriggers ambiguos, garantiza resets MIDI al final, individualiza la expresión y crea
+un manifiesto `.pulso.json` para asignar cada `catalog_id` a racks de Ableton o bibliotecas
+externas.
+
+Desde 0.26.0, PULSO no aloja instrumentos de terceros. El puente indexa únicamente sonidos
+nativos de Live, consume un manifiesto atómico y crea una pista de Arrangement por parte.
+La IA elige el dispositivo y describe el carácter del preset; un resolver determinista
+elige sólo entre contenido realmente instalado y reporta cualquier fallback o faltante.
 
 Lee [docs/ROADMAP.md](docs/ROADMAP.md) para las siguientes etapas y
 [docs/LICENSING.md](docs/LICENSING.md) antes de distribuir binarios.

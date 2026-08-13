@@ -3,9 +3,11 @@
 #include "Random.h"
 #include "HarmonyEngine.h"
 #include "MusicalCritic.h"
+#include "OrchestrationScore.h"
 #include "PhraseDirector.h"
 #include "PhraseComposer.h"
 #include "RhythmEngine.h"
+#include "Scale.h"
 #include "TonalContract.h"
 
 #include <algorithm>
@@ -57,6 +59,23 @@ bool containsCaseInsensitive(const std::string& text, const std::string& needle)
         return static_cast<char>(std::tolower(value));
     });
     return lower.find(needle) != std::string::npos;
+}
+
+std::vector<int> homeScalePitchClasses(int rootPitchClass, ScaleKind scale) {
+    std::vector<int> result;
+    for (const auto interval : intervalsFor(scale))
+        result.push_back(positiveModulo(rootPitchClass + interval, 12));
+    return result;
+}
+
+int nearestScalePitchClass(int pitchClass, std::span<const int> scalePitches) {
+    for (auto distance = 0; distance < 7; ++distance) {
+        const auto down = positiveModulo(pitchClass - distance, 12);
+        if (std::find(scalePitches.begin(), scalePitches.end(), down) != scalePitches.end()) return down;
+        const auto up = positiveModulo(pitchClass + distance, 12);
+        if (std::find(scalePitches.begin(), scalePitches.end(), up) != scalePitches.end()) return up;
+    }
+    return scalePitches.empty() ? positiveModulo(pitchClass, 12) : scalePitches.front();
 }
 
 std::vector<VoiceId> defaultActiveVoices(const SongSection& section) {
@@ -269,6 +288,7 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
     plan.seed = seed;
     plan.rootPitchClass = positiveModulo(rootPitchClass, 12);
     plan.scale = scale;
+    plan.harmonicLanguage.tonalPolicy = tonalPolicyForDirection(direction);
     plan.title = direction.empty() ? "Longform Idea" : direction.substr(0, 48);
     plan.key = std::array{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
                    [static_cast<std::size_t>(plan.rootPitchClass)] +
@@ -319,16 +339,22 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
         makeChord("arrival", "Final arrival", 0, {0, minor ? 3 : 4, 7, minor ? 10 : 11},
                   HarmonicFunction::Tonic, VoicingStrategy::Close, 0.08)
     };
-    plan.harmonicLanguage.description = "Open local harmony derived from the full creative direction";
-    plan.harmonicLanguage.tonalGravity = 0.38 + harmonyRandom.unit() * 0.52;
-    plan.harmonicLanguage.modalFluidity = 0.10 + harmonyRandom.unit() * 0.70;
-    plan.harmonicLanguage.chromaticism = 0.08 + harmonyRandom.unit() * 0.58;
+    plan.harmonicLanguage.description = plan.harmonicLanguage.tonalPolicy == TonalPolicy::Consolidated
+        ? "Consolidated tonal narrative with functional diatonic colour"
+        : "Expanded harmonic narrative explicitly requested by the direction";
+    plan.harmonicLanguage.tonalGravity = plan.harmonicLanguage.tonalPolicy == TonalPolicy::Consolidated
+        ? 0.78 + harmonyRandom.unit() * 0.18 : 0.38 + harmonyRandom.unit() * 0.52;
+    plan.harmonicLanguage.modalFluidity = plan.harmonicLanguage.tonalPolicy == TonalPolicy::Consolidated
+        ? 0.02 + harmonyRandom.unit() * 0.06 : 0.10 + harmonyRandom.unit() * 0.70;
+    plan.harmonicLanguage.chromaticism = plan.harmonicLanguage.tonalPolicy == TonalPolicy::Consolidated
+        ? 0.0 : 0.08 + harmonyRandom.unit() * 0.58;
     plan.harmonicLanguage.extensionRichness = 0.28 + harmonyRandom.unit() * 0.65;
     plan.harmonicLanguage.inversionMotion = 0.20 + harmonyRandom.unit() * 0.68;
     plan.harmonicLanguage.voiceLeadingSmoothness = 0.45 + harmonyRandom.unit() * 0.50;
     plan.harmonicLanguage.harmonicRhythmActivity = 0.18 + harmonyRandom.unit() * 0.66;
     plan.harmonicLanguage.pedalToneAffinity = 0.08 + harmonyRandom.unit() * 0.62;
-    plan.harmonicLanguage.ambiguity = 0.12 + harmonyRandom.unit() * 0.66;
+    plan.harmonicLanguage.ambiguity = plan.harmonicLanguage.tonalPolicy == TonalPolicy::Consolidated
+        ? 0.04 + harmonyRandom.unit() * 0.10 : 0.12 + harmonyRandom.unit() * 0.66;
     plan.harmonicLanguage.cadenceStrength = 0.38 + harmonyRandom.unit() * 0.56;
     plan.voices = defaultVoicePlan();
     Random rhythmRandom(seed ^ textIdentity(direction) ^ 0x525954484dULL);
@@ -390,8 +416,10 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
         harmonicSection.tonalCenterPitchClass = positiveModulo(
             plan.rootPitchClass + (index > selectedFormIndices.size() / 2 && item.tension > 0.68
                 ? (harmonyRandom.chance(0.5) ? 5 : 7) : 0), 12);
-        harmonicSection.modeHint = minor ? "minor with modal and borrowed colour"
-                                         : "major with modal and borrowed colour";
+        harmonicSection.modeHint = plan.harmonicLanguage.tonalPolicy == TonalPolicy::Consolidated
+            ? (minor ? "consolidated minor" : "consolidated major")
+            : (minor ? "minor with requested harmonic expansion"
+                     : "major with requested harmonic expansion");
         const auto harmonicStride = std::clamp(4 - static_cast<int>(std::lround(
             plan.harmonicLanguage.harmonicRhythmActivity * 3.0)), 1, 4);
         for (auto harmonicBar = 0; harmonicBar < bars; harmonicBar += harmonicStride) {
@@ -499,6 +527,16 @@ void SongComposer::normalizePlan(SongPlan& plan) {
                         &plan.harmonicLanguage.ambiguity,
                         &plan.harmonicLanguage.cadenceStrength})
         *value = std::clamp(std::isfinite(*value) ? *value : 0.5, 0.0, 1.0);
+    if (plan.harmonicLanguage.tonalPolicy == TonalPolicy::Consolidated) {
+        plan.harmonicLanguage.tonalGravity = std::max(0.72, plan.harmonicLanguage.tonalGravity);
+        plan.harmonicLanguage.modalFluidity = std::min(0.10, plan.harmonicLanguage.modalFluidity);
+        plan.harmonicLanguage.chromaticism = std::min(0.02, plan.harmonicLanguage.chromaticism);
+        plan.harmonicLanguage.ambiguity = std::min(0.16, plan.harmonicLanguage.ambiguity);
+    } else if (plan.harmonicLanguage.tonalPolicy == TonalPolicy::Expanded) {
+        plan.harmonicLanguage.chromaticism = std::min(0.35, plan.harmonicLanguage.chromaticism);
+        plan.harmonicLanguage.ambiguity = std::min(0.42, plan.harmonicLanguage.ambiguity);
+    }
+    const auto homeScale = homeScalePitchClasses(plan.rootPitchClass, plan.scale);
     std::vector<std::string> chordIds;
     for (std::size_t index = 0; index < plan.chordPalette.size(); ++index) {
         auto& chord = plan.chordPalette[index];
@@ -517,12 +555,190 @@ void SongComposer::normalizePlan(SongPlan& plan) {
                 uniquePitchClasses.end())
                 uniquePitchClasses.push_back(pitchClass);
         chord.pitchClasses = std::move(uniquePitchClasses);
+        if (plan.harmonicLanguage.tonalPolicy == TonalPolicy::Consolidated) {
+            chord.rootPitchClass = nearestScalePitchClass(chord.rootPitchClass, homeScale);
+            chord.bassPitchClass = nearestScalePitchClass(chord.bassPitchClass, homeScale);
+            chord.pitchClasses.erase(std::remove_if(chord.pitchClasses.begin(), chord.pitchClasses.end(),
+                [&](int pitchClass) {
+                    return std::find(homeScale.begin(), homeScale.end(), pitchClass) == homeScale.end();
+                }), chord.pitchClasses.end());
+            if (std::find(chord.pitchClasses.begin(), chord.pitchClasses.end(), chord.rootPitchClass) ==
+                chord.pitchClasses.end())
+                chord.pitchClasses.insert(chord.pitchClasses.begin(), chord.rootPitchClass);
+            if (chord.pitchClasses.size() < 3) {
+                const auto degree = std::find(homeScale.begin(), homeScale.end(), chord.rootPitchClass);
+                const auto degreeIndex = degree == homeScale.end() ? 0 :
+                    static_cast<std::size_t>(std::distance(homeScale.begin(), degree));
+                for (const auto offset : {2U, 4U}) {
+                    const auto tone = homeScale[(degreeIndex + offset) % homeScale.size()];
+                    if (std::find(chord.pitchClasses.begin(), chord.pitchClasses.end(), tone) == chord.pitchClasses.end())
+                        chord.pitchClasses.push_back(tone);
+                }
+            }
+            if (chord.function == HarmonicFunction::Chromatic || chord.function == HarmonicFunction::Colour)
+                chord.function = HarmonicFunction::Modal;
+            if (chord.voicing == VoicingStrategy::Cluster || chord.voicing == VoicingStrategy::Quartal)
+                chord.voicing = VoicingStrategy::Open;
+            chord.tension = std::min(chord.tension, 0.72);
+        }
         if (chord.pitchClasses.size() < 2)
             chord.pitchClasses = {chord.rootPitchClass, positiveModulo(chord.rootPitchClass + 7, 12)};
         if (chord.pitchClasses.size() > 8) chord.pitchClasses.resize(8);
         chord.tension = std::clamp(std::isfinite(chord.tension) ? chord.tension : 0.5, 0.0, 1.0);
     }
     if (plan.voices.empty()) plan.voices = defaultVoicePlan();
+    if (plan.instruments.empty()) plan.instruments = defaultOrchestrationAssignments();
+    if (plan.instruments.size() > 48) plan.instruments.resize(48);
+    if (plan.orchestrationLanguage.description.empty())
+        plan.orchestrationLanguage.description = "Evolving chamber-to-tutti orchestration";
+    if (plan.orchestrationLanguage.description.size() > 320)
+        plan.orchestrationLanguage.description.resize(320);
+    for (auto* value : {&plan.orchestrationLanguage.ensembleScale,
+                        &plan.orchestrationLanguage.timbralMotion,
+                        &plan.orchestrationLanguage.foregroundRotation,
+                        &plan.orchestrationLanguage.doublingRestraint,
+                        &plan.orchestrationLanguage.registerSeparation,
+                        &plan.orchestrationLanguage.chamberContrast,
+                        &plan.orchestrationLanguage.tuttiRarity,
+                        &plan.orchestrationLanguage.harmonicDepth,
+                        &plan.orchestrationLanguage.counterpointActivity,
+                        &plan.orchestrationLanguage.divisiDepth,
+                        &plan.orchestrationLanguage.articulationContrast,
+                        &plan.orchestrationLanguage.familyDialogue,
+                        &plan.orchestrationLanguage.hybridProduction})
+        *value = std::clamp(std::isfinite(*value) ? *value : 0.5, 0.0, 1.0);
+    std::vector<std::string> instrumentIds;
+    std::vector<std::string> instrumentNames;
+    for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+        auto& instrument = plan.instruments[index];
+        const auto* definition = instrumentDefinition(instrument.instrumentId);
+        if (definition == nullptr) {
+            definition = &instrumentCatalog()[index % instrumentCatalog().size()];
+            instrument.instrumentId = std::string(definition->id);
+        }
+        if (instrument.id.empty()) instrument.id = "part_" + std::to_string(index + 1);
+        if (std::find(instrumentIds.begin(), instrumentIds.end(), instrument.id) != instrumentIds.end())
+            instrument.id += "_" + std::to_string(index + 1);
+        instrumentIds.push_back(instrument.id);
+        if (instrument.name.empty()) instrument.name = std::string(definition->name);
+        if (instrument.name.size() > 96) instrument.name.resize(96);
+        const auto baseName = instrument.name;
+        auto nameSuffix = 2;
+        while (std::find(instrumentNames.begin(), instrumentNames.end(), instrument.name) != instrumentNames.end())
+            instrument.name = baseName + " " + std::to_string(nameSuffix++);
+        instrumentNames.push_back(instrument.name);
+        if (instrument.role.size() > 180) instrument.role.resize(180);
+        if (instrument.sourceVoice == VoiceId::Unspecified || instrument.sourceVoice == VoiceId::Count)
+            instrument.sourceVoice = definition->preferredVoice;
+        const auto sourceFamily = voiceDefinition(instrument.sourceVoice).family;
+        const auto incompatible = (definition->department == ScoreDepartment::Rhythm &&
+                                   sourceFamily != VoiceFamily::Rhythm) ||
+                                  (definition->department == ScoreDepartment::Melody &&
+                                   sourceFamily != VoiceFamily::Melodic) ||
+                                  (definition->department == ScoreDepartment::Harmony &&
+                                   (sourceFamily == VoiceFamily::Rhythm || sourceFamily == VoiceFamily::Melodic));
+        if (incompatible) instrument.sourceVoice = definition->preferredVoice;
+        instrument.minimumPitch = std::clamp(instrument.minimumPitch,
+            definition->minimumPitch, definition->maximumPitch);
+        instrument.maximumPitch = std::clamp(instrument.maximumPitch,
+            instrument.minimumPitch, definition->maximumPitch);
+        instrument.octaveShift = std::clamp(instrument.octaveShift, -24, 24);
+        instrument.activity = std::clamp(std::isfinite(instrument.activity) ? instrument.activity : 0.5, 0.0, 1.0);
+        instrument.prominence = std::clamp(std::isfinite(instrument.prominence) ? instrument.prominence : 0.5, 0.0, 1.0);
+        instrument.doubling = std::clamp(std::isfinite(instrument.doubling) ? instrument.doubling : 0.2, 0.0, 1.0);
+        constexpr std::array functions{"foundation", "body", "extension", "counterpoint", "color", "transition"};
+        if (std::find(functions.begin(), functions.end(), instrument.orchestralFunction) == functions.end())
+            instrument.orchestralFunction = "body";
+        constexpr std::array articulations{"natural", "legato", "staccato", "detached", "sustained",
+                                            "swelling", "tremolo", "pizzicato", "ostinato"};
+        if (std::find(articulations.begin(), articulations.end(), instrument.articulation) == articulations.end())
+            instrument.articulation = "natural";
+        instrument.divisiVoices = std::clamp(instrument.divisiVoices, 1, 4);
+        constexpr std::array liveDevices{"auto", "Drum Rack", "Instrument Rack", "Simpler", "Sampler",
+                                         "Drift", "Meld", "Wavetable", "Operator", "Analog", "Electric",
+                                         "Tension", "Collision", "Granulator III"};
+        if (std::find(liveDevices.begin(), liveDevices.end(), instrument.liveDevice) == liveDevices.end())
+            instrument.liveDevice = "auto";
+        if (instrument.livePresetIntent.empty()) instrument.livePresetIntent = instrument.instrumentId;
+        if (instrument.livePresetIntent.size() > 96) instrument.livePresetIntent.resize(96);
+    }
+    const auto departmentCount = [&](ScoreDepartment department) {
+        return std::count_if(plan.instruments.begin(), plan.instruments.end(), [&](const auto& instrument) {
+            const auto* definition = instrumentDefinition(instrument.instrumentId);
+            return definition != nullptr && definition->department == department;
+        });
+    };
+    auto orchestralDefaults = defaultOrchestrationAssignments();
+    const auto ensureDepartment = [&](ScoreDepartment department, int minimum) {
+        auto count = departmentCount(department);
+        for (const auto& candidate : orchestralDefaults) {
+            if (count >= minimum || plan.instruments.size() >= 48) break;
+            const auto* definition = instrumentDefinition(candidate.instrumentId);
+            if (definition == nullptr || definition->department != department ||
+                std::any_of(plan.instruments.begin(), plan.instruments.end(), [&](const auto& existing) {
+                    return existing.instrumentId == candidate.instrumentId;
+                })) continue;
+            auto addition = candidate;
+            addition.id = "auto_" + addition.instrumentId;
+            plan.instruments.push_back(std::move(addition));
+            ++count;
+        }
+    };
+    ensureDepartment(ScoreDepartment::Rhythm, 3);
+    ensureDepartment(ScoreDepartment::Harmony, plan.orchestrationLanguage.harmonicDepth >= 0.62 ? 9 : 6);
+    ensureDepartment(ScoreDepartment::Melody, plan.orchestrationLanguage.familyDialogue >= 0.62 ? 4 : 3);
+    const auto voiceDefaultsForInstruments = defaultVoicePlan();
+    const auto fullyAuthoredCast = plan.voices.size() >= 7 &&
+        std::all_of(plan.voices.begin(), plan.voices.end(), [](const auto& voice) {
+            return voice.performance.authored;
+        });
+    for (auto& instrument : plan.instruments)
+        if (std::none_of(plan.voices.begin(), plan.voices.end(), [&](const auto& voice) {
+                return voice.id == instrument.sourceVoice;
+            })) {
+            const auto* instrumentType = instrumentDefinition(instrument.instrumentId);
+            const auto compatible = [&](VoiceId voice) {
+                if (instrumentType == nullptr) return true;
+                const auto family = voiceDefinition(voice).family;
+                if (instrumentType->department == ScoreDepartment::Rhythm)
+                    return family == VoiceFamily::Rhythm;
+                if (instrumentType->department == ScoreDepartment::Melody)
+                    return family == VoiceFamily::Melodic;
+                return family != VoiceFamily::Rhythm && family != VoiceFamily::Melodic;
+            };
+            const auto authoredSource = fullyAuthoredCast ? std::find_if(plan.voices.begin(), plan.voices.end(),
+                [&](const auto& voice) { return compatible(voice.id); }) : plan.voices.end();
+            if (authoredSource != plan.voices.end()) {
+                instrument.sourceVoice = authoredSource->id;
+                continue;
+            }
+            const auto source = std::find_if(voiceDefaultsForInstruments.begin(),
+                voiceDefaultsForInstruments.end(), [&](const auto& voice) {
+                    return voice.id == instrument.sourceVoice;
+                });
+            if (source != voiceDefaultsForInstruments.end()) plan.voices.push_back(*source);
+        }
+    // Every execution role in the score needs a concrete instrumental owner. Without this
+    // invariant, inactive assignments leak back out as anonymous legacy MIDI tracks.
+    for (const auto& voice : plan.voices) {
+        if (plan.instruments.size() >= 48 ||
+            std::any_of(plan.instruments.begin(), plan.instruments.end(), [&](const auto& instrument) {
+                return instrument.sourceVoice == voice.id;
+            })) continue;
+        const auto definition = std::find_if(instrumentCatalog().begin(), instrumentCatalog().end(),
+            [&](const auto& candidate) { return candidate.preferredVoice == voice.id; });
+        if (definition == instrumentCatalog().end()) continue;
+        auto name = std::string(definition->name);
+        const auto baseName = name;
+        auto suffix = 2;
+        while (std::any_of(plan.instruments.begin(), plan.instruments.end(), [&](const auto& instrument) {
+            return instrument.name == name;
+        })) name = baseName + " " + std::to_string(suffix++);
+        plan.instruments.push_back({"coverage_" + std::string(voiceDefinition(voice.id).key),
+            std::string(definition->id), std::move(name), voice.id, "Dedicated orchestral owner",
+            definition->minimumPitch, definition->maximumPitch, 0, 0.62,
+            definition->weight * 0.68, 0.10, {}});
+    }
     if (plan.rhythmLanguage.description.empty())
         plan.rhythmLanguage.description = "Open rhythmic conversation";
     if (plan.rhythmLanguage.description.size() > 240)
@@ -670,6 +886,8 @@ void SongComposer::normalizePlan(SongPlan& plan) {
                            ? plan.totalBars - cursor
                            : std::clamp(section.bars, 1, plan.totalBars - cursor - remainingSections);
         section.tonalCenterPitchClass = positiveModulo(section.tonalCenterPitchClass, 12);
+        if (plan.harmonicLanguage.tonalPolicy == TonalPolicy::Consolidated)
+            section.tonalCenterPitchClass = plan.rootPitchClass;
         if (section.modeHint.empty()) section.modeHint = "open";
         if (section.modeHint.size() > 96) section.modeHint.resize(96);
         if (section.harmonicEvents.empty()) {
@@ -733,6 +951,32 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     if (plan.sections.back().bars < 1) {
         plan.sections.back().bars = 1;
         plan.totalBars = std::max(plan.totalBars, cursor + 1);
+    }
+    for (auto& instrument : plan.instruments) {
+        instrument.activeSections.erase(std::remove_if(instrument.activeSections.begin(),
+            instrument.activeSections.end(), [&](const auto& name) {
+                return std::none_of(plan.sections.begin(), plan.sections.end(), [&](const auto& section) {
+                    return section.name == name;
+                });
+            }), instrument.activeSections.end());
+        std::sort(instrument.activeSections.begin(), instrument.activeSections.end());
+        instrument.activeSections.erase(std::unique(instrument.activeSections.begin(),
+            instrument.activeSections.end()), instrument.activeSections.end());
+        if (!instrument.activeSections.empty()) {
+            for (auto& section : plan.sections)
+                if (std::find(instrument.activeSections.begin(), instrument.activeSections.end(), section.name) !=
+                        instrument.activeSections.end() &&
+                    std::find(section.activeVoices.begin(), section.activeVoices.end(), instrument.sourceVoice) ==
+                        section.activeVoices.end())
+                    section.activeVoices.push_back(instrument.sourceVoice);
+        } else if (std::none_of(plan.sections.begin(), plan.sections.end(), [&](const auto& section) {
+                       return std::find(section.activeVoices.begin(), section.activeVoices.end(),
+                                        instrument.sourceVoice) != section.activeVoices.end();
+                   })) {
+            const auto selected = std::max_element(plan.sections.begin(), plan.sections.end(),
+                [](const auto& left, const auto& right) { return left.energy < right.energy; });
+            if (selected != plan.sections.end()) selected->activeVoices.push_back(instrument.sourceVoice);
+        }
     }
 }
 
@@ -897,16 +1141,12 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
 
     [[maybe_unused]] const auto rhythmReport = RhythmEngine::enforceContract(song, plan);
     const auto tonalReport = repairTonalContract(
-        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows);
+        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
+        plan.harmonicLanguage.tonalPolicy);
     const auto qualityReport = MusicalCritic::reviewAndRefine(song, plan);
-    const auto finalTonalReport = repairTonalContract(
-        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows);
-    if (renderReport != nullptr) {
-        renderReport->firstTonalPass = tonalReport;
-        renderReport->finalTonalPass = finalTonalReport;
-        renderReport->musical = qualityReport;
-        renderReport->harmonicWindows = harmonicWindows.size();
-    }
+    [[maybe_unused]] const auto structuralTonalReport = repairTonalContract(
+        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
+        plan.harmonicLanguage.tonalPolicy);
     for (auto& note : song.notes) {
         if (note.voice == VoiceId::Unspecified ||
             isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
@@ -917,7 +1157,18 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
                                            definition.minimumPitch, definition.maximumPitch);
     }
 
-    PerformanceExpression::apply(song, plan);
+    // Articulation is part of the rendered score and may extend releases. Validate that
+    // actual performed MIDI, then rebuild note-bound expression against the final notes.
+    PerformanceExpression::apply(song, plan, true);
+    const auto finalTonalReport = repairTonalContract(
+        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
+        plan.harmonicLanguage.tonalPolicy);
+    if (renderReport != nullptr) {
+        renderReport->firstTonalPass = tonalReport;
+        renderReport->finalTonalPass = finalTonalReport;
+        renderReport->musical = qualityReport;
+        renderReport->harmonicWindows = harmonicWindows.size();
+    }
 
     std::sort(song.notes.begin(), song.notes.end(), [](const auto& left, const auto& right) {
         if (left.startBeat != right.startBeat) return left.startBeat < right.startBeat;
@@ -928,6 +1179,12 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         return std::abs(left.startBeat - right.startBeat) < 0.0001 && left.channel == right.channel &&
                left.pitch == right.pitch && left.voice == right.voice;
     }), song.notes.end());
+    auto orchestrationReport = OrchestrationScore::realize(song, plan);
+    // Instrument realization can transpose a line by octaves. Rebind per-note expression
+    // only after every final orchestral pitch and doubling is known.
+    PerformanceExpression::apply(song, plan, false);
+    OrchestrationScore::applyPartExpression(song, plan, &orchestrationReport);
+    if (renderReport != nullptr) renderReport->orchestration = orchestrationReport;
     std::sort(song.controls.begin(), song.controls.end(), [](const auto& left, const auto& right) {
         if (left.beat != right.beat) return left.beat < right.beat;
         if (left.voice != right.voice) return left.voice < right.voice;

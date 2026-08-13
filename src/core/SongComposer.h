@@ -3,6 +3,7 @@
 #include "Generator.h"
 #include "HarmonyPlan.h"
 #include "MusicalCritic.h"
+#include "OrchestrationScore.h"
 #include "PerformanceExpression.h"
 #include "RhythmPlan.h"
 #include "TonalContract.h"
@@ -54,11 +55,13 @@ struct SongPlan {
     ScaleKind scale{ScaleKind::Minor};
     RhythmLanguage rhythmLanguage;
     HarmonicLanguage harmonicLanguage;
+    OrchestrationLanguage orchestrationLanguage;
     std::uint64_t seed{1};
     std::vector<int> motifIntervals{0, 3, 5, 7, 3};
     std::vector<HarmonicChord> chordPalette;
     std::vector<RhythmMotif> rhythmMotifs;
     std::vector<PlannedVoice> voices;
+    std::vector<InstrumentAssignment> instruments;
     std::vector<SongSection> sections;
 };
 
@@ -66,10 +69,12 @@ struct CompositionRenderReport {
     TonalRepairReport firstTonalPass;
     TonalRepairReport finalTonalPass;
     MusicalQualityReport musical;
+    OrchestrationReport orchestration;
     std::size_t harmonicWindows{};
 
     [[nodiscard]] bool productionReady() const noexcept {
-        return finalTonalPass.after.productionReady();
+        return finalTonalPass.after.productionReady() && orchestration.registerClarity >= 0.70 &&
+               orchestration.familyBalance >= 0.45;
     }
 };
 

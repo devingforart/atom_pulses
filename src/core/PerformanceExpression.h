@@ -53,7 +53,9 @@ class PerformanceExpression final {
 public:
     // Converts semantic, AI-authored performance intent into portable MIDI expression.
     // Safe channel pitch gestures are limited to monophonic voices with dedicated channels.
-    static void apply(Pattern&, const SongPlan&);
+    // shapeNotes=false rebuilds CC/expression from already-final note data without
+    // changing velocity or duration. This is used after the final tonal audit.
+    static void apply(Pattern&, const SongPlan&, bool shapeNotes = true);
     static void applyIdeaDefaults(Pattern&, double bpm, double beatsPerBar = 4.0);
 };
 

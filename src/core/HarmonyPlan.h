@@ -16,8 +16,14 @@ enum class VoicingStrategy : std::uint8_t {
     Close = 0, Open, Drop2, Quartal, Cluster, Shell, Mixed
 };
 
+// The tonal policy is a safety boundary, not a style preset. Consolidated is the
+// default for every ordinary request; wider pitch vocabularies require explicit
+// language in the user's direction.
+enum class TonalPolicy : std::uint8_t { Consolidated = 0, Expanded, Free };
+
 struct HarmonicLanguage {
     std::string description{"Open harmonic narrative"};
+    TonalPolicy tonalPolicy{TonalPolicy::Consolidated};
     double tonalGravity{0.65};
     double modalFluidity{0.25};
     double chromaticism{0.18};
@@ -51,7 +57,9 @@ struct HarmonicEvent {
 
 [[nodiscard]] std::string_view harmonicFunctionKey(HarmonicFunction) noexcept;
 [[nodiscard]] std::string_view voicingStrategyKey(VoicingStrategy) noexcept;
+[[nodiscard]] std::string_view tonalPolicyKey(TonalPolicy) noexcept;
 [[nodiscard]] std::optional<HarmonicFunction> harmonicFunctionFromKey(std::string_view) noexcept;
 [[nodiscard]] std::optional<VoicingStrategy> voicingStrategyFromKey(std::string_view) noexcept;
+[[nodiscard]] TonalPolicy tonalPolicyForDirection(std::string_view);
 
 } // namespace pulso

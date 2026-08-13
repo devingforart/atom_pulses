@@ -71,15 +71,18 @@ void canonicalizeMotif(std::vector<int>& intervals, ScaleKind);
 [[nodiscard]] TonalRepairReport repairTonalContract(
     Pattern&, int rootPitchClass, ScaleKind, double beatsPerBar,
     std::span<const std::vector<int>> harmonyByBar,
-    double maximumChromaticRatio = 0.035);
+    double maximumChromaticRatio = 0.035,
+    TonalPolicy policy = TonalPolicy::Consolidated);
 
 [[nodiscard]] TonalAuditReport auditTonalContract(
     const Pattern&, int rootPitchClass, ScaleKind, double beatsPerBar,
-    std::span<const HarmonicWindow> harmony);
+    std::span<const HarmonicWindow> harmony,
+    TonalPolicy policy = TonalPolicy::Consolidated);
 
 [[nodiscard]] TonalRepairReport repairTonalContract(
     Pattern&, int rootPitchClass, ScaleKind, double beatsPerBar,
     std::span<const HarmonicWindow> harmony,
-    double maximumChromaticRatio = 0.035);
+    double maximumChromaticRatio = 0.035,
+    TonalPolicy policy = TonalPolicy::Consolidated);
 
 } // namespace pulso

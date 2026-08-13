@@ -32,32 +32,42 @@ El cambio tímbrico se oye sobre la composición actual; para obtener la nueva d
 de silencios y respiraciones hay que pulsar `COMPOSE SONG` o `REGENERATE UNLOCKED`, ya
 que esas decisiones forman parte del MIDI y no del preset de escucha.
 El indicador distingue una composición GPT validada del motor local.
+
+### Producir con instrumentos nativos de Live
+
+La franja `LIVE SOUND DIRECTOR` muestra el inventario que el puente encontró realmente
+en el Browser. GPT selecciona un dispositivo nativo por parte y describe el carácter del
+preset sin inventar nombres. Puedes cambiar la elección desde el menú de cada pista.
+
+1. Activa `PulsoDeployRemote` como Control Surface y espera `LIVE SOUNDS INDEXED`.
+2. Elige `FULL ORCHESTRATION` o `QUICK 3-STEM`.
+3. Pulsa `CREATE IN LIVE`.
+4. El puente crea clips editables y carga dispositivos/Racks de uno en uno.
+
+El estado final indica cuántos sonidos cargaron, cuántos usaron fallback y cuáles faltan.
+El índice incluye Sounds, Drums, Instruments, Max for Live y User Library; excluye VSTs.
 La franja superior muestra la forma completa. Pulsa una sección para seleccionarla;
 después arrastra `SECTION` para convertirla en un clip MIDI independiente. `FULL SONG`
-exporta la obra completa con una pista por voz activa, hasta quince.
+exporta la obra completa con una pista por instrumento orquestal que tenga material. Una
+canción puede contener entre 12 y 36 partes, aunque nunca tienen que sonar todas a la vez.
+Junto al `.mid`, PULSO escribe un archivo `.pulso.json` con `catalog_id`, departamento,
+rol, nombre exacto de pista y ruta de rack recomendada para cada parte. Ese manifiesto es
+el contrato estable del puente: permite que racks propios, Max for Live o un Remote Script
+resuelvan la instrumentación sin inferirla a partir del nombre visible. Si no existe un
+rack compatible, el puente informa el faltante; nunca carga silenciosamente otro preset.
 
-Debajo del arreglo hay cuatro selectores de fuente sonora:
-
-- `KIT`: 808 Deep, 909 House, Modern Club u Organic. 808 y 909 poseen modelos propios
-  de kick, snare, clap y hats; no son una ecualización del mismo sonido. Snare y hats
-  incorporan variación analógica controlada por golpe y choke entre open/closed hat.
-- `BASS`: Deep Sub, Warm Analog, Rolling Reese o Acid Pluck.
-- `HARMONY`: Deep Pad, Warm Poly, House Organ o Glass.
-- `MELODY`: Warm Mono, Soft Pluck, Air o Bell.
-
-`Warm Mono` usa fase libre, dos osciladores apenas desafinados en la misma octava,
-filtro más cálido, ataque redondeado, drift y vibrato progresivo. Está diseñado para
-evitar ataques clonados y el carácter rígido de una onda chiptune.
-
-Los selectores se guardan en la sesión y cambian solamente el audio de referencia. El
-MIDI GM arrastrado, grabado o enviado a otros instrumentos permanece idéntico.
+El preview integrado sí resuelve esos `catalog_id` inmediatamente. Piano, harp, familias
+de cuerdas, maderas, brass, choir, mallets, bajos, sintes, taiko, timpani, percusión latina,
+shaker y cymbals tienen modelos DSP y envolventes diferentes aunque compartan canal o rol.
+El MIDI estándar continúa siendo neutral: para obtener el mismo timbre dentro de Live hay
+que cargar el rack recomendado o conectar una biblioteca propia al mismo `catalog_id`.
 
 ## Sonido individual desde cada pista
 
 La columna izquierda de la partitura funciona como un banco de pestañas instrumentales.
 Haz clic sobre el nombre de cualquier voz para abrir su menú de sonidos. La fila muestra
-el modelo que está escuchándose; `AUTO` significa que sigue el selector de familia de la
-parte inferior. Una elección manual sólo reemplaza esa voz: elegir `808 Body Snare` para
+el modelo que está escuchándose; `AUTO` sigue la familia y el mundo sonoro actual.
+Una elección manual sólo reemplaza esa voz: elegir `808 Body Snare` para
 `SNARE / CLAP`, por ejemplo, no cambia kick, hats ni percusiones.
 
 Las quince selecciones son parámetros automatizables y persistentes del host. SOLO,
@@ -80,7 +90,25 @@ y muestra `PLAY` o `PAUSED`, el compás, la sección musical y el tiempo dentro 
 Al hacer seek, detener o reanudar Live, el indicador salta inmediatamente a la posición
 correcta. Si el host no ofrece transporte, muestra `PREVIEW` y utiliza el reloj interno.
 
-## 3. Conservar y regenerar capas
+## 3. Desplegar la orquesta como pistas editables
+
+Instala el Remote Script desde una PowerShell elevada:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-ableton-bridge.ps1
+```
+
+Reinicia Live y elige `PulsoDeployRemote` en `Settings > Link, Tempo & MIDI > Control
+Surface`. Compón una canción y pulsa `CREATE IN LIVE`. El puente crea una pista MIDI y un
+clip de Arrangement por cada `partId` poblado. Después resuelve la intención tímbrica
+contra presets y dispositivos nativos realmente instalados. Si no encuentra el preset,
+prueba el dispositivo elegido y un Rack seguro, siempre informando el fallback.
+
+El intercambio usa JSON atómico en `%LOCALAPPDATA%\PULSO\LiveBridge`. El despliegue crea
+notas y velocities editables. Para conservar además CC, aftertouch, bends y metaeventos,
+arrastra `FULL SONG`, que continúa siendo la exportación MIDI canónica.
+
+## 4. Conservar y regenerar capas
 
 1. Genera una idea y escúchala completa.
 2. Activa `LOCK MELODY` si te gusta el hook.
@@ -91,7 +119,19 @@ correcta. Si el host no ofrece transporte, muestra `PREVIEW` y utiliza el reloj 
 Los locks actúan por familias: `Harmony + FX`, `Melodic`, `Bass` y `Rhythm`. Las quince
 voces conservan identidad propia aunque varias compartan el mismo canal MIDI.
 
-## 4. Enviar el MIDI a otro instrumento
+## 5. Enviar el MIDI a otro instrumento
+
+### Despliegue nativo en Live
+
+Con `PulsoDeployRemote` activo, el selector de despliegue ofrece dos destinos:
+
+- `FULL ORCHESTRATION` (predeterminado): crea una pista MIDI editable por cada instrumento
+  poblado y carga en cada pista el sonido nativo elegido por la IA.
+- `QUICK 3-STEM`: crea únicamente `RHYTHM`, `HARMONY` y `MELODY` para una prueba ligera.
+
+`CREATE IN LIVE` reemplaza sólo las pistas creadas por esa instancia del puente; no
+duplica el arreglo ni toca pistas del usuario. PULSO conserva su preview interno para
+audicionar antes de materializar la producción en Live.
 
 1. Conserva PULSO en la primera pista.
 2. Crea una segunda pista MIDI y carga el instrumento deseado.
@@ -103,7 +143,7 @@ voces conservan identidad propia aunque varias compartan el mismo canal MIDI.
 Para convertir el resultado en un clip, graba la segunda pista. Esta ruta conserva
 notas y velocidades como MIDI normal.
 
-## 5. Arrastrar clips MIDI directamente
+## 6. Arrastrar clips MIDI directamente
 
 Cuando la partitura ya contiene notas, mantén pulsada una de las asas inferiores y
 arrástrala a una pista o espacio vacío del Arrangement de Live:
@@ -136,7 +176,7 @@ PULSO no activa MPE implícitamente: Live y muchos instrumentos tratan los canal
 canales miembro y eso entraría en conflicto con las pistas por voz. Los bends expresivos
 se aplican solamente a voces monofónicas que ya poseen un canal independiente.
 
-## 6. Variaciones desde Max for Live
+## 7. Variaciones desde Max for Live
 
 El plugin interpreta la nota MIDI 127 del canal 16 como `Regenerate Unlocked`.
 No la reenvía ni la usa como información armónica.

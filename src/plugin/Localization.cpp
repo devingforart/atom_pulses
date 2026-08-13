@@ -49,7 +49,7 @@ const char8_t* english(TextId id) noexcept {
         case TextId::AiTip: return u8"GPT status is explicit. PULSO never labels local fallback output as AI-generated.";
         case TextId::IdeaTitleTip: return u8"Title and tonal centre proposed for the current composition.";
         case TextId::IdeaDescriptionTip: return u8"Compositional intention behind the current idea.";
-        case TextId::PatternTip: return u8"Each lane is an instrument. Click its name for sound, octave, level and instant audition. S/M isolate voices. Preview controls never alter MIDI export.";
+        case TextId::PatternTip: return u8"Each lane is an execution role; its label shows the orchestral parts sharing it. Click for preview sound, octave, level and audition. Full Song exports one MIDI track per populated instrument.";
         case TextId::LanguageTip: return u8"Change the complete PULSO interface and every tooltip between English and Spanish. The choice is saved with the project.";
         case TextId::PreviewSound: return u8"PREVIEW SOUND";
         case TextId::Octave: return u8"OCTAVE";
@@ -95,6 +95,10 @@ const char8_t* english(TextId id) noexcept {
         case TextId::CurrentKeepsPlaying: return u8"The current composition keeps playing while the new one is prepared.";
         case TextId::Directing: return u8"DIRECTING HARMONY, MELODY, BASS AND RHYTHM";
         case TextId::Working: return u8"WORKING";
+        case TextId::SoundStage: return u8"LIVE SOUND DIRECTOR";
+        case TextId::SoundStageTip: return u8"Index installed native Live sounds, create editable Arrangement tracks and load the AI-selected device or a reported fallback.";
+        case TextId::DeployLive: return u8"CREATE IN LIVE";
+        case TextId::DeployLiveTip: return u8"Create one editable Arrangement track and MIDI clip per orchestral instrument, then load only native Live devices and Racks.";
     }
     return u8"";
 }
@@ -137,7 +141,7 @@ const char8_t* spanish(TextId id) noexcept {
         case TextId::AiTip: return u8"El estado de GPT es explícito. PULSO nunca presenta una salida local como generada por IA.";
         case TextId::IdeaTitleTip: return u8"Título y centro tonal propuestos para la composición actual.";
         case TextId::IdeaDescriptionTip: return u8"Intención compositiva de la idea actual.";
-        case TextId::PatternTip: return u8"Cada fila es un instrumento. Pulsa su nombre para elegir sonido, octava, nivel y audición. S/M aíslan voces. Los controles de escucha nunca alteran la exportación MIDI.";
+        case TextId::PatternTip: return u8"Cada fila es un rol de ejecución y su nombre muestra las partes orquestales que lo comparten. Pulsa para configurar la escucha. Full Song exporta una pista MIDI por instrumento con material.";
         case TextId::LanguageTip: return u8"Cambia toda la interfaz de PULSO y cada tooltip entre español e inglés. La elección se guarda con el proyecto.";
         case TextId::PreviewSound: return u8"SONIDO DE ESCUCHA";
         case TextId::Octave: return u8"OCTAVA";
@@ -183,6 +187,10 @@ const char8_t* spanish(TextId id) noexcept {
         case TextId::CurrentKeepsPlaying: return u8"La composición actual sigue sonando mientras se prepara la nueva.";
         case TextId::Directing: return u8"DIRIGIENDO ARMONÍA, MELODÍA, BAJO Y RITMO";
         case TextId::Working: return u8"TRABAJANDO";
+        case TextId::SoundStage: return u8"DIRECTOR DE SONIDO LIVE";
+        case TextId::SoundStageTip: return u8"Indexa sonidos nativos instalados, crea pistas editables y carga el dispositivo elegido por la IA o un fallback informado.";
+        case TextId::DeployLive: return u8"CREAR EN LIVE";
+        case TextId::DeployLiveTip: return u8"Crea una pista y un clip MIDI editables por instrumento y carga exclusivamente dispositivos y Racks nativos de Live.";
     }
     return u8"";
 }

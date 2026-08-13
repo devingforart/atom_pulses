@@ -27,7 +27,8 @@ enum class TextId : std::uint8_t {
     Solo, SoloOff, Muted, MuteOff,
     KickMuted, KickReduced, KickSparse, KickFourOnFloor,
     Cancel, Cancelling, ProgressTip, CancelTip, GptComposing,
-    Composing, CurrentKeepsPlaying, Directing, Working
+    Composing, CurrentKeepsPlaying, Directing, Working,
+    SoundStage, SoundStageTip, DeployLive, DeployLiveTip
 };
 
 [[nodiscard]] juce::String tr(UiLanguage, TextId);

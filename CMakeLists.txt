@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.21.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.26.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,6 +26,8 @@ add_library(pulso_core STATIC
     src/core/MusicalCritic.h
     src/core/Orchestration.cpp
     src/core/Orchestration.h
+    src/core/OrchestrationScore.cpp
+    src/core/OrchestrationScore.h
     src/core/PerformanceTiming.cpp
     src/core/PerformanceTiming.h
     src/core/PerformanceExpression.cpp
@@ -104,6 +106,8 @@ if(PULSO_BUILD_PLUGIN)
         src/plugin/AiComposer.h
         src/plugin/CompositionProgress.cpp
         src/plugin/CompositionProgress.h
+        src/plugin/LiveDeployer.cpp
+        src/plugin/LiveDeployer.h
         src/plugin/LookAndFeel.cpp
         src/plugin/LookAndFeel.h
         src/plugin/Localization.cpp
@@ -137,6 +141,7 @@ if(PULSO_BUILD_PLUGIN)
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
+        JUCE_PLUGINHOST_VST3=1
     )
 
     if(MSVC)

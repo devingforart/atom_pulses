@@ -4,6 +4,7 @@
 #include "core/SongComposer.h"
 #include "Localization.h"
 #include "AiComposer.h"
+#include "LiveDeployer.h"
 #include "PreviewSynth.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -24,6 +25,8 @@ namespace pulso::plugin {
 class PulsoAudioProcessor final : public juce::AudioProcessor,
                                   private juce::AudioProcessorValueTreeState::Listener {
 public:
+    enum class LiveDeploymentMode : std::uint8_t { FullOrchestration = 0, QuickThreeStem };
+    enum class OrchestrationIntent : std::uint8_t { Adaptive = 0, DeepProduction, Symphonic };
     PulsoAudioProcessor();
     ~PulsoAudioProcessor() override;
 
@@ -76,6 +79,10 @@ public:
     [[nodiscard]] static juce::String voicePreviewTimbreParameterId(VoiceId);
     [[nodiscard]] static juce::String voicePreviewLevelParameterId(VoiceId);
     void auditionVoicePreview(VoiceId) noexcept;
+    [[nodiscard]] InstrumentSoundModel partPreviewSound(std::uint16_t partId) const noexcept;
+    void setPartPreviewSound(std::uint16_t partId, InstrumentSoundModel, bool restoreAiChoice = false);
+    void setPartLiveDevice(std::uint16_t partId, const juce::String&, bool restoreAiChoice = false);
+    [[nodiscard]] static juce::StringArray liveNativeDeviceChoices();
     [[nodiscard]] juce::String currentAiStatus() const;
     [[nodiscard]] juce::String currentIdeaTitle() const;
     [[nodiscard]] juce::String currentIdeaDescription() const;
@@ -118,6 +125,25 @@ public:
     }
     [[nodiscard]] std::uint64_t currentVariationIndex() const noexcept {
         return variationIndex.load(std::memory_order_relaxed);
+    }
+    void setLiveDeploymentMode(LiveDeploymentMode mode) noexcept {
+        liveDeploymentModeValue.store(mode, std::memory_order_release);
+    }
+    [[nodiscard]] LiveDeploymentMode liveDeploymentMode() const noexcept {
+        return liveDeploymentModeValue.load(std::memory_order_acquire);
+    }
+    void setOrchestrationIntent(OrchestrationIntent intent) noexcept {
+        orchestrationIntentValue.store(intent, std::memory_order_release);
+    }
+    [[nodiscard]] OrchestrationIntent orchestrationIntent() const noexcept {
+        return orchestrationIntentValue.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] bool liveBridgeAvailable() const { return liveBridgeIsAvailable(); }
+    [[nodiscard]] bool liveNativeInventoryReady() const { return liveNativeInventoryIsReady(); }
+    bool deployCurrentSongToLive(bool aggregateDepartmentStems = false);
+    [[nodiscard]] juce::String currentLiveDeployStatus() const;
+    [[nodiscard]] juce::String currentLiveNativeInventorySummary() const {
+        return readLiveNativeInventorySummary();
     }
 
     juce::AudioProcessorValueTreeState parameters;
@@ -174,11 +200,13 @@ private:
         std::uint8_t action{};
         std::uint8_t lockedLayers{};
         int targetSongSeconds{};
+        std::uint8_t orchestrationIntent{};
     };
 
     struct RealtimePattern {
         std::shared_ptr<const Pattern> pattern;
         double lengthBeats{4.0};
+        double maximumNoteDuration{0.25};
         std::uint64_t seed{1};
         std::uint64_t serial{};
         std::uint64_t epoch{};
@@ -290,6 +318,12 @@ private:
     std::array<std::atomic<float>*, static_cast<std::size_t>(VoiceId::Count)> voiceOctaveParameters{};
     std::array<std::atomic<float>*, static_cast<std::size_t>(VoiceId::Count)> voiceLevelParameters{};
     std::atomic<int> pendingPreviewAudition{-1};
+    std::atomic<LiveDeploymentMode> liveDeploymentModeValue{LiveDeploymentMode::FullOrchestration};
+    std::atomic<OrchestrationIntent> orchestrationIntentValue{OrchestrationIntent::Adaptive};
+    static constexpr std::size_t maximumPreviewParts = 65;
+    std::array<std::atomic<int>, maximumPreviewParts> partSoundOverrides{};
+    mutable std::mutex liveDeployStatusMutex;
+    juce::String liveDeployStatus{"LIVE BRIDGE READY"};
     int activePreviewAudition{-1};
     int previewAuditionSamplesRemaining{};
     int previewAuditionChannel{};

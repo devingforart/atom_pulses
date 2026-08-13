@@ -12,6 +12,18 @@
 
 namespace pulso::plugin {
 
+// Destructive host actions must never be activated by Space/Return forwarded
+// from the DAW transport. This button accepts pointer activation only.
+class MouseOnlyTextButton final : public juce::TextButton {
+public:
+    explicit MouseOnlyTextButton(const juce::String& text) : juce::TextButton(text) {
+        setWantsKeyboardFocus(false);
+        setMouseClickGrabsKeyboardFocus(false);
+    }
+
+    bool keyPressed(const juce::KeyPress&) override { return false; }
+};
+
 class PulsoAudioProcessorEditor final : public juce::AudioProcessorEditor, private juce::Timer {
 public:
     explicit PulsoAudioProcessorEditor(PulsoAudioProcessor&);
@@ -46,8 +58,14 @@ private:
     juce::ToggleButton previewButton{"PREVIEW AUDIO"};
     juce::ToggleButton performanceButton{"HUMAN PERFORMANCE"};
     juce::ComboBox soundWorld;
+    juce::ComboBox orchestrationIntent;
     juce::ComboBox languageSelector;
     juce::ToggleButton thruButton{"MIDI THRU"};
+    juce::Label soundStageLabel;
+    juce::Label soundStageStatus;
+    juce::Label nativeInventory;
+    juce::ComboBox liveDeploymentMode;
+    MouseOnlyTextButton deployLiveButton{"CREATE IN LIVE"};
     std::array<juce::ToggleButton, 4> lockButtons;
 
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;

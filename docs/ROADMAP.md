@@ -141,7 +141,26 @@
 - [x] Voice leading con memoria interseccional y estrategias close/open/drop-2/quartal/cluster/shell.
 - [x] Contrato tonal compatible con intercambio modal y cromatismo estructural autorizado.
 - [x] Persistencia completa del lenguaje, paleta y eventos en proyectos de Ableton.
+
+## 0.22 — Director orquestal
+
+- [x] Separación explícita entre los departamentos de ritmo, armonía y melodía.
+- [x] Catálogo extensible y plantilla GPT de 12–36 instancias instrumentales.
+- [x] Rotación de foreground, contraste cámara–tutti, reparto registral y doblaje restringido.
+- [x] `partId` persistente y exportación multitrack por instrumento realmente poblado.
+- [x] Crítica GPT y métricas locales de respiración y utilización orquestal.
 - [ ] Evaluación perceptual ciega de narrativa armónica con músicos y productores.
+
+## 0.26 — Live Native Sound Director
+
+- [x] Eliminación completa del alojamiento de VSTs y su estado asociado.
+- [x] Inventario incremental de Sounds, Drums, Instruments, Max for Live y User Library.
+- [x] Selección de dispositivo nativo e intención tímbrica por GPT.
+- [x] Override manual por parte desde la partitura y persistencia en el Set.
+- [x] Resolución validada, carga secuencial y reporte de fallbacks/faltantes.
+- [x] Manifiesto de despliegue atómico y Remote Script de Ableton Live.
+- [x] Creación de pistas y clips de Arrangement por parte orquestal.
+- [ ] Evaluación perceptual de presets resueltos sobre bibliotecas Live diversas.
 
 ## 0.17 — Interfaz localizada y compacta (actual)
 

@@ -1,6 +1,9 @@
 #include "HarmonyPlan.h"
 
 #include <array>
+#include <algorithm>
+#include <cctype>
+#include <string>
 
 namespace pulso {
 namespace {
@@ -44,6 +47,39 @@ std::string_view harmonicFunctionKey(HarmonicFunction value) noexcept {
 std::string_view voicingStrategyKey(VoicingStrategy value) noexcept {
     for (const auto& [key, candidate] : voicingValues) if (candidate == value) return key;
     return "mixed";
+}
+
+std::string_view tonalPolicyKey(TonalPolicy value) noexcept {
+    switch (value) {
+        case TonalPolicy::Consolidated: return "consolidated";
+        case TonalPolicy::Expanded: return "expanded";
+        case TonalPolicy::Free: return "free";
+    }
+    return "consolidated";
+}
+
+TonalPolicy tonalPolicyForDirection(std::string_view direction) {
+    auto text = std::string(direction);
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+    });
+    constexpr std::array freeTerms{
+        "atonal", "twelve-tone", "twelve tone", "12-tone", "serialism", "serialista",
+        "free chromatic", "cromatismo libre", "deliberately dissonant", "deliberadamente disonante",
+        "dissonant cluster", "cluster disonante", "polytonal", "politonal", "bitonal"
+    };
+    for (const auto* term : freeTerms)
+        if (text.find(term) != std::string::npos) return TonalPolicy::Free;
+
+    constexpr std::array expandedTerms{
+        "modal interchange", "intercambio modal", "borrowed chord", "acorde prestado",
+        "secondary dominant", "dominante secundaria", "chromatic harmony", "armonia cromatica",
+        "chromatic mediant", "mediante cromatica", "brief modulation", "modulacion breve",
+        "jazz harmony", "armonia jazz", "altered harmony", "armonia alterada"
+    };
+    for (const auto* term : expandedTerms)
+        if (text.find(term) != std::string::npos) return TonalPolicy::Expanded;
+    return TonalPolicy::Consolidated;
 }
 
 std::optional<HarmonicFunction> harmonicFunctionFromKey(std::string_view key) noexcept {

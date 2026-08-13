@@ -96,16 +96,39 @@ bool harshInterval(int leftPitch, int rightPitch) noexcept {
 }
 
 bool intentionalVerticalColour(const NoteEvent& left, const NoteEvent& right,
-                               const HarmonicWindow* window) noexcept {
-    if (window == nullptr || left.pitch < 55 || right.pitch < 55 ||
-        bassVoice(left.voice) || bassVoice(right.voice)) return false;
+                               const HarmonicWindow* window, TonalPolicy policy) noexcept {
+    if (policy == TonalPolicy::Consolidated) return false;
+    if (window == nullptr ||
+        !containsPitchClass(window->pitchClasses, left.pitch) ||
+        !containsPitchClass(window->pitchClasses, right.pitch)) return false;
+    const auto distance = std::abs(left.pitch - right.pitch);
+    const auto interval = positiveModulo(distance, 12);
+    const auto structuralColour = window->function == HarmonicFunction::Dominant ||
+                                  window->function == HarmonicFunction::Chromatic ||
+                                  window->function == HarmonicFunction::Colour;
+    if (bassVoice(left.voice) || bassVoice(right.voice)) {
+        if (interval == 6) return structuralColour && distance >= 18;
+        return (interval == 1 || interval == 11) && structuralColour &&
+               window->tension >= 0.65 && distance >= 24;
+    }
     const auto compatibleVoices = [](VoiceId voice) {
-        return harmonicVoice(voice) || voice == VoiceId::Atmosphere;
+        return harmonicVoice(voice) || melodicVoice(voice) || voice == VoiceId::Atmosphere;
     };
     if (!compatibleVoices(left.voice) || !compatibleVoices(right.voice)) return false;
-    if (window->voicing == VoicingStrategy::Cluster) return window->tension >= 0.45;
+    if (window->voicing == VoicingStrategy::Cluster)
+        return policy == TonalPolicy::Free &&
+               window->tension >= 0.45 && left.pitch >= 55 && right.pitch >= 55;
+    if (policy == TonalPolicy::Expanded) {
+        // Expanded harmony permits a registered tritone, but not unresolved
+        // semitone clusters merely because the plan labelled them as colour.
+        return interval == 6 && structuralColour && distance >= 12;
+    }
+    if (interval == 6 && structuralColour) return distance >= 6;
+    if ((interval == 1 || interval == 11) && structuralColour)
+        return window->tension >= 0.60 && std::min(left.pitch, right.pitch) >= 55 &&
+               distance >= 12;
     return window->voicing == VoicingStrategy::Quartal && window->tension >= 0.72 &&
-           positiveModulo(std::abs(left.pitch - right.pitch), 12) == 6;
+           interval == 6 && std::min(left.pitch, right.pitch) >= 55;
 }
 
 bool overlaps(const NoteEvent& left, const NoteEvent& right) noexcept {
@@ -150,7 +173,14 @@ bool validPassingTone(const Pattern& pattern, std::size_t index, int rootPitchCl
         if (pattern.notes[before].voice == note.voice) { previous = &pattern.notes[before]; break; }
     for (auto after = index + 1; after < pattern.notes.size(); ++after)
         if (pattern.notes[after].voice == note.voice) { next = &pattern.notes[after]; break; }
-    return previous != nullptr && next != nullptr &&
+    if (previous == nullptr || next == nullptr) return false;
+    const auto into = note.pitch - previous->pitch;
+    const auto out = next->pitch - note.pitch;
+    const auto stepwise = std::abs(into) >= 1 && std::abs(into) <= 2 &&
+                          std::abs(out) >= 1 && std::abs(out) <= 2;
+    const auto resolves = (into > 0 && out > 0) || (into < 0 && out < 0) ||
+                          previous->pitch == next->pitch;
+    return stepwise && resolves &&
            note.startBeat - previous->startBeat <= 1.5 &&
            next->startBeat - note.startBeat <= 1.0 &&
            isPitchClassInScale(previous->pitch, rootPitchClass, scale) &&
@@ -222,7 +252,8 @@ void canonicalizeMotif(std::vector<int>& intervals, ScaleKind scale) {
 
 TonalAuditReport auditTonalContract(const Pattern& pattern, int rootPitchClass, ScaleKind scale,
                                     double beatsPerBar,
-                                    std::span<const HarmonicWindow> harmony) {
+                                    std::span<const HarmonicWindow> harmony,
+                                    TonalPolicy policy) {
     TonalAuditReport report;
     if (beatsPerBar <= 0.0) return report;
     for (std::size_t noteIndex = 0; noteIndex < pattern.notes.size(); ++noteIndex) {
@@ -236,8 +267,9 @@ TonalAuditReport auditTonalContract(const Pattern& pattern, int rootPitchClass, 
         const auto inChord = containsPitchClass(chord, note.pitch);
         const auto inScale = scale == ScaleKind::Chromatic ||
             isPitchClassInScale(note.pitch, rootPitchClass, scale);
-        if ((harmonicVoice(note.voice) || ((bassVoice(note.voice) || melodicVoice(note.voice)) && strong)) &&
-            !inChord) {
+        const auto structural = harmonicVoice(note.voice) ||
+            ((bassVoice(note.voice) || melodicVoice(note.voice)) && strong);
+        if (structural && (!inChord || (policy == TonalPolicy::Consolidated && !inScale))) {
             ++report.strongNonChordNotes;
             addIssue(report, note.startBeat, note.voice, note.pitch, "strong_non_chord");
         } else if (!inScale && !inChord &&
@@ -266,7 +298,7 @@ TonalAuditReport auditTonalContract(const Pattern& pattern, int rootPitchClass, 
             if (!pitchedVoice(right.voice) || !overlaps(left, right) ||
                 !harshInterval(left.pitch, right.pitch)) continue;
             const auto conflictBeat = std::max(left.startBeat, right.startBeat);
-            if (intentionalVerticalColour(left, right, windowAt(harmony, conflictBeat))) {
+            if (intentionalVerticalColour(left, right, windowAt(harmony, conflictBeat), policy)) {
                 ++report.intentionalClusters;
                 continue;
             }
@@ -286,7 +318,8 @@ TonalAuditReport auditTonalContract(const Pattern& pattern, int rootPitchClass, 
 TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, ScaleKind scale,
                                       double beatsPerBar,
                                       std::span<const HarmonicWindow> harmony,
-                                      double maximumChromaticRatio) {
+                                      double maximumChromaticRatio,
+                                      TonalPolicy policy) {
     TonalRepairReport report;
     if (pattern.notes.empty() || beatsPerBar <= 0.0) return report;
     const auto scalePitches = scalePitchClasses(rootPitchClass, scale);
@@ -295,12 +328,13 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
         if (left.voice != right.voice) return left.voice < right.voice;
         return left.pitch < right.pitch;
     });
-    report.before = auditTonalContract(pattern, rootPitchClass, scale, beatsPerBar, harmony);
+    report.before = auditTonalContract(pattern, rootPitchClass, scale, beatsPerBar, harmony, policy);
 
     const auto maximumChromatic = std::max(1, static_cast<int>(std::lround(
         std::count_if(pattern.notes.begin(), pattern.notes.end(), [](const auto& note) {
             return melodicVoice(note.voice);
-        }) * std::clamp(maximumChromaticRatio, 0.0, 0.15))));
+        }) * std::clamp(maximumChromaticRatio, 0.0,
+            policy == TonalPolicy::Consolidated ? 0.02 : policy == TonalPolicy::Expanded ? 0.06 : 0.15))));
     auto acceptedChromatic = 0;
     for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
         auto& note = pattern.notes[index];
@@ -312,17 +346,33 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
             isPitchClassInScale(note.pitch, rootPitchClass, scale);
         const auto inChord = containsPitchClass(allowed, note.pitch);
         const auto strong = strongMetricPosition(note.startBeat, beatsPerBar, window);
-        if (!inScale && !inChord && !strong && acceptedChromatic < maximumChromatic &&
-            validPassingTone(pattern, index, rootPitchClass, scale, 0.36)) {
+        const auto passingDuration = policy == TonalPolicy::Consolidated ? 0.25 : 0.36;
+        if (policy != TonalPolicy::Free && !inScale && !strong && acceptedChromatic < maximumChromatic &&
+            validPassingTone(pattern, index, rootPitchClass, scale, passingDuration)) {
             ++acceptedChromatic;
             ++report.intentionalChromaticNotes;
             continue;
         }
         const auto requireChordTone = harmonicVoice(note.voice) ||
             ((bassVoice(note.voice) || melodicVoice(note.voice)) && strong);
-        if ((requireChordTone && inChord) || (!requireChordTone && (inScale || inChord))) continue;
+        const auto acceptedStructural = requireChordTone && inChord &&
+            (policy != TonalPolicy::Consolidated || inScale);
+        const auto acceptedDecorative = !requireChordTone &&
+            (inScale || (policy != TonalPolicy::Consolidated && inChord));
+        if (acceptedStructural || acceptedDecorative || policy == TonalPolicy::Free) continue;
         const auto& definition = voiceDefinition(note.voice);
-        note.pitch = nearestAllowed(note.pitch, requireChordTone ? allowed : std::span<const int>(scalePitches),
+        std::vector<int> consolidatedChordPitches;
+        if (policy == TonalPolicy::Consolidated && requireChordTone) {
+            for (const auto pitchClass : allowed)
+                if (containsPitchClass(scalePitches, pitchClass))
+                    consolidatedChordPitches.push_back(positiveModulo(pitchClass, 12));
+        }
+        const auto repairPitches = !consolidatedChordPitches.empty()
+            ? std::span<const int>(consolidatedChordPitches)
+            : policy == TonalPolicy::Consolidated
+                ? std::span<const int>(scalePitches)
+                : requireChordTone ? allowed : std::span<const int>(scalePitches);
+        note.pitch = nearestAllowed(note.pitch, repairPitches,
                                     definition.minimumPitch, definition.maximumPitch);
         if (!inScale) ++report.outOfScaleRepaired;
         if (strong && requireChordTone) ++report.strongBeatRepaired;
@@ -358,7 +408,7 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
                 if (!overlaps(left, right) || !harshInterval(left.pitch, right.pitch)) continue;
                 const auto conflictBeat = std::max(left.startBeat, right.startBeat);
                 const auto* window = windowAt(harmony, conflictBeat);
-                if (intentionalVerticalColour(left, right, window)) {
+                if (intentionalVerticalColour(left, right, window, policy)) {
                     ++report.intentionalClusters;
                     continue;
                 }
@@ -367,6 +417,19 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
                     intentionalPassingCollision(pattern, rightIndex, leftIndex, rootPitchClass, scale,
                                                 beatsPerBar, harmony))
                     continue;
+                // Articulation may lengthen an earlier note over a later attack. In that case
+                // the musical boundary wins regardless of voice priority; pitch repair would
+                // change the composition when a precise release is sufficient.
+                if (left.startBeat + 0.05 < right.startBeat) {
+                    const auto duration = right.startBeat - left.startBeat - minimumDuration;
+                    if (duration >= minimumDuration) {
+                        left.durationBeats = duration;
+                        ++report.verticalCollisionsRepaired;
+                        ++report.exactBoundaryTrims;
+                        changed = true;
+                        continue;
+                    }
+                }
                 auto targetIndex = collisionPriority(left.voice) < collisionPriority(right.voice)
                     ? leftIndex : rightIndex;
                 if (collisionPriority(left.voice) == collisionPriority(right.voice)) {
@@ -421,18 +484,19 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
             if (!removed[index]) kept.push_back(pattern.notes[index]);
         pattern.notes = std::move(kept);
     }
-    report.after = auditTonalContract(pattern, rootPitchClass, scale, beatsPerBar, harmony);
+    report.after = auditTonalContract(pattern, rootPitchClass, scale, beatsPerBar, harmony, policy);
     return report;
 }
 
 TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, ScaleKind scale,
                                       double beatsPerBar,
                                       std::span<const std::vector<int>> harmonyByBar,
-                                      double maximumChromaticRatio) {
+                                      double maximumChromaticRatio,
+                                      TonalPolicy policy) {
     const auto windows = legacyWindows(harmonyByBar, beatsPerBar, rootPitchClass, scale,
                                        pattern.lengthBeats);
     return repairTonalContract(pattern, rootPitchClass, scale, beatsPerBar, windows,
-                               maximumChromaticRatio);
+                               maximumChromaticRatio, policy);
 }
 
 } // namespace pulso

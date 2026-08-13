@@ -20,7 +20,8 @@ pulso_core
 ├── Scale
 ├── Random determinista
 ├── CompositionPlan + intérpretes por rol
-└── SongPlan + catálogo de orquestación
+├── SongPlan + catálogo de orquestación
+└── OrchestrationScore + crítico instrumental posterior al render
 ```
 
 `pulso_core` no depende de JUCE ni del sistema operativo. Puede reutilizarse en un
@@ -43,11 +44,22 @@ convierte el resultado a un bloque de máximo 2048 eventos; el callback solo rea
 copias acotadas. El `shared_ptr` atómico se conserva únicamente para la vista de la UI,
 nunca en la ruta de audio.
 
+## Partitura orquestal profunda
+
+`OrchestrationLanguage` separa escala del conjunto, profundidad armónica, actividad
+contrapuntística, divisi, contraste de articulación, diálogo entre familias y mezcla
+híbrida. Cada `InstrumentAssignment` añade función orquestal, articulación intencional y
+número de voces divisi. `OrchestrationScore` realiza esas decisiones después de cerrar la
+partitura tonal: distribuye la propiedad del material estructural, compone líneas propias
+para contrapunto/color/transición, aplica límites de ejecución y repara acumulaciones en
+el registro grave. Finalmente publica expresión MIDI con `partId`, por lo que la
+exportación multipista conserva automatización e identidad instrumental.
+
 En stop, seek, loop o sustitución de patrón, el scheduler emite note-off para su ledger
 y CC 123 en los canales generativos. Si la reproducción comienza dentro de una nota,
 reconstruye el note-on en la primera muestra y conserva su note-off original.
 
-La preescucha reserva 24 voces one-shot para batería y 48 voces tonales, de modo que
+La preescucha reserva 24 voces one-shot para batería y 24 voces tonales priorizadas, de modo que
 los acordes densos no roben el pulso. Los canales de las quince voces se traducen a nueve
 motores: sub, bajo móvil, foundation, pulse, upper, lead, counter, atmosphere y
 transitions. El canal GM 10 sintetiza kick, snare, clap, hats, toms, percusión y cymbals.
@@ -179,8 +191,8 @@ el primer plan y produce un informe compacto con ventanas armónicas, notas crom
 justificadas, apoyos fuera del acorde, sustains inválidos, colisiones verticales, reparaciones
 y ubicaciones exactas. GPT revisa linaje, respiración, interlock kick–bass, causalidad formal
 y también las causas medidas en el MIDI. Si esa revisión falla, la primera respuesta validada
-permanece utilizable. Arquitectura y crítica comparten un deadline total de 180 segundos;
-la arquitectura tiene prioridad y la crítica recibe como máximo 45 segundos del remanente.
+permanece utilizable. Arquitectura y crítica comparten un deadline total de 210 segundos;
+la arquitectura tiene prioridad y la crítica recibe como máximo 50 segundos del remanente.
 En Windows, `AiComposer` usa WinHTTP nativo con TLS, configuración automática de proxy y
 timeouts por etapa. Un watchdog cierra el request activo desde el botón `CANCEL` o al vencer
 el deadline; en las demás plataformas se usa `WebInputStream::cancel`. La operación es
@@ -201,6 +213,12 @@ estructurales, retunea o elimina la voz secundaria y sólo conserva semitonos/tr
 cluster o color cuartal explícito, tenso y en registro superior. Una auditoría final exige
 cero conflictos no intencionales. Todo ocurre en el worker, nunca en el callback de audio.
 
+La auditoría de publicación corre después de aplicar articulación y microdinámica a las
+notas. Si legato, sustain o swelling crean una cola conflictiva, se recorta la nota anterior
+sin cambiar la intención tonal. Una segunda reconstrucción no destructiva vuelve a emitir
+CC, bends, pressure y poly-aftertouch contra las notas definitivas; así ningún evento por
+nota conserva un pitch o una duración anterior a la reparación.
+
 El exportador escribe además armadura tonal y marcadores de acorde en el conductor MIDI.
 Esto no obliga a Ableton a interpretar la armonía, pero mantiene el contexto legible para
 DAWs y herramientas que soportan esos metaeventos.
@@ -219,13 +237,29 @@ ligeras; su memoria se retira en el worker y no en el callback.
 
 ## Orquestación dinámica
 
-El catálogo tiene quince voces agrupadas en cinco familias: ritmo (`Kick`, `Snare / Clap`,
-`Closed Hats`, `Open Hats / Shaker`, `Low Percussion`, `High Percussion`), bajo (`Sub Bass`,
-`Movement Bass`), armonía (`Harmonic
-Foundation`, `Harmonic Pulse`, `Harmonic Upper`), melodía (`Lead`, `Countermelody`) y
-textura (`Atmosphere`, `Transitions`). Cada sección contiene un conjunto explícito de
-voces activas. `SongComposer` normaliza ese conjunto, mantiene registros musicales,
-evita colisiones principales y genera CC 11/1/74 para dinámica, tensión y transición.
+La partitura separa dos conceptos. Las quince `VoiceId` son roles de ejecución estables
+—pulso, bajos, tejido armónico, hablantes melódicos y transición—; no representan una
+plantilla fija. Sobre ellos, `OrchestrationScore` instancia entre 12 y 36 instrumentos del
+catálogo y los organiza en tres departamentos: ritmo/percusión, armonía/tejido y melodía.
+Cada instancia tiene nombre de pista, rol, registro, actividad, prominencia, probabilidad
+de doblaje y secciones opcionales.
+
+El director usa energía y densidad formal junto con `ensembleScale`, `timbralMotion`,
+`foregroundRotation`, `registerSeparation`, `chamberContrast`, `doublingRestraint` y
+`tuttiRarity`. Así reduce la plantilla en pasajes de cámara, rota el instrumento que expone
+el motivo, reparte las voces de acordes por registro y reserva doblajes y tutti para
+llegadas raras. Las notas conservan su rol causal mediante `VoiceId` y reciben además un
+`partId`; la exportación Full Song crea una pista MIDI por parte realmente poblada.
+El exportador no permite fallback legacy dentro de una partitura orquestal, recorta
+retriggers ambiguos por parte/canal/pitch, limita sustains extremos y termina cada pista
+con pedal, modulación, pitch, pressure y All Notes Off en estado neutral. Un manifiesto
+`.pulso.json` acompaña al MIDI y conserva `catalogId` para resolver racks externos.
+
+Para la escucha interna, el scheduler duplica sólo los note-on/off hacia un bus privado y
+los precede con CC119 reservado que selecciona `InstrumentSoundModel`. Ese selector nunca
+sale por el puerto MIDI del plugin. `PreviewSynth` captura el modelo al crear cada voz, por
+lo que varias instancias que comparten `VoiceId` pueden coexistir con fuentes y envolventes
+diferentes sin búsquedas, locks ni asignaciones en el callback.
 
 ## Intérprete expresivo 0.18
 
@@ -250,6 +284,15 @@ Los locks y filtros de exportación operan sobre identidad y familia de voz, no 
 sobre canal MIDI. Por eso dos capas que comparten canal siguen siendo pistas separadas
 en el archivo multitrack y pueden conservarse o arrastrarse de forma independiente.
 
+## Live Native Sound Director 0.26
+
+PULSO no aloja otros instrumentos dentro de su proceso. `InstrumentAssignment` declara
+un dispositivo nativo y una intención de preset; `LiveDeployer` publica el contrato JSON
+y `PulsoDeployRemote` lo resuelve contra un inventario incremental del Browser de Live.
+El índice excluye explícitamente `Plug-Ins`. La carga se serializa por pista para mantener
+responsiva la interfaz y el estado distingue coincidencias, fallbacks y faltantes.
+Consulta `docs/SOUND_STAGE.md` para el protocolo completo.
+
 ## Dirección rítmica
 
 Desde 0.19 no existe una enumeración de estilos rítmicos ni plantillas `organic`, `deep`,
@@ -264,12 +307,15 @@ seccional y valida solamente seguridad, rango e invariantes pedidos expresamente
 fallback sin red es reproducible, pero deriva sus motivos de la dirección completa y la
 semilla; no selecciona una familia estilística cerrada.
 
-## Lenguaje armónico abierto 0.20
+## Lenguaje armónico con política tonal 0.23.1
 
 `HarmonicLanguage` reemplaza la progresión global de grados. GPT define gravedad tonal,
 movilidad modal, cromatismo estructural, riqueza de extensiones, movimiento de inversiones,
 suavidad de voice leading, actividad del ritmo armónico, afinidad por pedales, ambigüedad y
-fuerza cadencial. Son dimensiones continuas, no presets ni nombres de género.
+fuerza cadencial. Son dimensiones continuas, no presets ni nombres de género. Sobre ellas
+actúa una política independiente: `consolidated` por defecto, `expanded` sólo ante una
+petición explícita de recursos como intercambio modal o dominante secundaria, y `free`
+únicamente para atonalidad, disonancia deliberada, serialismo o politonalidad solicitados.
 
 La `chordPalette` contiene hasta 24 identidades con raíz percibida, bajo independiente,
 pitch classes explícitas, función, tensión y estrategia de voicing (`close`, `open`,
@@ -281,9 +327,12 @@ Cada sección declara centro tonal, indicación modal y hasta 64 eventos armóni
 y beat exactos. `HarmonyEngine` los convierte en una línea temporal, conduce hasta cuatro
 voces preservando memoria entre secciones y distribuye el resultado entre foundation,
 pulse, upper y atmosphere. `PhraseComposer` consulta esa misma línea temporal para el bajo
-y las notas estructurales de melodía. `TonalContract` acepta pitch classes armónicas
-explícitamente autorizadas aunque estén fuera de la escala inicial, pero sigue reparando
-cromatismo accidental y colisiones verticales.
+y las notas estructurales de melodía. En `consolidated`, `TonalContract` exige la intersección
+entre acorde y escala en todo apoyo estructural: un acorde declarado por GPT no puede
+autorizar por sí solo una nota externa. El único cromatismo local admisible es breve, débil,
+con entrada por grado conjunto y resolución inmediata por grado conjunto. Las políticas más
+amplias conservan color sólo dentro del límite solicitado y la auditoría final se ejecuta
+después de articulación, releases y orquestación.
 
 `RhythmPlan` separa identidad, estructura y gesto. `RhythmMotif` conserva celdas de 1–4
 compases en seis máscaras independientes (`0` silencio, `1` golpe, `2` acento), y cada

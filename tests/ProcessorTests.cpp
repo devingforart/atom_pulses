@@ -1336,6 +1336,11 @@ int main(int argc, char** argv) {
                 quickDeploymentObject->getProperty("tracks").getArray() != nullptr &&
                 quickDeploymentObject->getProperty("tracks").getArray()->size() == 3,
             "Quick 3-stem must remain an explicit lightweight deployment option");
+    const auto* quickTracks = quickDeploymentObject->getProperty("tracks").getArray();
+    require(quickTracks != nullptr && std::all_of(quickTracks->begin(), quickTracks->end(), [](const auto& value) {
+                const auto* track = value.getDynamicObject();
+                return track != nullptr && track->getProperty("catalog_id").toString().isNotEmpty();
+            }), "Quick stems must also carry a strict musical identity for native sound resolution");
     bridgeTestDirectory.deleteRecursively();
 
     ensembleFile.deleteFile();

@@ -110,6 +110,8 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
             track->setProperty("track_key", "department:" + departmentName(department));
             track->setProperty("department", departmentName(department));
             track->setProperty("role", "Native Live Sound Director stem");
+            track->setProperty("catalog_id", department == ScoreDepartment::Rhythm ? "production_drums" :
+                department == ScoreDepartment::Harmony ? "harmonic_ensemble" : "foreground_voice");
             addNativeSoundProperties(*track,
                 department == ScoreDepartment::Rhythm ? "Drum Rack" :
                 department == ScoreDepartment::Harmony ? "Instrument Rack" : "Wavetable",

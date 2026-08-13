@@ -37,6 +37,12 @@ que todo Rack tenga cadenas. `status.json` registra preset, ruta y verificación
 por eso `20/20` significa veinte sonidos comprobados, no veinte llamadas aceptadas por el
 Browser. El estado también informa `fallbacks` y `missing`, sin disfrazar ausencias.
 
+La identidad instrumental es una restricción fuerte: cello sólo puede resolver a cello o,
+si no está instalado, a la familia Strings; oboe sólo a oboe o Winds; timpani, toms y cymbal
+sólo a sus identidades o familias de percusión. Adjetivos como `solo`, `section`, `low` o
+`orchestral` únicamente ordenan candidatos ya compatibles y nunca permiten cruzar familias.
+En Drum Racks, cada nota MIDI utilizada debe corresponder además a un pad poblado.
+
 ## Flujo
 
 ```text

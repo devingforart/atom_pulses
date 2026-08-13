@@ -8,9 +8,9 @@ import json
 import os
 import traceback
 
-from _Framework.ControlSurface import ControlSurface
+from _Framework.ControlSurface import ControlSurface  # pyright: ignore[reportMissingImports]
 from .request_guard import RequestGuard
-from .sound_matcher import EMPTY_CONTAINERS, best_inventory_match
+from .sound_matcher import select_track_sound
 
 
 class PulsoDeployRemote(ControlSurface):
@@ -163,13 +163,13 @@ class PulsoDeployRemote(ControlSurface):
                                        "state": "no_playable_match"})
             self.schedule_message(2, self._load_next_device)
             return
-        used_fallback, matched_name, matched_path, before_count = matched
+        quality, matched_name, matched_path, before_count = matched
         # Browser loads are asynchronous. Verify the new track actually received a device
         # instead of treating load_item() returning as proof of audible sound.
         self.schedule_message(8, lambda: self._verify_loaded_sound(
-            track, spec, used_fallback, matched_name, matched_path, before_count))
+            track, spec, quality, matched_name, matched_path, before_count))
 
-    def _verify_loaded_sound(self, track, spec, used_fallback, matched_name, matched_path, before_count):
+    def _verify_loaded_sound(self, track, spec, quality, matched_name, matched_path, before_count):
         if not self._running:
             return
         valid = False
@@ -182,15 +182,24 @@ class PulsoDeployRemote(ControlSurface):
                 if bool(getattr(device, "can_have_chains", False)) and len(list(device.chains)) == 0:
                     valid = False
                     reason = "empty_rack"
+                if valid and bool(getattr(device, "can_have_drum_pads", False)):
+                    requested = set(int(note.get("pitch", 60)) for note in spec.get("notes", []))
+                    populated = set(int(pad.note) for pad in device.drum_pads if len(list(pad.chains)) > 0)
+                    unmapped = sorted(requested.difference(populated))
+                    if unmapped:
+                        valid = False
+                        reason = "unmapped_drum_notes:" + ",".join(str(note) for note in unmapped)
         except (RuntimeError, AttributeError):
             valid = False
             reason = "track_unavailable"
-        report = {"track": str(spec.get("name", "PULSO Part")), "matched": matched_name,
-                  "path": matched_path, "state": "verified" if valid else reason}
+        report = {"track": str(spec.get("name", "PULSO Part")),
+                  "catalog_id": str(spec.get("catalog_id", "")), "matched": matched_name,
+                  "path": matched_path, "quality": quality,
+                  "state": "verified" if valid else reason}
         self._sound_report.append(report)
         if valid:
             self._loaded_devices += 1
-            if used_fallback:
+            if quality != "identity":
                 self._fallback_devices += 1
             track.name = (str(spec.get("name", track.name)) + " | " + matched_name)[:120]
             self._apply_mixer_defaults(track, spec)
@@ -205,25 +214,14 @@ class PulsoDeployRemote(ControlSurface):
         browser = getattr(self.application(), "browser", None)
         if browser is None or not hasattr(browser, "load_item"):
             return None
-        candidates = [str(value).strip() for value in spec.get("device_candidates", []) if str(value).strip()]
-        intent = str(spec.get("preset_intent", "")).strip()
-        device = str(spec.get("native_device", "Instrument Rack")).strip()
-        if intent and intent not in candidates:
-            candidates.insert(0, intent)
-        if device and device not in candidates:
-            candidates.append(device)
-        for index, query in enumerate(candidates):
-            if query.casefold() in EMPTY_CONTAINERS:
-                continue
-            item = best_inventory_match(self._native_items, query, device if index == 0 else "")
-            if item is None:
-                continue
+        item = select_track_sound(self._native_items, spec)
+        if item is not None:
             try:
                 before_count = len(list(self.song().view.selected_track.devices))
                 browser.load_item(item[2])
-                return index > 0, item[0], item[1], before_count
+                return item[3], item[0], item[1], before_count
             except Exception:
-                continue
+                return None
         return None
 
     @staticmethod

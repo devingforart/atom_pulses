@@ -111,12 +111,15 @@ std::size_t ProductionPolish::enforceMetricContract(Pattern& pattern, int onsetS
     const auto release = 1.0 / std::max(1, releaseStepsPerBeat);
     std::size_t repaired{};
     for (auto& note : pattern.notes) {
-        if (note.authoredTiming) continue;
         const auto start = std::round(note.startBeat / onset) * onset;
         const auto end = std::round(note.endBeat() / release) * release;
         if (std::abs(start - note.startBeat) > 0.000001 || std::abs(end - note.endBeat()) > 0.000001) ++repaired;
         note.startBeat = std::clamp(start, 0.0, std::max(0.0, pattern.lengthBeats - release));
         note.durationBeats = std::max(release, std::min(pattern.lengthBeats, end) - note.startBeat);
+        // The published composition is always metrically exact. Expressive timing is a
+        // reversible audition/render layer applied by Human Performance, never baked into
+        // the source MIDI that is dragged or deployed to Live.
+        note.authoredTiming = false;
     }
     return repaired;
 }

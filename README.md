@@ -9,11 +9,17 @@ Este repositorio contiene un MVP funcional para Ableton Live en Windows:
 
 - Plugin VST3 y aplicación standalone construidos con JUCE.
 - Generador musical C++20 desacoplado y cubierto por pruebas.
+- `Electronic Production Director`: AUTO detecta pedidos de club y cambia el pensamiento
+  orquestal por roles de producción, relación kick-bajo, ADN de groove, un único hook
+  protagonista, automatización de filtro y arreglo sustractivo. `CLUB ELECTRONIC` permite
+  forzarlo; `DEEP HYBRID` y `SYMPHONIC` conservan los otros dominios.
 - Orquestación dinámica en dos niveles: quince roles de ejecución alimentan entre 12 y 36
   instrumentos independientes de ritmo, armonía y melodía; kick, clap/snare, hats,
   dos percusiones, dos bajos, tres capas armónicas, lead, contramelodía, atmósfera y transiciones.
 - `RhythmPlan` dirigido por GPT con estados de kick, continuidad, swing y gestos estructurales
   como drops, dobles golpes, pickups, silencios y fills.
+- Crítico electrónico posterior al render: mide colisiones de low-end, repetición literal,
+  correspondencia instrumental con la intención y competencia entre protagonistas.
 - Un `CompositionPlan` global con motivo, contorno, secciones, función armónica y tensión.
 - Modo `IDEA` para frases y modo canción de 30 segundos a 30 minutos.
 - Arquitectura jerárquica con secciones, ADN temático, curva dramática y cadencia final.
@@ -181,6 +187,16 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 ```
 
 ## Estado del producto
+
+La versión 0.32.0 completa el contrato de publicación: CLUB conserva prioridad explícita sobre GPT,
+HYBRID recibe crítica electrónica real, el score electrónico informa `N/A` cuando no fue auditado,
+la percusión repetida evoluciona antes de superar cuatro compases literales y todo MIDI fuente sale
+en grilla exacta. Human Performance queda como capa reversible de escucha. El director de sonidos de
+Live separa Sub/Bass Groove, evita falsos reemplazos como contrabajo por violín, prioriza kicks cortos
+y usa `Clip.add_new_notes` de Live 12 sin caer en la API obsoleta.
+
+La versión 0.31.0 agrega el `Electronic Production Director`, selección AUTO/CLUB/HYBRID/SYMPHONIC,
+contrato kick-bajo, arreglo sustractivo, hooks con propietario único y auditoría electrónica.
 
 La versión 0.30.0 integra un arquitecto GPT-5.6 Terra de forma larga con razonamiento alto y una segunda pasada crítica de razonamiento medio,
 Structured Outputs, motivos rítmicos abiertos y mutaciones con propósito, renderizado

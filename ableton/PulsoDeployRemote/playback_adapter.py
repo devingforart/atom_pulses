@@ -24,6 +24,17 @@ DURATION_CAPS = {
     "piano": 2.0, "harp": 1.5, "guitar": 1.5,
 }
 
+# Extremely short note-offs can choke one-shots and make an otherwise valid percussion
+# gesture disappear. Floors are intentionally smaller than the musical grid: they protect
+# playback without moving attacks or flattening articulation.
+DURATION_FLOORS = {
+    "kick_drum": 1.0 / 16.0, "snare_clap": 1.0 / 16.0,
+    "hi_hats": 1.0 / 16.0, "shakers": 1.0 / 16.0,
+    "latin_percussion": 1.0 / 8.0, "timpani": 1.0 / 8.0,
+    "taiko_ensemble": 1.0 / 8.0, "orchestral_percussion": 1.0 / 8.0,
+    "cymbals": 1.0 / 8.0,
+}
+
 
 def is_one_shot_path(path):
     return os.path.splitext(str(path).casefold())[1] in (".wav", ".aif", ".aiff", ".flac")
@@ -69,7 +80,8 @@ def drum_semantics(catalog_id, pitch):
 
 def expand_percussion_specs(specs):
     """Split incompatible articulations before sound selection when one-shot playback is likely."""
-    split_catalogs = {"snare_clap", "hi_hats", "taiko_ensemble", "orchestral_percussion"}
+    split_catalogs = {"snare_clap", "hi_hats", "taiko_ensemble", "latin_percussion",
+                      "orchestral_percussion"}
     expanded = []
     for source in specs:
         catalog_id = str(source.get("catalog_id", "")).casefold()
@@ -125,6 +137,7 @@ def adapt_notes(spec, source_kind="chromatic", pitch_map=None, root_note=60):
     """Return sanitized note dictionaries and a reproducible adaptation report."""
     catalog_id = str(spec.get("catalog_id", "")).casefold()
     cap = DURATION_CAPS.get(catalog_id)
+    floor = DURATION_FLOORS.get(catalog_id, 1.0 / 960.0)
     adapted = []
     remapped = {}
     for source in spec.get("notes", []):
@@ -139,7 +152,7 @@ def adapt_notes(spec, source_kind="chromatic", pitch_map=None, root_note=60):
             remapped[original_pitch] = target_pitch
         note["pitch"] = max(0, min(127, target_pitch))
         note["start"] = max(0.0, float(note.get("start", 0.0)))
-        duration = max(1.0 / 960.0, float(note.get("duration", 0.25)))
+        duration = max(floor, float(note.get("duration", 0.25)))
         note["duration"] = min(duration, cap) if cap is not None else duration
         note["velocity"] = max(1, min(127, int(note.get("velocity", 100))))
         adapted.append(note)
@@ -162,6 +175,7 @@ def adapt_notes(spec, source_kind="chromatic", pitch_map=None, root_note=60):
         "root_note": int(root_note) if source_kind == "one_shot" else None,
         "pitch_remap": {str(source): target for source, target in sorted(remapped.items())},
         "duration_cap": cap,
+        "duration_floor": floor,
         "overlap_repairs": overlap_repairs,
     }
 
@@ -246,3 +260,20 @@ def project_expression(spec, notes, source_kind="chromatic"):
         "sustain_extensions": sustain_extensions,
         "extended_note_properties": bool(projected),
     }
+
+
+def deployment_outcome(loaded, total, missing=0, fallbacks=0):
+    """Pure transaction policy shared by tests and the Live callback implementation."""
+    loaded = max(0, int(loaded))
+    total = max(0, int(total))
+    missing = max(0, int(missing))
+    fallbacks = max(0, int(fallbacks))
+    if loaded == 0:
+        return "rejected", "LIVE DEPLOYMENT REJECTED - NO AUDIBLE TRACKS"
+    state = "degraded" if missing else "complete"
+    message = "LIVE NATIVE COMPLETE - {}/{} PLAYBACK CONTRACTS VERIFIED".format(loaded, total)
+    if fallbacks:
+        message += " - {} FALLBACKS".format(fallbacks)
+    if missing:
+        message += " - {} TRACK{} SKIPPED".format(missing, "" if missing == 1 else "S")
+    return state, message

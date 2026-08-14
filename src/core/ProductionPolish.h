@@ -36,8 +36,8 @@ struct ProductionAuditReport {
 
 class ProductionPolish final {
 public:
-    // Publication timing is exact by default. Only events explicitly authored as a
-    // metric exception retain free timing before this stage.
+    // Publication timing is always exact. Human feel is a reversible playback layer,
+    // never an irreversible offset embedded in draggable or Live-deployed MIDI.
     static std::size_t enforceMetricContract(Pattern&, int onsetStepsPerBeat = 4,
                                              int releaseStepsPerBeat = 16);
     // Curves exist only while their destination part is sounding and are reduced to

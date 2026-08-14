@@ -2,6 +2,7 @@
 
 #include "Random.h"
 #include "HarmonyEngine.h"
+#include "ElectronicProductionDirector.h"
 #include "MusicalCritic.h"
 #include "OrchestrationScore.h"
 #include "PhraseDirector.h"
@@ -404,6 +405,8 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
                    [static_cast<std::size_t>(plan.rootPitchClass)] +
                std::string(plan.scale == ScaleKind::Major ? " major" : " minor");
     plan.summary = "A complete thematic arc with recurring material, contrast, climax and resolution.";
+    plan.productionLanguage = ElectronicProductionDirector::infer(direction);
+    plan.productionModeSource = "local_inference";
 
     Random random(seed ^ 0x534F4E47504C414EULL);
     const auto third = plan.scale == ScaleKind::Major ? 4 : 3;
@@ -615,6 +618,7 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     plan.beatsPerBar = std::clamp(plan.beatsPerBar, 2.0, 12.0);
     plan.totalBars = std::clamp(plan.totalBars, 8, 512);
     plan.rootPitchClass = positiveModulo(plan.rootPitchClass, 12);
+    ElectronicProductionDirector::normalizePlan(plan);
     if (plan.motifIntervals.size() < 3) plan.motifIntervals = {0, 3, 7, 5};
     for (auto& value : plan.motifIntervals) value = std::clamp(value, -24, 24);
     canonicalizeMotif(plan.motifIntervals, plan.scale);
@@ -819,9 +823,13 @@ void SongComposer::normalizePlan(SongPlan& plan) {
             ++count;
         }
     };
-    ensureDepartment(ScoreDepartment::Rhythm, 3);
-    ensureDepartment(ScoreDepartment::Harmony, plan.orchestrationLanguage.harmonicDepth >= 0.62 ? 9 : 6);
-    ensureDepartment(ScoreDepartment::Melody, plan.orchestrationLanguage.familyDialogue >= 0.62 ? 4 : 3);
+    const auto clubProduction = plan.productionLanguage.domain == ProductionDomain::ClubElectronic &&
+                                plan.productionLanguage.electronicIntent >= 0.58;
+    if (!clubProduction) {
+        ensureDepartment(ScoreDepartment::Rhythm, 3);
+        ensureDepartment(ScoreDepartment::Harmony, plan.orchestrationLanguage.harmonicDepth >= 0.62 ? 9 : 6);
+        ensureDepartment(ScoreDepartment::Melody, plan.orchestrationLanguage.familyDialogue >= 0.62 ? 4 : 3);
+    }
     const auto voiceDefaultsForInstruments = defaultVoicePlan();
     const auto fullyAuthoredCast = plan.voices.size() >= 7 &&
         std::all_of(plan.voices.begin(), plan.voices.end(), [](const auto& voice) {
@@ -1158,6 +1166,11 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     song.soundWarmth = plan.timbrePalette.warmth;
     song.soundBrightness = plan.timbrePalette.brightness;
     song.acousticElectronicBalance = plan.timbrePalette.acousticElectronicBalance;
+    song.productionDomain = plan.productionLanguage.domain == ProductionDomain::ClubElectronic
+        ? "club_electronic" : plan.productionLanguage.domain == ProductionDomain::Hybrid
+        ? "hybrid" : plan.productionLanguage.domain == ProductionDomain::Orchestral
+        ? "orchestral" : "adaptive";
+    song.productionModeSource = plan.productionModeSource;
     Generator generator;
     std::size_t workUnits = 0;
     for (const auto& section : plan.sections)
@@ -1355,6 +1368,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         return std::abs(left.startBeat - right.startBeat) < 0.0001 && left.channel == right.channel &&
                left.pitch == right.pitch && left.voice == right.voice;
     }), song.notes.end());
+    const auto electronicShaping = ElectronicProductionDirector::shapePerformance(song, plan);
     auto orchestrationReport = OrchestrationScore::realize(song, plan);
     // Continuity must be the final structural stage. Earlier anchors can legitimately be
     // removed by active-section orchestration, which would recreate long empty windows in
@@ -1382,6 +1396,17 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         song, orchestratedTonalReport.after, plan.beatsPerBar, orchestrationReport.registerClarity,
         orchestrationReport.familyBalance);
     ProductionPolish::stamp(song, productionReport);
+    auto electronicReport = ElectronicProductionDirector::audit(song, plan);
+    electronicReport.lowEndCollisionsBefore = electronicShaping.lowEndCollisionsBefore;
+    electronicReport.bassAttacksMoved = electronicShaping.bassAttacksMoved;
+    electronicReport.bassReleasesTrimmed = electronicShaping.bassReleasesTrimmed;
+    electronicReport.phraseBreathsCreated = electronicShaping.phraseBreathsCreated;
+    electronicReport.rhythmNotesEvolved = electronicShaping.rhythmNotesEvolved;
+    electronicReport.foregroundNotesRemoved = electronicShaping.foregroundNotesRemoved;
+    electronicReport.automationEventsAdded = electronicShaping.automationEventsAdded;
+    ElectronicProductionDirector::stamp(song, electronicReport);
+    song.electronicProductionAudited = electronicReport.active;
+    song.electronicProductionScore = electronicReport.active ? electronicReport.score : 0.0;
     if (renderReport != nullptr) {
         renderReport->orchestration = orchestrationReport;
         renderReport->finalTonalPass = orchestratedTonalReport;
@@ -1390,6 +1415,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         renderReport->longestGlobalSilenceAfter = continuityReport.longestAfter;
         renderReport->expression = expressionReport;
         renderReport->production = productionReport;
+        renderReport->electronicProduction = electronicReport;
     }
     std::sort(song.controls.begin(), song.controls.end(), [](const auto& left, const auto& right) {
         if (left.beat != right.beat) return left.beat < right.beat;

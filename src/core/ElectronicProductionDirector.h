@@ -1,0 +1,64 @@
+#pragma once
+
+#include "MusicTypes.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <string_view>
+
+namespace pulso {
+
+struct SongPlan;
+
+enum class ProductionDomain : std::uint8_t {
+    Adaptive = 0,
+    ClubElectronic,
+    Hybrid,
+    Orchestral
+};
+
+// This is a production grammar, not a genre preset. GPT describes how the record should
+// behave across the dance floor, frequency spectrum and arrangement without selecting a
+// closed house/techno template.
+struct ProductionLanguage {
+    ProductionDomain domain{ProductionDomain::Adaptive};
+    std::string description{"Adaptive production direction"};
+    double electronicIntent{};
+    double clubFocus{};
+    double lowEndInterlock{0.62};
+    double grooveEvolution{0.58};
+    double hookEconomy{0.66};
+    double automationMotion{0.56};
+    double djUtility{0.42};
+    double spectralRestraint{0.64};
+    double orchestralAllowance{0.35};
+};
+
+struct ElectronicProductionReport {
+    bool active{};
+    std::size_t lowEndCollisionsBefore{};
+    std::size_t lowEndCollisionsAfter{};
+    std::size_t bassAttacksMoved{};
+    std::size_t bassReleasesTrimmed{};
+    std::size_t phraseBreathsCreated{};
+    std::size_t rhythmNotesEvolved{};
+    std::size_t foregroundNotesRemoved{};
+    std::size_t automationEventsAdded{};
+    std::size_t literalRhythmBars{};
+    std::size_t maximumRhythmRun{};
+    std::size_t competingForegroundBars{};
+    double intentionMatch{1.0};
+    double score{1.0};
+};
+
+class ElectronicProductionDirector final {
+public:
+    [[nodiscard]] static ProductionLanguage infer(std::string_view direction);
+    static void normalizePlan(SongPlan&);
+    [[nodiscard]] static ElectronicProductionReport shapePerformance(Pattern&, const SongPlan&);
+    [[nodiscard]] static ElectronicProductionReport audit(const Pattern&, const SongPlan&);
+    static void stamp(Pattern&, const ElectronicProductionReport&);
+};
+
+} // namespace pulso

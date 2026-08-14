@@ -135,6 +135,10 @@ struct Pattern {
     double soundWarmth{0.5};
     double soundBrightness{0.5};
     double acousticElectronicBalance{0.5};
+    std::string productionDomain{"adaptive"};
+    std::string productionModeSource{"adaptive_inference"};
+    bool electronicProductionAudited{};
+    double electronicProductionScore{};
     bool productionAuditPerformed{};
     bool productionReady{};
     double productionScore{};

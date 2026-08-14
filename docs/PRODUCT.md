@@ -75,6 +75,14 @@ reglas observables:
 17. **Crítica instrumental:** el MIDI realizado debe respetar polifonía ejecutable,
     separación grave, balance de familias y expresión independiente antes de publicarse.
 
+18. **Producción electrónica:** cuando la intención sea de club, la complejidad proviene de
+    groove, timbre, automatización, tensión y sustracción. Kick y bajo comparten un contrato
+    temporal, solamente un hook posee el primer plano y la orquesta acústica deja de ser el
+    comportamiento predeterminado.
+19. **Correspondencia de intención:** el crítico compara el dominio solicitado con las partes
+    realizadas; una producción electrónica no puede aprobarse silenciosamente como concierto
+    de cuerdas y vientos.
+
 La reproducción repite el resultado de manera exacta hasta que el usuario solicita
 otra idea o regenera las capas desbloqueadas.
 

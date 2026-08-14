@@ -16,18 +16,26 @@ class SoundMatcherTests(unittest.TestCase):
             ("Orchestral Sweep Pad.adv", "sounds/Sounds/Pad/Orchestral Sweep Pad.adv", "wrong-pad"),
             ("Swell Brass.adg", "sounds/Sounds/Brass/Swell Brass.adg", "wrong-brass"),
             ("Kick Felt Crack.wav", "drums/Drums/Drum Hits/Kick/Kick Felt Crack.wav", "kick"),
+            ("Kick Synth Bass.aif", "drums/Drums/Drum Hits/Kick/Kick Synth Bass.aif", "bad-long-kick"),
+            ("Kick 909 Tight.wav", "drums/Drums/Drum Hits/Kick/Kick 909 Tight.wav", "tight-kick"),
             ("Analog Tom.adv", "sounds/Sounds/Percussive/Analog Tom.adv", "tom"),
             ("Timpani Orchestra.wav", "drums/Drums/Drum Hits/Misc Percussion/Timpani Orchestra.wav", "timpani"),
             ("Crash 909.wav", "drums/Drums/Drum Hits/Cymbal/Crash 909.wav", "cymbal"),
+            ("Crash Kick Reverse.aif", "drums/Drums/Drum Hits/Cymbal/Crash Kick Reverse.aif", "bad-cymbal"),
             ("909 Core Kit.adg", "drums/Drums/909 Core Kit.adg", "kit-909"),
             ("Percussion Core Kit.adg", "drums/Drums/Percussion Core Kit.adg", "percussion-kit"),
             ("Conga High.wav", "drums/Drums/Drum Hits/Conga/Conga High.wav", "single-conga"),
+            ("FM Piano Filtered.adv", "sounds/Sounds/Piano & Keys/FM Piano Filtered.adv", "fm-piano"),
+            ("Prepared Piano Mute.adv", "sounds/Sounds/Piano & Keys/Prepared Piano Mute.adv", "prepared-piano"),
             ("Violin Strings.adv", "sounds/Sounds/Strings/Violin Strings.adv", "violin"),
             ("Cello Strings.adv", "sounds/Sounds/Strings/Cello Strings.adv", "cello"),
             ("Flute Mellow.adv", "sounds/Sounds/Winds/Flute Mellow.adv", "flute"),
             ("Basic Synth Flute.adg", "sounds/Sounds/Winds/Basic Synth Flute.adg", "flute-2"),
             ("Horns Mellow.adg", "sounds/Sounds/Brass/Horns Mellow.adg", "horns"),
             ("Warm Analog Pad.adg", "sounds/Sounds/Pad/Warm Analog Pad.adg", "analog-pad"),
+            ("Sub Sine Bass.adv", "sounds/Sounds/Bass/Sub Sine Bass.adv", "sub-sine"),
+            ("Electric Bass Finger.adv", "sounds/Sounds/Bass/Electric Bass Finger.adv", "electric-finger"),
+            ("Drift", "instruments/Instruments/Drift", "drift"),
             ("Wavetable", "instruments/Instruments/Wavetable", "wavetable"),
         ]
 
@@ -60,6 +68,10 @@ class SoundMatcherTests(unittest.TestCase):
     def test_timbre_ranks_only_after_identity(self):
         self.assertEqual(self.select("analog_pad", "dark warm analog pad", "Analog")[2], "analog-pad")
 
+    def test_felt_piano_and_cymbal_intents_avoid_misleading_electronic_matches(self):
+        self.assertEqual(self.select("piano", "felt intimate piano")[2], "prepared-piano")
+        self.assertEqual(self.select("cymbals", "natural cymbal swell")[2], "cymbal")
+
     def test_reuse_is_avoided_within_the_same_identity_tier(self):
         first = self.select("flute", "soft flute")
         second = select_track_sound(self.items, {
@@ -85,26 +97,46 @@ class SoundMatcherTests(unittest.TestCase):
         self.assertEqual(self.select("orchestral_percussion", "cinematic low toms")[2], "tom")
         self.assertEqual(self.select("cymbals", "orchestral cymbal swell")[2], "cymbal")
 
-    def test_multivoice_latin_percussion_requires_a_populated_kit(self):
-        self.assertEqual(self.select("latin_percussion", "natural latin percussion", "Drum Rack")[2],
-                         "percussion-kit")
+    def test_latin_percussion_prefers_a_semantic_one_shot_over_an_opaque_kit(self):
+        result = self.select("latin_percussion", "natural latin percussion", "Drum Rack")
+        self.assertEqual(result[2], "single-conga")
+        self.assertEqual(result[3], "identity")
 
-    def test_missing_orchestral_identity_uses_its_family(self):
+    def test_missing_solo_wind_uses_neutral_synth_not_wrong_named_instrument(self):
         result = self.select("oboe", "expressive solo oboe", "Sampler", ("Wavetable",))
-        self.assertIn(result[2], ("flute", "flute-2"))
-        self.assertEqual(result[3], "family_fallback")
+        self.assertEqual(result[2], "wavetable")
+        self.assertEqual(result[3], "device_fallback")
 
     def test_raw_synth_is_an_explicit_audible_last_resort(self):
         result = self.select("unknown_voice", "unknown timbre", "Sampler", ("Wavetable",))
         self.assertEqual(result[2], "wavetable")
         self.assertEqual(result[3], "device_fallback")
 
-    def test_empty_containers_never_match(self):
+    def test_empty_container_request_resolves_to_audible_neutral_instrument(self):
         result = select_track_sound(self.items, {
             "catalog_id": "unknown", "preset_intent": "balanced natural",
             "native_device": "Instrument Rack", "device_candidates": [],
         })
-        self.assertIsNone(result)
+        self.assertIsNotNone(result)
+        self.assertEqual(result[2], "drift")
+        self.assertEqual(result[3], "emergency_instrument")
+
+    def test_low_end_roles_are_distinct_and_kick_has_a_short_identity(self):
+        kick = self.select("kick_drum", "tight club kick with controlled sub tail")
+        self.assertEqual(kick[2], "tight-kick")
+        sub = self.select("sub_synth", "clean mono sine sub")
+        movement = select_track_sound(self.items, {
+            "catalog_id": "electric_bass", "preset_intent": "warm electronic bass groove",
+            "native_device": "Wavetable", "device_candidates": ["Wavetable"],
+        }, {sub[1]})
+        self.assertIsNotNone(movement)
+        self.assertEqual(movement[2], "electric-finger")
+        self.assertNotEqual(movement[1], sub[1])
+
+    def test_missing_contrabass_never_masquerades_as_violin(self):
+        result = self.select("contrabass", "deep natural contrabass", "Sampler", ("Drift",))
+        self.assertEqual(result[2], "drift")
+        self.assertEqual(result[3], "device_fallback")
 
     def test_generic_search_uses_complete_words(self):
         self.assertIsNone(best_inventory_match(self.items, "aire particles", "Granulator III"))

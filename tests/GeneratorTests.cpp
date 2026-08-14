@@ -124,6 +124,14 @@ void runGeneratorTests() {
                 performanceOffsetBeats(timingPattern.notes.back(), 42, 1, 120.0) ==
                     performanceOffsetBeats(timingPattern.notes.back(), 42, 1, 120.0),
             "Performance timing must keep kick exact and remain deterministic and tightly bounded");
+    Pattern publicationTiming;
+    publicationTiming.lengthBeats = 4.0;
+    publicationTiming.notes = {{0.625, 0.37, 42, 90, 10, VoiceId::ClosedHats, 0, true}};
+    ProductionPolish::enforceMetricContract(publicationTiming);
+    require(std::abs(publicationTiming.notes.front().startBeat * 4.0 -
+                     std::round(publicationTiming.notes.front().startBeat * 4.0)) < 0.000001 &&
+                !publicationTiming.notes.front().authoredTiming,
+            "Published MIDI must be exact even when a legacy AI score requested baked displacement");
     Generator generator;
     auto context = phraseContext();
 
@@ -323,6 +331,51 @@ void runGeneratorTests() {
     const auto machinePulsePlan = SongComposer::createLocalPlan(
         "Hypnotic machine pulse, displaced metallic accents and sparse asymmetrical percussion",
         96, 120.0, 4.0, 55191, 0, ScaleKind::Minor);
+    const auto clubPlan = SongComposer::createLocalPlan(
+        "Dark electronic club track for a DJ set, physical four on the floor groove, evolving hook and breakdown",
+        192, 124.0, 4.0, 88117, 2, ScaleKind::Minor);
+    require(clubPlan.productionLanguage.domain == ProductionDomain::ClubElectronic &&
+                clubPlan.productionLanguage.electronicIntent >= 0.85 &&
+                clubPlan.timbrePalette.acousticElectronicBalance >= 0.85 &&
+                clubPlan.productionModeSource == "local_inference",
+            "Club intent must activate an electronic production grammar rather than orchestral defaults");
+    const std::set<std::string> electronicCatalog{"kick_drum", "snare_clap", "hi_hats",
+        "shakers", "latin_percussion", "orchestral_percussion", "sub_synth", "electric_bass",
+        "poly_synth", "analog_pad", "lead_synth", "ambient_texture", "cymbals"};
+    require(clubPlan.instruments.size() >= 12 &&
+                std::all_of(clubPlan.instruments.begin(), clubPlan.instruments.end(), [&](const auto& part) {
+                    return electronicCatalog.contains(part.instrumentId) && part.divisiVoices == 1;
+                }),
+            "Electronic production must use functional drum, bass, synth, hook and FX roles without implicit orchestra");
+    require(std::all_of(clubPlan.sections.begin(), clubPlan.sections.end(), [](const auto& section) {
+                const auto melodicOwners = std::count(section.activeVoices.begin(), section.activeVoices.end(), VoiceId::Lead) +
+                    std::count(section.activeVoices.begin(), section.activeVoices.end(), VoiceId::Countermelody);
+                return melodicOwners <= 1;
+            }), "A club arrangement must assign at most one foreground melodic owner per section");
+    CompositionRenderReport clubReport;
+    const auto renderedClub = SongComposer{}.render(clubPlan, phraseContext(), {}, &clubReport);
+    require(renderedClub.productionReady && clubReport.electronicProduction.active &&
+                clubReport.electronicProduction.lowEndCollisionsAfter <=
+                    clubReport.electronicProduction.lowEndCollisionsBefore &&
+                clubReport.electronicProduction.automationEventsAdded > 0 &&
+                renderedClub.acousticElectronicBalance >= 0.85,
+            "The electronic director must publish safe low end, structural automation and an audible club contract");
+    auto hybridPlan = SongComposer::createLocalPlan(
+        "Deep electronic club production with an orchestral chamber dialogue", 64, 122.0, 4.0,
+        88118, 2, ScaleKind::Minor);
+    require(hybridPlan.productionLanguage.domain == ProductionDomain::Hybrid,
+            "A genuinely hybrid request must preserve both production domains");
+    Pattern repeatedPercussion;
+    repeatedPercussion.lengthBeats = 40.0;
+    for (auto bar = 0; bar < 10; ++bar) {
+        repeatedPercussion.notes.push_back({bar * 4.0 + 0.5, 0.125, 64, 88, 10, VoiceId::LowPercussion});
+        repeatedPercussion.notes.push_back({bar * 4.0 + 2.5, 0.125, 65, 82, 10, VoiceId::LowPercussion});
+    }
+    const auto hybridShape = ElectronicProductionDirector::shapePerformance(repeatedPercussion, hybridPlan);
+    const auto hybridAudit = ElectronicProductionDirector::audit(repeatedPercussion, hybridPlan);
+    require(hybridShape.active && hybridAudit.active && hybridShape.rhythmNotesEvolved > 0 &&
+                hybridAudit.maximumRhythmRun <= 4,
+            "Hybrid electronic music must receive the same groove-evolution critic as club music");
     require(motifFingerprint(liveDrumPlan.rhythmMotifs.front()) !=
                 motifFingerprint(machinePulsePlan.rhythmMotifs.front()) &&
                 (std::abs(liveDrumPlan.rhythmLanguage.backbeatGravity -
@@ -720,9 +773,9 @@ void runGeneratorTests() {
                 return note.voice == VoiceId::HighPercussion && note.velocity > 85 &&
                        std::abs(note.startBeat - 1.5) < 0.04;
             }) && std::count_if(mutatedSong.notes.begin(), mutatedSong.notes.end(), [](const auto& note) {
-                return note.voice == VoiceId::ClosedHats && note.startBeat >= 0.5 && note.startBeat < 0.75;
+                return note.voice == VoiceId::ClosedHats && note.startBeat >= 0.5 && note.startBeat < 1.0;
             }) >= 2,
-            "Open rhythm mutations must produce audible, deterministic development of the shared cell");
+            "Open rhythm mutations must produce audible, deterministic development on the publication grid");
 
     auto aiRhythmPlan = longPlan;
     aiRhythmPlan.voices.erase(std::remove_if(aiRhythmPlan.voices.begin(), aiRhythmPlan.voices.end(), [](const auto& voice) {

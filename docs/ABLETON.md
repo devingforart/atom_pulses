@@ -182,6 +182,11 @@ pressure y poly-aftertouch. PULSO configura por RPN un rango de bend de ±2 semi
 El instrumento receptor debe mapear o soportar esos mensajes para oírlos. Si una voz no
 existe en el patrón actual, su fila aparece atenuada.
 
+`CREATE IN LIVE` confirma todas las pistas verificadas aunque una identidad aislada no pueda
+resolverse. El estado `degraded` enumera únicamente las pistas omitidas. Sólo un error global
+de la API de Live o cero pistas audibles provoca rollback total. Percusión multiarticulación
+se divide por identidad y usa one-shots de Drum Hits antes de aceptar un Drum Rack opaco.
+
 PULSO no activa MPE implícitamente: Live y muchos instrumentos tratan los canales MPE como
 canales miembro y eso entraría en conflicto con las pistas por voz. Los bends expresivos
 se aplican solamente a voces monofónicas que ya poseen un canal independiente.
@@ -228,3 +233,10 @@ conductora. Cada nota sigue siendo MIDI estándar y puede editarse normalmente e
 - El MVP aprende la armonía del MIDI que llega a su propia instancia.
 - El canal de batería 10 puede requerir
   remapeo de canal.
+## Contrato de publicación 0.32
+
+- `production_mode_source` registra si el dominio vino de GPT, inferencia local o una selección explícita del usuario.
+- `electronic_production_audited` indica si se ejecutó la crítica electrónica; el score sólo existe cuando corresponde.
+- Sub y Bass Groove no comparten preset. Un instrumento neutro audible es preferible a una identidad falsa.
+- Las notas se insertan con `Clip.add_new_notes({"notes": ...})` en Live 11/12; `set_notes` queda únicamente como compatibilidad antigua.
+- El MIDI desplegado está cuantizado. Human Performance afecta la escucha de PULSO, no el clip editable.

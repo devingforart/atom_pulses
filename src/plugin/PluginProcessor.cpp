@@ -140,6 +140,25 @@ juce::String songPlanToJson(const SongPlan& plan) {
     jsonRoot->setProperty("mode", plan.scale == ScaleKind::Major ? "major" :
                               plan.scale == ScaleKind::Dorian ? "dorian" :
                               plan.scale == ScaleKind::Mixolydian ? "mixolydian" : "minor");
+    auto* productionLanguage = new juce::DynamicObject();
+    productionLanguage->setProperty("domain",
+        plan.productionLanguage.domain == ProductionDomain::ClubElectronic ? "club_electronic" :
+        plan.productionLanguage.domain == ProductionDomain::Hybrid ? "hybrid" :
+        plan.productionLanguage.domain == ProductionDomain::Orchestral ? "orchestral" : "adaptive");
+    productionLanguage->setProperty("description",
+        juce::String::fromUTF8(plan.productionLanguage.description.c_str()));
+    productionLanguage->setProperty("electronic_intent", plan.productionLanguage.electronicIntent);
+    productionLanguage->setProperty("club_focus", plan.productionLanguage.clubFocus);
+    productionLanguage->setProperty("low_end_interlock", plan.productionLanguage.lowEndInterlock);
+    productionLanguage->setProperty("groove_evolution", plan.productionLanguage.grooveEvolution);
+    productionLanguage->setProperty("hook_economy", plan.productionLanguage.hookEconomy);
+    productionLanguage->setProperty("automation_motion", plan.productionLanguage.automationMotion);
+    productionLanguage->setProperty("dj_utility", plan.productionLanguage.djUtility);
+    productionLanguage->setProperty("spectral_restraint", plan.productionLanguage.spectralRestraint);
+    productionLanguage->setProperty("orchestral_allowance", plan.productionLanguage.orchestralAllowance);
+    productionLanguage->setProperty("source",
+        juce::String::fromUTF8(plan.productionModeSource.c_str()));
+    jsonRoot->setProperty("production_language", juce::var(productionLanguage));
     auto* rhythmLanguage = new juce::DynamicObject();
     rhythmLanguage->setProperty("description", juce::String::fromUTF8(plan.rhythmLanguage.description.c_str()));
     rhythmLanguage->setProperty("pulse_stability", plan.rhythmLanguage.pulseStability);
@@ -1298,7 +1317,9 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             }
             if (const auto capabilities = readLiveNativeCapabilitiesSummary(); capabilities.isNotEmpty())
                 songDirection += "\n" + capabilities;
-            if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::DeepProduction))
+            if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::ClubElectronic))
+                songDirection += "\nProduction mode: club electronic. Think as a producer and DJ: build kick-bass interlock, evolving groove DNA, one foreground hook, subtractive arrangement, automation, spectral restraint and useful mix-in/mix-out energy. Do not add orchestral instruments unless explicitly requested.";
+            else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::DeepProduction))
                 songDirection += "\nOrchestration mode: deep production. Build a detailed hybrid acoustic/electronic ensemble with independent harmonic families, controlled counterpoint, automation and production-ready negative space.";
             else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Symphonic))
                 songDirection += "\nOrchestration mode: symphonic. Treat the orchestra as multiple independent choirs with divisi strings, woodwind and brass dialogue, orchestral percussion, register-aware counterpoint, articulation contrast and a long-range chamber-to-tutti arc.";
@@ -1362,13 +1383,32 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 }
                 plan.seed = newest.seed;
                 plan.targetSeconds = newest.targetSongSeconds;
-                if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::DeepProduction)) {
+                const auto inferredProduction = ElectronicProductionDirector::infer(songDirection.toStdString());
+                if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Adaptive) &&
+                    inferredProduction.electronicIntent > plan.productionLanguage.electronicIntent) {
+                    plan.productionLanguage = inferredProduction;
+                    plan.productionModeSource = "adaptive_prompt_inference";
+                }
+                if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::ClubElectronic)) {
+                    plan.productionLanguage = inferredProduction;
+                    plan.productionLanguage.domain = ProductionDomain::ClubElectronic;
+                    plan.productionLanguage.electronicIntent = 1.0;
+                    plan.productionLanguage.clubFocus = 1.0;
+                    plan.productionLanguage.orchestralAllowance = 0.0;
+                    plan.productionModeSource = "user_club_electronic";
+                } else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::DeepProduction)) {
+                    plan.productionLanguage.domain = ProductionDomain::Hybrid;
+                    plan.productionLanguage.electronicIntent = std::max(plan.productionLanguage.electronicIntent, 0.70);
+                    plan.productionLanguage.orchestralAllowance = std::max(plan.productionLanguage.orchestralAllowance, 0.55);
                     plan.orchestrationLanguage.ensembleScale = std::max(plan.orchestrationLanguage.ensembleScale, 0.78);
                     plan.orchestrationLanguage.harmonicDepth = std::max(plan.orchestrationLanguage.harmonicDepth, 0.84);
                     plan.orchestrationLanguage.counterpointActivity = std::max(plan.orchestrationLanguage.counterpointActivity, 0.66);
                     plan.orchestrationLanguage.familyDialogue = std::max(plan.orchestrationLanguage.familyDialogue, 0.78);
                     plan.orchestrationLanguage.hybridProduction = std::max(plan.orchestrationLanguage.hybridProduction, 0.72);
+                    plan.productionModeSource = "user_deep_hybrid";
                 } else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Symphonic)) {
+                    plan.productionLanguage.domain = ProductionDomain::Orchestral;
+                    plan.productionLanguage.orchestralAllowance = 1.0;
                     plan.orchestrationLanguage.ensembleScale = std::max(plan.orchestrationLanguage.ensembleScale, 0.92);
                     plan.orchestrationLanguage.harmonicDepth = std::max(plan.orchestrationLanguage.harmonicDepth, 0.92);
                     plan.orchestrationLanguage.counterpointActivity = std::max(plan.orchestrationLanguage.counterpointActivity, 0.80);
@@ -1376,6 +1416,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     plan.orchestrationLanguage.articulationContrast = std::max(plan.orchestrationLanguage.articulationContrast, 0.82);
                     plan.orchestrationLanguage.familyDialogue = std::max(plan.orchestrationLanguage.familyDialogue, 0.88);
                     plan.orchestrationLanguage.hybridProduction = std::min(plan.orchestrationLanguage.hybridProduction, 0.28);
+                    plan.productionModeSource = "user_symphonic";
                 }
                 SongComposer::normalizePlan(plan);
                 songPlanSnapshot.store(std::make_shared<SongPlan>(plan), std::memory_order_release);
@@ -1505,6 +1546,10 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->soundWarmth = generated.soundWarmth;
         playbackPattern->soundBrightness = generated.soundBrightness;
         playbackPattern->acousticElectronicBalance = generated.acousticElectronicBalance;
+        playbackPattern->productionDomain = generated.productionDomain;
+        playbackPattern->productionModeSource = generated.productionModeSource;
+        playbackPattern->electronicProductionAudited = generated.electronicProductionAudited;
+        playbackPattern->electronicProductionScore = generated.electronicProductionScore;
         playbackPattern->productionAuditPerformed = generated.productionAuditPerformed;
         playbackPattern->productionReady = generated.productionReady;
         playbackPattern->productionScore = generated.productionScore;
@@ -1909,7 +1954,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(9); // Binary composition state version.
+        composition.writeInt(11); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -1976,6 +2021,10 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
         composition.writeInt(static_cast<int>(pattern->productionIssues.size()));
         for (const auto& issue : pattern->productionIssues)
             composition.writeString(juce::String::fromUTF8(issue.c_str()));
+        composition.writeString(juce::String::fromUTF8(pattern->productionDomain.c_str()));
+        composition.writeDouble(pattern->electronicProductionScore);
+        composition.writeString(juce::String::fromUTF8(pattern->productionModeSource.c_str()));
+        composition.writeBool(pattern->electronicProductionAudited);
         state.setProperty("compositionData", composition.getMemoryBlock().toBase64Encoding(), nullptr);
         if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) {
             state.setProperty("ideaTitle", metadata->title, nullptr);
@@ -2018,7 +2067,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                     : LiveDeploymentMode::FullOrchestration,
                 std::memory_order_release);
             orchestrationIntentValue.store(static_cast<OrchestrationIntent>(std::clamp(
-                static_cast<int>(state.getProperty("orchestrationIntent", 0)), 0, 2)),
+                static_cast<int>(state.getProperty("orchestrationIntent", 0)), 0, 3)),
                 std::memory_order_release);
             {
                 const std::scoped_lock lock(creativeDirectionMutex);
@@ -2035,7 +2084,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 9) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 11) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2185,6 +2234,19 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                             for (auto index = 0; index < issueCount; ++index)
                                 restoredPattern->productionIssues.push_back(
                                     composition.readString().substring(0, 96).toStdString());
+                        if (version >= 10) {
+                            restoredPattern->productionDomain =
+                                composition.readString().substring(0, 32).toStdString();
+                            restoredPattern->electronicProductionScore =
+                                std::clamp(composition.readDouble(), 0.0, 1.0);
+                            restoredPattern->electronicProductionAudited =
+                                restoredPattern->productionDomain == "club_electronic";
+                            if (version >= 11) {
+                                restoredPattern->productionModeSource =
+                                    composition.readString().substring(0, 48).toStdString();
+                                restoredPattern->electronicProductionAudited = composition.readBool();
+                            }
+                        }
                     }
                 }
                 if (!restoredPattern->notes.empty()) {

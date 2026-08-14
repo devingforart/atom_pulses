@@ -10,8 +10,8 @@ import traceback
 
 from _Framework.ControlSurface import ControlSurface  # pyright: ignore[reportMissingImports]
 from .request_guard import RequestGuard
-from .playback_adapter import (adapt_notes, build_drum_pitch_map, expand_percussion_specs,
-                               is_one_shot_path, project_expression)
+from .playback_adapter import (adapt_notes, build_drum_pitch_map, deployment_outcome,
+                               expand_percussion_specs, is_one_shot_path, project_expression)
 from .sound_matcher import catalog_capabilities, select_track_sound
 
 
@@ -34,6 +34,8 @@ class PulsoDeployRemote(ControlSurface):
         self._request_guard = RequestGuard(self._request_file)
         self._deployed_tracks = []
         self._previous_deployed_tracks = []
+        self._verified_tracks = []
+        self._failed_tracks = []
         self._device_queue = []
         self._native_items = []
         self._inventory_queue = []
@@ -124,7 +126,7 @@ class PulsoDeployRemote(ControlSurface):
             self._write_status("busy", "LIVE DEPLOYMENT ALREADY IN PROGRESS")
             return
         tracks = expand_percussion_specs(request.get("tracks", []))
-        if request.get("schema_version") not in (2, 3, 4, 5) or not tracks:
+        if request.get("schema_version") not in (2, 3, 4, 5, 6) or not tracks:
             raise RuntimeError("invalid or empty deployment request")
         if request.get("sound_engine", "ableton_live_native") != "ableton_live_native":
             raise RuntimeError("unsupported sound engine")
@@ -140,33 +142,47 @@ class PulsoDeployRemote(ControlSurface):
                 continue
             used_paths.add(str(match[1]).casefold())
             resolved.append((spec, match))
-        if unresolved:
-            self._write_status("rejected", "LIVE PREFLIGHT REJECTED - {} SOUNDS MISSING".format(len(unresolved)),
-                               {"missing": unresolved, "committed_tracks": 0})
+        if not resolved:
+            self._write_status("rejected", "LIVE PREFLIGHT REJECTED - NO AUDIBLE SOUNDS AVAILABLE",
+                               {"missing": unresolved, "committed_tracks": 0,
+                                "previous_deployment_preserved": bool(self._deployed_tracks)})
             return
         song = self.song()
         self._previous_deployed_tracks = list(self._deployed_tracks)
         self._device_queue = []
         self._deployed_tracks = []
+        self._verified_tracks = []
+        self._failed_tracks = []
         self._loaded_devices = 0
         self._fallback_devices = 0
-        self._missing_devices = []
-        self._sound_report = []
-        self._deployment_total = len(resolved)
+        self._missing_devices = list(unresolved)
+        self._sound_report = [{"track": name, "state": "preflight_no_playable_match"}
+                              for name in unresolved]
+        self._deployment_total = len(tracks)
         self._deployment_busy = True
         if hasattr(song, "tempo"):
             song.tempo = max(20.0, min(999.0, float(request.get("bpm", song.tempo))))
-        for spec, match in resolved:
-            song.create_midi_track(-1)
-            track_index = len(song.tracks) - 1
-            track = song.tracks[track_index]
-            track.name = str(spec.get("name", "PULSO Part"))[:120]
-            track.mute = False
-            self._deployed_tracks.append(track)
-            # Live can invalidate a Python Track wrapper while Browser.load_item() is
-            # completing. Keep the stable Set index across the asynchronous boundary and
-            # reacquire a fresh wrapper at every callback.
-            self._device_queue.append((track_index, spec, match, float(request.get("length_beats", 4.0))))
+        try:
+            for spec, match in resolved:
+                song.create_midi_track(-1)
+                track_index = len(song.tracks) - 1
+                track = song.tracks[track_index]
+                track.name = str(spec.get("name", "PULSO Part"))[:120]
+                track.mute = False
+                self._deployed_tracks.append(track)
+                # Live can invalidate a Python Track wrapper while Browser.load_item() is
+                # completing. Keep the stable Set index across the asynchronous boundary and
+                # reacquire a fresh wrapper at every callback.
+                self._device_queue.append((track_index, spec, match, float(request.get("length_beats", 4.0))))
+        except Exception:
+            # Track creation is a transaction-level Live API failure. This is the one class
+            # of error that rolls the complete staging set back.
+            self._remove_tracks(song, self._deployed_tracks)
+            self._deployed_tracks = self._previous_deployed_tracks
+            self._previous_deployed_tracks = []
+            self._device_queue = []
+            self._deployment_busy = False
+            raise
         self._write_status("loading", "STAGING {} TRACKS - LOADING VERIFIED SOUNDS".format(len(resolved)))
         self.schedule_message(2, self._load_next_device)
 
@@ -177,26 +193,27 @@ class PulsoDeployRemote(ControlSurface):
         if not self._device_queue:
             details = {"loaded": self._loaded_devices, "fallbacks": self._fallback_devices,
                        "missing": self._missing_devices, "sounds": self._sound_report}
-            if self._missing_devices:
+            if self._loaded_devices == 0:
                 self._remove_tracks(self.song(), self._deployed_tracks)
                 self._deployed_tracks = self._previous_deployed_tracks
                 self._previous_deployed_tracks = []
                 self._deployment_busy = False
                 details["committed_tracks"] = 0
                 details["previous_deployment_preserved"] = bool(self._deployed_tracks)
-                message = "LIVE DEPLOYMENT REJECTED - {} INVALID - 0 TRACKS COMMITTED".format(
-                    len(self._missing_devices))
-                self._write_status("rejected", message, details)
+                self._write_status("rejected", "LIVE DEPLOYMENT REJECTED - NO AUDIBLE TRACKS",
+                                   details)
                 return
-            message = "LIVE NATIVE COMPLETE - {}/{} PLAYBACK CONTRACTS VERIFIED".format(
-                self._loaded_devices, total)
-            if self._fallback_devices:
-                message += " - {} FALLBACKS".format(self._fallback_devices)
-            details["committed_tracks"] = total
+            self._remove_tracks(self.song(), self._failed_tracks)
+            self._deployed_tracks = list(self._verified_tracks)
+            state, message = deployment_outcome(self._loaded_devices, total,
+                                                len(self._missing_devices), self._fallback_devices)
+            details["committed_tracks"] = self._loaded_devices
+            details["skipped_tracks"] = len(self._missing_devices)
+            details["previous_deployment_preserved"] = False
             self._remove_tracks(self.song(), self._previous_deployed_tracks)
             self._previous_deployed_tracks = []
             self._deployment_busy = False
-            self._write_status("complete", message, details)
+            self._write_status(state, message, details)
             return
         track_index, spec, match, length_beats = self._device_queue.pop(0)
         track = self._track_at(track_index)
@@ -210,6 +227,7 @@ class PulsoDeployRemote(ControlSurface):
         matched = self._load_native_sound(match)
         if matched is None:
             self._missing_devices.append(str(spec.get("name", "PULSO Part")))
+            self._failed_tracks.append(track)
             self._sound_report.append({"track": str(spec.get("name", "PULSO Part")),
                                        "state": "no_playable_match"})
             self.schedule_message(2, self._load_next_device)
@@ -295,12 +313,14 @@ class PulsoDeployRemote(ControlSurface):
         self._sound_report.append(report)
         if valid:
             self._loaded_devices += 1
+            self._verified_tracks.append(track)
             if quality != "identity":
                 self._fallback_devices += 1
             track.name = (str(spec.get("name", track.name)) + " | " + matched_name)[:120]
             self._apply_mixer_defaults(track, spec)
         else:
             self._missing_devices.append(str(spec.get("name", "PULSO Part")))
+            self._failed_tracks.append(track)
         completed = len(self._deployed_tracks) - len(self._device_queue)
         self._write_status("loading", "VERIFYING LIVE SOUNDS {}/{}".format(
             completed, len(self._deployed_tracks)), {"sounds": self._sound_report})
@@ -378,7 +398,10 @@ class PulsoDeployRemote(ControlSurface):
             })
         if extended_notes and hasattr(clip, "add_new_notes"):
             try:
-                clip.add_new_notes(tuple(extended_notes))
+                # Live 11+ expects one dictionary whose `notes` key contains the note
+                # specifications. Passing the tuple directly raises TypeError and caused
+                # every deployment to fall back to deprecated set_notes.
+                clip.add_new_notes({"notes": tuple(extended_notes)})
                 if hasattr(clip, "deselect_all_notes"):
                     clip.deselect_all_notes()
                 return "live12_extended_notes"

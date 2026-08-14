@@ -106,7 +106,7 @@ juce::String schema() {
     return result;
 }
 
-const juce::String songPlanSchema = R"json({
+const juce::String songPlanSchema = juce::String(R"json({
   "type":"object",
   "properties":{
     "title":{"type":"string"},
@@ -114,6 +114,15 @@ const juce::String songPlanSchema = R"json({
     "summary":{"type":"string"},
     "root_pitch_class":{"type":"integer"},
     "mode":{"type":"string","enum":["major","minor","dorian","mixolydian"]},
+    "production_language":{"type":"object","properties":{
+      "domain":{"type":"string","enum":["adaptive","club_electronic","hybrid","orchestral"]},
+      "description":{"type":"string"},
+      "electronic_intent":{"type":"number"},"club_focus":{"type":"number"},
+      "low_end_interlock":{"type":"number"},"groove_evolution":{"type":"number"},
+      "hook_economy":{"type":"number"},"automation_motion":{"type":"number"},
+      "dj_utility":{"type":"number"},"spectral_restraint":{"type":"number"},
+      "orchestral_allowance":{"type":"number"}
+    },"required":["domain","description","electronic_intent","club_focus","low_end_interlock","groove_evolution","hook_economy","automation_motion","dj_utility","spectral_restraint","orchestral_allowance"],"additionalProperties":false},
     "rhythm_language":{"type":"object","properties":{
       "description":{"type":"string"},
       "pulse_stability":{"type":"number"},"backbeat_gravity":{"type":"number"},
@@ -156,8 +165,8 @@ const juce::String songPlanSchema = R"json({
       "transient_definition":{"type":"number"},"acoustic_electronic_balance":{"type":"number"},
       "cohesion":{"type":"number"},"contrast":{"type":"number"}
     },"required":["description","material","space","warmth","brightness","transient_definition","acoustic_electronic_balance","cohesion","contrast"],"additionalProperties":false},
-    "motif_intervals":{"type":"array","items":{"type":"integer"},"minItems":3,"maxItems":8},
-    "instruments":{"type":"array","minItems":12,"maxItems":36,"items":{
+)json") + R"json(    "motif_intervals":{"type":"array","items":{"type":"integer"},"minItems":3,"maxItems":8},
+    "instruments":{"type":"array","minItems":8,"maxItems":36,"items":{
       "type":"object","properties":{
         "id":{"type":"string"},
         "instrument":{"type":"string","enum":["kick_drum","snare_clap","hi_hats","timpani","taiko_ensemble","latin_percussion","shakers","cymbals","orchestral_percussion","piano","harp","violin_1","violin_2","viola","cello","contrabass","string_ensemble","chamber_strings","flute","piccolo","alto_flute","oboe","english_horn","clarinet","bass_clarinet","bassoon","contrabassoon","french_horns","trumpets","trombones","bass_trombone","tuba","brass_ensemble","woodwind_ensemble","choir","mallets","celesta","vibraphone","marimba","tubular_bells","electric_bass","sub_synth","analog_pad","poly_synth","lead_synth","guitar","ambient_texture"]},
@@ -221,7 +230,7 @@ const juce::String songPlanSchema = R"json({
           "notes":{"type":"array","maxItems":768,"items":{"type":"object","properties":{
             "beat":{"type":"number"},"duration":{"type":"number"},"pitch":{"type":"integer"},
             "velocity":{"type":"integer"},"voice":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]},
-            "metric_intent":{"type":"string","enum":["strict_grid","tuplet","deliberate_displacement"]}
+            "metric_intent":{"type":"string","enum":["strict_grid"]}
           },"required":["beat","duration","pitch","velocity","voice","metric_intent"],"additionalProperties":false}},
           "controls":{"type":"array","maxItems":384,"items":{"type":"object","properties":{
             "beat":{"type":"number"},"controller":{"type":"integer"},"value":{"type":"integer"},
@@ -239,7 +248,7 @@ const juce::String songPlanSchema = R"json({
         },"required":["from","to"],"additionalProperties":false}},
         "retrograde":{"type":"boolean"},"invert_contour":{"type":"boolean"},
         "inversion_axis":{"type":"integer"},"fragment_start":{"type":"number"},"fragment_end":{"type":"number"},
-        "metric_intent":{"type":"string","enum":["strict_grid","tuplet","deliberate_displacement"]}
+        "metric_intent":{"type":"string","enum":["strict_grid"]}
       },"required":["cell_id","section_index","start_beat","repeats","transpose","velocity_scale","time_scale","purpose","voice_map","retrograde","invert_contour","inversion_axis","fragment_start","fragment_end","metric_intent"],"additionalProperties":false}}
     },"required":["cells","placements"],"additionalProperties":false},
     "sections":{"type":"array","minItems":3,"maxItems":20,"items":{
@@ -293,7 +302,7 @@ const juce::String songPlanSchema = R"json({
       "additionalProperties":false
     }}
   },
-  "required":["title","key","summary","root_pitch_class","mode","rhythm_language","harmonic_language","orchestration_language","timbre_palette","chord_palette","motif_intervals","instruments","rhythm_motifs","voices","performance_score","sections"],
+  "required":["title","key","summary","root_pitch_class","mode","production_language","rhythm_language","harmonic_language","orchestration_language","timbre_palette","chord_palette","motif_intervals","instruments","rhythm_motifs","voices","performance_score","sections"],
   "additionalProperties":false
 })json";
 
@@ -355,7 +364,7 @@ HttpResponse performSingleRequest(const wchar_t* method, const juce::String& pat
     }
 
     const auto timeoutMs = std::clamp(static_cast<int>(budget.count()), 1000, 120000);
-    const auto session = WinHttpOpen(L"PULSO/0.30.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    const auto session = WinHttpOpen(L"PULSO/0.31.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) {
         result.nativeError = GetLastError();
@@ -817,15 +826,24 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "activity and register. Use core_drums plus low_percussion and high_percussion as distinct rhythmic strata, "
         "multiple complementary harmonic voices, independent bass functions, melodic dialogue, atmosphere and "
         "transitions when musically justified. Do not activate every voice in every section. "
-        "Above those execution voices, design an orchestra of 12-36 instrument instances from the supplied catalog. "
-        "The orchestra has three coordinated departments: rhythm/percussion, harmony/orchestral fabric and melodic "
-        "speakers. source_voice is the playable archetype feeding an instrument, not its identity, and MUST reference "
+        "First classify the requested production in production_language. club_electronic means the musical logic is "
+        "that of a producer and DJ: kick-bass interlock, groove, hook economy, automation, spectral space and energy "
+        "over 4/8/16/32-bar horizons. It is not an instruction to imitate one fixed genre template. hybrid preserves "
+        "electronic production logic while allowing requested acoustic families; orchestral is reserved for genuinely "
+        "orchestral requests. All production dimensions are 0 to 1. For club_electronic, complexity comes from timbral "
+        "evolution, rhythmic conversation, subtraction and structural returns rather than many simultaneous pitches. "
+        "Use functional production roles such as kick, backbeat, tops, low/high percussion, sub, bass groove, chord body, "
+        "stab, hook, response, atmosphere and transitions. One foreground hook owns attention at a time. "
+        "Above those execution voices, design a production cast of 8-36 instrument instances from the supplied catalog. "
+        "Use the smallest cast that can realize the requested depth. It has three coordinated departments: rhythm and "
+        "percussion, harmonic fabric, and hooks or melodic speakers. source_voice is the playable archetype feeding an instrument, not its identity, and MUST reference "
         "an id present in the voices array. Assign each instance "
         "a distinct role, playable register, prominence, restrained doubling probability and optional named sections. "
         "For every instrument, author orchestral_function, articulation_intent and divisi_voices. The functions "
         "foundation, body, extension, counterpoint, color and transition are compositional responsibilities: distribute "
-        "them across harmonic families so strings, winds, brass, keys and hybrid layers contribute independent, "
-        "voice-led material rather than cloning one chord track. Use harmonic_depth, counterpoint_activity, divisi_depth, "
+        "them across the families actually required by production_language. In club_electronic, prefer synth, drum, bass, "
+        "texture and transition roles; do not add strings, winds or brass merely to create scale. In orchestral or hybrid "
+        "directions, acoustic families may contribute independent voice-led material. Use harmonic_depth, counterpoint_activity, divisi_depth, "
         "articulation_contrast, family_dialogue and hybrid_production to define how that ensemble thinks. "
         "Choose live_device only from the supplied Ableton-native device enum and describe the desired installed sound "
         "in live_preset_intent with concise English browser-search nouns, even when the user writes in another language "
@@ -915,11 +933,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "one voice, answer it in another, then transform it using time_scale, transpose, fragment boundaries, contour "
         "inversion or retrograde only when the dramatic purpose calls for it. purpose must state establish, answer, "
         "transform, withdraw, intensify or resolve in the language of this specific composition; these are relationships, "
-        "not mandatory templates. At least three instrument families must participate in a thematic relationship across "
-        "the full form, but they must not all play simultaneously. octave_shift is strictly an octave displacement: -24, -12, 0, 12 or 24 semitones. "
-        "Every authored note and placement MUST declare metric_intent. Use strict_grid by default. Use tuplet only "
-        "for an audible tuple ratio, and deliberate_displacement only for a structurally intentional anticipation, "
-        "polymetric phase or metric transformation. Undeclared decimal timing is invalid. Keep the score sparse enough to fit: prioritize authored "
+        "not mandatory templates. In orchestral and hybrid domains, at least three instrument families should participate "
+        "in a thematic relationship. In club_electronic, use at least three production families (low end, groove, harmonic "
+        "or hook/texture) and do not inflate the cast with acoustic doublings. They must not all play simultaneously. "
+        "octave_shift is strictly an octave displacement: -24, -12, 0, 12 or 24 semitones. "
+        "Every authored note and placement MUST declare metric_intent=strict_grid. Source MIDI timing is always exact; "
+        "anticipation, feel and microtiming belong exclusively to PULSO's reversible Human Performance playback layer. "
+        "Undeclared decimal timing is invalid. Keep the score sparse enough to fit: prioritize authored "
         "foreground, bass, harmonic rhythm and defining percussion, leaving genuinely secondary voices to fallback. "
         "For consolidated tonality, pitched performance notes must respect the chord and tonal narrative already authored. "
         "Target duration: " + juce::String(targetSeconds) +
@@ -1121,6 +1141,7 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
         return false;
     }
     result = {};
+    result.productionModeSource = "gpt_plan";
     result.harmonicLanguage.tonalPolicy = tonalPolicy;
     result.title = object->getProperty("title").toString().trim().toStdString();
     result.key = object->getProperty("key").toString().trim().toStdString();
@@ -1134,6 +1155,25 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
     const auto mode = object->getProperty("mode").toString();
     result.scale = mode == "major" ? ScaleKind::Major : mode == "dorian" ? ScaleKind::Dorian
                  : mode == "mixolydian" ? ScaleKind::Mixolydian : ScaleKind::Minor;
+    if (const auto* language = object->getProperty("production_language").getDynamicObject()) {
+        const auto source = language->getProperty("source").toString().trim();
+        if (source.isNotEmpty()) result.productionModeSource = source.substring(0, 48).toStdString();
+        const auto domain = language->getProperty("domain").toString();
+        result.productionLanguage.domain = domain == "club_electronic" ? ProductionDomain::ClubElectronic
+            : domain == "hybrid" ? ProductionDomain::Hybrid
+            : domain == "orchestral" ? ProductionDomain::Orchestral
+            : ProductionDomain::Adaptive;
+        result.productionLanguage.description = language->getProperty("description").toString().trim().toStdString();
+        result.productionLanguage.electronicIntent = static_cast<double>(language->getProperty("electronic_intent"));
+        result.productionLanguage.clubFocus = static_cast<double>(language->getProperty("club_focus"));
+        result.productionLanguage.lowEndInterlock = static_cast<double>(language->getProperty("low_end_interlock"));
+        result.productionLanguage.grooveEvolution = static_cast<double>(language->getProperty("groove_evolution"));
+        result.productionLanguage.hookEconomy = static_cast<double>(language->getProperty("hook_economy"));
+        result.productionLanguage.automationMotion = static_cast<double>(language->getProperty("automation_motion"));
+        result.productionLanguage.djUtility = static_cast<double>(language->getProperty("dj_utility"));
+        result.productionLanguage.spectralRestraint = static_cast<double>(language->getProperty("spectral_restraint"));
+        result.productionLanguage.orchestralAllowance = static_cast<double>(language->getProperty("orchestral_allowance"));
+    }
     if (const auto* language = object->getProperty("rhythm_language").getDynamicObject()) {
         result.rhythmLanguage.description = language->getProperty("description").toString().trim().toStdString();
         result.rhythmLanguage.pulseStability = static_cast<double>(language->getProperty("pulse_stability"));

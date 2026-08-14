@@ -66,7 +66,7 @@ IDENTITY_TIERS = {
     "vibraphone": (("vibraphone", "vibes"), ("mallet",)),
     "marimba": (("marimba",), ("mallet",)),
     "tubular_bells": (("tubular bells",), ("bells",)),
-    "electric_bass": (("electric bass", "bass"),),
+    "electric_bass": (("electric bass", "bass guitar"), ("bass",)),
     "sub_synth": (("sub bass", "sub",), ("bass",)),
     "analog_pad": (("analog pad", "pad"),),
     "poly_synth": (("poly synth", "synth keys"), ("synth",)),
@@ -93,7 +93,7 @@ FAMILY_PATH_HINTS = {
     "kick_drum": ("/kick/", "/percussive/"), "snare_clap": ("/snare/", "/percussive/"),
     "hi_hats": ("/hihat/", "/percussive/"), "timpani": ("/misc percussion/", "/percussive/"),
     "taiko_ensemble": ("/tom/", "/percussive/"),
-    "latin_percussion": ("/percussion/", "/percussive/"),
+    "latin_percussion": ("/conga/", "/bongo/", "/bell/", "/misc percussion/", "/percussive/"),
     "shakers": ("/shaker/", "/misc percussion/", "/percussive/"),
     "cymbals": ("/cymbal/", "/percussive/"),
     "orchestral_percussion": ("/tom/", "/misc percussion/", "/percussive/"),
@@ -102,7 +102,28 @@ FAMILY_PATH_HINTS = {
     "lead_synth": ("/synth lead/",), "ambient_texture": ("/ambient & evolving/",),
 }
 
-KIT_REQUIRED_CATALOGS = {"latin_percussion", "production_drums"}
+KIT_REQUIRED_CATALOGS = {"production_drums"}
+
+# A wrong named solo instrument is more misleading than a neutral synth fallback. Ensemble
+# strings may substitute within their family, but solo winds retain exact identity.
+STRICT_IDENTITY_CATALOGS = {
+    "flute", "piccolo", "oboe", "english_horn", "clarinet", "bass_clarinet",
+    "bassoon", "contrabassoon", "french_horns", "trumpets", "trombones",
+    "bass_trombone", "tuba", "contrabass",
+}
+
+# These roles must remain timbrally independent. Sharing the sub preset with the movement
+# bass collapses the low-end arrangement into one voice and defeats the AI's orchestration.
+EXCLUSIVE_SOUND_CATALOGS = {"sub_synth", "electric_bass"}
+
+RHYTHM_CATALOGS = {
+    "kick_drum", "snare_clap", "hi_hats", "timpani", "taiko_ensemble",
+    "latin_percussion", "shakers", "cymbals", "orchestral_percussion", "production_drums",
+}
+
+ONE_SHOT_PREFERRED_CATALOGS = {
+    "kick_drum", "snare_clap", "hi_hats", "latin_percussion", "shakers", "cymbals",
+}
 
 
 def tokens(value):
@@ -152,6 +173,36 @@ def _rank_item(name, path, intent, requested_device, catalog_id=""):
         score -= 4
     if any(hint in lowered_path for hint in FAMILY_PATH_HINTS.get(str(catalog_id).casefold(), ())):
         score += 12
+    if str(catalog_id).casefold() in ONE_SHOT_PREFERRED_CATALOGS and lowered_name.endswith(
+            (".wav", ".aif", ".aiff", ".flac")):
+        score += 12
+    if str(catalog_id).casefold() == "piano":
+        wanted = set(tokens(intent))
+        if wanted.intersection({"felt", "acoustic"}):
+            acoustic_character = ("prepared", "mute", "upright", "grand", "childhood", "ac piano")
+            electronic_character = ("e-piano", "electric piano", "fm piano", "synth piano",
+                                    "wurli", "toy piano", "analog piano")
+            if any(value in lowered_name for value in acoustic_character):
+                score += 28
+            if any(value in lowered_name for value in electronic_character):
+                score -= 36
+    if str(catalog_id).casefold() == "cymbals" and ("kick" in name_tokens or "reverse" in name_tokens):
+        score -= 30
+    if str(catalog_id).casefold() == "kick_drum":
+        if any(value in lowered_name for value in ("short", "tight", "punch", "909", "club")):
+            score += 24
+        if "synth bass" in lowered_name or any(value in lowered_name for value in ("long tail", "boomy")):
+            score -= 60
+    if str(catalog_id).casefold() == "sub_synth":
+        if any(value in lowered_name for value in ("sub", "sine", "clean")):
+            score += 28
+        if any(value in lowered_name for value in ("electric", "finger", "pluck", "growl")):
+            score -= 32
+    if str(catalog_id).casefold() == "electric_bass":
+        if any(value in lowered_name for value in ("electric", "finger", "pluck", "muted", "groove")):
+            score += 30
+        if any(value in lowered_name for value in ("sub sine", "pure sine", "clean sub")):
+            score -= 55
     device_tokens = set(tokens(requested_device))
     if device_tokens and device_tokens.issubset(item_tokens):
         score += 2
@@ -171,6 +222,8 @@ def select_track_sound(items, spec, used_paths=None):
         if not is_playable_item(name):
             continue
         lowered_name = str(name).casefold()
+        if catalog_id == "kick_drum" and "synth bass" in lowered_name:
+            continue
         if catalog_id in KIT_REQUIRED_CATALOGS and not (lowered_name.endswith(".adg") and "kit" in tokens(name)):
             continue
         haystack = set(tokens(str(name) + " " + str(path)))
@@ -179,6 +232,15 @@ def select_track_sound(items, spec, used_paths=None):
             tiered.append((tier, str(path).casefold() in used,
                            -_rank_item(name, path, intent, requested_device, catalog_id),
                            str(path).casefold(), name, path, item))
+    if tiered:
+        if catalog_id in STRICT_IDENTITY_CATALOGS:
+            tiered = [candidate for candidate in tiered if candidate[0] == 0]
+        elif catalog_id in RHYTHM_CATALOGS and catalog_id != "production_drums" and \
+                not any(candidate[0] == 0 for candidate in tiered):
+            tiered = [candidate for candidate in tiered
+                      if str(candidate[5]).casefold().endswith((".wav", ".aif", ".aiff", ".flac"))]
+        if catalog_id in EXCLUSIVE_SOUND_CATALOGS:
+            tiered = [candidate for candidate in tiered if not candidate[1]]
     if tiered:
         tiered.sort(key=lambda value: value[:4])
         tier, shared, _, _, name, path, item = tiered[0]
@@ -195,6 +257,28 @@ def select_track_sound(items, spec, used_paths=None):
         for name, path, item in items:
             if is_playable_item(name) and candidate.casefold() == str(name).strip().casefold():
                 return name, path, item, "device_fallback", str(path).casefold() in used
+
+    # Last-resort playback is explicit and audible, never an empty Rack. Rhythm receives a
+    # one-shot from Drum Hits; pitched parts receive a neutral native synth rather than a
+    # falsely labelled orchestral substitute.
+    if catalog_id in RHYTHM_CATALOGS:
+        emergency = []
+        for name, path, item in items:
+            lowered_path = str(path).casefold().replace("\\", "/")
+            if not str(name).casefold().endswith((".wav", ".aif", ".aiff", ".flac")) or \
+                    "/drum hits/" not in lowered_path:
+                continue
+            emergency.append((-_rank_item(name, path, intent, requested_device, catalog_id),
+                              str(path).casefold() in used, str(path).casefold(), name, path, item))
+        if emergency:
+            emergency.sort(key=lambda value: value[:3])
+            _, shared, _, name, path, item = emergency[0]
+            return name, path, item, "emergency_one_shot", shared
+    else:
+        for safe_name in ("Drift", "Wavetable", "Operator"):
+            for name, path, item in items:
+                if str(name).strip().casefold() == safe_name.casefold() and is_playable_item(name):
+                    return name, path, item, "emergency_instrument", str(path).casefold() in used
     return None
 
 

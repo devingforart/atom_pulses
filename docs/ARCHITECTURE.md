@@ -28,6 +28,25 @@ pulso_core
 `pulso_core` no depende de JUCE ni del sistema operativo. Puede reutilizarse en un
 servicio neuronal, una aplicación móvil, Max o futuras versiones AU/AAX.
 
+## Director de producción electrónica
+
+`ProductionLanguage` clasifica el dominio como adaptativo, electrónico de club, híbrido u
+orquestal y conserva nueve dimensiones continuas: intención electrónica, foco de pista,
+interlock de graves, evolución del groove, economía del hook, movimiento de automatización,
+utilidad para DJ, restricción espectral y permiso orquestal. No representa una lista cerrada
+de géneros.
+
+Cuando el dominio es `ClubElectronic`, `ElectronicProductionDirector` sustituye los defaults
+orquestales por quince funciones de producción: kick, backbeat, hats, percusiones, sub, bass
+groove, cuerpo armónico, stab, aire superior, hook, respuesta, atmósfera y transiciones. El
+director limita la sección a un protagonista melódico, protege el espacio temporal entre kick
+y bajo, agrega respiraciones al final de frases y escribe automatización CC74 vinculada a la
+energía y tensión. Después vuelve a auditar el resultado que llegará a Live.
+
+`AUTO DIRECTOR` infiere el dominio desde el pedido. Los modos explícitos únicamente fijan el
+dominio; GPT continúa diseñando el lenguaje interno, motivos y forma, por lo que `CLUB
+ELECTRONIC` no equivale a una plantilla fija de house o techno.
+
 ## Tiempo real
 
 El callback de audio:

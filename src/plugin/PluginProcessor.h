@@ -27,7 +27,9 @@ class PulsoAudioProcessor final : public juce::AudioProcessor,
     friend struct ProcessorTestAccess;
 public:
     enum class LiveDeploymentMode : std::uint8_t { FullOrchestration = 0, QuickThreeStem };
-    enum class OrchestrationIntent : std::uint8_t { Adaptive = 0, DeepProduction, Symphonic };
+    enum class OrchestrationIntent : std::uint8_t {
+        Adaptive = 0, DeepProduction, Symphonic, ClubElectronic
+    };
     PulsoAudioProcessor();
     ~PulsoAudioProcessor() override;
 

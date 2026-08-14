@@ -86,6 +86,9 @@ Las pruebas de core deben conservar simultáneamente:
 - rachas literales y expresión densa informadas como advertencias, no como corrupción;
 - menos de doce eventos expresivos por nota como objetivo después de compactación;
 - `Pattern::productionReady == true` para toda canción publicable.
+- para `ClubElectronic`, el cast final usa roles electrónicos, las colisiones kick-bajo no
+  aumentan después del director y el informe incluye automatización estructural;
+- cada sección electrónica tiene como máximo un propietario melódico de primer plano.
 
 `LiveDeployer` permite patrones legacy sin auditoría para compatibilidad de estados
 anteriores, pero rechaza cualquier patrón nuevo que haya sido auditado y no esté listo.

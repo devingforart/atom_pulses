@@ -1,7 +1,8 @@
 import unittest
 
 from ableton.PulsoDeployRemote.playback_adapter import (
-    adapt_notes, build_drum_pitch_map, expand_percussion_specs, project_expression,
+    adapt_notes, build_drum_pitch_map, deployment_outcome, expand_percussion_specs,
+    project_expression,
 )
 
 
@@ -38,6 +39,13 @@ class PlaybackAdapterTests(unittest.TestCase):
         self.assertEqual(notes[1]["duration"], 1.0)
         self.assertEqual(report["overlap_repairs"], 1)
 
+    def test_percussion_duration_floor_prevents_inaudible_triggers(self):
+        notes, report = adapt_notes({"catalog_id": "latin_percussion", "notes": [
+            {"pitch": 62, "start": 1.0, "duration": 0.01, "velocity": 70},
+        ]}, "one_shot", root_note=60)
+        self.assertEqual(notes[0]["duration"], 0.125)
+        self.assertEqual(report["duration_floor"], 0.125)
+
     def test_distinct_hat_articulations_receive_independent_sound_tracks(self):
         expanded = expand_percussion_specs([{
             "name": "Hats", "track_key": "part:3", "catalog_id": "hi_hats",
@@ -48,6 +56,16 @@ class PlaybackAdapterTests(unittest.TestCase):
         self.assertEqual(len(expanded), 2)
         self.assertEqual([item["preset_intent"] for item in expanded], ["closed hat", "pedal hat"])
         self.assertEqual([item["notes"][0]["pitch"] for item in expanded], [42, 44])
+
+    def test_latin_articulations_are_split_before_one_shot_resolution(self):
+        expanded = expand_percussion_specs([{
+            "name": "Latin", "track_key": "part:6", "catalog_id": "latin_percussion",
+            "preset_intent": "low skin conversation", "notes": [
+                {"pitch": 60, "start": 0}, {"pitch": 62, "start": 1},
+            ],
+        }])
+        self.assertEqual(len(expanded), 2)
+        self.assertEqual([item["preset_intent"] for item in expanded], ["high bongo", "mute high conga"])
 
     def test_expression_is_projected_into_portable_live_note_properties(self):
         notes, report = project_expression({
@@ -70,6 +88,14 @@ class PlaybackAdapterTests(unittest.TestCase):
         self.assertEqual(report["controls_received"], 5)
         self.assertEqual(report["expressions_received"], 1)
         self.assertEqual(report["sustain_extensions"], 1)
+
+    def test_one_bad_sound_degrades_without_discarding_verified_tracks(self):
+        state, message = deployment_outcome(21, 22, missing=1, fallbacks=2)
+        self.assertEqual(state, "degraded")
+        self.assertIn("21/22", message)
+        self.assertIn("1 TRACK SKIPPED", message)
+        rejected, _ = deployment_outcome(0, 22, missing=22)
+        self.assertEqual(rejected, "rejected")
 
 
 if __name__ == "__main__":

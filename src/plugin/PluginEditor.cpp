@@ -88,15 +88,24 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     soundWorld.addItemList(localizedSoundWorlds(UiLanguage::English,
                                                 processor.currentPreviewWorldName()), 1);
     soundWorld.setJustificationType(juce::Justification::centred);
-    orchestrationIntent.addItem("AUTO ORCHESTRA", 1);
-    orchestrationIntent.addItem("DEEP PRODUCTION", 2);
-    orchestrationIntent.addItem("SYMPHONIC", 3);
-    orchestrationIntent.setSelectedId(static_cast<int>(processor.orchestrationIntent()) + 1,
-                                      juce::dontSendNotification);
+    orchestrationIntent.addItem("AUTO DIRECTOR", 1);
+    orchestrationIntent.addItem("CLUB ELECTRONIC", 2);
+    orchestrationIntent.addItem("DEEP HYBRID", 3);
+    orchestrationIntent.addItem("SYMPHONIC", 4);
+    const auto storedIntent = processor.orchestrationIntent();
+    orchestrationIntent.setSelectedId(
+        storedIntent == PulsoAudioProcessor::OrchestrationIntent::ClubElectronic ? 2
+        : storedIntent == PulsoAudioProcessor::OrchestrationIntent::DeepProduction ? 3
+        : storedIntent == PulsoAudioProcessor::OrchestrationIntent::Symphonic ? 4 : 1,
+        juce::dontSendNotification);
     orchestrationIntent.setJustificationType(juce::Justification::centred);
     orchestrationIntent.onChange = [this] {
-        processor.setOrchestrationIntent(static_cast<PulsoAudioProcessor::OrchestrationIntent>(
-            std::clamp(orchestrationIntent.getSelectedId() - 1, 0, 2)));
+        const auto selected = orchestrationIntent.getSelectedId();
+        processor.setOrchestrationIntent(selected == 2
+            ? PulsoAudioProcessor::OrchestrationIntent::ClubElectronic
+            : selected == 3 ? PulsoAudioProcessor::OrchestrationIntent::DeepProduction
+            : selected == 4 ? PulsoAudioProcessor::OrchestrationIntent::Symphonic
+                            : PulsoAudioProcessor::OrchestrationIntent::Adaptive);
     };
     languageSelector.addItemList({"ENGLISH", juce::String::fromUTF8("ESPA\xC3\x91OL")}, 1);
     languageSelector.setJustificationType(juce::Justification::centred);
@@ -198,14 +207,16 @@ void PulsoAudioProcessorEditor::applyTranslations() {
     previewButton.setTooltip(tr(language, TextId::PreviewTip));
     performanceButton.setTooltip(tr(language, TextId::PerformanceTip));
     soundWorld.setTooltip(tr(language, TextId::SoundWorldTip));
-    orchestrationIntent.changeItemText(1, language == UiLanguage::Spanish ? "ORQUESTA AUTO" : "AUTO ORCHESTRA");
+    orchestrationIntent.changeItemText(1, language == UiLanguage::Spanish ? "DIRECTOR AUTO" : "AUTO DIRECTOR");
     orchestrationIntent.changeItemText(2, language == UiLanguage::Spanish
-        ? juce::String::fromUTF8("PRODUCCI\xC3\x93N PROFUNDA") : "DEEP PRODUCTION");
+        ? juce::String::fromUTF8("ELECTR\xC3\x93NICA DE CLUB") : "CLUB ELECTRONIC");
     orchestrationIntent.changeItemText(3, language == UiLanguage::Spanish
+        ? juce::String::fromUTF8("H\xC3\x8D" "BRIDO PROFUNDO") : "DEEP HYBRID");
+    orchestrationIntent.changeItemText(4, language == UiLanguage::Spanish
         ? juce::String::fromUTF8("SINF\xC3\x93NICO") : "SYMPHONIC");
     orchestrationIntent.setTooltip(language == UiLanguage::Spanish
-        ? juce::String::fromUTF8("AUTO adapta el conjunto a tu pedido. PRODUCCI\xC3\x93N PROFUNDA mezcla familias ac\xC3\xBAsticas y electr\xC3\xB3nicas independientes. SINF\xC3\x93NICO prioriza cuerdas divisi, di\xC3\xA1logo de vientos y metales, contrapunto y un arco de c\xC3\xA1mara a tutti.")
-        : "AUTO adapts the ensemble to your request. DEEP PRODUCTION combines independent acoustic and electronic families. SYMPHONIC prioritizes divisi strings, woodwind/brass dialogue, counterpoint and a chamber-to-tutti arc.");
+        ? juce::String::fromUTF8("AUTO infiere el lenguaje de producci\xC3\xB3n. ELECTR\xC3\x93NICA DE CLUB prioriza groove, relaci\xC3\xB3n kick-bajo, hooks, automatizaci\xC3\xB3n y energ\xC3\xAD" "a para pista. H\xC3\x8D" "BRIDO PROFUNDO combina familias electr\xC3\xB3nicas y ac\xC3\xBAsticas. SINF\xC3\x93NICO activa el pensamiento orquestal.")
+        : "AUTO infers the production language. CLUB ELECTRONIC prioritizes groove, kick-bass interlock, hooks, automation and dance-floor energy. DEEP HYBRID combines electronic and acoustic families. SYMPHONIC enables orchestral thinking.");
     thruButton.setTooltip(tr(language, TextId::ThruTip));
     prompt.setTooltip(tr(language, TextId::PromptTip));
     promptLabel.setTooltip(prompt.getTooltip());

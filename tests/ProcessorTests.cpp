@@ -862,14 +862,14 @@ int main(int argc, char** argv) {
     require(std::any_of(authoredPerformance.notes.begin(), authoredPerformance.notes.end(),
                 [](const auto& note) {
                     return note.voice == pulso::VoiceId::Countermelody &&
-                           std::abs(note.startBeat - 32.375) < 0.001;
+                           std::abs(note.startBeat - 32.5) < 0.001;
                 }),
-            "The explicit AI performance must preserve its first authored onset through a voice mapping");
+            "The explicit AI performance must preserve its mapped phrase on the publication grid");
     require(std::none_of(authoredPerformance.notes.begin(), authoredPerformance.notes.end(),
                 [](const auto& note) {
                     return note.voice == pulso::VoiceId::Countermelody &&
                            note.startBeat >= 32.0 && note.startBeat < 48.0 &&
-                           std::abs(std::fmod(note.startBeat - 32.0, 4.0) - 0.375) > 0.001 &&
+                           std::abs(std::fmod(note.startBeat - 32.0, 4.0) - 0.5) > 0.001 &&
                            std::abs(std::fmod(note.startBeat - 32.0, 4.0) - 2.25) > 0.001;
                 }),
             "The explicit AI performance must replace only the mapped response voice");
@@ -886,7 +886,7 @@ int main(int argc, char** argv) {
             "A GPT-authored sub-bar chord must survive rendering and tonal validation into exported MIDI notes");
 
     const auto orchestrationPlan = pulso::SongComposer::createLocalPlan(
-        "Deep progressive long-form test", 120, 120.0, 4.0, 8841, 2, pulso::ScaleKind::Minor);
+        "Deep symphonic orchestral long-form test", 120, 120.0, 4.0, 8841, 2, pulso::ScaleKind::Minor);
     pulso::GenerationContext orchestrationFoundation;
     orchestrationFoundation.role = pulso::Role::Ensemble;
     orchestrationFoundation.seed = orchestrationPlan.seed;
@@ -1333,13 +1333,16 @@ int main(int argc, char** argv) {
     deploymentPattern.controls = {
         {0.0, 11, 58, 2, pulso::VoiceId::Lead, 0},
         {1.0, 74, 92, 2, pulso::VoiceId::Lead, 3},
+        {7.5, 11, 12, 2, pulso::VoiceId::Lead, 0},
         {0.0, 64, 96, 3, pulso::VoiceId::HarmonicFoundation, 2},
         {2.0, 64, 0, 3, pulso::VoiceId::HarmonicFoundation, 2}};
     deploymentPattern.expressions = {
         {1.0, pulso::ExpressionEventType::PitchBend, 8700, -1, 2,
          pulso::VoiceId::Lead, 0},
         {1.5, pulso::ExpressionEventType::PolyAftertouch, 72, 67, 2,
-         pulso::VoiceId::Lead, 3}};
+         pulso::VoiceId::Lead, 3},
+        {7.5, pulso::ExpressionEventType::ChannelPressure, 100, -1, 2,
+         pulso::VoiceId::Lead, 0}};
     deploymentPattern.parts[0].liveDevice = "Drum Rack";
     deploymentPattern.parts[0].livePresetIntent = "tight modern acoustic kick";
     deploymentPattern.parts[1].liveDevice = "Electric";
@@ -1357,10 +1360,14 @@ int main(int argc, char** argv) {
         bridgeTestDirectory.getChildFile("request.json").loadFileAsString());
     auto* deploymentObject = deploymentJson.getDynamicObject();
     require(deploymentObject != nullptr &&
-                static_cast<int>(deploymentObject->getProperty("schema_version")) == 5 &&
+                static_cast<int>(deploymentObject->getProperty("schema_version")) == 6 &&
                 deploymentObject->getProperty("sound_engine").toString() == "ableton_live_native" &&
                 deploymentObject->getProperty("expression_delivery").toString() ==
                     "native_editable_with_lossless_midi_source" &&
+                deploymentObject->getProperty("production_domain").toString() == "adaptive" &&
+                deploymentObject->getProperty("production_mode_source").toString() == "adaptive_inference" &&
+                !static_cast<bool>(deploymentObject->getProperty("electronic_production_audited")) &&
+                !deploymentObject->hasProperty("electronic_production_score") &&
                 deploymentObject->getProperty("sound_world").toString().isNotEmpty() &&
                 deploymentObject->getProperty("deployment_mode").toString() == "full_orchestration" &&
                 deploymentObject->getProperty("tracks").getArray() != nullptr &&
@@ -1391,7 +1398,7 @@ int main(int argc, char** argv) {
     const auto* violinDeployment = (*nativeTracks)[2].getDynamicObject();
     require(violinDeployment != nullptr && violinDeployment->getProperty("controls").getArray()->size() == 2 &&
                 violinDeployment->getProperty("expressions").getArray()->size() == 2,
-            "Voice-level and part-level performance curves must follow each instrument into Live");
+            "Voice and part expression must follow audible phrases without leaking distant generic curves");
     const auto* violinCandidates = violinDeployment->getProperty("device_candidates").getArray();
     require(violinCandidates != nullptr && violinCandidates->contains("violin 1 orchestral") &&
                 !violinCandidates->contains("Instrument Rack") && violinCandidates->contains("Wavetable"),

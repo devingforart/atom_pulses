@@ -52,14 +52,19 @@ En Drum Racks, cada nota MIDI utilizada debe corresponder además a un pad pobla
 La composición conserva su semántica musical; el clip que recibe Live se adapta al
 instrumento verificado. Los one-shots rítmicos se disparan en su nota raíz para evitar
 transposición accidental, los Drum Racks remapean cada articulación por nombre de pad y
-las articulaciones incompatibles (por ejemplo snare/clap o closed/pedal hat) se separan en
-pistas reproducibles independientes. Marimba, bells, winds, brass y percusión aplican
-límites de duración instrumentales, y toda repetición del mismo pitch recorta la nota
+las articulaciones incompatibles (por ejemplo snare/clap, closed/pedal hat o
+bongo/conga/clave) se separan en pistas reproducibles independientes. Las percusiones
+priorizan one-shots con identidad completa antes que racks cuyos pads no puedan verificarse.
+Marimba, bells, winds, brass y percusión aplican pisos y límites de duración instrumentales,
+y toda repetición del mismo pitch recorta la nota
 anterior para que su note-off no silencie el ataque siguiente.
 
-El despliegue es transaccional: preflight resuelve todas las identidades antes de crear
-staging; las pistas anteriores sólo se eliminan después de verificar cada dispositivo,
-pad, remapeo y clip nuevo. Un fallo elimina el staging y conserva el despliegue previo.
+El despliegue realiza preflight y staging antes de tocar el arreglo anterior. Una identidad
+no disponible usa primero un fallback audible garantizado: one-shot de Drum Hits para
+ritmo o Drift/Wavetable/Operator para material tonal. Si una pista aun falla, sólo se
+elimina esa pista de staging y las demás se confirman con estado `degraded`. El rollback
+completo queda reservado para fallos transaccionales de la API de Live o para un despliegue
+sin ninguna pista audible.
 El contrato schema 5 incluye `controls`, `expressions`, paleta tímbrica y score de producción.
 El puente interpola las
 curvas de manera lineal y proyecta su interpretación sobre velocity, velocity deviation,
@@ -67,6 +72,9 @@ release velocity y duración/sustain. Si Live expone `add_new_notes`, usa las pr
 extendidas de nota; de lo contrario conserva la misma intención audible mediante notas
 legacy ya modeladas. El reporte de `CREATE IN LIVE` muestra cuántos controles recibió,
 cuántas notas modificó, qué sustain extendió y qué API de inserción utilizó.
+Antes de serializar, las curvas genéricas de una voz se intersectan con las frases audibles
+de cada parte concreta; un instrumento con tres notas ya no hereda cientos de eventos que
+pertenecen a otros miembros de su familia.
 
 El inventario publica además identidades exactas, sustituciones familiares y ausencias.
 PULSO incluye ese resumen en el contexto de GPT para que la orquestación nazca ejecutable

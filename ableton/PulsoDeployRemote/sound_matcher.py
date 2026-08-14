@@ -216,18 +216,26 @@ def select_track_sound(items, spec, used_paths=None):
     # ensemble inhabits one sound world instead of selecting unrelated presets.
     intent = "{} {}".format(spec.get("preset_intent", ""), spec.get("sound_world", "")).strip()
     requested_device = str(spec.get("native_device", ""))
+    articulation_aliases = tuple(str(value).strip() for value in
+                                 spec.get("articulation_aliases", ()) if str(value).strip())
     used = set(str(path).casefold() for path in (used_paths or ()))
     tiered = []
     for name, path, item in items:
         if not is_playable_item(name):
             continue
         lowered_name = str(name).casefold()
-        if catalog_id == "kick_drum" and "synth bass" in lowered_name:
+        if catalog_id == "kick_drum" and ("synth bass" in lowered_name or
+                any(value in lowered_name for value in ("click layer", "top layer", "transient layer"))):
             continue
         if catalog_id in KIT_REQUIRED_CATALOGS and not (lowered_name.endswith(".adg") and "kit" in tokens(name)):
             continue
         haystack = set(tokens(str(name) + " " + str(path)))
-        tier = _identity_tier(catalog_id, haystack)
+        articulation_match = articulation_aliases and any(
+            _matches_alias(haystack, alias) for alias in articulation_aliases)
+        identity_tier = _identity_tier(catalog_id, haystack)
+        tier = 0 if articulation_match else (
+            identity_tier + 1 if articulation_aliases and identity_tier is not None
+            else identity_tier)
         if tier is not None:
             tiered.append((tier, str(path).casefold() in used,
                            -_rank_item(name, path, intent, requested_device, catalog_id),

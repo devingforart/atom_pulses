@@ -188,6 +188,12 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 
 ## Estado del producto
 
+La versión 0.33.0 convierte la naturalidad electrónica en contratos verificables: notas de Live 12
+mediante `MidiNoteSpecification`, articulaciones de percusión resueltas por identidad, kicks completos
+en lugar de capas de click, un único ornamento libre de kick por frase de ocho compases, transformaciones
+rítmicas que cambian ataques reales, stabs de hasta un beat, respiración armónica y rotación de soportes
+en clímax extensos. La telemetría conserva el error exacto si Live necesita usar compatibilidad antigua.
+
 La versión 0.32.0 completa el contrato de publicación: CLUB conserva prioridad explícita sobre GPT,
 HYBRID recibe crítica electrónica real, el score electrónico informa `N/A` cuando no fue auditado,
 la percusión repetida evoluciona antes de superar cuatro compases literales y todo MIDI fuente sale

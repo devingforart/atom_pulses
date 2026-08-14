@@ -240,3 +240,11 @@ conductora. Cada nota sigue siendo MIDI estándar y puede editarse normalmente e
 - Sub y Bass Groove no comparten preset. Un instrumento neutro audible es preferible a una identidad falsa.
 - Las notas se insertan con `Clip.add_new_notes({"notes": ...})` en Live 11/12; `set_notes` queda únicamente como compatibilidad antigua.
 - El MIDI desplegado está cuantizado. Human Performance afecta la escucha de PULSO, no el clip editable.
+
+## Contrato de publicación 0.33
+
+- El Remote Script crea `Live.Clip.MidiNoteSpecification` y entrega esos objetos directamente a `add_new_notes`.
+- Si Live rechaza la ruta moderna, `modern_note_error` conserva tipo y mensaje antes del fallback compatible.
+- Open hat, shaker, clap, rim, tom, conga, claves, metal y cymbal se separan antes de elegir el sonido.
+- Un sample etiquetado como `click layer`, `top layer` o `transient layer` no puede representar el kick completo.
+- Stabs electrónicos tienen una duración máxima de un beat y los one-shots conservan sus límites instrumentales.

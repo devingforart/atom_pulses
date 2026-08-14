@@ -202,6 +202,158 @@ std::size_t evolveLiteralRhythm(Pattern& pattern, double beatsPerBar) {
     return remove.size();
 }
 
+const SongSection* sectionAtBeat(const SongPlan& plan, double beat) {
+    const auto bar = static_cast<int>(std::floor(beat / plan.beatsPerBar));
+    const auto found = std::find_if(plan.sections.begin(), plan.sections.end(), [&](const auto& section) {
+        return bar >= section.startBar && bar < section.startBar + section.bars;
+    });
+    return found == plan.sections.end() ? nullptr : &*found;
+}
+
+bool explicitKickOrnament(const SongPlan& plan, double beat) {
+    constexpr auto tolerance = 0.04;
+    for (const auto& section : plan.sections) {
+        const auto scale = plan.beatsPerBar / 4.0;
+        for (const auto& gesture : section.rhythm.gestures) {
+            const auto barStart = (section.startBar + gesture.barOffset) * plan.beatsPerBar;
+            if (gesture.kind == RhythmGestureKind::DoubleKick &&
+                std::abs(beat - (barStart + gesture.beat * scale)) < tolerance) return true;
+            if (gesture.kind == RhythmGestureKind::PickupFill &&
+                (std::abs(beat - (barStart + 3.50 * scale)) < tolerance ||
+                 std::abs(beat - (barStart + 3.75 * scale)) < tolerance)) return true;
+        }
+    }
+    return false;
+}
+
+std::size_t restrainKickOrnaments(Pattern& pattern, const SongPlan& plan) {
+    std::map<int, std::vector<std::size_t>> candidates;
+    for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
+        const auto& note = pattern.notes[index];
+        if (note.voice != VoiceId::CoreDrums || (note.pitch != 35 && note.pitch != 36)) continue;
+        const auto* section = sectionAtBeat(plan, note.startBeat);
+        if (section == nullptr || section->rhythm.kickState != KickState::FourOnFloor) continue;
+        const auto beatScale = plan.beatsPerBar / 4.0;
+        const auto metric = note.startBeat / beatScale;
+        if (std::abs(metric - std::round(metric)) < 0.04 || explicitKickOrnament(plan, note.startBeat)) continue;
+        candidates[static_cast<int>(std::floor(note.startBeat / (plan.beatsPerBar * 8.0)))].push_back(index);
+    }
+    std::set<std::size_t> remove;
+    for (auto& [phrase, indices] : candidates) {
+        (void) phrase;
+        if (indices.size() <= 1) continue;
+        const auto keep = *std::max_element(indices.begin(), indices.end(), [&](auto left, auto right) {
+            const auto& a = pattern.notes[left];
+            const auto& b = pattern.notes[right];
+            if (a.startBeat != b.startBeat) return a.startBeat < b.startBeat;
+            return a.velocity < b.velocity;
+        });
+        for (const auto index : indices) if (index != keep) remove.insert(index);
+    }
+    if (remove.empty()) return 0;
+    std::vector<NoteEvent> retained;
+    retained.reserve(pattern.notes.size() - remove.size());
+    for (std::size_t index = 0; index < pattern.notes.size(); ++index)
+        if (!remove.contains(index)) retained.push_back(pattern.notes[index]);
+    pattern.notes = std::move(retained);
+    return remove.size();
+}
+
+std::size_t createPhraseVariations(Pattern& pattern, double beatsPerBar) {
+    std::map<std::pair<VoiceId, int>, std::vector<std::size_t>> byBar;
+    for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
+        const auto voice = pattern.notes[index].voice;
+        if (voice != VoiceId::ClosedHats && voice != VoiceId::OpenHatsShaker &&
+            voice != VoiceId::LowPercussion && voice != VoiceId::HighPercussion) continue;
+        const auto bar = static_cast<int>(std::floor(pattern.notes[index].startBeat / beatsPerBar));
+        if (positiveModulo(bar, 8) != 5) continue;
+        byBar[{voice, bar}].push_back(index);
+    }
+    std::size_t changed{};
+    for (const auto& [owner, indices] : byBar) {
+        if (indices.empty()) continue;
+        const auto selected = *std::min_element(indices.begin(), indices.end(), [&](auto left, auto right) {
+            return pattern.notes[left].velocity < pattern.notes[right].velocity;
+        });
+        auto& note = pattern.notes[selected];
+        const auto barStart = owner.second * beatsPerBar;
+        const auto direction = positiveModulo(owner.second / 8 + static_cast<int>(owner.first), 2) == 0 ? 0.25 : -0.25;
+        auto target = std::clamp(note.startBeat + direction, barStart, barStart + beatsPerBar - 0.25);
+        const auto collision = std::any_of(pattern.notes.begin(), pattern.notes.end(), [&](const auto& other) {
+            return &other != &note && other.voice == note.voice && other.pitch == note.pitch &&
+                   std::abs(other.startBeat - target) < 0.02;
+        });
+        if (collision) target = std::clamp(note.startBeat - direction, barStart, barStart + beatsPerBar - 0.25);
+        if (std::abs(target - note.startBeat) > 0.02) { note.startBeat = target; ++changed; }
+    }
+    return changed;
+}
+
+std::size_t createHarmonicPhraseBreaths(Pattern& pattern, double beatsPerBar) {
+    std::map<int, std::vector<std::size_t>> byBar;
+    for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
+        const auto& note = pattern.notes[index];
+        if (note.voice != VoiceId::HarmonicFoundation) continue;
+        const auto bar = static_cast<int>(std::floor(note.startBeat / beatsPerBar));
+        if (positiveModulo(bar, 8) == 7) byBar[bar].push_back(index);
+    }
+    std::set<std::size_t> remove;
+    for (const auto& [bar, indices] : byBar) {
+        (void) bar;
+        if (indices.empty()) continue;
+        remove.insert(*std::max_element(indices.begin(), indices.end(), [&](auto left, auto right) {
+            if (pattern.notes[left].pitch != pattern.notes[right].pitch)
+                return pattern.notes[left].pitch < pattern.notes[right].pitch;
+            return pattern.notes[left].velocity > pattern.notes[right].velocity;
+        }));
+    }
+    if (remove.empty()) return 0;
+    std::vector<NoteEvent> retained;
+    retained.reserve(pattern.notes.size() - remove.size());
+    for (std::size_t index = 0; index < pattern.notes.size(); ++index)
+        if (!remove.contains(index)) retained.push_back(pattern.notes[index]);
+    pattern.notes = std::move(retained);
+    return remove.size();
+}
+
+std::size_t rotatePeakSupport(Pattern& pattern, const SongPlan& plan) {
+    constexpr std::array rotations{
+        std::array{VoiceId::HighPercussion, VoiceId::HarmonicUpper, VoiceId::Countermelody},
+        std::array{VoiceId::LowPercussion, VoiceId::OpenHatsShaker, VoiceId::Atmosphere},
+        std::array{VoiceId::ClosedHats, VoiceId::HarmonicPulse, VoiceId::Countermelody},
+        std::array{VoiceId::OpenHatsShaker, VoiceId::HarmonicUpper, VoiceId::LowPercussion}};
+    const auto before = pattern.notes.size();
+    pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+        const auto* section = sectionAtBeat(plan, note.startBeat);
+        if (section == nullptr || section->bars < 16 || section->energy < 0.72 || section->density < 0.68)
+            return false;
+        const auto bar = static_cast<int>(std::floor(note.startBeat / plan.beatsPerBar));
+        const auto phrase = positiveModulo((bar - section->startBar) / 8, static_cast<int>(rotations.size()));
+        const auto& muted = rotations[static_cast<std::size_t>(phrase)];
+        return std::find(muted.begin(), muted.end(), note.voice) != muted.end();
+    }), pattern.notes.end());
+    return before - pattern.notes.size();
+}
+
+std::size_t maximumRunForVoice(const Pattern& pattern, VoiceId voice, double beatsPerBar) {
+    using Signature = std::vector<std::pair<int, int>>;
+    Signature previous;
+    std::size_t run{}, maximum{};
+    const auto bars = static_cast<int>(std::ceil(pattern.lengthBeats / beatsPerBar));
+    for (auto bar = 0; bar < bars; ++bar) {
+        Signature current;
+        for (const auto& note : pattern.notes)
+            if (note.voice == voice && note.startBeat >= bar * beatsPerBar && note.startBeat < (bar + 1) * beatsPerBar)
+                current.push_back({static_cast<int>(std::lround((note.startBeat - bar * beatsPerBar) * 16.0)), note.pitch});
+        std::sort(current.begin(), current.end());
+        if (current.empty()) { previous.clear(); run = 0; continue; }
+        run = current == previous ? run + 1 : 1;
+        maximum = std::max(maximum, run);
+        previous = std::move(current);
+    }
+    return maximum;
+}
+
 } // namespace
 
 ProductionLanguage ElectronicProductionDirector::infer(std::string_view direction) {
@@ -321,6 +473,7 @@ ElectronicProductionReport ElectronicProductionDirector::shapePerformance(Patter
     report.active = electronicCoreActive(plan.productionLanguage);
     if (!report.active) return report;
     report.lowEndCollisionsBefore = lowEndCollisions(pattern);
+    report.kickOrnamentsRemoved = restrainKickOrnaments(pattern, plan);
 
     std::vector<double> kicks;
     for (const auto& note : pattern.notes)
@@ -359,7 +512,10 @@ ElectronicProductionReport ElectronicProductionDirector::shapePerformance(Patter
         if (remove) ++report.phraseBreathsCreated;
         return remove;
     }), pattern.notes.end());
+    report.phraseVariationsCreated = createPhraseVariations(pattern, beatsPerBar);
     report.rhythmNotesEvolved = evolveLiteralRhythm(pattern, beatsPerBar);
+    report.harmonicBreathsCreated = createHarmonicPhraseBreaths(pattern, beatsPerBar);
+    report.supportNotesRotated = rotatePeakSupport(pattern, plan);
 
     const auto bars = static_cast<int>(std::ceil(pattern.lengthBeats / beatsPerBar));
     for (auto bar = 0; bar < bars; ++bar) {
@@ -410,6 +566,26 @@ ElectronicProductionReport ElectronicProductionDirector::audit(const Pattern& pa
     const auto runs = rhythmRuns(pattern, plan.beatsPerBar);
     report.literalRhythmBars = runs.literal;
     report.maximumRhythmRun = runs.maximum;
+    report.maximumHarmonicRun = maximumRunForVoice(
+        pattern, VoiceId::HarmonicFoundation, plan.beatsPerBar);
+    std::size_t primaryKicks{}, ornamentKicks{};
+    for (const auto& note : pattern.notes) {
+        if (note.voice != VoiceId::CoreDrums || (note.pitch != 35 && note.pitch != 36)) continue;
+        const auto* section = sectionAtBeat(plan, note.startBeat);
+        if (section == nullptr || section->rhythm.kickState != KickState::FourOnFloor) continue;
+        const auto metric = note.startBeat / (plan.beatsPerBar / 4.0);
+        if (std::abs(metric - std::round(metric)) < 0.04) ++primaryKicks;
+        else ++ornamentKicks;
+    }
+    report.kickOrnamentRatio = static_cast<double>(ornamentKicks) /
+        std::max<std::size_t>(1, primaryKicks + ornamentKicks);
+    for (double start = 0.0; start < pattern.lengthBeats; start += plan.beatsPerBar * 8.0) {
+        std::set<VoiceId> active;
+        for (const auto& note : pattern.notes)
+            if (note.startBeat >= start && note.startBeat < start + plan.beatsPerBar * 8.0)
+                active.insert(note.voice);
+        report.peakActiveVoices = std::max(report.peakActiveVoices, active.size());
+    }
     const auto bassNotes = std::count_if(pattern.notes.begin(), pattern.notes.end(), [](const auto& note) {
         return note.voice == VoiceId::SubBass || note.voice == VoiceId::MovementBass;
     });
@@ -426,6 +602,9 @@ ElectronicProductionReport ElectronicProductionDirector::audit(const Pattern& pa
     report.intentionMatch = std::clamp(instrumentMatch * 1.25, 0.0, 1.0);
     report.score = std::clamp(1.0 - collisionRatio * 0.32 -
         std::max(0.0, static_cast<double>(runs.maximum) - 4.0) * 0.025 -
+        std::max(0.0, static_cast<double>(report.maximumHarmonicRun) - 8.0) * 0.018 -
+        std::max(0.0, report.kickOrnamentRatio - 0.08) * 0.75 -
+        std::max(0.0, static_cast<double>(report.peakActiveVoices) - 12.0) * 0.025 -
         std::max(0.0, 0.82 - report.intentionMatch) * 0.55, 0.0, 1.0);
     return report;
 }
@@ -436,6 +615,12 @@ void ElectronicProductionDirector::stamp(Pattern& pattern,
     pattern.productionScore = std::clamp(pattern.productionScore * 0.68 + report.score * 0.32, 0.0, 1.0);
     if (report.maximumRhythmRun > 6)
         pattern.productionIssues.push_back("warning:electronic_loop_needs_evolution");
+    if (report.maximumHarmonicRun > 8)
+        pattern.productionIssues.push_back("warning:harmonic_body_needs_evolution");
+    if (report.kickOrnamentRatio > 0.08)
+        pattern.productionIssues.push_back("warning:kick_ornaments_overused");
+    if (report.peakActiveVoices > 12)
+        pattern.productionIssues.push_back("warning:electronic_peak_needs_rotation");
     if (report.intentionMatch < 0.82)
         pattern.productionIssues.push_back("warning:electronic_intention_mismatch");
 }

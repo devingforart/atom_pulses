@@ -58,13 +58,41 @@ def drum_semantics(catalog_id, pitch):
             return ("pedal hat", "pedal hihat")
         return ("closed hat", "closed hihat", "hat")
     if catalog_id == "shakers":
+        if pitch == 46:
+            return ("open hat", "open hihat")
+        if pitch == 58:
+            return ("vibraslap", "shaker")
         return ("maracas", "shaker", "cabasa")
     if catalog_id == "timpani":
         return ("timpani",)
-    if catalog_id in ("taiko_ensemble", "orchestral_percussion"):
+    if catalog_id == "taiko_ensemble":
         return ("low tom", "floor tom", "tom") if pitch <= 45 else ("mid tom", "tom")
+    if catalog_id == "orchestral_percussion":
+        meanings = {
+            37: ("side stick", "sidestick", "rim"),
+            41: ("low floor tom", "floor tom", "tom"), 43: ("high floor tom", "floor tom", "tom"),
+            45: ("low tom", "tom"), 47: ("low mid tom", "tom"),
+            48: ("high mid tom", "tom"), 50: ("high tom", "tom"),
+            54: ("tambourine",), 56: ("cowbell",),
+            60: ("high bongo", "bongo"), 61: ("low bongo", "bongo"),
+            62: ("mute high conga", "muted conga", "conga"),
+            63: ("open high conga", "open conga", "conga"), 64: ("low conga", "conga"),
+            65: ("high timbale", "timbale"), 66: ("low timbale", "timbale"),
+            67: ("high agogo", "agogo"), 68: ("low agogo", "agogo"),
+            69: ("cabasa",), 70: ("maracas", "shaker"),
+            75: ("claves", "clave"), 76: ("high wood block", "wood block"),
+            77: ("low wood block", "wood block"), 80: ("mute triangle", "triangle"),
+            81: ("open triangle", "triangle"),
+        }
+        return meanings.get(pitch, ("percussion",))
     if catalog_id == "cymbals":
-        return ("ride", "cymbal") if pitch in (51, 53, 59) else ("crash", "cymbal")
+        if pitch in (51, 53, 59):
+            return ("ride", "cymbal")
+        if pitch == 52:
+            return ("chinese cymbal", "china cymbal", "cymbal")
+        if pitch == 55:
+            return ("splash cymbal", "splash")
+        return ("crash", "cymbal")
     if catalog_id == "latin_percussion":
         meanings = {
             60: ("high bongo", "bongo"), 61: ("low bongo", "bongo"),
@@ -80,8 +108,8 @@ def drum_semantics(catalog_id, pitch):
 
 def expand_percussion_specs(specs):
     """Split incompatible articulations before sound selection when one-shot playback is likely."""
-    split_catalogs = {"snare_clap", "hi_hats", "taiko_ensemble", "latin_percussion",
-                      "orchestral_percussion"}
+    split_catalogs = {"snare_clap", "hi_hats", "shakers", "taiko_ensemble",
+                      "latin_percussion", "orchestral_percussion", "cymbals"}
     expanded = []
     for source in specs:
         catalog_id = str(source.get("catalog_id", "")).casefold()
@@ -97,9 +125,25 @@ def expand_percussion_specs(specs):
             identity = aliases[0] if aliases else "articulation {}".format(pitch)
             item["name"] = "{} | {}".format(source.get("name", "PULSO Part"), identity.title())
             item["preset_intent"] = identity
+            item["articulation_identity"] = identity
+            item["articulation_aliases"] = list(aliases)
             item["track_key"] = "{}:pitch:{}".format(source.get("track_key", "part"), pitch)
             expanded.append(item)
     return expanded
+
+
+def note_specification_arguments(item):
+    """Return the positional Live.Clip.MidiNoteSpecification constructor contract."""
+    return (
+        max(0, min(127, int(item.get("pitch", 60)))),
+        max(0.0, float(item.get("start", item.get("start_time", 0.0)))),
+        max(1.0 / 960.0, float(item.get("duration", 0.25))),
+        float(max(1, min(127, int(item.get("velocity", 100))))),
+        bool(item.get("mute", False)),
+        max(0.0, min(1.0, float(item.get("probability", 1.0)))),
+        float(max(-127, min(127, int(item.get("velocity_deviation", 0))))),
+        float(max(1, min(127, int(item.get("release_velocity", 64))))),
+    )
 
 
 def best_pad_for_semantics(populated_pads, aliases):
@@ -137,6 +181,10 @@ def adapt_notes(spec, source_kind="chromatic", pitch_map=None, root_note=60):
     """Return sanitized note dictionaries and a reproducible adaptation report."""
     catalog_id = str(spec.get("catalog_id", "")).casefold()
     cap = DURATION_CAPS.get(catalog_id)
+    role_text = "{} {} {}".format(spec.get("name", ""), spec.get("role", ""),
+                                   spec.get("orchestral_function", "")).casefold()
+    if "chord stab" in role_text or "harmonic punctuation" in role_text:
+        cap = min(1.0, cap) if cap is not None else 1.0
     floor = DURATION_FLOORS.get(catalog_id, 1.0 / 960.0)
     adapted = []
     remapped = {}

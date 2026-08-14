@@ -8,10 +8,12 @@ import json
 import os
 import traceback
 
+import Live  # pyright: ignore[reportMissingImports]
 from _Framework.ControlSurface import ControlSurface  # pyright: ignore[reportMissingImports]
 from .request_guard import RequestGuard
 from .playback_adapter import (adapt_notes, build_drum_pitch_map, deployment_outcome,
-                               expand_percussion_specs, is_one_shot_path, project_expression)
+                               expand_percussion_specs, is_one_shot_path,
+                               note_specification_arguments, project_expression)
 from .sound_matcher import catalog_capabilities, select_track_sound
 
 
@@ -292,8 +294,11 @@ class PulsoDeployRemote(ControlSurface):
                     adaptation["expression"] = expression_report
                     adapted_spec = dict(spec)
                     adapted_spec["notes"] = notes
-                    adaptation["note_insertion"] = self._create_arrangement_clip(
+                    insertion, insertion_error = self._create_arrangement_clip(
                         track, adapted_spec, length_beats)
+                    adaptation["note_insertion"] = insertion
+                    if insertion_error:
+                        adaptation["modern_note_error"] = insertion_error
         except Exception as error:
             # A Browser load may briefly leave Live's Python wrapper without its native
             # Track handle. A fresh wrapper on a later tick is safe; rejecting the whole
@@ -382,36 +387,32 @@ class PulsoDeployRemote(ControlSurface):
         clip = track.create_midi_clip(0.0, max(0.25, length_beats))
         clip.name = str(spec.get("name", "PULSO Part"))[:120]
         notes = []
-        extended_notes = []
+        extended_note_args = []
         for item in spec.get("notes", []):
             pitch = max(0, min(127, int(item.get("pitch", 60))))
             start = max(0.0, float(item.get("start", 0.0)))
             duration = max(1.0 / 960.0, float(item.get("duration", 0.25)))
             velocity = max(1, min(127, int(item.get("velocity", 100))))
             notes.append((pitch, start, duration, velocity, False))
-            extended_notes.append({
-                "pitch": pitch, "start_time": start, "duration": duration,
-                "velocity": velocity, "mute": False,
-                "probability": max(0.0, min(1.0, float(item.get("probability", 1.0)))),
-                "velocity_deviation": max(-127, min(127, int(item.get("velocity_deviation", 0)))),
-                "release_velocity": max(1, min(127, int(item.get("release_velocity", 64)))),
-            })
-        if extended_notes and hasattr(clip, "add_new_notes"):
+            extended_note_args.append(note_specification_arguments(item))
+        modern_error = None
+        if extended_note_args and hasattr(clip, "add_new_notes"):
             try:
-                # Live 11+ expects one dictionary whose `notes` key contains the note
-                # specifications. Passing the tuple directly raises TypeError and caused
-                # every deployment to fall back to deprecated set_notes.
-                clip.add_new_notes({"notes": tuple(extended_notes)})
+                # The Python Remote Script runtime differs from Max's dictionary LOM:
+                # it consumes MidiNoteSpecification objects directly.
+                extended_notes = tuple(Live.Clip.MidiNoteSpecification(*arguments)
+                                       for arguments in extended_note_args)
+                clip.add_new_notes(tuple(extended_notes))
                 if hasattr(clip, "deselect_all_notes"):
                     clip.deselect_all_notes()
-                return "live12_extended_notes"
-            except (RuntimeError, TypeError):
-                pass
+                return "live12_midi_note_specifications", None
+            except Exception as error:
+                modern_error = "{}: {}".format(type(error).__name__, str(error))[:180]
         if notes and hasattr(clip, "set_notes"):
             clip.set_notes(tuple(notes))
             if hasattr(clip, "deselect_all_notes"):
                 clip.deselect_all_notes()
-            return "legacy_notes_with_baked_expression"
+            return "legacy_notes_with_baked_expression", modern_error
         if notes:
             raise RuntimeError("this Live version does not expose MIDI note insertion")
 

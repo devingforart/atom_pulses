@@ -360,6 +360,10 @@ void runGeneratorTests() {
                 clubReport.electronicProduction.automationEventsAdded > 0 &&
                 renderedClub.acousticElectronicBalance >= 0.85,
             "The electronic director must publish safe low end, structural automation and an audible club contract");
+    require(std::none_of(renderedClub.notes.begin(), renderedClub.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::HarmonicPulse && note.durationBeats > 1.001;
+            }),
+            "Electronic harmonic punctuation must never become a six-beat hanging chord");
     auto hybridPlan = SongComposer::createLocalPlan(
         "Deep electronic club production with an orchestral chamber dialogue", 64, 122.0, 4.0,
         88118, 2, ScaleKind::Minor);
@@ -376,6 +380,44 @@ void runGeneratorTests() {
     require(hybridShape.active && hybridAudit.active && hybridShape.rhythmNotesEvolved > 0 &&
                 hybridAudit.maximumRhythmRun <= 4,
             "Hybrid electronic music must receive the same groove-evolution critic as club music");
+
+    auto peakPlan = clubPlan;
+    auto& peakSection = *std::max_element(peakPlan.sections.begin(), peakPlan.sections.end(),
+        [](const auto& left, const auto& right) { return left.bars < right.bars; });
+    peakSection.bars = std::max(16, peakSection.bars);
+    peakSection.energy = 0.94;
+    peakSection.density = 0.92;
+    Pattern peakPattern;
+    peakPattern.lengthBeats = peakPlan.totalBars * peakPlan.beatsPerBar;
+    constexpr std::array peakVoices{VoiceId::CoreDrums, VoiceId::SnareClap, VoiceId::ClosedHats,
+        VoiceId::OpenHatsShaker, VoiceId::LowPercussion, VoiceId::HighPercussion,
+        VoiceId::SubBass, VoiceId::MovementBass, VoiceId::HarmonicFoundation,
+        VoiceId::HarmonicPulse, VoiceId::HarmonicUpper, VoiceId::Lead,
+        VoiceId::Countermelody, VoiceId::Atmosphere, VoiceId::Transitions};
+    for (auto localBar = 0; localBar < 16; ++localBar) {
+        const auto start = (peakSection.startBar + localBar) * peakPlan.beatsPerBar;
+        for (auto quarter = 0; quarter < 4; ++quarter)
+            peakPattern.notes.push_back({start + quarter, 0.10, 36, 100, 10, VoiceId::CoreDrums});
+        peakPattern.notes.push_back({start + 3.5, 0.08, 36, 82, 10, VoiceId::CoreDrums});
+        for (const auto voice : peakVoices) {
+            if (voice == VoiceId::CoreDrums) continue;
+            const auto rhythm = isVoiceInFamily(voice, VoiceFamily::Rhythm);
+            peakPattern.notes.push_back({start + (rhythm ? 0.5 : 0.0),
+                voice == VoiceId::HarmonicPulse ? 6.75 : 0.5,
+                rhythm ? 62 : 60, 78, rhythm ? 10 : voiceDefinition(voice).midiChannel, voice});
+            if (voice == VoiceId::LowPercussion)
+                peakPattern.notes.push_back({start + 2.5, 0.15, 64, 72, 10, voice});
+            if (voice == VoiceId::HarmonicFoundation)
+                peakPattern.notes.push_back({start, 3.5, 64, 70, voiceDefinition(voice).midiChannel, voice});
+        }
+    }
+    const auto peakShape = ElectronicProductionDirector::shapePerformance(peakPattern, peakPlan);
+    const auto peakAudit = ElectronicProductionDirector::audit(peakPattern, peakPlan);
+    require(peakShape.kickOrnamentsRemoved >= 14 && peakShape.phraseVariationsCreated > 0 &&
+                peakShape.harmonicBreathsCreated > 0 && peakShape.supportNotesRotated > 0 &&
+                peakAudit.kickOrnamentRatio <= 0.08 && peakAudit.peakActiveVoices <= 12 &&
+                peakAudit.maximumHarmonicRun <= 8,
+            "Electronic peaks must ration kick ornaments, evolve phrases, breathe harmony and rotate support roles");
     require(motifFingerprint(liveDrumPlan.rhythmMotifs.front()) !=
                 motifFingerprint(machinePulsePlan.rhythmMotifs.front()) &&
                 (std::abs(liveDrumPlan.rhythmLanguage.backbeatGravity -

@@ -43,11 +43,18 @@ struct ElectronicProductionReport {
     std::size_t bassReleasesTrimmed{};
     std::size_t phraseBreathsCreated{};
     std::size_t rhythmNotesEvolved{};
+    std::size_t phraseVariationsCreated{};
+    std::size_t kickOrnamentsRemoved{};
+    std::size_t harmonicBreathsCreated{};
+    std::size_t supportNotesRotated{};
     std::size_t foregroundNotesRemoved{};
     std::size_t automationEventsAdded{};
     std::size_t literalRhythmBars{};
     std::size_t maximumRhythmRun{};
     std::size_t competingForegroundBars{};
+    std::size_t maximumHarmonicRun{};
+    std::size_t peakActiveVoices{};
+    double kickOrnamentRatio{};
     double intentionMatch{1.0};
     double score{1.0};
 };

@@ -2,7 +2,7 @@ import unittest
 
 from ableton.PulsoDeployRemote.playback_adapter import (
     adapt_notes, build_drum_pitch_map, deployment_outcome, expand_percussion_specs,
-    project_expression,
+    note_specification_arguments, project_expression,
 )
 
 
@@ -66,6 +66,37 @@ class PlaybackAdapterTests(unittest.TestCase):
         }])
         self.assertEqual(len(expanded), 2)
         self.assertEqual([item["preset_intent"] for item in expanded], ["high bongo", "mute high conga"])
+
+    def test_combined_open_hat_shaker_and_high_percussion_keep_real_articulations(self):
+        expanded = expand_percussion_specs([{
+            "name": "Open Hats and Shaker", "track_key": "part:4", "catalog_id": "shakers",
+            "notes": [{"pitch": 46, "start": 0.5}, {"pitch": 58, "start": 1.5}],
+        }, {
+            "name": "High Percussion", "track_key": "part:6",
+            "catalog_id": "orchestral_percussion", "notes": [
+                {"pitch": 50, "start": 0}, {"pitch": 62, "start": 1},
+                {"pitch": 75, "start": 2},
+            ],
+        }])
+        self.assertEqual([item["articulation_identity"] for item in expanded],
+                         ["open hat", "vibraslap", "high tom", "mute high conga", "claves"])
+        self.assertTrue(all(item["articulation_aliases"] for item in expanded))
+
+    def test_live_note_specification_arguments_preserve_extended_expression(self):
+        arguments = note_specification_arguments({
+            "pitch": 140, "start": 2.5, "duration": 0.5, "velocity": 91,
+            "probability": 0.72, "velocity_deviation": -11, "release_velocity": 78,
+        })
+        self.assertEqual(arguments, (127, 2.5, 0.5, 91.0, False, 0.72, -11.0, 78.0))
+
+    def test_chord_stab_duration_is_bounded_by_musical_role(self):
+        notes, report = adapt_notes({
+            "catalog_id": "poly_synth", "name": "PULSO Chord Stab",
+            "role": "Rhythmic harmonic punctuation",
+            "notes": [{"pitch": 60, "start": 0, "duration": 6.75, "velocity": 80}],
+        })
+        self.assertEqual(notes[0]["duration"], 1.0)
+        self.assertEqual(report["duration_cap"], 1.0)
 
     def test_expression_is_projected_into_portable_live_note_properties(self):
         notes, report = project_expression({

@@ -1402,6 +1402,10 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     electronicReport.bassReleasesTrimmed = electronicShaping.bassReleasesTrimmed;
     electronicReport.phraseBreathsCreated = electronicShaping.phraseBreathsCreated;
     electronicReport.rhythmNotesEvolved = electronicShaping.rhythmNotesEvolved;
+    electronicReport.phraseVariationsCreated = electronicShaping.phraseVariationsCreated;
+    electronicReport.kickOrnamentsRemoved = electronicShaping.kickOrnamentsRemoved;
+    electronicReport.harmonicBreathsCreated = electronicShaping.harmonicBreathsCreated;
+    electronicReport.supportNotesRotated = electronicShaping.supportNotesRotated;
     electronicReport.foregroundNotesRemoved = electronicShaping.foregroundNotesRemoved;
     electronicReport.automationEventsAdded = electronicShaping.automationEventsAdded;
     ElectronicProductionDirector::stamp(song, electronicReport);

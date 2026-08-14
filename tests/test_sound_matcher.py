@@ -18,6 +18,11 @@ class SoundMatcherTests(unittest.TestCase):
             ("Kick Felt Crack.wav", "drums/Drums/Drum Hits/Kick/Kick Felt Crack.wav", "kick"),
             ("Kick Synth Bass.aif", "drums/Drums/Drum Hits/Kick/Kick Synth Bass.aif", "bad-long-kick"),
             ("Kick 909 Tight.wav", "drums/Drums/Drum Hits/Kick/Kick 909 Tight.wav", "tight-kick"),
+            ("Kick 909 Click Layer.wav", "drums/Drums/Drum Hits/Kick/Kick 909 Click Layer.wav", "click-kick"),
+            ("Hihat Open 909.wav", "drums/Drums/Drum Hits/Hihat/Hihat Open 909.wav", "open-hat"),
+            ("Hihat Closed Chirp.wav", "drums/Drums/Drum Hits/Hihat/Hihat Closed Chirp.wav", "closed-hat"),
+            ("Clap Dry.wav", "drums/Drums/Drum Hits/Clap/Clap Dry.wav", "dry-clap"),
+            ("Claves Dry.wav", "drums/Drums/Drum Hits/Misc Percussion/Claves Dry.wav", "claves"),
             ("Analog Tom.adv", "sounds/Sounds/Percussive/Analog Tom.adv", "tom"),
             ("Timpani Orchestra.wav", "drums/Drums/Drum Hits/Misc Percussion/Timpani Orchestra.wav", "timpani"),
             ("Crash 909.wav", "drums/Drums/Drum Hits/Cymbal/Crash 909.wav", "cymbal"),
@@ -132,6 +137,26 @@ class SoundMatcherTests(unittest.TestCase):
         self.assertIsNotNone(movement)
         self.assertEqual(movement[2], "electric-finger")
         self.assertNotEqual(movement[1], sub[1])
+
+    def test_articulation_identity_beats_a_generic_family_match(self):
+        open_hat = select_track_sound(self.items, {
+            "catalog_id": "shakers", "preset_intent": "open hat",
+            "articulation_aliases": ["open hat", "open hihat"],
+            "native_device": "Drum Rack", "device_candidates": [],
+        })
+        self.assertIsNotNone(open_hat)
+        self.assertEqual(open_hat[2], "open-hat")
+        clap = select_track_sound(self.items, {
+            "catalog_id": "snare_clap", "preset_intent": "clap",
+            "articulation_aliases": ["clap"], "native_device": "Drum Rack",
+            "device_candidates": [],
+        })
+        self.assertEqual(clap[2], "dry-clap")
+
+    def test_kick_click_layer_cannot_become_the_complete_kick(self):
+        kick = self.select("kick_drum", "tight full body club kick with controlled sub tail")
+        self.assertEqual(kick[2], "tight-kick")
+        self.assertNotEqual(kick[2], "click-kick")
 
     def test_missing_contrabass_never_masquerades_as_violin(self):
         result = self.select("contrabass", "deep natural contrabass", "Sampler", ("Drift",))

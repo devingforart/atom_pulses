@@ -480,3 +480,13 @@ vuelve a ejecutarse sobre las notas de las partes finales. En Live, la carga ser
 dispositivos conserva índices de staging y vuelve a adquirir el objeto `Track` después de cada
 operación asíncrona del Browser; los handles transitorios inválidos se reintentan antes de
 rechazar atómicamente el despliegue.
+### Electronic performance contracts (0.33)
+
+`ElectronicProductionDirector` reviews authored MIDI before orchestration. It rations uncontracted
+kick ornaments, creates deterministic phrase-level onset variation, inserts harmonic breathing and
+rotates optional support voices in long dense sections. `OrchestrationScore` then enforces final
+role-duration limits, so later expression and Live deployment cannot turn punctuation into a pad.
+
+The Ableton bridge expands multi-articulation percussion specs before preflight. Sound matching ranks
+the exact articulation ahead of its broad catalog family, and Live note insertion uses Python Remote
+Script `MidiNoteSpecification` objects rather than the dictionary contract exposed to Max devices.

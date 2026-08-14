@@ -488,6 +488,9 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
     // A repeated pitch on one DAW part must end before its retrigger. Standard MIDI cannot
     // represent overlapping ownership of the same channel/pitch pair unambiguously.
     std::map<std::tuple<std::uint16_t, int, int>, double> nextOnset;
+    const auto electronicCore = plan.productionLanguage.electronicIntent >= 0.58 &&
+        (plan.productionLanguage.domain == ProductionDomain::ClubElectronic ||
+         plan.productionLanguage.domain == ProductionDomain::Hybrid);
     for (auto iterator = pattern.notes.rbegin(); iterator != pattern.notes.rend(); ++iterator) {
         auto& note = *iterator;
         const auto key = std::tuple{note.partId, note.channel, note.pitch};
@@ -498,6 +501,14 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
             : (note.voice == VoiceId::HarmonicFoundation || note.voice == VoiceId::HarmonicUpper)
                 ? plan.beatsPerBar * 1.05 : note.durationBeats;
         note.durationBeats = std::min(note.durationBeats, maximumSustain);
+        if (electronicCore) {
+            const auto roleMaximum = note.voice == VoiceId::HarmonicPulse ? plan.beatsPerBar * 0.25
+                : note.voice == VoiceId::CoreDrums || note.voice == VoiceId::SnareClap ||
+                  note.voice == VoiceId::ClosedHats || note.voice == VoiceId::OpenHatsShaker ? 0.25
+                : note.voice == VoiceId::LowPercussion || note.voice == VoiceId::HighPercussion ? 0.50
+                : note.voice == VoiceId::Transitions ? 1.0 : note.durationBeats;
+            note.durationBeats = std::min(note.durationBeats, roleMaximum);
+        }
         nextOnset[key] = note.startBeat;
     }
     // Orchestration critic: enforce playable chord sizes and keep the low register

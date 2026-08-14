@@ -108,6 +108,16 @@ El intercambio usa JSON atómico en `%LOCALAPPDATA%\PULSO\LiveBridge`. El despli
 notas y velocities editables. Para conservar además CC, aftertouch, bends y metaeventos,
 arrastra `FULL SONG`, que continúa siendo la exportación MIDI canónica.
 
+Antes de escribir `request.json`, PULSO ejecuta la puerta de producción. Si el score final
+no es tonal, métricamente válido, seguro y expresivamente razonable, `CREATE IN LIVE` no
+crea pistas parciales: muestra `PRODUCTION GATE BLOCKED INVALID SCORE`. El contrato schema 5
+incluye además el `sound_world` global. Live resuelve primero la identidad exacta o familia
+correcta y usa esa paleta compartida para elegir entre alternativas compatibles.
+
+La entrega expresiva se identifica como `native_editable_with_lossless_midi_source`:
+las pistas creadas reciben la mejor proyección editable que ofrece la API de Live, mientras
+`FULL SONG` conserva la fuente MIDI sin pérdida con CC, pedal, bend y pressure originales.
+
 ## 4. Conservar y regenerar capas
 
 1. Genera una idea y escúchala completa.

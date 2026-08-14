@@ -60,6 +60,21 @@ struct OrchestrationLanguage {
     double hybridProduction{0.42};
 };
 
+// One shared sound world is optimized before individual instruments are selected.
+// Per-part preset intent is interpreted relative to this palette instead of as an
+// unrelated search phrase, keeping a large ensemble sonically coherent.
+struct TimbrePalette {
+    std::string description{"coherent, dimensional and natural"};
+    std::string material{"warm organic core with restrained electronic detail"};
+    std::string space{"deep foreground-to-background stage"};
+    double warmth{0.62};
+    double brightness{0.48};
+    double transientDefinition{0.58};
+    double acousticElectronicBalance{0.58};
+    double cohesion{0.82};
+    double contrast{0.55};
+};
+
 struct OrchestrationReport {
     std::size_t parts{};
     std::size_t rhythmParts{};

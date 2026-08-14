@@ -182,7 +182,7 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 
 ## Estado del producto
 
-La versión 0.25.0 integra un arquitecto GPT de forma larga con razonamiento medio y una segunda pasada crítica,
+La versión 0.30.0 integra un arquitecto GPT-5.6 Terra de forma larga con razonamiento alto y una segunda pasada crítica de razonamiento medio,
 Structured Outputs, motivos rítmicos abiertos y mutaciones con propósito, renderizado
 jerárquico de hasta 512 compases, quince roles compositivos y una plantilla dinámica de
 12–36 instrumentos con rotación de foreground, contraste cámara–tutti, divisi y doblajes restringidos, expresión
@@ -207,6 +207,29 @@ codificación UTF-8 explícita y layout inferior simplificado sin selectores glo
 timeline de secciones, exportación por voz y fallback algorítmico. La red nunca se usa
 desde el callback de audio.
 
+### Interpretación explícita por IA
+
+`performance_score` permite que GPT escriba ataques, duraciones, pitches, velocidades,
+silencios y controles MIDI por voz. Para escalar hasta 512 compases, la partitura usa
+células de duración libre y placements por sección con repetición, transposición y escala
+temporal. La propiedad es local al intervalo exacto de cada placement: una célula breve ya
+no puede borrar accidentalmente el resto de una sección. Las voces y los intervalos no
+escritos conservan el renderer local como respaldo. Una auditoría de continuidad mide el
+silencio global real y, únicamente ante un vacío absoluto mayor de dos compases, conserva
+el arco con anclas atmosféricas tonales discretas; las respiraciones normales permanecen intactas.
+
+Cada placement puede trasladar el material a otra voz, fragmentarlo, invertir su contorno,
+retrogradarlo y cambiar tiempo, registro y dinámica. GPT decide libremente qué instrumento
+establece, responde, transforma, retira, intensifica o resuelve una idea. El crítico exige
+relaciones audibles entre familias, no más capas simultáneas ni una plantilla estilística.
+
+PULSO valida límites MIDI, tesituras, duración, duplicados, referencias y forma. La rejilla
+es estricta por defecto: sólo conserva timing libre cuando la IA declara explícitamente
+`tuplet` o `deliberate_displacement`. Una huella independiente del nombre
+detecta células musicalmente idénticas. La segunda pasada crítica recibe además las barras
+repetidas, la repetición literal de placements y los silencios accidentales reparados para
+reescribir el material débil sin destruir las partes válidas.
+
 ### Orquestación profunda
 
 El selector `AUTO ORCHESTRA / DEEP PRODUCTION / SYMPHONIC` define la escala de pensamiento
@@ -227,6 +250,19 @@ Desde 0.26.0, PULSO no aloja instrumentos de terceros. El puente indexa únicame
 nativos de Live, consume un manifiesto atómico y crea una pista de Arrangement por parte.
 La IA elige el dispositivo y describe el carácter del preset; un resolver determinista
 elige sólo entre contenido realmente instalado y reporta cualquier fallback o faltante.
+
+Desde 0.29.0, `CREATE IN LIVE` transporta también controles y expresión por cada parte. El
+puente conserva las curvas originales y proyecta CC11, CC1, CC74, sustain y pressure sobre
+velocidad, duración, release y propiedades expresivas de nota compatibles con Live 12. El
+archivo MIDI arrastrable sigue conservando además los mensajes MIDI crudos completos.
+
+Desde 0.30.0, una puerta de producción revisa el MIDI ya orquestado antes de publicarlo:
+cero notas externas en tonalidad consolidada, ataques exactos salvo excepción declarada,
+duraciones y propiedad de pista seguras, repetición rítmica acotada, claridad de registro,
+balance de familias y densidad expresiva. Las curvas CC/pressure se recortan al material
+realmente audible y se reducen a puntos significativos por frase. Una `TimbrePalette`
+global coordina material, espacio, brillo, calidez y balance acústico/electrónico antes de
+resolver los sonidos individuales instalados en Live.
 
 Lee [docs/ROADMAP.md](docs/ROADMAP.md) para las siguientes etapas y
 [docs/LICENSING.md](docs/LICENSING.md) antes de distribuir binarios.

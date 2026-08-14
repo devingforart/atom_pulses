@@ -39,15 +39,16 @@ void quantizePatternTiming(Pattern& pattern, int onsetStepsPerBeat,
     };
     for (auto& note : pattern.notes) {
         const auto originalEnd = note.endBeat();
-        const auto start = std::clamp(snapOnset(note.startBeat), 0.0,
+        const auto start = std::clamp(note.authoredTiming ? note.startBeat : snapOnset(note.startBeat), 0.0,
                                       std::max(0.0, pattern.lengthBeats - releaseGrid));
-        const auto end = std::clamp(snapRelease(originalEnd), start + releaseGrid,
+        const auto end = std::clamp(note.authoredTiming ? originalEnd : snapRelease(originalEnd),
+                                    start + (note.authoredTiming ? 1.0 / 960.0 : releaseGrid),
                                     pattern.lengthBeats);
         note.startBeat = start;
-        note.durationBeats = std::max(releaseGrid, end - start);
+        note.durationBeats = std::max(note.authoredTiming ? 1.0 / 960.0 : releaseGrid, end - start);
     }
     for (auto& control : pattern.controls)
-        control.beat = std::clamp(snapRelease(control.beat), 0.0,
+        control.beat = std::clamp(control.authoredTiming ? control.beat : snapRelease(control.beat), 0.0,
                                   std::max(0.0, pattern.lengthBeats - releaseGrid));
     for (auto& expression : pattern.expressions)
         expression.beat = std::clamp(snapRelease(expression.beat), 0.0,

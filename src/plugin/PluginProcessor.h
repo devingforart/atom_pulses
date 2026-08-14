@@ -24,6 +24,7 @@ namespace pulso::plugin {
 
 class PulsoAudioProcessor final : public juce::AudioProcessor,
                                   private juce::AudioProcessorValueTreeState::Listener {
+    friend struct ProcessorTestAccess;
 public:
     enum class LiveDeploymentMode : std::uint8_t { FullOrchestration = 0, QuickThreeStem };
     enum class OrchestrationIntent : std::uint8_t { Adaptive = 0, DeepProduction, Symphonic };
@@ -261,6 +262,12 @@ private:
     std::array<RealtimePattern, resultQueueSize> resultQueue{};
     std::atomic<std::size_t> resultWrite{};
     std::atomic<std::size_t> resultRead{};
+    // When the audio callback is suspended, a full SPSC queue must never block the
+    // composition worker. This single coalescing slot retains only the newest result;
+    // the callback uses a try-lock and therefore never waits on the worker.
+    juce::SpinLock resultOverflowLock;
+    RealtimePattern resultOverflowPattern{};
+    bool resultOverflowPending{};
     std::jthread generationThread;
 
     RealtimePattern activePattern{};

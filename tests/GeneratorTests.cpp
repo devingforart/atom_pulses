@@ -102,15 +102,23 @@ void runGeneratorTests() {
     Pattern timingPattern;
     timingPattern.lengthBeats = 4.0;
     timingPattern.notes = {{0.13, 0.41, 36, 100, 10, VoiceId::CoreDrums},
-                           {1.46, 0.69, 67, 88, 2, VoiceId::Lead}};
-    timingPattern.controls = {{2.87, 11, 90, 2, VoiceId::Lead}};
+                           {1.46, 0.69, 67, 88, 2, VoiceId::Lead},
+                           {3.0 / 7.0, 5.0 / 7.0, 64, 82, 2, VoiceId::Lead, 0, true}};
+    timingPattern.controls = {{2.87, 11, 90, 2, VoiceId::Lead},
+                              {5.0 / 7.0, 1, 76, 2, VoiceId::Lead, 0, true}};
     quantizePatternTiming(timingPattern, 4);
     require(std::all_of(timingPattern.notes.begin(), timingPattern.notes.end(), [](const auto& note) {
+                if (note.authoredTiming) return true;
                 return std::abs(note.startBeat * 4.0 - std::round(note.startBeat * 4.0)) < 0.000001 &&
                        std::abs(note.endBeat() * 16.0 - std::round(note.endBeat() * 16.0)) < 0.000001;
             }) && std::abs(timingPattern.controls.front().beat * 16.0 -
                            std::round(timingPattern.controls.front().beat * 16.0)) < 0.000001,
             "Stored onsets must be exact while note-offs and controls retain fine articulation");
+    require(std::any_of(timingPattern.notes.begin(), timingPattern.notes.end(), [](const auto& note) {
+                return note.authoredTiming && std::abs(note.startBeat - 3.0 / 7.0) < 0.000001 &&
+                       std::abs(note.durationBeats - 5.0 / 7.0) < 0.000001;
+            }) && std::abs(timingPattern.controls.back().beat - 5.0 / 7.0) < 0.000001,
+            "AI-authored tuplets and control timing must survive the publication quantizer exactly");
     require(performanceOffsetBeats(timingPattern.notes.front(), 42, 0, 120.0) == 0.0 &&
                 std::abs(performanceOffsetBeats(timingPattern.notes.back(), 42, 1, 120.0)) <= 0.008 &&
                 performanceOffsetBeats(timingPattern.notes.back(), 42, 1, 120.0) ==
@@ -425,6 +433,19 @@ void runGeneratorTests() {
                 "Nine minutes at 120 BPM must render exactly 1080 beats");
     require(!longSong.notes.empty() && longSong.notes.size() < 32768,
             "Long-form rendering must remain populated and safe for realtime publication");
+    require(deepReport.longestGlobalSilenceAfter <= longPlan.beatsPerBar * 2.0 + 0.001,
+            "The final orchestrated MIDI must not contain an accidental global silence longer than two bars");
+    auto orderedFinalNotes = longSong.notes;
+    std::sort(orderedFinalNotes.begin(), orderedFinalNotes.end(), [](const auto& left, const auto& right) {
+        return std::tie(left.partId, left.channel, left.pitch, left.startBeat) <
+               std::tie(right.partId, right.channel, right.pitch, right.startBeat);
+    });
+    require(std::adjacent_find(orderedFinalNotes.begin(), orderedFinalNotes.end(), [](const auto& left,
+                                                                                      const auto& right) {
+                return left.partId == right.partId && left.channel == right.channel &&
+                       left.pitch == right.pitch && left.endBeat() >= right.startBeat - 0.0001;
+            }) == orderedFinalNotes.end(),
+            "Final tonal convergence must never leave overlapping ownership of one MIDI note");
     require(longSong.parts.size() >= 12 &&
                 std::count_if(longSong.parts.begin(), longSong.parts.end(), [](const auto& part) {
                     return part.department == ScoreDepartment::Rhythm;
@@ -440,6 +461,11 @@ void runGeneratorTests() {
                 deepReport.orchestration.registerClarity >= 0.70 &&
                 deepReport.orchestration.familyBalance >= 0.45,
             "Deep orchestration must write independent material and pass register/balance review");
+    require(deepReport.production.ready && longSong.productionAuditPerformed &&
+                longSong.productionReady && deepReport.production.metricViolations == 0 &&
+                deepReport.production.expressionEventsPerNote <= 12.0 &&
+                deepReport.expression.controlsAfter < deepReport.expression.controlsBefore,
+            "Only a metrically exact, tonally valid and expression-efficient score may be published");
     require(std::count_if(longSong.parts.begin(), longSong.parts.end(), [](const auto& part) {
                 return part.department == ScoreDepartment::Harmony &&
                        part.orchestralFunction != "body";
@@ -448,6 +474,47 @@ void runGeneratorTests() {
     require(std::any_of(longSong.controls.begin(), longSong.controls.end(), [](const auto& event) {
                 return event.partId > 0 && (event.controller == 1 || event.controller == 11 || event.controller == 74);
             }), "Instrument parts must carry their own exported dynamics, articulation and timbre controls");
+
+    Pattern copiedRhythm;
+    copiedRhythm.lengthBeats = 16.0;
+    for (auto bar = 0; bar < 4; ++bar) {
+        copiedRhythm.notes.push_back({bar * 4.0, 0.0625, 36, 100, 10, VoiceId::CoreDrums});
+        copiedRhythm.notes.push_back({bar * 4.0 + 0.5, 0.0625, 42, 58, 10, VoiceId::ClosedHats});
+        copiedRhythm.notes.push_back({bar * 4.0 + 1.5, 0.0625, 42, 54, 10, VoiceId::ClosedHats});
+    }
+    auto rhythmGuardPlan = longPlan;
+    rhythmGuardPlan.totalBars = 4;
+    rhythmGuardPlan.sections.resize(1);
+    rhythmGuardPlan.sections.front().startBar = 0;
+    rhythmGuardPlan.sections.front().bars = 4;
+    const auto copiedRhythmReport = MusicalCritic::reviewAndRefine(copiedRhythm, rhythmGuardPlan);
+    require(copiedRhythmReport.literalRhythmBarsVaried > 0 &&
+                std::count_if(copiedRhythm.notes.begin(), copiedRhythm.notes.end(), [](const auto& note) {
+                    return note.voice == VoiceId::CoreDrums;
+                }) == 4,
+            "The rhythm critic must break copied percussion runs without damaging a stable kick contract");
+    Pattern intentionalOstinato;
+    intentionalOstinato.lengthBeats = 32.0;
+    for (auto bar = 0; bar < 8; ++bar) {
+        intentionalOstinato.notes.push_back({bar * 4.0 + 0.5, 0.25, 42, 62, 10, VoiceId::ClosedHats});
+        intentionalOstinato.notes.push_back({bar * 4.0 + 1.5, 0.25, 42, 58, 10, VoiceId::ClosedHats});
+    }
+    TonalAuditReport expressiveTension;
+    expressiveTension.pitchedNotes = 100;
+    expressiveTension.strongNonChordNotes = 18;
+    const auto softQualityReport = ProductionPolish::audit(
+        intentionalOstinato, expressiveTension, 4.0, 0.35, 0.20);
+    ProductionPolish::stamp(intentionalOstinato, softQualityReport);
+    require(softQualityReport.ready && intentionalOstinato.productionReady &&
+                softQualityReport.maximumRhythmRun > 4 &&
+                std::any_of(intentionalOstinato.productionIssues.begin(), intentionalOstinato.productionIssues.end(),
+                    [](const auto& issue) { return issue == "warning:repeated_rhythm_run"; }),
+            "Musical quality warnings must remain visible without deleting an otherwise valid song");
+    auto corruptPattern = intentionalOstinato;
+    corruptPattern.notes.front().partId = 999;
+    const auto corruptReport = ProductionPolish::audit(corruptPattern, {}, 4.0, 1.0, 1.0);
+    require(!corruptReport.ready && corruptReport.orphanEvents == 1,
+            "The production gate must still block objectively corrupt MIDI ownership");
     require(std::all_of(longSong.parts.begin(), longSong.parts.end(), [](const auto& part) {
                 return !part.liveDevice.empty() && !part.livePresetIntent.empty();
             }), "Every orchestral part must carry a Live-native device and preset intent");
@@ -657,6 +724,27 @@ void runGeneratorTests() {
             }) >= 2,
             "Open rhythm mutations must produce audible, deterministic development of the shared cell");
 
+    auto aiRhythmPlan = longPlan;
+    aiRhythmPlan.voices.erase(std::remove_if(aiRhythmPlan.voices.begin(), aiRhythmPlan.voices.end(), [](const auto& voice) {
+        return voice.id == VoiceId::SnareClap || voice.id == VoiceId::ClosedHats ||
+               voice.id == VoiceId::OpenHatsShaker;
+    }), aiRhythmPlan.voices.end());
+    auto authoredRhythm = std::find_if(aiRhythmPlan.voices.begin(), aiRhythmPlan.voices.end(), [](const auto& voice) {
+        return voice.id == VoiceId::CoreDrums;
+    });
+    require(authoredRhythm != aiRhythmPlan.voices.end(), "The test score needs a core rhythm voice");
+    authoredRhythm->performance.authored = true;
+    authoredRhythm->performance.intent = "AI-authored restrained acoustic attack";
+    SongComposer::normalizePlan(aiRhythmPlan);
+    for (const auto requiredLane : {VoiceId::SnareClap, VoiceId::ClosedHats, VoiceId::OpenHatsShaker}) {
+        const auto lane = std::find_if(aiRhythmPlan.voices.begin(), aiRhythmPlan.voices.end(), [requiredLane](const auto& voice) {
+            return voice.id == requiredLane;
+        });
+        require(lane != aiRhythmPlan.voices.end() && lane->performance.authored &&
+                    lane->performance.intent.find("AI") != std::string::npos,
+                "Technical drum lanes must retain the AI-authored rhythmic performance language");
+    }
+
     SongPlan contradictoryPlan = longPlan;
     contradictoryPlan.key = "F# major";
     contradictoryPlan.motifIntervals = {0, 1, 6, 11};
@@ -680,9 +768,9 @@ void runGeneratorTests() {
     const std::vector<std::vector<int>> changingHarmony{{0, 4, 7, 11}, {5, 9, 0}};
     const auto repair = repairTonalContract(brokenHarmony, 0, ScaleKind::Major, 4.0,
                                             changingHarmony, 0.20);
-    require(repair.outOfScaleRepaired >= 1 && repair.intentionalChromaticNotes == 1 &&
+    require(repair.outOfScaleRepaired >= 2 && repair.intentionalChromaticNotes == 0 &&
                 repair.harmonicOverlapsTrimmed == 1 && repair.verticalCollisionsRepaired >= 1,
-            "Tonal validation must repair structural errors while preserving prepared passing notes");
+            "Consolidated tonal validation must repair every external note, including passing notes");
     require(isPitchClassInScale(brokenHarmony.notes.front().pitch, 0, ScaleKind::Major),
             "An unsupported chromatic note on a strong beat must be repaired into the declared key");
 
@@ -824,6 +912,91 @@ void runGeneratorTests() {
                                    [&](int pitch) { return isPitchClassInScale(pitch, 3, ScaleKind::Major); });
                     }),
             "Ordinary full-song plans must expose a completely diatonic structural palette");
+
+    PerformanceScore authoredScore;
+    authoredScore.cells.push_back({"question", 4.0, {VoiceId::Lead},
+        {{0.375, 0.625, 64, 91, VoiceId::Lead},
+         {2.25, 0.50, 67, 73, VoiceId::Lead}},
+        {{0.0, 11, 70, VoiceId::Lead}, {2.25, 11, 108, VoiceId::Lead}}});
+    authoredScore.cells.push_back(authoredScore.cells.front());
+    authoredScore.cells.back().id = "question_copy";
+    authoredScore.placements.push_back({"question", 0, 0.0, 2, 0, 1.0, 1.0});
+    const auto authoredReport = PerformanceScoreEngine::normalize(authoredScore, 1, {8.0});
+    require(authoredReport.cellsAccepted == 2 && authoredReport.exactDuplicateCells == 1 &&
+                authoredReport.novelty < 0.51,
+            "Performance fingerprints must expose renamed duplicate musical cells");
+    Pattern authoredChunk;
+    authoredChunk.lengthBeats = 8.0;
+    authoredChunk.notes = {
+        {0.0, 0.5, 72, 64, 2, VoiceId::Lead},
+        {1.0, 1.0, 55, 70, 3, VoiceId::HarmonicFoundation}
+    };
+    PerformanceScoreEngine::replaceChunk(authoredChunk, authoredScore, 0, 0.0, 8.0);
+    require(std::none_of(authoredChunk.notes.begin(), authoredChunk.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::Lead && std::abs(note.startBeat) < 0.001;
+            }) && std::count_if(authoredChunk.notes.begin(), authoredChunk.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::Lead;
+            }) == 4 && std::any_of(authoredChunk.notes.begin(), authoredChunk.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::HarmonicFoundation;
+            }),
+            "Explicit performance must replace only owned voices while preserving local fallback parts");
+
+    PerformanceScore partialScore;
+    partialScore.cells.push_back({"brief_answer", 2.0, {VoiceId::Lead},
+        {{0.0, 0.5, 67, 88, VoiceId::Lead}}, {}});
+    partialScore.placements.push_back({"brief_answer", 0, 2.0, 1, 0, 1.0, 1.0});
+    PerformanceScoreEngine::normalize(partialScore, 1, {8.0});
+    Pattern partialChunk;
+    partialChunk.lengthBeats = 8.0;
+    partialChunk.notes = {
+        {0.0, 0.5, 60, 70, 2, VoiceId::Lead},
+        {2.0, 0.5, 62, 70, 2, VoiceId::Lead},
+        {5.0, 0.5, 64, 70, 2, VoiceId::Lead}
+    };
+    PerformanceScoreEngine::replaceChunk(partialChunk, partialScore, 0, 0.0, 8.0);
+    require(std::any_of(partialChunk.notes.begin(), partialChunk.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::Lead && std::abs(note.startBeat) < 0.001;
+            }) && std::none_of(partialChunk.notes.begin(), partialChunk.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::Lead && std::abs(note.startBeat - 2.0) < 0.001 && note.pitch == 62;
+            }) && std::any_of(partialChunk.notes.begin(), partialChunk.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::Lead && std::abs(note.startBeat - 5.0) < 0.001;
+            }),
+            "A placed cell must own only its covered interval, never erase the rest of a section");
+
+    PerformanceScore dialogueScore;
+    dialogueScore.cells.push_back({"lead_question", 4.0, {VoiceId::Lead},
+        {{0.5, 0.5, 62, 90, VoiceId::Lead}, {2.0, 0.5, 65, 78, VoiceId::Lead}}, {}});
+    PerformancePlacement transformedAnswer;
+    transformedAnswer.cellId = "lead_question";
+    transformedAnswer.sectionIndex = 0;
+    transformedAnswer.purpose = "Countermelody answers the question in inverted retrograde";
+    transformedAnswer.voiceMap = {{VoiceId::Lead, VoiceId::Countermelody}};
+    transformedAnswer.retrograde = true;
+    transformedAnswer.invertContour = true;
+    transformedAnswer.inversionAxis = 64;
+    transformedAnswer.fragmentEnd = 4.0;
+    dialogueScore.placements.push_back(transformedAnswer);
+    PerformanceScoreEngine::normalize(dialogueScore, 1, {4.0});
+    Pattern dialogueChunk;
+    dialogueChunk.lengthBeats = 4.0;
+    PerformanceScoreEngine::replaceChunk(dialogueChunk, dialogueScore, 0, 0.0, 4.0);
+    require(std::any_of(dialogueChunk.notes.begin(), dialogueChunk.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::Countermelody && note.pitch == 66 &&
+                       std::abs(note.startBeat - 3.0) < 0.001;
+            }) && std::any_of(dialogueChunk.notes.begin(), dialogueChunk.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::Countermelody && note.pitch == 63 &&
+                       std::abs(note.startBeat - 1.5) < 0.001;
+            }),
+            "AI placements must turn a cell into audible cross-instrument thematic transformation");
+
+    auto octavePlan = SongComposer::createLocalPlan(
+        "octave normalization", 60, 120.0, 4.0, 91, 0, ScaleKind::Minor);
+    require(!octavePlan.instruments.empty(), "Local orchestration must expose instruments");
+    octavePlan.instruments.front().octaveShift = 7;
+    SongComposer::normalizePlan(octavePlan);
+    require(octavePlan.instruments.front().octaveShift == 12,
+            "Orchestration octave shifts must never become chromatic transpositions");
+
     const auto compactPlan = SongComposer::createLocalPlan(
         "A slow compact song", 30, 30.0, 4.0, 31, 5, ScaleKind::Dorian);
     require(compactPlan.totalBars == 8 && !compactPlan.sections.empty() &&

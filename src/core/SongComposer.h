@@ -5,6 +5,8 @@
 #include "MusicalCritic.h"
 #include "OrchestrationScore.h"
 #include "PerformanceExpression.h"
+#include "PerformanceScore.h"
+#include "ProductionPolish.h"
 #include "RhythmPlan.h"
 #include "TonalContract.h"
 
@@ -56,6 +58,7 @@ struct SongPlan {
     RhythmLanguage rhythmLanguage;
     HarmonicLanguage harmonicLanguage;
     OrchestrationLanguage orchestrationLanguage;
+    TimbrePalette timbrePalette;
     std::uint64_t seed{1};
     std::vector<int> motifIntervals{0, 3, 5, 7, 3};
     std::vector<HarmonicChord> chordPalette;
@@ -63,6 +66,7 @@ struct SongPlan {
     std::vector<PlannedVoice> voices;
     std::vector<InstrumentAssignment> instruments;
     std::vector<SongSection> sections;
+    PerformanceScore performanceScore;
 };
 
 struct CompositionRenderReport {
@@ -71,10 +75,14 @@ struct CompositionRenderReport {
     MusicalQualityReport musical;
     OrchestrationReport orchestration;
     std::size_t harmonicWindows{};
+    std::size_t unintendedSilenceWindowsRepaired{};
+    double longestGlobalSilenceBefore{};
+    double longestGlobalSilenceAfter{};
+    ExpressionCompactionReport expression;
+    ProductionAuditReport production;
 
     [[nodiscard]] bool productionReady() const noexcept {
-        return finalTonalPass.after.productionReady() && orchestration.registerClarity >= 0.70 &&
-               orchestration.familyBalance >= 0.45;
+        return production.ready;
     }
 };
 

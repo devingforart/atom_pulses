@@ -43,6 +43,62 @@ bool needsMonophonicSpace(VoiceId voice) noexcept {
            voice == VoiceId::HarmonicUpper;
 }
 
+std::size_t varyLiteralRhythmRuns(Pattern& pattern, const SongPlan& plan) {
+    std::vector<bool> remove(pattern.notes.size(), false);
+    std::map<std::pair<VoiceId, int>, std::vector<std::size_t>> notesByVoiceBar;
+    for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
+        const auto& note = pattern.notes[index];
+        if (isVoiceInFamily(note.voice, VoiceFamily::Rhythm) && note.voice != VoiceId::CoreDrums)
+            notesByVoiceBar[{note.voice, barFor(note, plan)}].push_back(index);
+    }
+    std::size_t varied{};
+    for (auto voiceIndex = std::size_t{};
+         voiceIndex < static_cast<std::size_t>(VoiceId::Count); ++voiceIndex) {
+        const auto voice = static_cast<VoiceId>(voiceIndex);
+        if (!isVoiceInFamily(voice, VoiceFamily::Rhythm) || voice == VoiceId::CoreDrums)
+            continue; // A requested four-on-the-floor foundation is allowed to be literal.
+        Signature previous;
+        auto run = 0;
+        for (auto bar = 0; bar < plan.totalBars; ++bar) {
+            Signature signature;
+            const auto foundBar = notesByVoiceBar.find({voice, bar});
+            static const std::vector<std::size_t> noIndices;
+            const auto& indices = foundBar == notesByVoiceBar.end() ? noIndices : foundBar->second;
+            for (const auto index : indices) {
+                const auto& note = pattern.notes[index];
+                signature.emplace_back(
+                    static_cast<int>(std::lround((note.startBeat - bar * plan.beatsPerBar) * 96.0)),
+                    note.pitch, static_cast<int>(std::lround(note.durationBeats * 96.0)));
+            }
+            std::sort(signature.begin(), signature.end());
+            if (!signature.empty() && signature == previous) ++run;
+            else run = signature.empty() ? 0 : 1;
+            if (run >= 3 && !indices.empty()) {
+                // Negative space is the safest style-independent mutation: it preserves
+                // the grid, tuning and sound identity while breaking a copied bar.
+                const auto selected = indices[(static_cast<std::size_t>(bar) + voiceIndex) % indices.size()];
+                remove[selected] = true;
+                const auto token = std::tuple{
+                    static_cast<int>(std::lround((pattern.notes[selected].startBeat -
+                        bar * plan.beatsPerBar) * 96.0)), pattern.notes[selected].pitch,
+                    static_cast<int>(std::lround(pattern.notes[selected].durationBeats * 96.0))};
+                if (const auto found = std::find(signature.begin(), signature.end(), token);
+                    found != signature.end()) signature.erase(found);
+                previous = std::move(signature);
+                run = previous.empty() ? 0 : 1;
+                ++varied;
+            } else previous = std::move(signature);
+        }
+    }
+    if (varied == 0) return 0;
+    std::vector<NoteEvent> retained;
+    retained.reserve(pattern.notes.size() - varied);
+    for (std::size_t index = 0; index < pattern.notes.size(); ++index)
+        if (!remove[index]) retained.push_back(pattern.notes[index]);
+    pattern.notes = std::move(retained);
+    return varied;
+}
+
 } // namespace
 
 MusicalQualityReport MusicalCritic::review(const Pattern& pattern, const SongPlan& plan) {
@@ -133,6 +189,7 @@ MusicalQualityReport MusicalCritic::reviewAndRefine(Pattern& pattern, const Song
     std::map<std::pair<int, VoiceId>, int> onsets;
     auto removed = std::size_t{};
     pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+        if (note.authoredTiming) return false;
         if (isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
             note.voice == VoiceId::Transitions || note.voice == VoiceId::Atmosphere)
             return false;
@@ -144,6 +201,8 @@ MusicalQualityReport MusicalCritic::reviewAndRefine(Pattern& pattern, const Song
         ++removed;
         return true;
     }), pattern.notes.end());
+
+    const auto literalRhythmBarsVaried = varyLiteralRhythmRuns(pattern, plan);
 
     // Expression curves are part of the score, not random playback jitter. They let a receiving
     // instrument shape a phrase even when its note-on grid remains exact.
@@ -168,6 +227,7 @@ MusicalQualityReport MusicalCritic::reviewAndRefine(Pattern& pattern, const Song
     auto report = review(pattern, plan);
     report.overlapsRepaired = repaired;
     report.densityEventsRemoved = removed;
+    report.literalRhythmBarsVaried = literalRhythmBarsVaried;
     return report;
 }
 

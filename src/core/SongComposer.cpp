@@ -53,6 +53,116 @@ void appendShifted(Pattern& destination, Pattern&& source, double beatOffset,
     }
 }
 
+struct ContinuityRepair {
+    std::size_t windowsRepaired{};
+    double longestBefore{};
+    double longestAfter{};
+};
+
+double longestGlobalSilence(const Pattern& song) {
+    auto notes = song.notes;
+    std::sort(notes.begin(), notes.end(), [](const auto& left, const auto& right) {
+        return left.startBeat < right.startBeat;
+    });
+    auto soundingUntil = 0.0;
+    auto longest = 0.0;
+    for (const auto& note : notes) {
+        longest = std::max(longest, note.startBeat - soundingUntil);
+        soundingUntil = std::max(soundingUntil, std::min(song.lengthBeats, note.endBeat()));
+    }
+    return std::max(longest, song.lengthBeats - soundingUntil);
+}
+
+ContinuityRepair repairUnintendedGlobalSilence(Pattern& song, double beatsPerBar,
+                                                std::span<const HarmonicWindow> harmony) {
+    ContinuityRepair report;
+    report.longestBefore = longestGlobalSilence(song);
+    // Long silence is valid only when represented by active sparse material; an empty
+    // exported score may never vanish for more than two bars without an explicit event.
+    const auto maximumSilence = std::max(4.0, beatsPerBar * 2.0);
+    auto notes = song.notes;
+    std::sort(notes.begin(), notes.end(), [](const auto& left, const auto& right) {
+        return left.startBeat < right.startBeat;
+    });
+    std::vector<std::pair<double, double>> gaps;
+    auto soundingUntil = 0.0;
+    for (const auto& note : notes) {
+        if (note.startBeat - soundingUntil > maximumSilence)
+            gaps.emplace_back(soundingUntil, note.startBeat);
+        soundingUntil = std::max(soundingUntil, std::min(song.lengthBeats, note.endBeat()));
+    }
+    if (song.lengthBeats - soundingUntil > maximumSilence)
+        gaps.emplace_back(soundingUntil, song.lengthBeats);
+
+    const InstrumentPart* continuityPart = nullptr;
+    for (const auto& part : song.parts) {
+        if (part.sourceVoice == VoiceId::Atmosphere) {
+            continuityPart = &part;
+            break;
+        }
+        if (continuityPart == nullptr && part.department == ScoreDepartment::Harmony)
+            continuityPart = &part;
+    }
+    const auto continuityVoice = continuityPart == nullptr ? VoiceId::Atmosphere
+                                                            : continuityPart->sourceVoice;
+    const auto& voice = voiceDefinition(continuityVoice);
+    const auto minimumPitch = continuityPart == nullptr ? voice.minimumPitch
+        : std::max(voice.minimumPitch, continuityPart->minimumPitch);
+    const auto maximumPitch = continuityPart == nullptr ? voice.maximumPitch
+        : std::min(voice.maximumPitch, continuityPart->maximumPitch);
+    const auto partId = continuityPart == nullptr ? std::uint16_t{} : continuityPart->id;
+    for (const auto& [start, end] : gaps) {
+        ++report.windowsRepaired;
+        for (auto beat = start + maximumSilence * 0.5; beat < end; beat += maximumSilence * 0.5) {
+            auto pitchClass = 0;
+            if (!harmony.empty()) {
+                const auto found = std::find_if(harmony.begin(), harmony.end(), [&](const auto& window) {
+                    return beat >= window.startBeat && beat < window.endBeat;
+                });
+                pitchClass = (found == harmony.end() ? harmony.back() : *found).rootPitchClass;
+            }
+            song.notes.push_back({beat, std::min(beatsPerBar * 0.75, end - beat),
+                nearestPitchClass(pitchClass, 60, minimumPitch, maximumPitch),
+                38, voice.midiChannel, continuityVoice, partId, false});
+        }
+    }
+    report.longestAfter = longestGlobalSilence(song);
+    return report;
+}
+
+std::size_t repairSamePitchOverlaps(Pattern& song) {
+    std::sort(song.notes.begin(), song.notes.end(), [](const auto& left, const auto& right) {
+        if (left.partId != right.partId) return left.partId < right.partId;
+        if (left.channel != right.channel) return left.channel < right.channel;
+        if (left.pitch != right.pitch) return left.pitch < right.pitch;
+        return left.startBeat < right.startBeat;
+    });
+    std::size_t repaired{};
+    std::vector<NoteEvent> resolved;
+    resolved.reserve(song.notes.size());
+    for (const auto& note : song.notes) {
+        if (!resolved.empty()) {
+            auto& previous = resolved.back();
+            const auto sameKey = previous.partId == note.partId && previous.channel == note.channel &&
+                                 previous.pitch == note.pitch;
+            if (sameKey && std::abs(previous.startBeat - note.startBeat) < 0.0001) {
+                previous.durationBeats = std::max(previous.durationBeats, note.durationBeats);
+                previous.velocity = std::max(previous.velocity, note.velocity);
+                ++repaired;
+                continue;
+            }
+            if (sameKey && previous.endBeat() >= note.startBeat - 0.0001) {
+                previous.durationBeats = std::max(1.0 / 960.0,
+                    note.startBeat - previous.startBeat - 1.0 / 960.0);
+                ++repaired;
+            }
+        }
+        resolved.push_back(note);
+    }
+    song.notes = std::move(resolved);
+    return repaired;
+}
+
 bool containsCaseInsensitive(const std::string& text, const std::string& needle) {
     auto lower = text;
     std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char value) {
@@ -368,6 +478,16 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
     plan.rhythmLanguage.orchestrationMotion = 0.20 + rhythmRandom.unit() * 0.68;
     plan.rhythmLanguage.silenceBias = 0.12 + rhythmRandom.unit() * 0.52;
     plan.rhythmLanguage.callResponse = 0.18 + rhythmRandom.unit() * 0.70;
+    Random timbreRandom(seed ^ textIdentity(direction) ^ 0x54494d425245ULL);
+    plan.timbrePalette.description = "Cohesive sound world serving: " + direction;
+    plan.timbrePalette.material = "A shared material continuum shaped by the composition DNA";
+    plan.timbrePalette.space = "Layered depth with deliberate foreground rotation";
+    plan.timbrePalette.warmth = 0.30 + timbreRandom.unit() * 0.60;
+    plan.timbrePalette.brightness = 0.25 + timbreRandom.unit() * 0.65;
+    plan.timbrePalette.transientDefinition = 0.32 + timbreRandom.unit() * 0.62;
+    plan.timbrePalette.acousticElectronicBalance = 0.18 + timbreRandom.unit() * 0.72;
+    plan.timbrePalette.cohesion = 0.72 + timbreRandom.unit() * 0.24;
+    plan.timbrePalette.contrast = 0.30 + timbreRandom.unit() * 0.60;
     for (auto variant = 0; variant < 3; ++variant)
         plan.rhythmMotifs.push_back(createOpenRhythmMotif(direction, seed, variant));
 
@@ -607,6 +727,17 @@ void SongComposer::normalizePlan(SongPlan& plan) {
                         &plan.orchestrationLanguage.familyDialogue,
                         &plan.orchestrationLanguage.hybridProduction})
         *value = std::clamp(std::isfinite(*value) ? *value : 0.5, 0.0, 1.0);
+    if (plan.timbrePalette.description.empty())
+        plan.timbrePalette.description = "coherent, dimensional and natural";
+    if (plan.timbrePalette.material.empty())
+        plan.timbrePalette.material = "warm organic core with restrained electronic detail";
+    if (plan.timbrePalette.space.empty())
+        plan.timbrePalette.space = "deep foreground-to-background stage";
+    for (auto* value : {&plan.timbrePalette.warmth, &plan.timbrePalette.brightness,
+                        &plan.timbrePalette.transientDefinition,
+                        &plan.timbrePalette.acousticElectronicBalance,
+                        &plan.timbrePalette.cohesion, &plan.timbrePalette.contrast})
+        *value = std::clamp(std::isfinite(*value) ? *value : 0.5, 0.0, 1.0);
     std::vector<std::string> instrumentIds;
     std::vector<std::string> instrumentNames;
     for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
@@ -642,7 +773,11 @@ void SongComposer::normalizePlan(SongPlan& plan) {
             definition->minimumPitch, definition->maximumPitch);
         instrument.maximumPitch = std::clamp(instrument.maximumPitch,
             instrument.minimumPitch, definition->maximumPitch);
-        instrument.octaveShift = std::clamp(instrument.octaveShift, -24, 24);
+        // This is an octave displacement, never a chromatic transposition. Accept old
+        // persisted values defensively, but snap them to an octave so orchestration
+        // cannot silently move a tonal line by an arbitrary number of semitones.
+        instrument.octaveShift = std::clamp(
+            static_cast<int>(std::lround(instrument.octaveShift / 12.0)) * 12, -24, 24);
         instrument.activity = std::clamp(std::isfinite(instrument.activity) ? instrument.activity : 0.5, 0.0, 1.0);
         instrument.prominence = std::clamp(std::isfinite(instrument.prominence) ? instrument.prominence : 0.5, 0.0, 1.0);
         instrument.doubling = std::clamp(std::isfinite(instrument.doubling) ? instrument.doubling : 0.2, 0.0, 1.0);
@@ -716,7 +851,18 @@ void SongComposer::normalizePlan(SongPlan& plan) {
                 voiceDefaultsForInstruments.end(), [&](const auto& voice) {
                     return voice.id == instrument.sourceVoice;
                 });
-            if (source != voiceDefaultsForInstruments.end()) plan.voices.push_back(*source);
+            if (source != voiceDefaultsForInstruments.end()) {
+                auto addition = *source;
+                const auto authoredCompatible = std::find_if(plan.voices.begin(), plan.voices.end(),
+                    [&](const auto& voice) { return compatible(voice.id) && voice.performance.authored; });
+                if (authoredCompatible != plan.voices.end()) {
+                    addition.performance = authoredCompatible->performance;
+                    addition.performance.authored = true;
+                    addition.performance.intent = "Derived part articulation from AI family direction: " +
+                                                    authoredCompatible->performance.intent;
+                }
+                plan.voices.push_back(std::move(addition));
+            }
         }
     // Every execution role in the score needs a concrete instrumental owner. Without this
     // invariant, inactive assignments leak back out as anonymous legacy MIDI tracks.
@@ -786,10 +932,24 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     for (const auto rhythmVoice : {VoiceId::SnareClap, VoiceId::ClosedHats, VoiceId::OpenHatsShaker})
         if (std::none_of(plan.voices.begin(), plan.voices.end(), [rhythmVoice](const auto& voice) {
                 return voice.id == rhythmVoice;
-            }))
-            plan.voices.push_back(*std::find_if(defaults.begin(), defaults.end(), [rhythmVoice](const auto& voice) {
+            })) {
+            auto addition = *std::find_if(defaults.begin(), defaults.end(), [rhythmVoice](const auto& voice) {
                 return voice.id == rhythmVoice;
-            }));
+            });
+            // A structured AI score may omit a technical drum lane while still authoring the
+            // complete rhythmic language. Preserve that intelligence instead of injecting an
+            // unrelated generic performance profile.
+            const auto authoredRhythm = std::find_if(plan.voices.begin(), plan.voices.end(), [](const auto& voice) {
+                return isVoiceInFamily(voice.id, VoiceFamily::Rhythm) && voice.performance.authored;
+            });
+            if (authoredRhythm != plan.voices.end()) {
+                addition.performance = authoredRhythm->performance;
+                addition.performance.authored = true;
+                addition.performance.intent = "Derived lane articulation from AI rhythm direction: " +
+                                                authoredRhythm->performance.intent;
+            }
+            plan.voices.push_back(std::move(addition));
+        }
     std::array<bool, static_cast<std::size_t>(VoiceId::Count)> seenVoices{};
     plan.voices.erase(std::remove_if(plan.voices.begin(), plan.voices.end(), [&](auto& voice) {
         const auto index = static_cast<std::size_t>(voice.id);
@@ -978,6 +1138,11 @@ void SongComposer::normalizePlan(SongPlan& plan) {
             if (selected != plan.sections.end()) selected->activeVoices.push_back(instrument.sourceVoice);
         }
     }
+    std::vector<double> sectionLengths;
+    sectionLengths.reserve(plan.sections.size());
+    for (const auto& section : plan.sections)
+        sectionLengths.push_back(section.bars * plan.beatsPerBar);
+    PerformanceScoreEngine::normalize(plan.performanceScore, plan.sections.size(), sectionLengths);
 }
 
 Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext& foundation,
@@ -988,6 +1153,11 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     Pattern song;
     song.lengthBeats = plan.totalBars * plan.beatsPerBar;
     song.seed = plan.seed;
+    song.soundWorld = plan.timbrePalette.description + "; " + plan.timbrePalette.material +
+                      "; " + plan.timbrePalette.space;
+    song.soundWarmth = plan.timbrePalette.warmth;
+    song.soundBrightness = plan.timbrePalette.brightness;
+    song.acousticElectronicBalance = plan.timbrePalette.acousticElectronicBalance;
     Generator generator;
     std::size_t workUnits = 0;
     for (const auto& section : plan.sections)
@@ -999,7 +1169,8 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     std::vector<std::vector<int>> songHarmony(static_cast<std::size_t>(plan.totalBars));
     std::vector<HarmonicWindow> harmonicWindows;
 
-    for (const auto& section : plan.sections) {
+    for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+        const auto& section = plan.sections[sectionIndex];
         const auto directions = PhraseDirector::create(plan, section);
         const auto sectionHarmony = HarmonyEngine::composeSection(plan, section, directions,
                                                                    harmonyState);
@@ -1117,6 +1288,11 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
             }), chunk.notes.end());
             applyDirectedPerformance(chunk, plan, section, directions, sectionBar, plan.beatsPerBar);
             RhythmEngine::coordinateBassWithKick(chunk, section, plan.beatsPerBar);
+            // Explicit AI-authored voices replace procedural material only after the local
+            // fallback has completed. Their rests, phrasing and dynamics remain intentional.
+            PerformanceScoreEngine::replaceChunk(chunk, plan.performanceScore,
+                static_cast<int>(sectionIndex), sectionBar * plan.beatsPerBar,
+                chunkBars * plan.beatsPerBar);
 
             appendShifted(song, std::move(chunk), offset, song.lengthBeats);
             sectionBar += chunkBars;
@@ -1180,11 +1356,41 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
                left.pitch == right.pitch && left.voice == right.voice;
     }), song.notes.end());
     auto orchestrationReport = OrchestrationScore::realize(song, plan);
+    // Continuity must be the final structural stage. Earlier anchors can legitimately be
+    // removed by active-section orchestration, which would recreate long empty windows in
+    // the MIDI actually delivered to Live.
+    const auto continuityReport = repairUnintendedGlobalSilence(
+        song, plan.beatsPerBar, harmonicWindows);
+    // Orchestration is a pitch-producing stage (register fitting and divisi). The tonal
+    // contract therefore has to validate the realized score, not merely its source voices.
+    const auto orchestratedTonalReport = repairTonalContract(
+        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
+        plan.harmonicLanguage.tonalPolicy);
+    // Tonal repair may converge two independently voiced pitches. Restore unambiguous
+    // MIDI note ownership after that last pitch-producing operation.
+    [[maybe_unused]] const auto finalOverlapRepairs = repairSamePitchOverlaps(song);
     // Instrument realization can transpose a line by octaves. Rebind per-note expression
     // only after every final orchestral pitch and doubling is known.
     PerformanceExpression::apply(song, plan, false);
     OrchestrationScore::applyPartExpression(song, plan, &orchestrationReport);
-    if (renderReport != nullptr) renderReport->orchestration = orchestrationReport;
+    [[maybe_unused]] const auto metricRepairs = ProductionPolish::enforceMetricContract(song);
+    // Snapping two independently voiced attacks can make their release boundaries
+    // coincide again; ownership is therefore converged once more on published timing.
+    [[maybe_unused]] const auto metricOverlapRepairs = repairSamePitchOverlaps(song);
+    const auto expressionReport = ProductionPolish::compactExpression(song);
+    const auto productionReport = ProductionPolish::audit(
+        song, orchestratedTonalReport.after, plan.beatsPerBar, orchestrationReport.registerClarity,
+        orchestrationReport.familyBalance);
+    ProductionPolish::stamp(song, productionReport);
+    if (renderReport != nullptr) {
+        renderReport->orchestration = orchestrationReport;
+        renderReport->finalTonalPass = orchestratedTonalReport;
+        renderReport->unintendedSilenceWindowsRepaired = continuityReport.windowsRepaired;
+        renderReport->longestGlobalSilenceBefore = continuityReport.longestBefore;
+        renderReport->longestGlobalSilenceAfter = continuityReport.longestAfter;
+        renderReport->expression = expressionReport;
+        renderReport->production = productionReport;
+    }
     std::sort(song.controls.begin(), song.controls.end(), [](const auto& left, const auto& right) {
         if (left.beat != right.beat) return left.beat < right.beat;
         if (left.voice != right.voice) return left.voice < right.voice;

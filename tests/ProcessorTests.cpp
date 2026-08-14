@@ -18,6 +18,24 @@
 #include <thread>
 #include <vector>
 
+namespace pulso::plugin {
+struct ProcessorTestAccess {
+    static bool publish(PulsoAudioProcessor& processor, std::uint64_t serial) {
+        PulsoAudioProcessor::RealtimePattern result;
+        result.serial = serial;
+        result.epoch = 1;
+        return processor.pushGeneratedPattern(result);
+    }
+
+    static std::vector<std::uint64_t> drain(PulsoAudioProcessor& processor) {
+        std::vector<std::uint64_t> serials;
+        PulsoAudioProcessor::RealtimePattern result;
+        while (processor.popGeneratedPattern(result)) serials.push_back(result.serial);
+        return serials;
+    }
+};
+} // namespace pulso::plugin
+
 namespace {
 
 class TestPlayHead final : public juce::AudioPlayHead {
@@ -707,6 +725,18 @@ int main(int argc, char** argv) {
             "A cancelled operation must finish with an explicit non-blocking status");
     processor.setTargetSongDurationSeconds(0);
 
+    // Live may suspend processBlock while its transport/device is reconfiguring. Fill the
+    // three usable ring slots, then prove later publications coalesce without blocking.
+    {
+        pulso::plugin::PulsoAudioProcessor suspendedHost;
+        for (std::uint64_t publication = 1; publication <= 7; ++publication)
+            require(pulso::plugin::ProcessorTestAccess::publish(suspendedHost, publication),
+                    "A suspended audio callback must not reject or block result publication");
+        const auto published = pulso::plugin::ProcessorTestAccess::drain(suspendedHost);
+        require(published == std::vector<std::uint64_t>({1, 2, 3, 7}),
+                "A full result queue must retain queued work and coalesce overflow to the newest score");
+    }
+
     const auto exportFolder = juce::File::getSpecialLocation(juce::File::tempDirectory)
                                   .getChildFile("PULSO Test Exports");
     const auto ensembleFile = exportFolder.getNonexistentChildFile("ensemble", ".mid", false);
@@ -770,7 +800,7 @@ int main(int argc, char** argv) {
         {"id":"harmonic_pulse","function":"Rhythmic harmony","interaction":"Answers percussion","activity":0.5,"syncopation":0.6,"minimum_pitch":50,"maximum_pitch":84},
         {"id":"lead","function":"Carries the motif","interaction":"Alternates with countermelody","activity":0.6,"syncopation":0.4,"minimum_pitch":55,"maximum_pitch":92,"performance_intent":"Sing with a restrained late bloom","articulation":"legato","dynamic_contour":"phrase_arc","vibrato":"late_expressive","pitch_gesture":"gentle_bends","expression_depth":0.72,"brightness":0.61,"humanization":0.48,"sustain_pedal":false},
         {"id":"atmosphere","function":"Long-range depth","interaction":"Bridges sparse sections","activity":0.4,"syncopation":0.0,"minimum_pitch":42,"maximum_pitch":92}
-      ],"sections":[
+      ],"performance_score":{"cells":[{"id":"development_lead_answer","length_beats":4,"owned_voices":["lead"],"notes":[{"beat":0.375,"duration":0.625,"pitch":62,"velocity":91,"voice":"lead","metric_intent":"deliberate_displacement"},{"beat":2.25,"duration":0.5,"pitch":65,"velocity":76,"voice":"lead","metric_intent":"strict_grid"}],"controls":[{"beat":0,"controller":11,"value":72,"voice":"lead"},{"beat":2.25,"controller":11,"value":104,"voice":"lead"}]}],"placements":[{"cell_id":"development_lead_answer","section_index":1,"start_beat":0,"repeats":16,"transpose":0,"velocity_scale":1,"time_scale":1,"purpose":"Cello answers and transforms the lead question","voice_map":[{"from":"lead","to":"countermelody"}],"retrograde":false,"invert_contour":true,"inversion_axis":64,"fragment_start":0,"fragment_end":4,"metric_intent":"strict_grid"}]},"sections":[
         {"name":"Prologue","function":"Introduce motif fragments","harmonic_direction":"Tonic ambiguity","motif_treatment":"Fragment","bars":8,"energy":0.2,"tension":0.2,"density":0.3,"motif_variant":0,"tonal_center_pitch_class":2,"mode_hint":"D minor with suspended colour","harmonic_events":[{"bar_offset":0,"beat_offset":0,"chord_id":"dm9","emphasis":0.4,"purpose":"Establish home"},{"bar_offset":4,"beat_offset":0,"chord_id":"gpedal","emphasis":0.55,"purpose":"Open ambiguity"}],"active_voices":["harmonic_foundation","lead","atmosphere"],"kick_state":"reduced","kick_continuity":"sectional","percussion_density":0.2,"rhythmic_syncopation":0.2,"swing":0.08,"rhythm_motif_id":"A","rhythm_mutations":[],"rhythm_gestures":[]},
         {"name":"Development","function":"Transform the theme","harmonic_direction":"Move away from tonic","motif_treatment":"Sequence","bars":16,"energy":0.7,"tension":0.8,"density":0.7,"motif_variant":2,"tonal_center_pitch_class":3,"mode_hint":"Eb luminous pivot","harmonic_events":[{"bar_offset":0,"beat_offset":0,"chord_id":"ebmaj7_g","emphasis":0.72,"purpose":"Pivot chromatically"},{"bar_offset":7,"beat_offset":2,"chord_id":"a7sus","emphasis":0.86,"purpose":"Create dominant suspension"}],"active_voices":["core_drums","sub_bass","harmonic_foundation","harmonic_pulse","lead"],"kick_state":"four_on_floor","kick_continuity":"required","percussion_density":0.7,"rhythmic_syncopation":0.5,"swing":0.1,"rhythm_motif_id":"A","rhythm_mutations":[{"bar_offset":6,"lane":"low_percussion","operation":"shift","step":5,"amount":1,"velocity":72,"purpose":"Answer the phrase"}],"rhythm_gestures":[{"bar_offset":7,"type":"drop_last_kick","beat":3,"intensity":0.6},{"bar_offset":15,"type":"double_kick","beat":3.75,"intensity":0.75}]},
         {"name":"Coda","function":"Resolve the argument","harmonic_direction":"Final tonic","motif_treatment":"Cadential recall","bars":8,"energy":0.3,"tension":0.1,"density":0.3,"motif_variant":0,"tonal_center_pitch_class":2,"mode_hint":"D minor home","harmonic_events":[{"bar_offset":0,"beat_offset":0,"chord_id":"a7sus","emphasis":0.58,"purpose":"Prepare resolution"},{"bar_offset":4,"beat_offset":0,"chord_id":"dm9","emphasis":0.9,"purpose":"Resolve home"}],"active_voices":["sub_bass","harmonic_foundation","lead","atmosphere"],"kick_state":"muted","kick_continuity":"sectional","percussion_density":0.2,"rhythmic_syncopation":0.1,"swing":0.05,"rhythm_motif_id":"A","rhythm_mutations":[],"rhythm_gestures":[]}
@@ -801,6 +831,12 @@ int main(int argc, char** argv) {
                 std::abs(parsedSongPlan.sections[1].harmonicEvents[1].beatOffset - 2.0) < 0.001 &&
                 parsedSongPlan.sections[1].rhythm.mutations.size() == 1 &&
                 parsedSongPlan.sections[1].rhythm.gestures.size() == 2 &&
+                parsedSongPlan.performanceScore.cells.size() == 1 &&
+                parsedSongPlan.performanceScore.placements.size() == 1 &&
+                parsedSongPlan.performanceScore.placements.front().invertContour &&
+                parsedSongPlan.performanceScore.placements.front().voiceMap.size() == 1 &&
+                parsedSongPlan.performanceScore.placements.front().voiceMap.front().to ==
+                    pulso::VoiceId::Countermelody &&
                 std::any_of(parsedSongPlan.voices.begin(), parsedSongPlan.voices.end(), [](const auto& voice) {
                     return voice.id == pulso::VoiceId::Lead && voice.performance.authored &&
                            voice.performance.vibrato == pulso::VibratoStyle::LateExpressive &&
@@ -823,6 +859,20 @@ int main(int argc, char** argv) {
                            event.type == pulso::ExpressionEventType::PolyAftertouch;
                 }),
             "AI-authored performance intent must reach note-level bends and aftertouch");
+    require(std::any_of(authoredPerformance.notes.begin(), authoredPerformance.notes.end(),
+                [](const auto& note) {
+                    return note.voice == pulso::VoiceId::Countermelody &&
+                           std::abs(note.startBeat - 32.375) < 0.001;
+                }),
+            "The explicit AI performance must preserve its first authored onset through a voice mapping");
+    require(std::none_of(authoredPerformance.notes.begin(), authoredPerformance.notes.end(),
+                [](const auto& note) {
+                    return note.voice == pulso::VoiceId::Countermelody &&
+                           note.startBeat >= 32.0 && note.startBeat < 48.0 &&
+                           std::abs(std::fmod(note.startBeat - 32.0, 4.0) - 0.375) > 0.001 &&
+                           std::abs(std::fmod(note.startBeat - 32.0, 4.0) - 2.25) > 0.001;
+                }),
+            "The explicit AI performance must replace only the mapped response voice");
     const auto authoredSubBarBeat = (8.0 + 7.0) * 4.0 + 2.0;
     require(std::any_of(authoredPerformance.notes.begin(), authoredPerformance.notes.end(),
                 [&](const auto& note) {
@@ -1280,6 +1330,16 @@ int main(int argc, char** argv) {
         {0.0, 0.25, 36, 110, 10, pulso::VoiceId::CoreDrums, 1},
         {0.0, 4.0, 60, 82, 3, pulso::VoiceId::HarmonicFoundation, 2},
         {1.0, 1.0, 67, 96, 2, pulso::VoiceId::Lead, 3}};
+    deploymentPattern.controls = {
+        {0.0, 11, 58, 2, pulso::VoiceId::Lead, 0},
+        {1.0, 74, 92, 2, pulso::VoiceId::Lead, 3},
+        {0.0, 64, 96, 3, pulso::VoiceId::HarmonicFoundation, 2},
+        {2.0, 64, 0, 3, pulso::VoiceId::HarmonicFoundation, 2}};
+    deploymentPattern.expressions = {
+        {1.0, pulso::ExpressionEventType::PitchBend, 8700, -1, 2,
+         pulso::VoiceId::Lead, 0},
+        {1.5, pulso::ExpressionEventType::PolyAftertouch, 72, 67, 2,
+         pulso::VoiceId::Lead, 3}};
     deploymentPattern.parts[0].liveDevice = "Drum Rack";
     deploymentPattern.parts[0].livePresetIntent = "tight modern acoustic kick";
     deploymentPattern.parts[1].liveDevice = "Electric";
@@ -1297,8 +1357,11 @@ int main(int argc, char** argv) {
         bridgeTestDirectory.getChildFile("request.json").loadFileAsString());
     auto* deploymentObject = deploymentJson.getDynamicObject();
     require(deploymentObject != nullptr &&
-                static_cast<int>(deploymentObject->getProperty("schema_version")) == 3 &&
+                static_cast<int>(deploymentObject->getProperty("schema_version")) == 5 &&
                 deploymentObject->getProperty("sound_engine").toString() == "ableton_live_native" &&
+                deploymentObject->getProperty("expression_delivery").toString() ==
+                    "native_editable_with_lossless_midi_source" &&
+                deploymentObject->getProperty("sound_world").toString().isNotEmpty() &&
                 deploymentObject->getProperty("deployment_mode").toString() == "full_orchestration" &&
                 deploymentObject->getProperty("tracks").getArray() != nullptr &&
                 deploymentObject->getProperty("tracks").getArray()->size() == 3,
@@ -1310,6 +1373,10 @@ int main(int argc, char** argv) {
                        track->getProperty("native_device").toString().isNotEmpty() &&
                        track->getProperty("playback_mode").toString().isNotEmpty() &&
                        track->getProperty("same_pitch_overlap_policy").toString() == "trim_previous" &&
+                       track->getProperty("controls").getArray() != nullptr &&
+                       track->getProperty("expressions").getArray() != nullptr &&
+                       static_cast<int>(track->getProperty("expression_projection_version")) == 1 &&
+                       track->getProperty("sound_world").toString().isNotEmpty() &&
                        track->getProperty("device_candidates").getArray() != nullptr;
             }), "Every deployed part must carry a validated Live-native sound contract without VST identifiers");
     const auto* kickDeployment = (*nativeTracks)[0].getDynamicObject();
@@ -1322,6 +1389,9 @@ int main(int argc, char** argv) {
                 kickCandidates->contains("808 Core Kit.adg") && !kickCandidates->contains("Drum Rack"),
             "Rhythm deployment must fall back to populated kits, never an empty Drum Rack container");
     const auto* violinDeployment = (*nativeTracks)[2].getDynamicObject();
+    require(violinDeployment != nullptr && violinDeployment->getProperty("controls").getArray()->size() == 2 &&
+                violinDeployment->getProperty("expressions").getArray()->size() == 2,
+            "Voice-level and part-level performance curves must follow each instrument into Live");
     const auto* violinCandidates = violinDeployment->getProperty("device_candidates").getArray();
     require(violinCandidates != nullptr && violinCandidates->contains("violin 1 orchestral") &&
                 !violinCandidates->contains("Instrument Rack") && violinCandidates->contains("Wavetable"),
@@ -1343,6 +1413,13 @@ int main(int argc, char** argv) {
                 const auto* track = value.getDynamicObject();
                 return track != nullptr && track->getProperty("catalog_id").toString().isNotEmpty();
             }), "Quick stems must also carry a strict musical identity for native sound resolution");
+    auto rejectedDeployment = deploymentPattern;
+    rejectedDeployment.productionAuditPerformed = true;
+    rejectedDeployment.productionReady = false;
+    require(!pulso::plugin::writeLiveDeploymentRequest(
+                rejectedDeployment, deployment, deploymentStatus, bridgeTestDirectory) &&
+                deploymentStatus.contains("PRODUCTION GATE"),
+            "Live deployment must reject an audited score that failed production readiness");
     bridgeTestDirectory.deleteRecursively();
 
     ensembleFile.deleteFile();

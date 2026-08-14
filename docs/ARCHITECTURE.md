@@ -21,6 +21,7 @@ pulso_core
 ├── Random determinista
 ├── CompositionPlan + intérpretes por rol
 ├── SongPlan + catálogo de orquestación
+├── PerformanceScore + scheduler de interpretación explícita
 └── OrchestrationScore + crítico instrumental posterior al render
 ```
 
@@ -37,6 +38,12 @@ El callback de audio:
 - Envía contextos y recibe patrones mediante colas SPSC de capacidad fija.
 - Programa note-on y note-off en offsets de muestra calculados desde PPQ/BPM.
 - Mantiene un registro acotado de notas generadas activas.
+
+La publicación worker→audio usa una cola SPSC y un mailbox de overflow coalescente. Si
+Live suspende `processBlock`, la cola puede llenarse, pero el worker conserva únicamente
+el resultado más reciente en el mailbox y termina la operación inmediatamente. El callback
+consulta ese slot con `try-lock`: nunca espera al worker ni deja el overlay de composición
+activo indefinidamente.
 
 Desde 0.2.1, la generación ocurre exclusivamente en un `jthread` dedicado. El worker puede usar
 los contenedores dinámicos del core sin bloquear el callback. Antes de publicar,
@@ -105,6 +112,10 @@ a muestras y añade únicamente los eventos que caen dentro de ese intervalo.
 normaliza a una rejilla de semicorcheas; note-off y CC usan una rejilla fina de 1/64 para
 conservar legato, staccato, releases y respiración. Por eso preview apagado, archivos
 arrastrados y sesiones restauradas parten de ataques exactos sin destruir articulación.
+Los eventos de `PerformanceScore` conservan en cambio su tiempo explícito mediante
+`authoredTiming`, incluyendo tuplets y anticipaciones fuera de esa rejilla. Ese indicador
+también se persiste en el estado binario v8, por lo que restaurar un proyecto no recuantiza
+la interpretación escrita por la IA.
 `HUMAN PERFORMANCE`
 no muta ese patrón: el scheduler añade una sola desviación determinista y acotada en
 milisegundos. Kick y foundation permanecen exactos; backbeat, hats, percusión, bajo y
@@ -133,6 +144,42 @@ pulse, upper y atmosphere reciben realizaciones distintas del mismo momento arm�
 repetición exacta, saltos, rango dinámico, densidad y claridad; repara solapamientos
 monofónicos, limita acumulación no rítmica y publica curvas CC11 de frase. `TonalContract`
 vuelve a validar el resultado revisado antes de que el worker lo publique.
+
+## Puerta de producción 0.30
+
+`ProductionPolish` opera sobre la representación que realmente recibirá Live, después de
+orquestación, transposición de tesitura, articulación y reparación tonal. El orden final es:
+
+1. convergencia tonal sobre partes realizadas;
+2. eliminación de propiedad MIDI solapada;
+3. expresión por voz y por instrumento;
+4. contrato métrico de publicación;
+5. nueva convergencia de note-offs sobre la rejilla final;
+6. compactación de expresión por frase audible;
+7. auditoría inmutable y sello de producción.
+
+La auditoría bloquea publicación únicamente cuando encuentra corrupción objetiva: timing
+fuera de contrato, notas o duraciones inválidas, eventos sin una parte existente, cromatismo
+no permitido, sustains armónicamente inválidos o colisiones verticales no resueltas. Las
+rachas rítmicas, tensiones diatónicas, claridad de registro, balance de familias y densidad
+expresiva afectan la puntuación y quedan registradas como advertencias; nunca eliminan una
+canción válida. Un ostinato, un ensemble de cámara o una tensión preparada pueden ser una
+decisión compositiva deliberada.
+
+La compactación construye intervalos audibles por `partId + VoiceId`. CC1, CC11, CC74,
+pedal, pressure y bends que caen durante silencio se eliminan; dentro de cada frase se
+conservan inicio, final y cambios perceptualmente significativos, con un máximo de seis
+puntos por curva. Los mensajes RPN de configuración permanecen intactos.
+
+`TimbrePalette` precede a `InstrumentAssignment`: describe un mundo global de material,
+profundidad, calidez, brillo, definición transiente, balance acústico/electrónico, cohesión
+y contraste. El resolver de Live mantiene identidad instrumental como contrato duro y usa
+la paleta sólo para desempatar candidatos de la familia correcta.
+
+Las pasadas GPT de arquitectura y crítica son trabajos largos de Responses API. Se inician
+con `background: true`, conservan el ID de respuesta y sólo consultan mientras el estado sea
+`queued` o `in_progress`. Cancelar propaga `POST /v1/responses/{id}/cancel`; los fallos
+transitorios de una consulta se reintentan sin bloquear el callback de audio.
 
 ## Localización y superficie de control
 
@@ -186,6 +233,22 @@ entrante durante la reproducción.
 produce un plan jerárquico con título, tonalidad, intención, voces, funciones, registros,
 interacciones y presencia por sección. No se aceptan identificadores de voz libres: el
 esquema limita la respuesta al catálogo conocido por el renderer.
+
+`PerformanceScore` cambia la frontera de autoridad. GPT puede entregar células con eventos
+nota por nota y CC, declarar qué voces posee cada célula y colocarlas a lo largo de cualquier
+sección. El renderer procedural se ejecuta como respaldo y luego se elimina únicamente en
+las voces poseídas, incluyendo sus silencios deliberados. Los eventos explícitos se insertan
+después del fraseo procedural para conservar sus ataques y pasan después por tesitura,
+contrato tonal, note-off seguro, expresión y realización orquestal.
+
+Las células admiten duración libre y timing con intención declarada; no están restringidas a ocho o
+dieciséis pasos. `strict_grid` es el contrato predeterminado, `tuplet` preserva ratios
+ternarios y `deliberate_displacement` reserva el timing libre para anticipaciones o fases
+métricas con función estructural. Los placements aportan repetición, transposición, velocidad y time scaling,
+lo que mantiene acotado el JSON de obras extensas. La normalización limita memoria, valida
+referencias y calcula fingerprints musicales sin incluir el nombre de la célula. El crítico
+recibe cantidad de células, notas explícitas y duplicados exactos y puede reescribir las
+partes débiles conservando el material válido.
 Una segunda llamada actúa como compositor-crítico. Antes de invocarla, el core renderiza
 el primer plan y produce un informe compacto con ventanas armónicas, notas cromáticas no
 justificadas, apoyos fuera del acorde, sustains inválidos, colisiones verticales, reparaciones
@@ -280,11 +343,18 @@ anterior al playhead antes de reactivar notas solapadas.
 preview, locks, slicing, exportación multitrack y estado binario versión 3 conservan ambos.
 El preview interpreta bend, sustain, pressure y aftertouch además de CC11/1/74.
 
+Desde 0.29, `PerformancePlacement` incorpora `voiceMap`, propósito narrativo, fragmento,
+retrogradación e inversión de contorno. La misma célula puede establecerse en una familia y
+ser contestada o transformada por otra sin copiar notas a unísono. El schema describe las
+operaciones disponibles pero no prescribe género, progresión ni combinación instrumental.
+La auditoría informa mappings, transformaciones y número de voces en diálogo a la segunda
+pasada GPT.
+
 Los locks y filtros de exportación operan sobre identidad y familia de voz, no sólo
 sobre canal MIDI. Por eso dos capas que comparten canal siguen siendo pistas separadas
 en el archivo multitrack y pueden conservarse o arrastrarse de forma independiente.
 
-## Live Native Sound Director 0.26
+## Live Native Sound Director 0.29
 
 PULSO no aloja otros instrumentos dentro de su proceso. `InstrumentAssignment` declara
 un dispositivo nativo y una intención de preset; `LiveDeployer` publica el contrato JSON
@@ -292,6 +362,12 @@ y `PulsoDeployRemote` lo resuelve contra un inventario incremental del Browser d
 El índice excluye explícitamente `Plug-Ins`. La carga se serializa por pista para mantener
 responsiva la interfaz y el estado distingue coincidencias, fallbacks y faltantes.
 Consulta `docs/SOUND_STAGE.md` para el protocolo completo.
+
+`LiveDeployer` schema 5 publica CC y eventos expresivos junto a cada parte, la paleta tímbrica
+global y el resultado de la puerta de producción. El Remote Script
+los convierte en propiedades extendidas de nota de Live 12 cuando están disponibles y en
+una proyección portable de velocidad, release y sustain en hosts legacy. El MIDI multitrack
+continúa siendo la representación cruda sin pérdida para curvas de pitch y pressure.
 
 ## Dirección rítmica
 
@@ -329,8 +405,8 @@ voces preservando memoria entre secciones y distribuye el resultado entre founda
 pulse, upper y atmosphere. `PhraseComposer` consulta esa misma línea temporal para el bajo
 y las notas estructurales de melodía. En `consolidated`, `TonalContract` exige la intersección
 entre acorde y escala en todo apoyo estructural: un acorde declarado por GPT no puede
-autorizar por sí solo una nota externa. El único cromatismo local admisible es breve, débil,
-con entrada por grado conjunto y resolución inmediata por grado conjunto. Las políticas más
+autorizar por sí solo una nota externa. Desde 0.30, `consolidated` no conserva tampoco
+cromatismos de paso: la garantía es literalmente cero pitch classes externas. Las políticas más
 amplias conservan color sólo dentro del límite solicitado y la auditoría final se ejecuta
 después de articulación, releases y orquestación.
 
@@ -368,3 +444,20 @@ explícitos; ya no proceden del stream continuo del ensemble. Una segunda pasada
 microtiming correlacionado por función, arcos de velocidad
 y pequeñas variaciones de duración. Las decisiones proceden de ADN, sección y posición,
 por lo que son naturales pero reproducibles, no jitter aleatorio.
+
+`PerformanceScore` superpone la escritura note-level de GPT sin apropiarse de una sección
+completa: cada placement crea spans de propiedad por voz y por intervalo. Sólo los eventos
+procedurales que intersectan esos spans son sustituidos. El auditor de continuidad calcula
+el mayor vacío global antes y después del refinamiento; un vacío absoluto superior a cuatro
+compases recibe anclas tonales de baja intensidad en una parte orquestal exportable y se
+informa a la pasada crítica para que la siguiente revisión lo resuelva compositivamente.
+Repeticiones de placements, runs literales y barras renderizadas repetidas también forman
+parte de esa crítica. Como última defensa, el crítico rompe una tercera copia literal de
+percusión mediante espacio negativo determinista; nunca altera el kick estructural exigido
+por el contrato.
+
+La realización orquestal sólo admite desplazamientos de octava exactos y el contrato tonal
+vuelve a ejecutarse sobre las notas de las partes finales. En Live, la carga serializada de
+dispositivos conserva índices de staging y vuelve a adquirir el objeto `Track` después de cada
+operación asíncrona del Browser; los handles transitorios inválidos se reintentan antes de
+rechazar atómicamente el despliegue.

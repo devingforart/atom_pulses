@@ -161,7 +161,9 @@ def _rank_item(name, path, intent, requested_device, catalog_id=""):
 def select_track_sound(items, spec, used_paths=None):
     """Return (name, path, opaque_item, quality, shared) or None for one track spec."""
     catalog_id = str(spec.get("catalog_id", "")).strip().casefold()
-    intent = str(spec.get("preset_intent", ""))
+    # Identity remains the hard contract; the shared palette resolves ties so a large
+    # ensemble inhabits one sound world instead of selecting unrelated presets.
+    intent = "{} {}".format(spec.get("preset_intent", ""), spec.get("sound_world", "")).strip()
     requested_device = str(spec.get("native_device", ""))
     used = set(str(path).casefold() for path in (used_paths or ()))
     tiered = []

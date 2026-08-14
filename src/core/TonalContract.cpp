@@ -272,8 +272,8 @@ TonalAuditReport auditTonalContract(const Pattern& pattern, int rootPitchClass, 
         if (structural && (!inChord || (policy == TonalPolicy::Consolidated && !inScale))) {
             ++report.strongNonChordNotes;
             addIssue(report, note.startBeat, note.voice, note.pitch, "strong_non_chord");
-        } else if (!inScale && !inChord &&
-                   !validPassingTone(pattern, noteIndex, rootPitchClass, scale, 0.36)) {
+        } else if (!inScale && (policy == TonalPolicy::Consolidated ||
+                   (!inChord && !validPassingTone(pattern, noteIndex, rootPitchClass, scale, 0.36)))) {
             ++report.unsupportedChromaticNotes;
             addIssue(report, note.startBeat, note.voice, note.pitch, "unsupported_chromatic");
         }
@@ -347,7 +347,7 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
         const auto inChord = containsPitchClass(allowed, note.pitch);
         const auto strong = strongMetricPosition(note.startBeat, beatsPerBar, window);
         const auto passingDuration = policy == TonalPolicy::Consolidated ? 0.25 : 0.36;
-        if (policy != TonalPolicy::Free && !inScale && !strong && acceptedChromatic < maximumChromatic &&
+        if (policy != TonalPolicy::Consolidated && policy != TonalPolicy::Free && !inScale && !strong && acceptedChromatic < maximumChromatic &&
             validPassingTone(pattern, index, rootPitchClass, scale, passingDuration)) {
             ++acceptedChromatic;
             ++report.intentionalChromaticNotes;

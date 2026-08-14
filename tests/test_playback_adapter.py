@@ -1,7 +1,7 @@
 import unittest
 
 from ableton.PulsoDeployRemote.playback_adapter import (
-    adapt_notes, build_drum_pitch_map, expand_percussion_specs,
+    adapt_notes, build_drum_pitch_map, expand_percussion_specs, project_expression,
 )
 
 
@@ -48,6 +48,28 @@ class PlaybackAdapterTests(unittest.TestCase):
         self.assertEqual(len(expanded), 2)
         self.assertEqual([item["preset_intent"] for item in expanded], ["closed hat", "pedal hat"])
         self.assertEqual([item["notes"][0]["pitch"] for item in expanded], [42, 44])
+
+    def test_expression_is_projected_into_portable_live_note_properties(self):
+        notes, report = project_expression({
+            "controls": [
+                {"beat": 0, "controller": 11, "value": 42},
+                {"beat": 2, "controller": 11, "value": 118},
+                {"beat": 0, "controller": 1, "value": 54},
+                {"beat": 0, "controller": 64, "value": 96},
+                {"beat": 1.5, "controller": 64, "value": 0},
+            ],
+            "expressions": [{"beat": 0, "type": "channel_pressure", "value": 48}],
+        }, [
+            {"pitch": 60, "start": 0, "duration": 0.5, "velocity": 90},
+            {"pitch": 64, "start": 2, "duration": 0.5, "velocity": 90},
+        ])
+        self.assertLess(notes[0]["velocity"], notes[1]["velocity"])
+        self.assertEqual(notes[0]["duration"], 1.5)
+        self.assertIn("velocity_deviation", notes[0])
+        self.assertIn("release_velocity", notes[0])
+        self.assertEqual(report["controls_received"], 5)
+        self.assertEqual(report["expressions_received"], 1)
+        self.assertEqual(report["sustain_extensions"], 1)
 
 
 if __name__ == "__main__":

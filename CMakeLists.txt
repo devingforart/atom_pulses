@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.26.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.30.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,6 +32,10 @@ add_library(pulso_core STATIC
     src/core/PerformanceTiming.h
     src/core/PerformanceExpression.cpp
     src/core/PerformanceExpression.h
+    src/core/PerformanceScore.cpp
+    src/core/PerformanceScore.h
+    src/core/ProductionPolish.cpp
+    src/core/ProductionPolish.h
     src/core/PhraseComposer.cpp
     src/core/PhraseComposer.h
     src/core/PhraseDirector.cpp

@@ -38,9 +38,10 @@ double human(std::uint64_t seed, int absoluteBar, int lane, int ordinal) noexcep
 }
 
 void addHit(Pattern& pattern, double beat, int pitch, int velocity, VoiceId voice,
-            double duration = 0.07) {
+            double duration = 0.07, bool authoredTiming = false) {
     if (beat < 0.0 || beat >= pattern.lengthBeats) return;
-    pattern.notes.push_back({beat, duration, pitch, std::clamp(velocity, 1, 127), 10, voice});
+    pattern.notes.push_back({beat, duration, pitch, std::clamp(velocity, 1, 127), 10, voice, 0,
+                             authoredTiming});
 }
 
 std::vector<double> kickQuarterBeats(KickState state) {
@@ -235,7 +236,7 @@ void applyMutations(Pattern& pattern, const SongPlan& plan, const SongSection& s
             const auto count = std::clamp(mutation.amount, 2, 4);
             for (auto repeat = 1; repeat < count; ++repeat)
                 addHit(pattern, target + repeat * stepDuration / count, info.pitch,
-                       std::max(1, mutation.velocity - repeat * 5), info.voice, 0.035);
+                       std::max(1, mutation.velocity - repeat * 5), info.voice, 0.035, true);
         }
     }
 }

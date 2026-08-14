@@ -16,6 +16,10 @@ Cada parte contiene:
 - `device_candidates`: intentos ordenados para resolver contenido instalado.
 - función orquestal, articulación, divisi y prominencia.
 
+El request incluye además una `sound_world` compartida. Identidad y familia siguen siendo
+restricciones fuertes; la paleta global sólo ordena candidatos compatibles para que todas
+las pistas pertenezcan al mismo espacio tímbrico.
+
 GPT sólo puede elegir `Drum Rack`, `Instrument Rack`, `Simpler`, `Sampler`, `Drift`,
 `Meld`, `Wavetable`, `Operator`, `Analog`, `Electric`, `Tension`, `Collision` o
 `Granulator III`. La normalización rechaza cualquier otro valor.
@@ -56,7 +60,13 @@ anterior para que su note-off no silencie el ataque siguiente.
 El despliegue es transaccional: preflight resuelve todas las identidades antes de crear
 staging; las pistas anteriores sólo se eliminan después de verificar cada dispositivo,
 pad, remapeo y clip nuevo. Un fallo elimina el staging y conserva el despliegue previo.
-El reporte del botón `CREATE IN LIVE` muestra preset, calidad, adaptación y estado por pista.
+El contrato schema 5 incluye `controls`, `expressions`, paleta tímbrica y score de producción.
+El puente interpola las
+curvas de manera lineal y proyecta su interpretación sobre velocity, velocity deviation,
+release velocity y duración/sustain. Si Live expone `add_new_notes`, usa las propiedades
+extendidas de nota; de lo contrario conserva la misma intención audible mediante notas
+legacy ya modeladas. El reporte de `CREATE IN LIVE` muestra cuántos controles recibió,
+cuántas notas modificó, qué sustain extendió y qué API de inserción utilizó.
 
 El inventario publica además identidades exactas, sustituciones familiares y ausencias.
 PULSO incluye ese resumen en el contexto de GPT para que la orquestación nazca ejecutable
@@ -68,7 +78,8 @@ con el contenido instalado, sin convertir el inventario en una plantilla creativ
 GPT SongPlan
   -> InstrumentAssignment(native_device, preset_intent)
   -> OrchestrationScore / Pattern(partId)
-  -> request.json schema 3
+  -> ProductionPolish (metric + tonal + rhythm + expression gate)
+  -> request.json schema 5 (notes + controls + expressions + sound world)
   -> PulsoDeployRemote
        -> pistas + clips MIDI
        -> resolución contra inventario nativo
@@ -87,5 +98,6 @@ crear o reemplazar pistas. Abrir PULSO, abrir un Set o reiniciar Live nunca desp
 transporte/editor y no pueden iniciar un despliegue aunque Live restaure el foco allí.
 
 La preescucha integrada sigue disponible para componer antes del despliegue. Es ligera y
-no pretende reemplazar la producción nativa de Live. El MIDI multitrack arrastrado sigue
-siendo la ruta canónica para conservar CC, bends, pressure y metaeventos completos.
+no pretende reemplazar la producción nativa de Live. `CREATE IN LIVE` conserva una
+proyección audible y editable de la interpretación; el MIDI multitrack arrastrado permanece
+como representación sin pérdida de CC, bends, pressure y metaeventos crudos completos.

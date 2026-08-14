@@ -1,6 +1,7 @@
 #include "LiveDeployer.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace pulso::plugin {
 namespace {
@@ -30,6 +31,66 @@ bool isSilentContainer(const juce::String& device) {
     return device == "Drum Rack" || device == "Instrument Rack" || device == "Sampler" ||
            device == "Simpler" || device == "Drum Sampler" || device == "Impulse" ||
            device == "External Instrument";
+}
+
+juce::String expressionTypeName(ExpressionEventType type) {
+    if (type == ExpressionEventType::ChannelPressure) return "channel_pressure";
+    if (type == ExpressionEventType::PolyAftertouch) return "poly_aftertouch";
+    return "pitch_bend";
+}
+
+template <typename Matcher>
+void addPerformanceProperties(juce::DynamicObject& track, const Pattern& pattern, Matcher&& matches) {
+    juce::Array<juce::var> controls;
+    std::vector<const ControlEvent*> selectedControls;
+    for (const auto& control : pattern.controls) {
+        if (!matches(control.partId, control.voice)) continue;
+        const auto duplicate = std::find_if(selectedControls.begin(), selectedControls.end(), [&](const auto* item) {
+            return std::abs(item->beat - control.beat) < 0.0001 && item->controller == control.controller &&
+                   item->channel == control.channel;
+        });
+        if (duplicate != selectedControls.end()) {
+            if ((*duplicate)->partId == 0 && control.partId != 0) *duplicate = &control;
+            continue;
+        }
+        selectedControls.push_back(&control);
+    }
+    for (const auto* selected : selectedControls) {
+        const auto& control = *selected;
+        auto* item = new juce::DynamicObject();
+        item->setProperty("beat", control.beat);
+        item->setProperty("controller", control.controller);
+        item->setProperty("value", control.value);
+        item->setProperty("channel", control.channel);
+        controls.add(juce::var(item));
+    }
+    juce::Array<juce::var> expressions;
+    std::vector<const ExpressionEvent*> selectedExpressions;
+    for (const auto& expression : pattern.expressions) {
+        if (!matches(expression.partId, expression.voice)) continue;
+        const auto duplicate = std::find_if(selectedExpressions.begin(), selectedExpressions.end(), [&](const auto* item) {
+            return std::abs(item->beat - expression.beat) < 0.0001 && item->type == expression.type &&
+                   item->note == expression.note && item->channel == expression.channel;
+        });
+        if (duplicate != selectedExpressions.end()) {
+            if ((*duplicate)->partId == 0 && expression.partId != 0) *duplicate = &expression;
+            continue;
+        }
+        selectedExpressions.push_back(&expression);
+    }
+    for (const auto* selected : selectedExpressions) {
+        const auto& expression = *selected;
+        auto* item = new juce::DynamicObject();
+        item->setProperty("beat", expression.beat);
+        item->setProperty("type", expressionTypeName(expression.type));
+        item->setProperty("value", expression.value);
+        item->setProperty("note", expression.note);
+        item->setProperty("channel", expression.channel);
+        expressions.add(juce::var(item));
+    }
+    track.setProperty("controls", controls);
+    track.setProperty("expressions", expressions);
+    track.setProperty("expression_projection_version", 1);
 }
 
 void addNativeSoundProperties(juce::DynamicObject& track, const juce::String& device,
@@ -66,6 +127,13 @@ void addNativeSoundProperties(juce::DynamicObject& track, const juce::String& de
     track.setProperty("mixer_gain_db", juce::jlimit(-18.0, 0.0, -12.0 + prominence * 10.0));
 }
 
+void addSoundWorldProperties(juce::DynamicObject& track, const Pattern& pattern) {
+    track.setProperty("sound_world", juce::String::fromUTF8(pattern.soundWorld.c_str()));
+    track.setProperty("sound_warmth", pattern.soundWarmth);
+    track.setProperty("sound_brightness", pattern.soundBrightness);
+    track.setProperty("acoustic_electronic_balance", pattern.acousticElectronicBalance);
+}
+
 } // namespace
 
 bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOptions& options,
@@ -74,8 +142,12 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
         statusMessage = "COMPOSE A SONG BEFORE DEPLOYING";
         return false;
     }
+    if (pattern.productionAuditPerformed && !pattern.productionReady) {
+        statusMessage = "PRODUCTION GATE BLOCKED INVALID SCORE";
+        return false;
+    }
     auto root = new juce::DynamicObject();
-    root->setProperty("schema_version", 3);
+    root->setProperty("schema_version", 5);
     root->setProperty("request_id", juce::Uuid().toString());
     root->setProperty("created_utc_ms", juce::Time::getCurrentTime().toMilliseconds());
     root->setProperty("title", options.title.isNotEmpty() ? options.title : "PULSO Song");
@@ -87,6 +159,9 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
         options.aggregateDepartmentStems ? "quick_3_stem" : "full_orchestration");
 
     root->setProperty("sound_engine", "ableton_live_native");
+    root->setProperty("expression_delivery", "native_editable_with_lossless_midi_source");
+    root->setProperty("production_score", pattern.productionScore);
+    root->setProperty("sound_world", juce::String::fromUTF8(pattern.soundWorld.c_str()));
 
     juce::Array<juce::var> tracks;
     if (options.aggregateDepartmentStems) {
@@ -124,6 +199,17 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
                                                          "expressive foreground voice", 0.72, department,
                 department == ScoreDepartment::Rhythm ? "production_drums" :
                 department == ScoreDepartment::Harmony ? "harmonic_ensemble" : "foreground_voice");
+            addSoundWorldProperties(*track, pattern);
+            addPerformanceProperties(*track, pattern, [&](std::uint16_t partId, VoiceId voice) {
+                if (partId != 0) {
+                    const auto found = std::find_if(pattern.parts.begin(), pattern.parts.end(),
+                        [&](const auto& part) { return part.id == partId; });
+                    return found != pattern.parts.end() && found->department == department;
+                }
+                return std::any_of(pattern.parts.begin(), pattern.parts.end(), [&](const auto& part) {
+                    return part.department == department && part.sourceVoice == voice;
+                });
+            });
             track->setProperty("notes", notes);
             tracks.add(juce::var(track));
         }
@@ -154,6 +240,10 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
         addNativeSoundProperties(*track, juce::String::fromUTF8(part.liveDevice.c_str()),
             juce::String::fromUTF8(part.livePresetIntent.c_str()), part.prominence,
             part.department, juce::String::fromUTF8(part.catalogId.c_str()));
+        addSoundWorldProperties(*track, pattern);
+        addPerformanceProperties(*track, pattern, [&](std::uint16_t partId, VoiceId voice) {
+            return partId == part.id || (partId == 0 && voice == part.sourceVoice);
+        });
         track->setProperty("notes", notes);
         tracks.add(juce::var(track));
     }

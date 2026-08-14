@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cmath>
 #include <initializer_list>
+#include <set>
 #include <thread>
 
 #if JUCE_WINDOWS
@@ -149,6 +150,12 @@ const juce::String songPlanSchema = R"json({
       "articulation_contrast":{"type":"number"},"family_dialogue":{"type":"number"},
       "hybrid_production":{"type":"number"}
     },"required":["description","ensemble_scale","timbral_motion","foreground_rotation","doubling_restraint","register_separation","chamber_contrast","tutti_rarity","harmonic_depth","counterpoint_activity","divisi_depth","articulation_contrast","family_dialogue","hybrid_production"],"additionalProperties":false},
+    "timbre_palette":{"type":"object","properties":{
+      "description":{"type":"string"},"material":{"type":"string"},"space":{"type":"string"},
+      "warmth":{"type":"number"},"brightness":{"type":"number"},
+      "transient_definition":{"type":"number"},"acoustic_electronic_balance":{"type":"number"},
+      "cohesion":{"type":"number"},"contrast":{"type":"number"}
+    },"required":["description","material","space","warmth","brightness","transient_definition","acoustic_electronic_balance","cohesion","contrast"],"additionalProperties":false},
     "motif_intervals":{"type":"array","items":{"type":"integer"},"minItems":3,"maxItems":8},
     "instruments":{"type":"array","minItems":12,"maxItems":36,"items":{
       "type":"object","properties":{
@@ -157,7 +164,7 @@ const juce::String songPlanSchema = R"json({
         "name":{"type":"string"},
         "source_voice":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]},
         "role":{"type":"string"},"minimum_pitch":{"type":"integer"},"maximum_pitch":{"type":"integer"},
-        "octave_shift":{"type":"integer"},"activity":{"type":"number"},
+        "octave_shift":{"type":"integer","enum":[-24,-12,0,12,24]},"activity":{"type":"number"},
         "prominence":{"type":"number"},"doubling":{"type":"number"},
         "orchestral_function":{"type":"string","enum":["foundation","body","extension","counterpoint","color","transition"]},
         "articulation_intent":{"type":"string","enum":["natural","legato","staccato","detached","sustained","swelling","tremolo","pizzicato","ostinato"]},
@@ -206,6 +213,35 @@ const juce::String songPlanSchema = R"json({
       "required":["id","function","interaction","activity","syncopation","minimum_pitch","maximum_pitch","performance_intent","articulation","dynamic_contour","vibrato","pitch_gesture","expression_depth","brightness","humanization","sustain_pedal"],
       "additionalProperties":false
     }},
+    "performance_score":{"type":"object","properties":{
+      "cells":{"type":"array","minItems":1,"maxItems":64,"items":{
+        "type":"object","properties":{
+          "id":{"type":"string"},"length_beats":{"type":"number"},
+          "owned_voices":{"type":"array","minItems":1,"maxItems":15,"items":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]}},
+          "notes":{"type":"array","maxItems":768,"items":{"type":"object","properties":{
+            "beat":{"type":"number"},"duration":{"type":"number"},"pitch":{"type":"integer"},
+            "velocity":{"type":"integer"},"voice":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]},
+            "metric_intent":{"type":"string","enum":["strict_grid","tuplet","deliberate_displacement"]}
+          },"required":["beat","duration","pitch","velocity","voice","metric_intent"],"additionalProperties":false}},
+          "controls":{"type":"array","maxItems":384,"items":{"type":"object","properties":{
+            "beat":{"type":"number"},"controller":{"type":"integer"},"value":{"type":"integer"},
+            "voice":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]}
+          },"required":["beat","controller","value","voice"],"additionalProperties":false}}
+        },"required":["id","length_beats","owned_voices","notes","controls"],"additionalProperties":false
+      }},
+      "placements":{"type":"array","maxItems":512,"items":{"type":"object","properties":{
+        "cell_id":{"type":"string"},"section_index":{"type":"integer"},"start_beat":{"type":"number"},
+        "repeats":{"type":"integer"},"transpose":{"type":"integer"},
+        "velocity_scale":{"type":"number"},"time_scale":{"type":"number"},"purpose":{"type":"string"},
+        "voice_map":{"type":"array","maxItems":15,"items":{"type":"object","properties":{
+          "from":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]},
+          "to":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]}
+        },"required":["from","to"],"additionalProperties":false}},
+        "retrograde":{"type":"boolean"},"invert_contour":{"type":"boolean"},
+        "inversion_axis":{"type":"integer"},"fragment_start":{"type":"number"},"fragment_end":{"type":"number"},
+        "metric_intent":{"type":"string","enum":["strict_grid","tuplet","deliberate_displacement"]}
+      },"required":["cell_id","section_index","start_beat","repeats","transpose","velocity_scale","time_scale","purpose","voice_map","retrograde","invert_contour","inversion_axis","fragment_start","fragment_end","metric_intent"],"additionalProperties":false}}
+    },"required":["cells","placements"],"additionalProperties":false},
     "sections":{"type":"array","minItems":3,"maxItems":20,"items":{
       "type":"object",
       "properties":{
@@ -257,7 +293,7 @@ const juce::String songPlanSchema = R"json({
       "additionalProperties":false
     }}
   },
-  "required":["title","key","summary","root_pitch_class","mode","rhythm_language","harmonic_language","orchestration_language","chord_palette","motif_intervals","instruments","rhythm_motifs","voices","sections"],
+  "required":["title","key","summary","root_pitch_class","mode","rhythm_language","harmonic_language","orchestration_language","timbre_palette","chord_palette","motif_intervals","instruments","rhythm_motifs","voices","performance_score","sections"],
   "additionalProperties":false
 })json";
 
@@ -309,8 +345,9 @@ struct HttpResponse {
 };
 
 #if JUCE_WINDOWS
-HttpResponse performWindowsRequest(const juce::String& body, const juce::String& apiKey,
-                                   std::stop_token token, std::chrono::milliseconds budget) {
+HttpResponse performSingleRequest(const wchar_t* method, const juce::String& path,
+                                  const juce::String& body, const juce::String& apiKey,
+                                  std::stop_token token, std::chrono::milliseconds budget) {
     HttpResponse result;
     if (token.stop_requested()) {
         result.cancelled = true;
@@ -318,7 +355,7 @@ HttpResponse performWindowsRequest(const juce::String& body, const juce::String&
     }
 
     const auto timeoutMs = std::clamp(static_cast<int>(budget.count()), 1000, 120000);
-    const auto session = WinHttpOpen(L"PULSO/0.17.1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    const auto session = WinHttpOpen(L"PULSO/0.30.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) {
         result.nativeError = GetLastError();
@@ -332,7 +369,7 @@ HttpResponse performWindowsRequest(const juce::String& body, const juce::String&
         WinHttpCloseHandle(session);
         return result;
     }
-    const auto request = WinHttpOpenRequest(connection, L"POST", L"/v1/responses",
+    const auto request = WinHttpOpenRequest(connection, method, path.toWideCharPointer(),
         nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE);
     if (request == nullptr) {
         result.nativeError = GetLastError();
@@ -360,9 +397,10 @@ HttpResponse performWindowsRequest(const juce::String& body, const juce::String&
     const auto headers = juce::String("Content-Type: application/json\r\nAuthorization: Bearer ") +
                          apiKey + "\r\n";
     const auto utf8Body = body.toUTF8();
-    const auto bodyBytes = static_cast<DWORD>(utf8Body.sizeInBytes() - 1);
+    const auto bodyBytes = static_cast<DWORD>(body.isEmpty() ? 0 : utf8Body.sizeInBytes() - 1);
     auto sent = WinHttpSendRequest(request, headers.toWideCharPointer(),
-        static_cast<DWORD>(-1L), const_cast<char*>(utf8Body.getAddress()), bodyBytes, bodyBytes, 0) != FALSE;
+        static_cast<DWORD>(-1L), bodyBytes > 0 ? const_cast<char*>(utf8Body.getAddress()) : nullptr,
+        bodyBytes, bodyBytes, 0) != FALSE;
     if (sent) sent = WinHttpReceiveResponse(request, nullptr) != FALSE;
     if (sent) {
         DWORD status{};
@@ -410,21 +448,20 @@ HttpResponse performWindowsRequest(const juce::String& body, const juce::String&
     result.timedOut = deadlineReached.load(std::memory_order_acquire);
     return result;
 }
-#endif
-
-HttpResponse performRequest(const juce::String& body, const juce::String& apiKey,
-                            std::stop_token token, std::chrono::milliseconds budget) {
-#if JUCE_WINDOWS
-    return performWindowsRequest(body, apiKey, token, budget);
 #else
+HttpResponse performSingleRequest(const char* method, const juce::String& path,
+                                  const juce::String& body, const juce::String& apiKey,
+                                  std::stop_token token, std::chrono::milliseconds budget) {
     HttpResponse result;
     if (token.stop_requested()) {
         result.cancelled = true;
         return result;
     }
 
-    juce::WebInputStream stream(
-        juce::URL("https://api.openai.com/v1/responses").withPOSTData(body), true);
+    auto url = juce::URL("https://api.openai.com" + path);
+    if (juce::String(method) == "POST")
+        url = url.withPOSTData(body.isEmpty() ? "{}" : body);
+    juce::WebInputStream stream(url, true);
     stream.withExtraHeaders("Content-Type: application/json\r\nAuthorization: Bearer " + apiKey + "\r\n")
           .withConnectionTimeout(static_cast<int>(budget.count()));
 
@@ -457,7 +494,92 @@ HttpResponse performRequest(const juce::String& body, const juce::String& apiKey
     result.cancelled = token.stop_requested();
     result.timedOut = deadlineReached.load(std::memory_order_acquire);
     return result;
+}
 #endif
+
+bool responseIdentity(const juce::String& body, juce::String& id, juce::String& status) {
+    const auto parsed = juce::JSON::parse(body);
+    const auto* object = parsed.getDynamicObject();
+    if (object == nullptr) return false;
+    id = object->getProperty("id").toString();
+    status = object->getProperty("status").toString().toLowerCase();
+    return id.isNotEmpty() && status.isNotEmpty();
+}
+
+HttpResponse singleRequest(const bool post, const juce::String& path, const juce::String& body,
+                           const juce::String& apiKey, std::stop_token token,
+                           std::chrono::milliseconds budget) {
+#if JUCE_WINDOWS
+    return performSingleRequest(post ? L"POST" : L"GET", path, body, apiKey, token, budget);
+#else
+    return performSingleRequest(post ? "POST" : "GET", path, body, apiKey, token, budget);
+#endif
+}
+
+void cancelBackgroundResponse(const juce::String& responseId, const juce::String& apiKey) {
+    if (responseId.isEmpty()) return;
+    std::stop_source cancellationRequest;
+    (void) singleRequest(true, "/v1/responses/" + responseId + "/cancel", "{}", apiKey,
+                         cancellationRequest.get_token(), std::chrono::milliseconds(1500));
+}
+
+HttpResponse performRequest(const juce::String& body, const juce::String& apiKey,
+                            std::stop_token token, std::chrono::milliseconds budget) {
+    const auto started = std::chrono::steady_clock::now();
+    const auto deadline = started + budget;
+    const auto initialBudget = std::min(budget, std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                   std::chrono::seconds(30)));
+    auto response = singleRequest(true, "/v1/responses", body, apiKey, token, initialBudget);
+    const auto background = body.contains("\"background\":true");
+    if (!background || !response.connected || response.status < 200 || response.status >= 300 ||
+        response.cancelled || response.timedOut)
+        return response;
+
+    juce::String responseId;
+    juce::String state;
+    if (!responseIdentity(response.body, responseId, state)) return response;
+
+    int transientFailures{};
+    while (state == "queued" || state == "in_progress") {
+        for (int elapsed = 0; elapsed < 2000; elapsed += 25) {
+            if (token.stop_requested()) {
+                cancelBackgroundResponse(responseId, apiKey);
+                response.cancelled = true;
+                return response;
+            }
+            if (std::chrono::steady_clock::now() >= deadline) {
+                cancelBackgroundResponse(responseId, apiKey);
+                response.timedOut = true;
+                return response;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
+        if (remaining <= std::chrono::milliseconds::zero()) {
+            cancelBackgroundResponse(responseId, apiKey);
+            response.timedOut = true;
+            return response;
+        }
+        const auto pollBudget = std::min(remaining, std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                       std::chrono::seconds(30)));
+        auto polled = singleRequest(false, "/v1/responses/" + responseId, {}, apiKey, token, pollBudget);
+        if (polled.cancelled) {
+            cancelBackgroundResponse(responseId, apiKey);
+            return polled;
+        }
+        if (!polled.connected || polled.timedOut) {
+            if (++transientFailures < 3) continue;
+            return polled;
+        }
+        transientFailures = 0;
+        response = std::move(polled);
+        if (response.status < 200 || response.status >= 300 ||
+            !responseIdentity(response.body, responseId, state))
+            return response;
+    }
+    return response;
 }
 
 juce::String apiErrorMessage(const HttpResponse& response) {
@@ -478,7 +600,8 @@ juce::String requestRevisedSongPlan(const juce::String& prompt, const juce::Stri
                                     std::stop_token token, std::chrono::milliseconds budget) {
     if (token.stop_requested()) return {};
     const auto body = juce::String("{\"model\":\"") + model +
-        "\",\"reasoning\":{\"effort\":\"low\"},\"max_output_tokens\":20000,\"input\":" +
+        "\",\"background\":true,\"reasoning\":{\"effort\":\"medium\"},"
+        "\"max_output_tokens\":64000,\"input\":" +
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_plan_critic\","
         "\"strict\":true,\"schema\":" + songPlanSchema + "}}}";
@@ -718,8 +841,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "oboe or synth in different phrases without losing thematic identity. Build chamber reductions, antiphonal "
         "answers, divisi, octave doublings and rare tutti arrivals. Never make every instrument play continuously and "
         "never turn orchestration into indiscriminate unison doubling. Bass remains an independent bridge between "
-        "harmony and rhythm. Write orchestration_language as the global timbral argument and use active_sections to "
-        "reserve colours for meaningful moments. Instrument names must be clear DAW track names. Complexity must come "
+        "harmony and rhythm. Write orchestration_language as the global orchestral argument and author one "
+        "timbre_palette before selecting individual sounds. Its material and space define a single mix world; all "
+        "numeric palette dimensions are 0 to 1. Interpret every live_preset_intent as a relative role inside that "
+        "palette, never as an unrelated sound search. Use active_sections to reserve colours for meaningful moments. "
+        "Instrument names must be clear DAW track names. Complexity must come "
         "from coordinated independence, negative space and long-range development, never indiscriminate density. "
         "Treat active_voices as an available cast, not a command to play continuously: design implied entrances, "
         "responses, withdrawals, breath before arrivals, tension plateaus and genuine low-density descents. "
@@ -773,17 +899,44 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "the user explicitly requests constant quarter-note kick or when a section deliberately mutes it. "
         "The section bars MUST sum exactly to ") + juce::String(totalBars) + ". Use between 5 and 14 sections. Energy, tension "
         "and density are values from 0 to 1. Motif intervals are semitones relative to the "
-        "tonic and form the immutable thematic DNA. Target duration: " + juce::String(targetSeconds) +
+        "tonic and form the immutable thematic DNA. Author the actual performance in performance_score. "
+        "A cell is a compact reusable passage measured in quarter-note beats, not a genre template. Its "
+        "owned_voices are authoritative: their notes and deliberate silences replace local procedural notes "
+        "in every section where the cell is placed. Write independent attacks, releases, pitches and velocities "
+        "for the important rhythm, bass, harmony, melody and texture voices. Use controls for intentional CC1, "
+        "CC11, CC64 or timbral movement. Create contrasting cells for establishment, question, answer, development, "
+        "withdrawal and arrival; never duplicate a cell under another name. placements use a zero-based section_index "
+        "and start_beat relative to that section. A placement owns only its exact time interval; cover every interval "
+        "that must be explicitly authored and leave gaps only when procedural continuity is desired. Never create an "
+        "unmarked global silence longer than two bars. Repetition is permitted only when musically intentional: no "
+        "foreground or bass cell may repeat verbatim more than twice, and a stable percussion cell no more than four "
+        "times before a materially different companion cell answers it. Use new cells and interleaved placements for "
+        "structural variation. Build audible dialogue by reusing strong cells through voice_map: establish an idea in "
+        "one voice, answer it in another, then transform it using time_scale, transpose, fragment boundaries, contour "
+        "inversion or retrograde only when the dramatic purpose calls for it. purpose must state establish, answer, "
+        "transform, withdraw, intensify or resolve in the language of this specific composition; these are relationships, "
+        "not mandatory templates. At least three instrument families must participate in a thematic relationship across "
+        "the full form, but they must not all play simultaneously. octave_shift is strictly an octave displacement: -24, -12, 0, 12 or 24 semitones. "
+        "Every authored note and placement MUST declare metric_intent. Use strict_grid by default. Use tuplet only "
+        "for an audible tuple ratio, and deliberate_displacement only for a structurally intentional anticipation, "
+        "polymetric phase or metric transformation. Undeclared decimal timing is invalid. Keep the score sparse enough to fit: prioritize authored "
+        "foreground, bass, harmonic rhythm and defining percussion, leaving genuinely secondary voices to fallback. "
+        "For consolidated tonality, pitched performance notes must respect the chord and tonal narrative already authored. "
+        "Target duration: " + juce::String(targetSeconds) +
         " seconds; tempo: " + juce::String(bpm, 1) + " BPM; meter: " + juce::String(beatsPerBar, 2) +
         " quarter-note beats per bar. Creative direction: " + direction;
 
     const auto body = juce::String("{\"model\":\"") + model +
-        "\",\"reasoning\":{\"effort\":\"medium\"},\"max_output_tokens\":20000,\"input\":" +
+        "\",\"background\":true,\"reasoning\":{\"effort\":\"high\"},"
+        "\"max_output_tokens\":64000,\"input\":" +
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_plan\","
         "\"strict\":true,\"schema\":" + songPlanSchema + "}}}";
 
-    constexpr auto totalAiBudget = std::chrono::seconds(210);
+    // Full-song architecture can legitimately require several minutes of reasoning. Background
+    // Responses keeps the UI cancellable while short, independently bounded polls avoid a single
+    // fragile HTTP connection owning the full composition lifetime.
+    constexpr auto totalAiBudget = std::chrono::minutes(12);
     const auto aiStarted = std::chrono::steady_clock::now();
     if (progress) progress(AiSongStage::Architecture);
     const auto http = performRequest(body, apiKey, token, totalAiBudget);
@@ -815,6 +968,34 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     [[maybe_unused]] const auto auditedDraft = SongComposer{}.render(
         result, auditFoundation, {}, &draftReport);
     juce::String auditSummary;
+    auto authoredNotes = std::size_t{};
+    std::set<std::uint64_t> performanceFingerprints;
+    auto duplicateCells = std::size_t{};
+    auto verbatimRepeatIterations = std::size_t{};
+    auto longestVerbatimRun = 0;
+    auto mappedDialoguePlacements = std::size_t{};
+    auto transformedPlacements = std::size_t{};
+    std::set<VoiceId> dialogueVoices;
+    for (const auto& cell : result.performanceScore.cells) {
+        authoredNotes += cell.notes.size();
+        if (!performanceFingerprints.insert(PerformanceScoreEngine::fingerprint(cell)).second)
+            ++duplicateCells;
+    }
+    for (const auto& placement : result.performanceScore.placements) {
+        verbatimRepeatIterations += static_cast<std::size_t>(std::max(0, placement.repeats - 1));
+        longestVerbatimRun = std::max(longestVerbatimRun, placement.repeats);
+        if (!placement.voiceMap.empty()) {
+            ++mappedDialoguePlacements;
+            for (const auto& mapping : placement.voiceMap) {
+                dialogueVoices.insert(mapping.from);
+                dialogueVoices.insert(mapping.to);
+            }
+        }
+        if (placement.retrograde || placement.invertContour ||
+            std::abs(placement.timeScale - 1.0) > 0.001 ||
+            placement.fragmentStart > 0.001)
+            ++transformedPlacements;
+    }
     auditSummary << "\nDeterministic MIDI render audit (the critic must reduce these causes, not merely rename them):\n"
                  << "harmonic_windows=" << static_cast<int>(draftReport.harmonicWindows)
                  << ", pitched_notes=" << draftReport.finalTonalPass.before.pitchedNotes
@@ -836,7 +1017,37 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                  << ", restrained_doublings=" << static_cast<int>(draftReport.orchestration.notesDoubled)
                  << ", chamber_sections=" << static_cast<int>(draftReport.orchestration.chamberSections)
                  << ", tutti_sections=" << static_cast<int>(draftReport.orchestration.tuttiSections)
-                 << ", musical_quality=" << juce::String(draftReport.musical.overall, 3) << ".\n";
+                 << ", musical_quality=" << juce::String(draftReport.musical.overall, 3)
+                 << ", repeated_rendered_bars=" << static_cast<int>(draftReport.musical.repeatedBars)
+                 << ", literal_rhythm_bars_varied="
+                 << static_cast<int>(draftReport.musical.literalRhythmBarsVaried)
+                 << ", longest_global_silence_beats_before="
+                 << juce::String(draftReport.longestGlobalSilenceBefore, 2)
+                 << ", longest_global_silence_beats_after="
+                 << juce::String(draftReport.longestGlobalSilenceAfter, 2)
+                 << ", accidental_silence_windows_repaired="
+                 << static_cast<int>(draftReport.unintendedSilenceWindowsRepaired)
+                 << ", authored_cells=" << static_cast<int>(result.performanceScore.cells.size())
+                 << ", authored_notes=" << static_cast<int>(authoredNotes)
+                 << ", duplicate_authored_cells=" << static_cast<int>(duplicateCells)
+                 << ", verbatim_repeat_iterations=" << static_cast<int>(verbatimRepeatIterations)
+                 << ", longest_verbatim_run=" << longestVerbatimRun << ".\n";
+    auditSummary << "thematic_voice_mappings=" << static_cast<int>(mappedDialoguePlacements)
+                 << ", transformed_placements=" << static_cast<int>(transformedPlacements)
+                 << ", dialogue_voices=" << static_cast<int>(dialogueVoices.size())
+                 << ", production_ready=" << (draftReport.production.ready ? "true" : "false")
+                 << ", production_score=" << juce::String(draftReport.production.score, 3)
+                 << ", metric_violations=" << static_cast<int>(draftReport.production.metricViolations)
+                 << ", expression_events_per_note="
+                 << juce::String(draftReport.production.expressionEventsPerNote, 2)
+                 << ", literal_rhythm_bars=" << static_cast<int>(draftReport.production.literalRhythmBars)
+                 << ", maximum_rhythm_run=" << static_cast<int>(draftReport.production.maximumRhythmRun)
+                 << ", expression_events_before="
+                 << static_cast<int>(draftReport.expression.controlsBefore +
+                                     draftReport.expression.expressionsBefore)
+                 << ", expression_events_after="
+                 << static_cast<int>(draftReport.expression.controlsAfter +
+                                     draftReport.expression.expressionsAfter) << ".\n";
     if (!draftReport.finalTonalPass.before.issues.empty()) {
         auditSummary << "Representative exact-timeline issues:\n";
         for (const auto& issue : draftReport.finalTonalPass.before.issues) {
@@ -869,12 +1080,21 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "kick-bass interlock, meaningful silence, phrase-level cause and effect, orchestral breathing, contrast and "
         "climax. Audit the orchestration as a real score: foreground rotation, playable ranges, family contrast, "
         "chamber-to-tutti development, independent inner voices, restrained doubling and meaningful instrumental rests. "
-        "Repair soloist monopoly, fake symphonic density, four-chord cycling, decorative complexity, generic repetition or arbitrary novelty. Use "
-        "rhythm masks as musical cells and sparse mutations as development; do not merely add density. The final "
+        "Repair soloist monopoly, fake symphonic density, four-chord cycling, decorative complexity, generic repetition or arbitrary novelty. "
+        "Audit performance_score at note level: cells must differ materially in rhythm, contour, register, duration, "
+        "dynamics and ownership; placements must cover the form while preserving real rests. Treat repaired accidental "
+        "silence windows, long verbatim runs and repeated rendered bars as concrete defects: replace them with related "
+        "question/answer or developmental cells, not cosmetic velocity changes. If thematic_voice_mappings is zero or "
+        "dialogue_voices is below three, create meaningful cross-instrument mappings and transformations across separate "
+        "sections; do not merely double the same notes. Rewrite only weak cells "
+        "and their placements while keeping strong material intact. Use rhythm masks as supporting cells and sparse "
+        "mutations as development; do not merely add density. production_ready must become true: strict-grid material "
+        "must be exact, every metric exception must be declared, consolidated tonality must contain zero external "
+        "notes, and expressive controls must be phrase-local rather than continuous through silence. The final "
         "JSON must be self-contained. Original creative direction: ") + direction +
         auditSummary + "\nCandidate plan to critique and revise:\n" + outputText;
     if (const auto revisedText = requestRevisedSongPlan(criticPrompt, apiKey, token,
-            std::min(remaining, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(50))));
+            std::min(remaining, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::minutes(4))));
         revisedText.isNotEmpty()) {
         SongPlan revised;
         juce::String criticError;
@@ -954,6 +1174,17 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
         result.orchestrationLanguage.articulationContrast = static_cast<double>(language->getProperty("articulation_contrast"));
         result.orchestrationLanguage.familyDialogue = static_cast<double>(language->getProperty("family_dialogue"));
         result.orchestrationLanguage.hybridProduction = static_cast<double>(language->getProperty("hybrid_production"));
+    }
+    if (const auto* palette = object->getProperty("timbre_palette").getDynamicObject()) {
+        result.timbrePalette.description = palette->getProperty("description").toString().trim().toStdString();
+        result.timbrePalette.material = palette->getProperty("material").toString().trim().toStdString();
+        result.timbrePalette.space = palette->getProperty("space").toString().trim().toStdString();
+        result.timbrePalette.warmth = static_cast<double>(palette->getProperty("warmth"));
+        result.timbrePalette.brightness = static_cast<double>(palette->getProperty("brightness"));
+        result.timbrePalette.transientDefinition = static_cast<double>(palette->getProperty("transient_definition"));
+        result.timbrePalette.acousticElectronicBalance = static_cast<double>(palette->getProperty("acoustic_electronic_balance"));
+        result.timbrePalette.cohesion = static_cast<double>(palette->getProperty("cohesion"));
+        result.timbrePalette.contrast = static_cast<double>(palette->getProperty("contrast"));
     }
     if (const auto* palette = object->getProperty("chord_palette").getArray()) {
         for (const auto& item : *palette) {
@@ -1158,6 +1389,74 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
     if (result.sections.size() < 3 || reportedBars <= 0) {
         error = "Song plan contains no usable form";
         return false;
+    }
+    if (const auto* performance = object->getProperty("performance_score").getDynamicObject()) {
+        if (const auto* cells = performance->getProperty("cells").getArray()) {
+            for (const auto& cellItem : *cells) {
+                const auto* cell = cellItem.getDynamicObject();
+                if (cell == nullptr) continue;
+                PerformanceCell parsedCell;
+                parsedCell.id = cell->getProperty("id").toString().trim().toStdString();
+                parsedCell.lengthBeats = static_cast<double>(cell->getProperty("length_beats"));
+                if (const auto* owners = cell->getProperty("owned_voices").getArray())
+                    for (const auto& owner : *owners)
+                        if (const auto voice = voiceIdFromKey(owner.toString().toStdString()))
+                            parsedCell.ownedVoices.push_back(*voice);
+                if (const auto* notes = cell->getProperty("notes").getArray())
+                    for (const auto& noteItem : *notes) {
+                        const auto* note = noteItem.getDynamicObject();
+                        if (note == nullptr) continue;
+                        if (const auto voice = voiceIdFromKey(note->getProperty("voice").toString().toStdString()))
+                            parsedCell.notes.push_back({
+                                static_cast<double>(note->getProperty("beat")),
+                                static_cast<double>(note->getProperty("duration")),
+                                static_cast<int>(note->getProperty("pitch")),
+                                static_cast<int>(note->getProperty("velocity")), *voice,
+                                metricIntentFromKey(note->getProperty("metric_intent").toString().toStdString())});
+                    }
+                if (const auto* controls = cell->getProperty("controls").getArray())
+                    for (const auto& controlItem : *controls) {
+                        const auto* control = controlItem.getDynamicObject();
+                        if (control == nullptr) continue;
+                        if (const auto voice = voiceIdFromKey(control->getProperty("voice").toString().toStdString()))
+                            parsedCell.controls.push_back({
+                                static_cast<double>(control->getProperty("beat")),
+                                static_cast<int>(control->getProperty("controller")),
+                                static_cast<int>(control->getProperty("value")), *voice});
+                    }
+                result.performanceScore.cells.push_back(std::move(parsedCell));
+            }
+        }
+        if (const auto* placements = performance->getProperty("placements").getArray())
+            for (const auto& placementItem : *placements) {
+                const auto* placement = placementItem.getDynamicObject();
+                if (placement == nullptr) continue;
+                PerformancePlacement parsedPlacement;
+                parsedPlacement.cellId = placement->getProperty("cell_id").toString().trim().toStdString();
+                parsedPlacement.sectionIndex = static_cast<int>(placement->getProperty("section_index"));
+                parsedPlacement.startBeat = static_cast<double>(placement->getProperty("start_beat"));
+                parsedPlacement.repeats = static_cast<int>(placement->getProperty("repeats"));
+                parsedPlacement.transpose = static_cast<int>(placement->getProperty("transpose"));
+                parsedPlacement.velocityScale = static_cast<double>(placement->getProperty("velocity_scale"));
+                parsedPlacement.timeScale = static_cast<double>(placement->getProperty("time_scale"));
+                parsedPlacement.purpose = placement->getProperty("purpose").toString().trim().toStdString();
+                if (const auto* mappings = placement->getProperty("voice_map").getArray())
+                    for (const auto& mappingItem : *mappings) {
+                        const auto* mapping = mappingItem.getDynamicObject();
+                        if (mapping == nullptr) continue;
+                        const auto from = voiceIdFromKey(mapping->getProperty("from").toString().toStdString());
+                        const auto to = voiceIdFromKey(mapping->getProperty("to").toString().toStdString());
+                        if (from && to) parsedPlacement.voiceMap.push_back({*from, *to});
+                    }
+                parsedPlacement.retrograde = static_cast<bool>(placement->getProperty("retrograde"));
+                parsedPlacement.invertContour = static_cast<bool>(placement->getProperty("invert_contour"));
+                parsedPlacement.inversionAxis = static_cast<int>(placement->getProperty("inversion_axis"));
+                parsedPlacement.fragmentStart = static_cast<double>(placement->getProperty("fragment_start"));
+                parsedPlacement.fragmentEnd = static_cast<double>(placement->getProperty("fragment_end"));
+                parsedPlacement.metricIntent = metricIntentFromKey(
+                    placement->getProperty("metric_intent").toString().toStdString());
+                result.performanceScore.placements.push_back(std::move(parsedPlacement));
+            }
     }
     SongComposer::normalizePlan(result);
     if (result.title.empty()) result.title = "Untitled Song";

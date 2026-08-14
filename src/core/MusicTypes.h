@@ -49,6 +49,7 @@ struct NoteEvent {
     int channel{1};
     VoiceId voice{VoiceId::Unspecified};
     std::uint16_t partId{};
+    bool authoredTiming{};
 
     [[nodiscard]] double endBeat() const noexcept { return startBeat + durationBeats; }
     friend bool operator==(const NoteEvent&, const NoteEvent&) = default;
@@ -61,6 +62,7 @@ struct ControlEvent {
     int channel{1};
     VoiceId voice{VoiceId::Unspecified};
     std::uint16_t partId{};
+    bool authoredTiming{};
 
     friend bool operator==(const ControlEvent&, const ControlEvent&) = default;
 };
@@ -129,6 +131,14 @@ struct Pattern {
     std::vector<InstrumentPart> parts;
     double lengthBeats{4.0};
     std::uint64_t seed{1};
+    std::string soundWorld{"coherent, balanced and natural"};
+    double soundWarmth{0.5};
+    double soundBrightness{0.5};
+    double acousticElectronicBalance{0.5};
+    bool productionAuditPerformed{};
+    bool productionReady{};
+    double productionScore{};
+    std::vector<std::string> productionIssues;
 };
 
 constexpr std::array<std::string_view, 4> roleNames{"Bass", "Percussion", "Countermelody", "Ensemble"};

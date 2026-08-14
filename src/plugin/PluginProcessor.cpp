@@ -183,6 +183,17 @@ juce::String songPlanToJson(const SongPlan& plan) {
     orchestrationLanguage->setProperty("family_dialogue", plan.orchestrationLanguage.familyDialogue);
     orchestrationLanguage->setProperty("hybrid_production", plan.orchestrationLanguage.hybridProduction);
     jsonRoot->setProperty("orchestration_language", juce::var(orchestrationLanguage));
+    auto* timbrePalette = new juce::DynamicObject();
+    timbrePalette->setProperty("description", juce::String::fromUTF8(plan.timbrePalette.description.c_str()));
+    timbrePalette->setProperty("material", juce::String::fromUTF8(plan.timbrePalette.material.c_str()));
+    timbrePalette->setProperty("space", juce::String::fromUTF8(plan.timbrePalette.space.c_str()));
+    timbrePalette->setProperty("warmth", plan.timbrePalette.warmth);
+    timbrePalette->setProperty("brightness", plan.timbrePalette.brightness);
+    timbrePalette->setProperty("transient_definition", plan.timbrePalette.transientDefinition);
+    timbrePalette->setProperty("acoustic_electronic_balance", plan.timbrePalette.acousticElectronicBalance);
+    timbrePalette->setProperty("cohesion", plan.timbrePalette.cohesion);
+    timbrePalette->setProperty("contrast", plan.timbrePalette.contrast);
+    jsonRoot->setProperty("timbre_palette", juce::var(timbrePalette));
     juce::Array<juce::var> chordPalette;
     for (const auto& chord : plan.chordPalette) {
         auto* item = new juce::DynamicObject();
@@ -275,6 +286,70 @@ juce::String songPlanToJson(const SongPlan& plan) {
         voices.add(juce::var(item));
     }
     jsonRoot->setProperty("voices", voices);
+    auto* performanceScore = new juce::DynamicObject();
+    juce::Array<juce::var> performanceCells;
+    for (const auto& cell : plan.performanceScore.cells) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("id", juce::String::fromUTF8(cell.id.c_str()));
+        item->setProperty("length_beats", cell.lengthBeats);
+        juce::Array<juce::var> owners;
+        for (const auto voice : cell.ownedVoices)
+            owners.add(juce::String(voiceDefinition(voice).key.data()));
+        item->setProperty("owned_voices", owners);
+        juce::Array<juce::var> notes;
+        for (const auto& note : cell.notes) {
+            auto* event = new juce::DynamicObject();
+            event->setProperty("beat", note.beat);
+            event->setProperty("duration", note.durationBeats);
+            event->setProperty("pitch", note.pitch);
+            event->setProperty("velocity", note.velocity);
+            event->setProperty("voice", juce::String(voiceDefinition(note.voice).key.data()));
+            event->setProperty("metric_intent", juce::String(metricIntentKey(note.metricIntent).data()));
+            notes.add(juce::var(event));
+        }
+        item->setProperty("notes", notes);
+        juce::Array<juce::var> controls;
+        for (const auto& control : cell.controls) {
+            auto* event = new juce::DynamicObject();
+            event->setProperty("beat", control.beat);
+            event->setProperty("controller", control.controller);
+            event->setProperty("value", control.value);
+            event->setProperty("voice", juce::String(voiceDefinition(control.voice).key.data()));
+            controls.add(juce::var(event));
+        }
+        item->setProperty("controls", controls);
+        performanceCells.add(juce::var(item));
+    }
+    performanceScore->setProperty("cells", performanceCells);
+    juce::Array<juce::var> placements;
+    for (const auto& placement : plan.performanceScore.placements) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("cell_id", juce::String::fromUTF8(placement.cellId.c_str()));
+        item->setProperty("section_index", placement.sectionIndex);
+        item->setProperty("start_beat", placement.startBeat);
+        item->setProperty("repeats", placement.repeats);
+        item->setProperty("transpose", placement.transpose);
+        item->setProperty("velocity_scale", placement.velocityScale);
+        item->setProperty("time_scale", placement.timeScale);
+        item->setProperty("purpose", juce::String::fromUTF8(placement.purpose.c_str()));
+        juce::Array<juce::var> voiceMap;
+        for (const auto& mapping : placement.voiceMap) {
+            auto* mappingObject = new juce::DynamicObject();
+            mappingObject->setProperty("from", juce::String(voiceDefinition(mapping.from).key.data()));
+            mappingObject->setProperty("to", juce::String(voiceDefinition(mapping.to).key.data()));
+            voiceMap.add(juce::var(mappingObject));
+        }
+        item->setProperty("voice_map", voiceMap);
+        item->setProperty("retrograde", placement.retrograde);
+        item->setProperty("invert_contour", placement.invertContour);
+        item->setProperty("inversion_axis", placement.inversionAxis);
+        item->setProperty("fragment_start", placement.fragmentStart);
+        item->setProperty("fragment_end", placement.fragmentEnd);
+        item->setProperty("metric_intent", juce::String(metricIntentKey(placement.metricIntent).data()));
+        placements.add(juce::var(item));
+    }
+    performanceScore->setProperty("placements", placements);
+    jsonRoot->setProperty("performance_score", juce::var(performanceScore));
     juce::Array<juce::var> sections;
     for (const auto& section : plan.sections) {
         auto* item = new juce::DynamicObject();
@@ -1119,7 +1194,14 @@ bool PulsoAudioProcessor::popGenerationRequest(GenerationRequest& request) noexc
 bool PulsoAudioProcessor::pushGeneratedPattern(const RealtimePattern& pattern) noexcept {
     const auto write = resultWrite.load(std::memory_order_relaxed);
     const auto next = (write + 1) % resultQueueSize;
-    if (next == resultRead.load(std::memory_order_acquire)) return false;
+    if (next == resultRead.load(std::memory_order_acquire)) {
+        const juce::SpinLock::ScopedLockType lock(resultOverflowLock);
+        if (!resultOverflowPending || pattern.epoch > resultOverflowPattern.epoch ||
+            (pattern.epoch == resultOverflowPattern.epoch && pattern.serial >= resultOverflowPattern.serial))
+            resultOverflowPattern = pattern;
+        resultOverflowPending = true;
+        return true;
+    }
     resultQueue[write] = pattern;
     resultWrite.store(next, std::memory_order_release);
     return true;
@@ -1127,9 +1209,15 @@ bool PulsoAudioProcessor::pushGeneratedPattern(const RealtimePattern& pattern) n
 
 bool PulsoAudioProcessor::popGeneratedPattern(RealtimePattern& pattern) noexcept {
     const auto read = resultRead.load(std::memory_order_relaxed);
-    if (read == resultWrite.load(std::memory_order_acquire)) return false;
-    pattern = resultQueue[read];
-    resultRead.store((read + 1) % resultQueueSize, std::memory_order_release);
+    if (read != resultWrite.load(std::memory_order_acquire)) {
+        pattern = resultQueue[read];
+        resultRead.store((read + 1) % resultQueueSize, std::memory_order_release);
+        return true;
+    }
+    const juce::SpinLock::ScopedTryLockType lock(resultOverflowLock);
+    if (!lock.isLocked() || !resultOverflowPending) return false;
+    pattern = resultOverflowPattern;
+    resultOverflowPending = false;
     return true;
 }
 
@@ -1378,6 +1466,27 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             continue;
         }
 
+        if (generated.productionAuditPerformed && !generated.productionReady) {
+            compositionSeed.store(generationPreviousSeed.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            variationIndex.store(generationPreviousVariation.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            auto rejected = metadataBeforeOperation
+                ? std::make_shared<IdeaMetadata>(*metadataBeforeOperation)
+                : std::make_shared<IdeaMetadata>();
+            juce::StringArray issues;
+            for (const auto& issue : generated.productionIssues)
+                issues.add(juce::String::fromUTF8(issue.c_str()));
+            rejected->description = "The rendered score contained a non-publishable MIDI integrity defect. "
+                "The previous composition was kept unchanged. Score " +
+                juce::String(generated.productionScore * 100.0, 1) + "%. Issues: " +
+                (issues.isEmpty() ? juce::String("unknown") : issues.joinIntoString(", "));
+            rejected->status = "PRODUCTION GATE - CURRENT IDEA KEPT";
+            ideaMetadata.store(std::move(rejected), std::memory_order_release);
+            activeGenerationCancellation.store(nullptr, std::memory_order_release);
+            generationInProgress.store(false, std::memory_order_release);
+            generationProgress.store(0.0f, std::memory_order_relaxed);
+            continue;
+        }
+
         quantizePatternTiming(generated, 4);
 
         RealtimePattern realtime;
@@ -1392,6 +1501,14 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->parts = generated.parts;
         playbackPattern->lengthBeats = generated.lengthBeats;
         playbackPattern->seed = generated.seed;
+        playbackPattern->soundWorld = generated.soundWorld;
+        playbackPattern->soundWarmth = generated.soundWarmth;
+        playbackPattern->soundBrightness = generated.soundBrightness;
+        playbackPattern->acousticElectronicBalance = generated.acousticElectronicBalance;
+        playbackPattern->productionAuditPerformed = generated.productionAuditPerformed;
+        playbackPattern->productionReady = generated.productionReady;
+        playbackPattern->productionScore = generated.productionScore;
+        playbackPattern->productionIssues = generated.productionIssues;
         realtime.pattern = std::move(playbackPattern);
         realtime.lengthBeats = generated.lengthBeats;
         realtime.maximumNoteDuration = std::accumulate(generated.notes.begin(), generated.notes.end(), 0.25,
@@ -1411,8 +1528,9 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         ideaMetadata.store(metadata, std::memory_order_release);
         updateHostDisplay(juce::AudioProcessorListener::ChangeDetails{}
                               .withNonParameterStateChanged(true));
-        while (!token.stop_requested() && !pushGeneratedPattern(realtime))
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // A suspended host may stop consuming the real-time queue. Publishing coalesces
+        // into the overflow mailbox instead of holding generationInProgress forever.
+        pushGeneratedPattern(realtime);
         if (action != IdeaAction::None)
             generationInProgress.store(false, std::memory_order_release);
         if (cancellableAction)
@@ -1540,8 +1658,8 @@ void PulsoAudioProcessor::schedulePattern(const RealtimePattern& pattern, const 
             const auto expressive = performanceEnabled
                 ? performanceOffsetBeats(note, pattern.seed, noteIndex, transport.bpm) : 0.0;
             const auto noteStart = cycleStart + note.startBeat + expressive;
-            const auto noteEnd = cycleStart + note.endBeat() + expressive;
-            if (retriggerOverlaps && noteStart < transport.startBeat && noteEnd > transport.startBeat) {
+            const auto performedNoteEnd = cycleStart + note.endBeat() + expressive;
+            if (retriggerOverlaps && noteStart < transport.startBeat && performedNoteEnd > transport.startBeat) {
                 auto on = juce::MidiMessage::noteOn(note.channel, note.pitch,
                                                     static_cast<juce::uint8>(note.velocity));
                 output.addEvent(on, 0);
@@ -1549,7 +1667,7 @@ void PulsoAudioProcessor::schedulePattern(const RealtimePattern& pattern, const 
             }
             addAtBeat(juce::MidiMessage::noteOn(note.channel, note.pitch,
                                                 static_cast<juce::uint8>(note.velocity)), noteStart);
-            addAtBeat(juce::MidiMessage::noteOff(note.channel, note.pitch), noteEnd);
+            addAtBeat(juce::MidiMessage::noteOff(note.channel, note.pitch), performedNoteEnd);
         }
         const auto localBlockStart = transport.startBeat - cycleStart;
         const auto localBlockEnd = transport.endBeat - cycleStart;
@@ -1791,7 +1909,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(7); // Binary composition state version.
+        composition.writeInt(9); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -1803,6 +1921,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
             composition.writeInt(note.channel);
             composition.writeInt(static_cast<int>(note.voice));
             composition.writeInt(static_cast<int>(note.partId));
+            composition.writeBool(note.authoredTiming);
         }
         composition.writeInt(static_cast<int>(pattern->controls.size()));
         for (const auto& control : pattern->controls) {
@@ -1812,6 +1931,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
             composition.writeInt(control.channel);
             composition.writeInt(static_cast<int>(control.voice));
             composition.writeInt(static_cast<int>(control.partId));
+            composition.writeBool(control.authoredTiming);
         }
         composition.writeInt(static_cast<int>(pattern->expressions.size()));
         for (const auto& expression : pattern->expressions) {
@@ -1846,6 +1966,16 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
             composition.writeString(juce::String::fromUTF8(part.liveDevice.c_str()));
             composition.writeString(juce::String::fromUTF8(part.livePresetIntent.c_str()));
         }
+        composition.writeString(juce::String::fromUTF8(pattern->soundWorld.c_str()));
+        composition.writeDouble(pattern->soundWarmth);
+        composition.writeDouble(pattern->soundBrightness);
+        composition.writeDouble(pattern->acousticElectronicBalance);
+        composition.writeBool(pattern->productionAuditPerformed);
+        composition.writeBool(pattern->productionReady);
+        composition.writeDouble(pattern->productionScore);
+        composition.writeInt(static_cast<int>(pattern->productionIssues.size()));
+        for (const auto& issue : pattern->productionIssues)
+            composition.writeString(juce::String::fromUTF8(issue.c_str()));
         state.setProperty("compositionData", composition.getMemoryBlock().toBase64Encoding(), nullptr);
         if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) {
             state.setProperty("ideaTitle", metadata->title, nullptr);
@@ -1905,7 +2035,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 7) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 9) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -1924,6 +2054,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                     if (version >= 4)
                         note.partId = static_cast<std::uint16_t>(
                             std::clamp(composition.readInt(), 0, 65535));
+                    if (version >= 8) note.authoredTiming = composition.readBool();
                     if (std::isfinite(note.startBeat) && std::isfinite(note.durationBeats) &&
                         note.startBeat >= 0.0 && note.startBeat < restoredPattern->lengthBeats &&
                         note.durationBeats > 0.0 && note.pitch >= 0 && note.pitch <= 127 &&
@@ -1946,6 +2077,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                             if (version >= 5)
                                 control.partId = static_cast<std::uint16_t>(
                                     std::clamp(composition.readInt(), 0, 65535));
+                            if (version >= 8) control.authoredTiming = composition.readBool();
                             if (std::isfinite(control.beat) && control.beat >= 0.0 &&
                                 control.beat < restoredPattern->lengthBeats &&
                                 control.controller >= 0 && control.controller <= 127 &&
@@ -2039,6 +2171,20 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                         return part.sourceVoice == note.voice;
                                     });
                             }), restoredPattern->notes.end());
+                    }
+                    if (version >= 9) {
+                        restoredPattern->soundWorld = composition.readString().substring(0, 480).toStdString();
+                        restoredPattern->soundWarmth = std::clamp(composition.readDouble(), 0.0, 1.0);
+                        restoredPattern->soundBrightness = std::clamp(composition.readDouble(), 0.0, 1.0);
+                        restoredPattern->acousticElectronicBalance = std::clamp(composition.readDouble(), 0.0, 1.0);
+                        restoredPattern->productionAuditPerformed = composition.readBool();
+                        restoredPattern->productionReady = composition.readBool();
+                        restoredPattern->productionScore = std::clamp(composition.readDouble(), 0.0, 1.0);
+                        const auto issueCount = composition.readInt();
+                        if (issueCount >= 0 && issueCount <= 32)
+                            for (auto index = 0; index < issueCount; ++index)
+                                restoredPattern->productionIssues.push_back(
+                                    composition.readString().substring(0, 96).toStdString());
                     }
                 }
                 if (!restoredPattern->notes.empty()) {

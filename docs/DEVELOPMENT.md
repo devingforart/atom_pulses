@@ -70,3 +70,22 @@ variable disponible solamente en la consola de desarrollo no llega a Ableton. Co
 
 La primera exige cancelación en menos de cuatro segundos. La segunda valida autenticación,
 Responses API, Structured Outputs, parseo y contrato de orquestación dinámica.
+
+La arquitectura y la crítica de una canción completa se ejecutan con Responses API en
+background. PULSO consulta el ID cada dos segundos mediante conexiones breves, permite
+cancelación inmediata también en el servidor y reserva hasta doce minutos para arquitectura
+más cuatro minutos para crítica. El hilo de audio y la interfaz nunca esperan esas conexiones.
+
+## Invariantes de producción
+
+Las pruebas de core deben conservar simultáneamente:
+
+- cero defectos después de `TonalContract` en política consolidada;
+- ataques en rejilla de semicorchea salvo `MetricIntent` explícito;
+- note-offs en rejilla fina y sin retriggers solapados por parte/canal/pitch;
+- rachas literales y expresión densa informadas como advertencias, no como corrupción;
+- menos de doce eventos expresivos por nota como objetivo después de compactación;
+- `Pattern::productionReady == true` para toda canción publicable.
+
+`LiveDeployer` permite patrones legacy sin auditoría para compatibilidad de estados
+anteriores, pero rechaza cualquier patrón nuevo que haya sido auditado y no esté listo.

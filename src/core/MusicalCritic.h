@@ -19,6 +19,7 @@ struct MusicalQualityReport {
     std::size_t excessiveLeaps{};
     std::size_t overlapsRepaired{};
     std::size_t densityEventsRemoved{};
+    std::size_t literalRhythmBarsVaried{};
 };
 
 class MusicalCritic final {

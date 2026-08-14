@@ -1,5 +1,6 @@
 """Translate compositional MIDI into the contract of the loaded Live instrument."""
 
+import bisect
 import os
 
 from .sound_matcher import tokens
@@ -162,4 +163,86 @@ def adapt_notes(spec, source_kind="chromatic", pitch_map=None, root_note=60):
         "pitch_remap": {str(source): target for source, target in sorted(remapped.items())},
         "duration_cap": cap,
         "overlap_repairs": overlap_repairs,
+    }
+
+
+def _curve(events):
+    ordered = sorted(events, key=lambda item: float(item.get("beat", 0.0)))
+    return ([float(item.get("beat", 0.0)) for item in ordered],
+            [int(item.get("value", 0)) for item in ordered])
+
+
+def _value_at(curve, beat, default):
+    """Linearly sample a controller curve without depending on Live's envelope API."""
+    beats, values = curve
+    if not beats:
+        return default
+    right = bisect.bisect_right(beats, beat)
+    if right == 0:
+        return values[0]
+    if right >= len(beats):
+        return values[-1]
+    start = beats[right - 1]
+    end = beats[right]
+    if end <= start:
+        return values[right - 1]
+    amount = max(0.0, min(1.0, (beat - start) / (end - start)))
+    return int(round(values[right - 1] * (1.0 - amount) + values[right] * amount))
+
+
+def project_expression(spec, notes, source_kind="chromatic"):
+    """Bake the portable part of CC/pressure performance into Live note properties.
+
+    Raw curves remain in the deployment contract. Velocity, release, duration and Live 12
+    note-expression fields make the interpretation audible even where Arrangement clip
+    MIDI-controller envelopes are not exposed by the Python API.
+    """
+    controls_by_cc = {}
+    for event in spec.get("controls", []):
+        controller = max(0, min(127, int(event.get("controller", 0))))
+        controls_by_cc.setdefault(controller, []).append(event)
+    curves = {controller: _curve(events) for controller, events in controls_by_cc.items()}
+    pressure = [event for event in spec.get("expressions", [])
+                if str(event.get("type", "")) in ("channel_pressure", "poly_aftertouch")]
+    pressure_curve = _curve(pressure)
+    pedal = controls_by_cc.get(64, [])
+    pedal_curve = curves.get(64, ([], []))
+    projected = []
+    velocity_changes = 0
+    sustain_extensions = 0
+    for source in notes:
+        note = dict(source)
+        beat = float(note.get("start", 0.0))
+        expression = _value_at(curves.get(11, ([], [])), beat, 100)
+        modulation = _value_at(curves.get(1, ([], [])), beat, 0)
+        brightness = _value_at(curves.get(74, ([], [])), beat, 64)
+        pressure_value = _value_at(pressure_curve, beat, 0)
+        original_velocity = int(note.get("velocity", 100))
+        expression_scale = 0.55 + 0.57 * (expression / 127.0)
+        shaped_velocity = max(1, min(127, int(round(
+            original_velocity * expression_scale + pressure_value * 0.055))))
+        if shaped_velocity != original_velocity:
+            velocity_changes += 1
+        note["velocity"] = shaped_velocity
+        note["velocity_deviation"] = max(-127, min(127, int(round(
+            (modulation - 32) * 0.18 + (brightness - 64) * 0.10))))
+        note["release_velocity"] = max(1, min(127, int(round(
+            48 + brightness * 0.42 + pressure_value * 0.16))))
+        note["probability"] = 1.0
+        if source_kind == "chromatic" and _value_at(pedal_curve, beat, 0) >= 64:
+            note_end = beat + float(note.get("duration", 0.25))
+            pedal_off = next((event_beat for event_beat, value in zip(*pedal_curve)
+                              if event_beat > note_end and value < 64), None)
+            if pedal_off is not None:
+                extended = min(beat + 2.0, pedal_off) - beat
+                if extended > float(note.get("duration", 0.25)):
+                    note["duration"] = extended
+                    sustain_extensions += 1
+        projected.append(note)
+    return projected, {
+        "controls_received": sum(len(items) for items in controls_by_cc.values()),
+        "expressions_received": len(spec.get("expressions", [])),
+        "velocity_changes": velocity_changes,
+        "sustain_extensions": sustain_extensions,
+        "extended_note_properties": bool(projected),
     }

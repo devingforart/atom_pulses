@@ -384,6 +384,9 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
                 harmonicAssignments.push_back(index);
         }
         for (const auto& section : plan.sections) {
+            const auto sectionIndex = static_cast<int>(&section - plan.sections.data());
+            const auto explicitlyOwned = PerformanceScoreEngine::ownedVoicesForSection(
+                plan.performanceScore, sectionIndex);
             const auto sectionStart = section.startBar * plan.beatsPerBar;
             const auto sectionEnd = std::min(pattern.lengthBeats,
                 (section.startBar + section.bars) * plan.beatsPerBar);
@@ -406,6 +409,9 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
             for (std::size_t castOrdinal = 0; castOrdinal < cast.size(); ++castOrdinal) {
                 const auto assignmentIndex = cast[castOrdinal];
                 const auto& assignment = assignments[assignmentIndex];
+                const auto sourceVoiceIndex = static_cast<std::size_t>(assignment.sourceVoice);
+                if (sourceVoiceIndex < explicitlyOwned.size() && explicitlyOwned[sourceVoiceIndex])
+                    continue;
                 const auto function = resolvedFunction(assignment);
                 auto existing = std::count_if(realized.begin(), realized.end(), [&](const auto& note) {
                     return note.partId == static_cast<std::uint16_t>(assignmentIndex + 1) &&

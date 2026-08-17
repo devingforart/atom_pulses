@@ -1455,8 +1455,12 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                         juce::String(generated.narrativeScore * 100.0, 0) + "% - FULL SONG";
                     metadata->description += " Authorship " +
                         juce::String(generated.primaryVoiceAuthorshipCoverage * 100.0, 0) +
-                        "%, thematic recall " +
-                        juce::String(generated.thematicRecallRatio * 100.0, 0) + "%.";
+                        "%, audible thematic recall " +
+                        juce::String(generated.thematicRecallRatio * 100.0, 0) +
+                        "%, motif similarity " +
+                        juce::String(generated.audibleThematicSimilarity * 100.0, 0) +
+                        "%, density control " +
+                        juce::String(generated.densityControl * 100.0, 0) + "%.";
                 }
                 if (aiError.isNotEmpty())
                     metadata->description += " Local rendering remained available because: " + aiError;
@@ -1532,11 +1536,12 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             juce::Logger::writeToLog("PULSO INTEGRITY GATE: score=" +
                 juce::String(generated.productionScore * 100.0, 1) + "% issues=" +
                 (issues.isEmpty() ? juce::String("unknown") : issues.joinIntoString(", ")));
-            rejected->description = "The rendered score contained a non-publishable MIDI integrity defect. "
-                "The previous composition was kept unchanged. Score " +
+            rejected->description = "The rendered score failed the audible composition or MIDI integrity contract. "
+                "PULSO refused to publish a technically valid but musically incoherent result. The previous "
+                "composition was kept unchanged. Score " +
                 juce::String(generated.productionScore * 100.0, 1) + "%. Issues: " +
                 (issues.isEmpty() ? juce::String("unknown") : issues.joinIntoString(", "));
-            rejected->status = "INTEGRITY GATE - CURRENT IDEA KEPT";
+            rejected->status = "COMPOSITION GATE - CURRENT IDEA KEPT";
             ideaMetadata.store(std::move(rejected), std::memory_order_release);
             activeGenerationCancellation.store(nullptr, std::memory_order_release);
             generationInProgress.store(false, std::memory_order_release);
@@ -1575,6 +1580,10 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->aiAuthoredNoteRatio = generated.aiAuthoredNoteRatio;
         playbackPattern->primaryVoiceAuthorshipCoverage = generated.primaryVoiceAuthorshipCoverage;
         playbackPattern->thematicRecallRatio = generated.thematicRecallRatio;
+        playbackPattern->audibleThematicSimilarity = generated.audibleThematicSimilarity;
+        playbackPattern->bassPhraseContinuity = generated.bassPhraseContinuity;
+        playbackPattern->densityControl = generated.densityControl;
+        playbackPattern->peakActiveVoices = generated.peakActiveVoices;
         playbackPattern->narrativeIssues = generated.narrativeIssues;
         realtime.pattern = std::move(playbackPattern);
         realtime.lengthBeats = generated.lengthBeats;
@@ -1976,7 +1985,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(12); // Binary composition state version.
+        composition.writeInt(13); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -2054,6 +2063,10 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
         composition.writeDouble(pattern->aiAuthoredNoteRatio);
         composition.writeDouble(pattern->primaryVoiceAuthorshipCoverage);
         composition.writeDouble(pattern->thematicRecallRatio);
+        composition.writeDouble(pattern->audibleThematicSimilarity);
+        composition.writeDouble(pattern->bassPhraseContinuity);
+        composition.writeDouble(pattern->densityControl);
+        composition.writeInt(static_cast<int>(pattern->peakActiveVoices));
         composition.writeInt(static_cast<int>(pattern->narrativeIssues.size()));
         for (const auto& issue : pattern->narrativeIssues)
             composition.writeString(juce::String::fromUTF8(issue.c_str()));
@@ -2116,7 +2129,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 12) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 13) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2293,6 +2306,16 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                         std::clamp(composition.readDouble(), 0.0, 1.0);
                                     restoredPattern->thematicRecallRatio =
                                         std::clamp(composition.readDouble(), 0.0, 1.0);
+                                    if (version >= 13) {
+                                        restoredPattern->audibleThematicSimilarity =
+                                            std::clamp(composition.readDouble(), 0.0, 1.0);
+                                        restoredPattern->bassPhraseContinuity =
+                                            std::clamp(composition.readDouble(), 0.0, 1.0);
+                                        restoredPattern->densityControl =
+                                            std::clamp(composition.readDouble(), 0.0, 1.0);
+                                        restoredPattern->peakActiveVoices = static_cast<std::size_t>(
+                                            std::max(0, composition.readInt()));
+                                    }
                                     const auto narrativeIssueCount = composition.readInt();
                                     if (narrativeIssueCount >= 0 && narrativeIssueCount <= 32)
                                         for (auto index = 0; index < narrativeIssueCount; ++index)

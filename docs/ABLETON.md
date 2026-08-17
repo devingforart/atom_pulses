@@ -1,5 +1,18 @@
 # Probar PULSO en Ableton Live
 
+## Contrato 0.43
+
+Además de procedencia y cobertura, la raíz de `request.json` publica
+`audible_thematic_similarity`, `bass_phrase_continuity`, `density_control` y
+`peak_active_voices`. Son métricas de las notas compuestas antes de elegir sonidos y permiten
+distinguir 15 roles compositivos fuente de las pistas finales que Live expande por articulación
+y round-robin.
+
+Si el plan GPT tiene cobertura extremadamente baja, etiquetas temáticas sin semejanza audible,
+bajo severamente fragmentado o acumulación persistente de voces, la interfaz muestra
+`COMPOSITION GATE - CURRENT IDEA KEPT`. Este rechazo es musical y se diferencia de un defecto de
+integridad MIDI o de un fallo tímbrico del despliegue.
+
 ## Contrato 0.42
 
 La solicitud de Live usa schema 8 y conserva `origin` y `narrative_id` en cada nota. En la raíz

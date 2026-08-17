@@ -819,10 +819,21 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     const auto direction = creativeDirection.trim().isEmpty()
         ? "Create a memorable instrumental song with a clear emotional narrative."
         : creativeDirection.trim();
+    const auto directionLower = direction.toLowerCase();
+    const auto hypnoticProgressiveReference = directionLower.contains("guy j");
+    const auto referenceBrief = hypnoticProgressiveReference
+        ? juce::String(
+            "The named artist is a high-level reference, never a request to reproduce a recording. Translate it into "
+            "deep hypnotic progressive-house traits: an unwavering but breathing four-on-floor foundation, an "
+            "eight-to-sixteen-bar kick/bass pocket, one compact emotional hook, patient subtractive development, "
+            "long tension plateaus, delayed returns and a decisive transformed recall. Complexity must emerge from "
+            "micro-development and automation, not melodic busyness or orchestral accumulation. ")
+        : juce::String();
     const auto prompt = juce::String(
         "You are the long-form composition architect for PULSO. Design one complete song, not a loop. "
         "Create a narratively inevitable form with introduction, thematic statements, contrast, development, "
-        "a true climax and a conclusive ending. Recurring sections must share a recognisable motif while changing "
+        "a true climax and a conclusive ending. ") + referenceBrief + juce::String(
+        "Recurring sections must share a recognisable motif while changing "
         "orchestration, register, harmony or rhythm. Design a variable ensemble rather than four fixed layers. "
         "Choose 7-15 execution voices from the supplied IDs; give every voice an independent function, interaction rule, "
         "activity and register. Use core_drums plus low_percussion and high_percussion as distinct rhythmic strata, "
@@ -944,7 +955,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "it with unrelated material. Author the actual performance in performance_score. "
         "This is the authoritative compositional layer, not an optional sketch. Give every cell a stable theme_id "
         "shared by its recognisable transformations and a narrative_function describing what it does. Across active "
-        "lead, countermelody, bass and harmonic voices, placements must author at least 45 percent of their available "
+        "lead, countermelody, bass and harmonic voices, placements must author at least 65 percent of their available "
         "timeline, concentrating that authorship in statements, answers, developments, breakdown memory, climax and "
         "resolution. Procedural continuity may connect authored phrases but must never invent the principal hook, bass "
         "argument or cadence. Write movement-bass cells as coherent four-to-eight-bar lines with pocket, breath and a "
@@ -995,8 +1006,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "octave_shift is strictly an octave displacement: -24, -12, 0, 12 or 24 semitones. "
         "Every authored note and placement MUST declare metric_intent=strict_grid. Source MIDI timing is always exact; "
         "anticipation, feel and microtiming belong exclusively to PULSO's reversible Human Performance playback layer. "
-        "Undeclared decimal timing is invalid. Keep the score sparse enough to fit: prioritize authored "
-        "foreground, bass, harmonic rhythm and defining percussion, leaving genuinely secondary voices to fallback. "
+        "Undeclared decimal timing is invalid. Keep the score sparse enough to fit, but never delegate the principal "
+        "hook, response, movement bass, harmonic identity, cadence or defining groove to procedural fallback. Reuse "
+        "authored cells through placements and purposeful transformations so primary authorship remains above 65 percent. "
         "For consolidated tonality, pitched performance notes must respect the chord and tonal narrative already authored. "
         "Target duration: " + juce::String(targetSeconds) +
         " seconds; tempo: " + juce::String(bpm, 1) + " BPM; meter: " + juce::String(beatsPerBar, 2) +
@@ -1103,8 +1115,16 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                  << juce::String(draftReport.narrative.grooveAuthorshipCoverage, 3)
                  << ", narrative_thematic_recall="
                  << juce::String(draftReport.narrative.thematicRecallRatio, 3)
+                 << ", audible_thematic_similarity="
+                 << juce::String(draftReport.narrative.audibleThematicSimilarity, 3)
                  << ", bass_phrase_continuity="
                  << juce::String(draftReport.narrative.bassPhraseContinuity, 3)
+                 << ", density_control="
+                 << juce::String(draftReport.narrative.densityControl, 3)
+                 << ", peak_active_voices="
+                 << static_cast<int>(draftReport.narrative.peakActiveVoices)
+                 << ", overcrowded_bars="
+                 << static_cast<int>(draftReport.narrative.overcrowdedBars)
                  << ", harmonic_direction="
                  << juce::String(draftReport.narrative.harmonicDirection, 3)
                  << ", rhythmic_development="
@@ -1248,9 +1268,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "sections; do not merely double the same notes. Rewrite only weak cells "
         "and their placements while keeping strong material intact. Every related statement, answer and development "
         "must carry the same theme_id, while narrative_function must express its actual role. Raise "
-        "primary_voice_authorship_coverage to at least 0.45, narrative_thematic_recall to at least 0.35, "
+        "primary_voice_authorship_coverage to at least 0.60, narrative_thematic_recall to at least 0.40, "
+        "audible_thematic_similarity to at least 0.66, density_control to at least 0.82, "
         "bass_phrase_continuity to at least 0.55 and harmonic_direction to at least 0.70. Repair those metrics by "
-        "writing and placing musical cells, never by changing descriptions or adding arbitrary notes. Use rhythm masks as supporting cells and sparse "
+        "writing and placing musical cells, never by changing theme_id, descriptions or adding arbitrary notes. The "
+        "audible audit is transposition-invariant and compares actual onset rhythm and interval contour, so labels cannot "
+        "fake lineage. Keep at most nine sounding execution voices in a club bar and no more than two foreground voices. "
+        "Use rhythm masks as supporting cells and sparse "
         "mutations as development; do not merely add density. production_ready must become true: strict-grid material "
         "must also leave zero sparse_structural_windows_repaired and establish a thematic_recurrence_ratio of at least "
         "0.20 whenever six or more thematic windows exist; repair those causes in the score rather than changing labels. "
@@ -1286,13 +1310,73 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             CompositionRenderReport revisedReport;
             [[maybe_unused]] const auto auditedRevision = SongComposer{}.render(
                 revised, revisedFoundation, {}, &revisedReport);
+            const auto meetsNarrativeTarget = [](const CompositionRenderReport& report) {
+                const auto memoryReady = report.narrative.audibleThematicWindows < 3 ||
+                    (report.narrative.thematicRecallRatio >= 0.40 &&
+                     report.narrative.audibleThematicSimilarity >= 0.66);
+                const auto bassReady = report.narrative.bassPhrases < 4 ||
+                    report.narrative.bassPhraseContinuity >= 0.55;
+                return report.production.ready && report.narrative.primaryVoiceCoverage >= 0.60 &&
+                    memoryReady && bassReady && report.narrative.densityControl >= 0.82;
+            };
+
+            auto bestRevision = std::move(revised);
+            auto bestReport = revisedReport;
+            auto bestRevisionText = revisedText;
+            const auto elapsedAfterFirstCritic = std::chrono::steady_clock::now() - aiStarted;
+            const auto remainingAfterFirstCritic = std::chrono::duration_cast<std::chrono::milliseconds>(
+                totalAiBudget - elapsedAfterFirstCritic);
+            if (!meetsNarrativeTarget(bestReport) && remainingAfterFirstCritic > std::chrono::seconds(30)) {
+                const auto focusedPrompt = juce::String(
+                    "Return a complete corrected PULSO song plan using the required schema. This is a focused "
+                    "note-level repair, not a fresh stylistic rewrite. Preserve the candidate's strong form, harmony, "
+                    "cast and successful cells. Rewrite and replace only placements or cells responsible for these "
+                    "measured failures. Principal voice coverage must be at least 0.60. A recurring theme must preserve "
+                    "audible onset rhythm and interval contour, not merely theme_id. Movement bass must form coherent "
+                    "four-to-eight-bar pocket phrases with breaths and a developed return. Club bars must contain no "
+                    "more than nine sounding execution voices and no more than two foreground owners. Do not add notes "
+                    "to raise a score; use ownership, subtraction, recurrence and transformation. Exact failed metrics: "
+                    "coverage=") + juce::String(bestReport.narrative.primaryVoiceCoverage, 3) +
+                    ", recall=" + juce::String(bestReport.narrative.thematicRecallRatio, 3) +
+                    ", audible_similarity=" + juce::String(bestReport.narrative.audibleThematicSimilarity, 3) +
+                    ", bass_continuity=" + juce::String(bestReport.narrative.bassPhraseContinuity, 3) +
+                    ", density_control=" + juce::String(bestReport.narrative.densityControl, 3) +
+                    ", peak_voices=" + juce::String(static_cast<int>(bestReport.narrative.peakActiveVoices)) +
+                    ". Original direction: " + direction + "\nCandidate to repair:\n" + bestRevisionText;
+                if (const auto focusedText = requestRevisedSongPlan(focusedPrompt, apiKey, token,
+                        std::min(remainingAfterFirstCritic,
+                            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::minutes(4))));
+                    focusedText.isNotEmpty()) {
+                    SongPlan focused;
+                    juce::String focusedError;
+                    if (parseSongPlanJson(focusedText, targetSeconds, totalBars, bpm, beatsPerBar,
+                                          seed, focused, focusedError,
+                                          tonalPolicyForDirection(direction.toStdString()))) {
+                        auto focusedFoundation = auditFoundation;
+                        focusedFoundation.rootPitchClass = focused.rootPitchClass;
+                        focusedFoundation.scale = focused.scale;
+                        CompositionRenderReport focusedReport;
+                        [[maybe_unused]] const auto auditedFocused = SongComposer{}.render(
+                            focused, focusedFoundation, {}, &focusedReport);
+                        const auto bestQuality = bestReport.narrative.score * 0.82 +
+                            bestReport.musical.overall * 0.18;
+                        const auto focusedQuality = focusedReport.narrative.score * 0.82 +
+                            focusedReport.musical.overall * 0.18;
+                        if ((meetsNarrativeTarget(focusedReport) && !meetsNarrativeTarget(bestReport)) ||
+                            (focusedReport.production.ready && focusedQuality > bestQuality + 0.01)) {
+                            bestRevision = std::move(focused);
+                            bestReport = focusedReport;
+                        }
+                    }
+                }
+            }
             const auto draftNarrative = draftReport.narrative.score * 0.78 +
                 draftReport.musical.overall * 0.22;
-            const auto revisedNarrative = revisedReport.narrative.score * 0.78 +
-                revisedReport.musical.overall * 0.22;
-            const auto safer = revisedReport.production.ready || !draftReport.production.ready;
+            const auto revisedNarrative = bestReport.narrative.score * 0.78 +
+                bestReport.musical.overall * 0.22;
+            const auto safer = bestReport.production.ready || !draftReport.production.ready;
             if (safer && revisedNarrative + 0.015 >= draftNarrative)
-                result = std::move(revised);
+                result = std::move(bestRevision);
         }
     }
     applyExplicitRhythmRequest(result, direction);

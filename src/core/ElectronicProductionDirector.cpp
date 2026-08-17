@@ -689,7 +689,7 @@ ProductionLanguage ElectronicProductionDirector::infer(std::string_view directio
     const auto text = lower(std::string(direction));
     const auto club = containsAny(text, {"club", "dancefloor", "dance floor", "boliche", "pista de baile",
         "house", "techno", "electronic", "electronica", "electrónica", "rave", "warehouse", "dj",
-        "progressive", "trance", "garage", "breakbeat", "electro", "disco"});
+        "progressive", "trance", "garage", "breakbeat", "electro", "disco", "guy j"});
     const auto orchestral = containsAny(text, {"orchestra", "orchestral", "symphony", "symphonic",
         "orquesta", "orquestal", "sinfonia", "sinfonía", "concerto", "concierto", "chamber ensemble"});
     if (club && !orchestral) result.domain = ProductionDomain::ClubElectronic;
@@ -749,10 +749,16 @@ void ElectronicProductionDirector::normalizePlan(SongPlan& plan) {
         const auto outro = sectionNamed(section, {"outro", "coda", "exit", "salida"});
         const auto arrival = sectionNamed(section, {"arrival", "drop", "peak", "climax", "return", "summit"});
         std::vector<VoiceId> active;
-        addUnique(active, VoiceId::Atmosphere);
+        // A club arrangement is an attention hierarchy, not a checklist. Keep the
+        // foundation legible and rotate colour roles instead of enabling thirteen
+        // generators at the peak.
+        if (intro || outro || breakdown || section.energy < 0.34)
+            addUnique(active, VoiceId::Atmosphere);
         if (section.tension > 0.45 || intro || outro) addUnique(active, VoiceId::Transitions);
-        if (section.energy > 0.18) addUnique(active, VoiceId::HarmonicPulse);
-        if (section.density > 0.38 || breakdown) addUnique(active, VoiceId::HarmonicFoundation);
+        if (breakdown || section.density > 0.58)
+            addUnique(active, VoiceId::HarmonicFoundation);
+        else if (section.energy > 0.18)
+            addUnique(active, VoiceId::HarmonicPulse);
         if (section.energy > 0.28 && !breakdown) {
             addUnique(active, VoiceId::CoreDrums);
             addUnique(active, VoiceId::ClosedHats);
@@ -763,9 +769,14 @@ void ElectronicProductionDirector::normalizePlan(SongPlan& plan) {
             addUnique(active, VoiceId::SnareClap);
             addUnique(active, VoiceId::OpenHatsShaker);
         }
-        if (section.energy > 0.54 && !breakdown) addUnique(active, VoiceId::LowPercussion);
-        if (section.energy > 0.66 && !breakdown) addUnique(active, VoiceId::HighPercussion);
-        if (section.energy > 0.76 || breakdown) addUnique(active, VoiceId::HarmonicUpper);
+        if (section.energy > 0.52 && !breakdown) {
+            const auto supportOwner = positiveModulo(section.motifVariant, 3);
+            addUnique(active, supportOwner == 0 ? VoiceId::OpenHatsShaker
+                              : supportOwner == 1 ? VoiceId::LowPercussion
+                                                  : VoiceId::HighPercussion);
+        }
+        if (breakdown || (section.energy > 0.80 && section.density < 0.78))
+            addUnique(active, VoiceId::HarmonicUpper);
         const auto phraseOwner = positiveModulo(section.motifVariant, 3);
         if (arrival || breakdown || phraseOwner != 0) addUnique(active, VoiceId::Lead);
         if (!breakdown && section.energy > 0.62 && phraseOwner == 0) addUnique(active, VoiceId::Countermelody);
@@ -777,6 +788,20 @@ void ElectronicProductionDirector::normalizePlan(SongPlan& plan) {
                 : mutation.lane == RhythmLane::LowPercussion ? VoiceId::LowPercussion
                                                              : VoiceId::HighPercussion;
             addUnique(active, voice);
+        }
+        // Transitions do not own the continuous texture. At most nine sounding
+        // execution voices remain available in club sections; authored foreground,
+        // bass and core pulse have priority over auxiliary percussion.
+        constexpr std::array auxiliaryOrder{VoiceId::HighPercussion, VoiceId::LowPercussion,
+            VoiceId::OpenHatsShaker, VoiceId::HarmonicUpper, VoiceId::Atmosphere};
+        const auto soundingCount = [&] {
+            return std::count_if(active.begin(), active.end(), [](VoiceId voice) {
+                return voice != VoiceId::Transitions;
+            });
+        };
+        for (const auto auxiliary : auxiliaryOrder) {
+            if (soundingCount() <= 9) break;
+            active.erase(std::remove(active.begin(), active.end(), auxiliary), active.end());
         }
         section.activeVoices = std::move(active);
         const auto explicitContinuousKick = section.rhythm.continuity == KickContinuity::Required &&

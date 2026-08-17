@@ -71,6 +71,10 @@ bool writeCompanionManifest(const Pattern& pattern, const juce::File& midi,
     root->setProperty("ai_authored_note_ratio", pattern.aiAuthoredNoteRatio);
     root->setProperty("primary_voice_authorship_coverage", pattern.primaryVoiceAuthorshipCoverage);
     root->setProperty("thematic_recall_ratio", pattern.thematicRecallRatio);
+    root->setProperty("audible_thematic_similarity", pattern.audibleThematicSimilarity);
+    root->setProperty("bass_phrase_continuity", pattern.bassPhraseContinuity);
+    root->setProperty("density_control", pattern.densityControl);
+    root->setProperty("peak_active_voices", static_cast<int>(pattern.peakActiveVoices));
     juce::Array<juce::var> parts;
     for (const auto& part : pattern.parts) {
         const auto noteCount = std::count_if(pattern.notes.begin(), pattern.notes.end(),

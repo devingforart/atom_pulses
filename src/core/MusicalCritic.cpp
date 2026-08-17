@@ -128,8 +128,11 @@ MusicalQualityReport MusicalCritic::review(const Pattern& pattern, const SongPla
     const auto totalBars = static_cast<double>(std::max<std::size_t>(1, signatures.size()));
     const auto restRatio = emptyMelodicBars / totalBars;
     report.negativeSpace = clampScore(1.0 - std::abs(restRatio - 0.48) / 0.48);
-    report.variation = clampScore(1.0 - report.repeatedBars /
-        static_cast<double>(std::max<std::size_t>(1, melodicBars)));
+    // Human musical memory lives between a copy and a stream of unrelated novelty.
+    // Reward a recognisable recurrence band instead of the old "never repeat" bias.
+    const auto recurrence = report.repeatedBars /
+        static_cast<double>(std::max<std::size_t>(1, melodicBars));
+    report.variation = clampScore(1.0 - std::abs(recurrence - 0.30) / 0.60);
 
     std::array<std::vector<const NoteEvent*>, static_cast<std::size_t>(VoiceId::Count)> byVoice;
     std::vector<int> velocities;
@@ -164,8 +167,9 @@ MusicalQualityReport MusicalCritic::review(const Pattern& pattern, const SongPla
     report.dynamicShape = clampScore(deviation / 16.0);
 
     auto crowdedBars = std::size_t{};
+    const auto voiceCeiling = plan.productionLanguage.domain == ProductionDomain::ClubElectronic ? 9 : 11;
     for (const auto& voices : voicesByBar)
-        if (voices.size() > 11) ++crowdedBars;
+        if (voices.size() > static_cast<std::size_t>(voiceCeiling)) ++crowdedBars;
     report.registerClarity = clampScore(1.0 - crowdedBars / totalBars);
     report.overall = report.negativeSpace * 0.22 + report.variation * 0.24 +
                      report.voiceIndependence * 0.20 + report.dynamicShape * 0.16 +

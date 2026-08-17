@@ -1,5 +1,23 @@
 # PULSO
 
+### 0.43 — memoria musical audible
+
+- La recurrencia temática se calcula sobre el MIDI final mediante ritmo de ataques,
+  duraciones y contorno interválico. Compartir `theme_id` ya no alcanza para aprobar.
+- El crítico dejó de premiar la novedad melódica permanente: busca una zona equilibrada
+  entre recuerdo reconocible, transformación y silencio.
+- GPT debe cubrir al menos el 60% de la línea temporal principal y recibe una segunda
+  reparación dirigida si fallan memoria, fraseo de bajo o control de densidad.
+- El bajo de movimiento se audita como frases completas; las sucesiones de gestos aislados
+  ya no pueden aprobar como desarrollo.
+- En producción electrónica de club se limita la atención a nueve voces sonoras por compás
+  y dos propietarios de foreground. Las capas auxiliares rotan en vez de acumularse.
+- Las referencias a artistas se traducen a atributos musicales abstractos. Para progressive
+  hipnótico se priorizan pocket kick–bass, desarrollo sustractivo, hook económico y retornos
+  demorados, sin copiar ninguna grabación.
+- `request.json` y el manifiesto MIDI publican `audible_thematic_similarity`,
+  `bass_phrase_continuity`, `density_control` y `peak_active_voices`.
+
 ### 0.42 — autoría narrativa verificable
 
 - GPT escribe células con `theme_id` y función narrativa explícita; statement, answer,

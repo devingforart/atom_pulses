@@ -845,7 +845,10 @@ void runGeneratorTests() {
     const auto musicalQuality = MusicalCritic::review(longSong, longPlan);
     require(musicalQuality.overall > 0.35 && musicalQuality.variation > 0.45 &&
                 musicalQuality.negativeSpace > 0.30,
-            "The rendered score must pass minimum symbolic quality, variation and breathing thresholds");
+            "The rendered score must pass minimum symbolic quality, variation and breathing thresholds: overall=" +
+                std::to_string(musicalQuality.overall) + ", variation=" +
+                std::to_string(musicalQuality.variation) + ", space=" +
+                std::to_string(musicalQuality.negativeSpace));
     requireNear(longSong.lengthBeats, 1088.0, 0.001,
                 "Nine minutes at 120 BPM must resolve to the nearest complete eight-bar phrase");
     require(!longSong.notes.empty() && longSong.notes.size() < 32768,
@@ -1529,6 +1532,41 @@ void runGeneratorTests() {
                 std::find(weakAudit.issues.begin(), weakAudit.issues.end(),
                           "insufficient_ai_phrase_coverage") != weakAudit.issues.end(),
             "A semantic GPT plan without authored phrases must fail the narrative authorship contract");
+
+    Pattern falseLabelMemory;
+    falseLabelMemory.lengthBeats = 32.0;
+    const std::array<std::array<int, 3>, 4> unrelatedContours{{
+        {{60, 62, 65}}, {{72, 64, 71}}, {{67, 69, 61}}, {{74, 63, 68}}
+    }};
+    const std::array<std::array<double, 3>, 4> unrelatedRhythms{{
+        {{0.0, 1.0, 2.0}}, {{0.0, 0.5, 3.0}}, {{0.0, 2.5, 3.5}}, {{0.0, 0.25, 3.75}}
+    }};
+    for (auto window = std::size_t{}; window < unrelatedContours.size(); ++window)
+        for (auto note = std::size_t{}; note < unrelatedContours[window].size(); ++note)
+            falseLabelMemory.notes.push_back({window * 8.0 + unrelatedRhythms[window][note],
+                0.5, unrelatedContours[window][note], 88, 2, VoiceId::Lead, 0, false,
+                NoteOrigin::AiAuthored, 4242});
+    const auto falseLabelAudit = NarrativeScoreGate::audit(falseLabelMemory, narrativePlan);
+    require(falseLabelAudit.audibleThematicWindows == 4 &&
+                falseLabelAudit.thematicRecallRatio < 0.40 &&
+                falseLabelAudit.audibleThematicSimilarity < 0.66,
+            "A shared theme_id must not turn unrelated rendered phrases into thematic recall: windows=" +
+                std::to_string(falseLabelAudit.audibleThematicWindows) + ", recall=" +
+                std::to_string(falseLabelAudit.thematicRecallRatio) + ", similarity=" +
+                std::to_string(falseLabelAudit.audibleThematicSimilarity));
+
+    Pattern audibleMemory;
+    audibleMemory.lengthBeats = 32.0;
+    for (auto window = 0; window < 4; ++window)
+        for (auto note = 0; note < 3; ++note)
+            audibleMemory.notes.push_back({window * 8.0 + note,
+                0.5 + (note == 2 ? 0.25 : 0.0), 60 + window * 2 + std::array{0, 3, 7}[note],
+                88 - note * 3, 2, VoiceId::Lead, 0, false,
+                window == 0 ? NoteOrigin::AiAuthored : NoteOrigin::AiTransformed, 5151});
+    const auto audibleMemoryAudit = NarrativeScoreGate::audit(audibleMemory, narrativePlan);
+    require(audibleMemoryAudit.thematicRecallRatio > 0.99 &&
+                audibleMemoryAudit.audibleThematicSimilarity > 0.90,
+            "Transposed statements with the same rhythm and contour must pass audible thematic memory");
 
     auto octavePlan = SongComposer::createLocalPlan(
         "octave normalization", 60, 120.0, 4.0, 91, 0, ScaleKind::Minor);

@@ -1,5 +1,24 @@
 # Arquitectura
 
+### Memoria musical 0.43
+
+`NarrativeScoreGate` ya no confía en identidad nominal. Agrupa el MIDI AI de lead y respuesta
+en ventanas audibles de dos compases y compara ritmo relativo, contorno interválico, cantidad de
+notas y gates. La comparación es invariante a transposición y tolera inversión deliberada, pero
+una colección de frases inconexas con el mismo `theme_id` no obtiene retorno temático.
+
+La auditoría también segmenta `MovementBass` por respiraciones reales y exige frases con arco
+temporal, variedad de fases y al menos tres ataques. Por compás contabiliza voces sonoras y
+propietarios de foreground; el dominio `club_electronic` usa un techo de nueve voces y dos
+foregrounds. Estas métricas forman parte del score narrativo y pueden bloquear publicación ante
+un fallo severo.
+
+El arquitecto apunta a 65% de autoría principal y el contrato acepta desde 60%. Tras la crítica
+general, un candidato que todavía falla recibe una segunda revisión focalizada: conserva forma,
+armonía y células fuertes, y reescribe solamente placements o células responsables de memoria,
+bajo o densidad. El motor local continúa validando afinación, ownership y seguridad, pero no
+inventa el hook principal para hacer pasar la puerta.
+
 ### Autoría narrativa 0.42
 
 `performance_score` es la capa compositiva vinculante. Sus células declaran un `theme_id` y

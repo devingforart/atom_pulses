@@ -171,6 +171,10 @@ struct Pattern {
     double aiAuthoredNoteRatio{};
     double primaryVoiceAuthorshipCoverage{};
     double thematicRecallRatio{};
+    double audibleThematicSimilarity{};
+    double bassPhraseContinuity{};
+    double densityControl{1.0};
+    std::size_t peakActiveVoices{};
     std::vector<std::string> narrativeIssues;
 };
 

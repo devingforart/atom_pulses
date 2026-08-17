@@ -116,12 +116,28 @@ void addNativeSoundProperties(juce::DynamicObject& track, const juce::String& de
         ? "adaptive_percussion" : "chromatic_instrument");
     track.setProperty("same_pitch_overlap_policy", "trim_previous");
     track.setProperty("articulation_duration_policy", "instrument_bound");
+    const auto identity = catalogId.toLowerCase();
+    const auto critical = identity == "kick_drum" || identity == "sub_synth" ||
+                          identity == "electric_bass" || identity == "lead_synth";
+    const auto featured = !critical && (prominence >= 0.68 || department == ScoreDepartment::Melody);
+    track.setProperty("timbre_priority", critical ? "critical" : featured ? "featured" : "support");
+    track.setProperty("minimum_intent_fidelity", critical ? 0.65 : featured ? 0.50 : 0.35);
+    const auto releaseSeconds = identity == "kick_drum" ? 0.14 :
+        identity == "snare_clap" ? 0.30 : identity == "hi_hats" ? 0.16 :
+        identity == "shakers" ? 0.22 : identity == "latin_percussion" ? 0.28 :
+        identity == "orchestral_percussion" ? 0.55 : identity == "cymbals" ? 1.40 :
+        identity == "sub_synth" ? 0.16 : identity == "electric_bass" ? 0.24 :
+        identity == "poly_synth" ? 0.22 : identity == "piano" ? 0.55 :
+        identity == "guitar" ? 0.42 : identity == "lead_synth" ? 0.42 :
+        identity == "alto_flute" ? 0.60 : identity == "flute" ? 0.55 :
+        identity == "piccolo" ? 0.48 : identity == "analog_pad" ? 0.95 :
+        identity == "ambient_texture" ? 1.35 : 0.65;
+    track.setProperty("release_max_seconds", releaseSeconds);
     juce::Array<juce::var> candidates;
     addCandidate(candidates, intent);
     addCandidate(candidates, catalogId.replaceCharacter('_', ' ') +
                              (department == ScoreDepartment::Rhythm ? " kit" : " orchestral"));
     if (department == ScoreDepartment::Rhythm) {
-        const auto identity = catalogId.toLowerCase();
         if (identity.contains("taiko") || identity.contains("timpani") ||
             identity.contains("percussion") || identity.contains("shaker")) {
             addCandidate(candidates, "Percussion Spirit Kit.adg");
@@ -158,7 +174,7 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
         return false;
     }
     auto root = new juce::DynamicObject();
-    root->setProperty("schema_version", 6);
+    root->setProperty("schema_version", 8);
     root->setProperty("request_id", juce::Uuid().toString());
     root->setProperty("created_utc_ms", juce::Time::getCurrentTime().toMilliseconds());
     auto safeTitle = options.title.isNotEmpty() ? options.title : juce::String("PULSO Song");
@@ -182,6 +198,15 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     if (pattern.electronicProductionAudited)
         root->setProperty("electronic_production_score", pattern.electronicProductionScore);
     root->setProperty("sound_world", juce::String::fromUTF8(pattern.soundWorld.c_str()));
+    root->setProperty("narrative_audited", pattern.narrativeAuditPerformed);
+    root->setProperty("narrative_score", pattern.narrativeScore);
+    root->setProperty("ai_authored_note_ratio", pattern.aiAuthoredNoteRatio);
+    root->setProperty("primary_voice_authorship_coverage", pattern.primaryVoiceAuthorshipCoverage);
+    root->setProperty("thematic_recall_ratio", pattern.thematicRecallRatio);
+    juce::Array<juce::var> narrativeIssues;
+    for (const auto& issue : pattern.narrativeIssues)
+        narrativeIssues.add(juce::String::fromUTF8(issue.c_str()));
+    root->setProperty("narrative_issues", narrativeIssues);
 
     juce::Array<juce::var> tracks;
     if (options.aggregateDepartmentStems) {
@@ -199,6 +224,8 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
                 item->setProperty("duration", note.durationBeats);
                 item->setProperty("velocity", note.velocity);
                 item->setProperty("channel", note.channel);
+                item->setProperty("origin", juce::String(noteOriginKey(note.origin).data()));
+                item->setProperty("narrative_id", static_cast<int>(note.narrativeId));
                 notes.add(juce::var(item));
             }
             if (notes.isEmpty()) continue;
@@ -244,6 +271,8 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
             item->setProperty("duration", note.durationBeats);
             item->setProperty("velocity", note.velocity);
             item->setProperty("channel", note.channel);
+            item->setProperty("origin", juce::String(noteOriginKey(note.origin).data()));
+            item->setProperty("narrative_id", static_cast<int>(note.narrativeId));
             notes.add(juce::var(item));
         }
         if (notes.isEmpty()) continue;
@@ -359,6 +388,40 @@ juce::String readLiveDeploymentReport() {
         }
     }
     return lines.joinIntoString("\n");
+}
+
+juce::String readLiveAudibleExecutionFeedback() {
+    juce::StringArray issues;
+    const auto status = juce::JSON::parse(bridgeDirectory().getChildFile("status.json"));
+    const auto* root = status.getDynamicObject();
+    const auto* details = root != nullptr ? root->getProperty("details").getDynamicObject() : nullptr;
+    if (details != nullptr) {
+        if (const auto* contracts = details->getProperty("timbre_contracts").getArray()) {
+            for (const auto& value : *contracts) {
+                const auto* contract = value.getDynamicObject();
+                if (contract == nullptr || static_cast<bool>(contract->getProperty("passed"))) continue;
+                issues.add(contract->getProperty("track").toString() + " matched " +
+                    contract->getProperty("matched").toString() + " below fidelity floor " +
+                    contract->getProperty("minimum_fidelity").toString());
+                if (issues.size() >= 6) break;
+            }
+        }
+    }
+    const auto audible = juce::JSON::parse(bridgeDirectory().getChildFile("audible_audit.json"));
+    if (const auto* object = audible.getDynamicObject()) {
+        const auto observations = static_cast<int>(object->getProperty("expected_active_observations"));
+        if (observations > 0) {
+            const auto presence = static_cast<double>(object->getProperty("audible_presence_ratio"));
+            const auto tails = static_cast<int>(object->getProperty("tail_violations"));
+            if (presence < 0.92)
+                issues.add("rendered meter presence ratio=" + juce::String(presence, 3));
+            if (tails > 0)
+                issues.add("rendered tail violations=" + juce::String(tails));
+        }
+    }
+    if (issues.isEmpty()) return {};
+    return "Previous Ableton audible execution defects: " + issues.joinIntoString("; ") +
+        ". Choose installed identities and articulation/envelope intents that remove these causes.";
 }
 
 bool liveNativeInventoryIsReady() {

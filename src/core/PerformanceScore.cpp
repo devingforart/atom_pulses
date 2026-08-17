@@ -30,6 +30,16 @@ std::uint64_t mix(std::uint64_t hash, std::uint64_t value) noexcept {
     return hash;
 }
 
+std::uint32_t narrativeIdFor(const PerformanceCell& cell) noexcept {
+    auto hash = std::uint32_t{2166136261u};
+    const auto& text = cell.themeId.empty() ? cell.id : cell.themeId;
+    for (const auto character : text) {
+        hash ^= static_cast<std::uint8_t>(character);
+        hash *= 16777619u;
+    }
+    return hash == 0 ? 1u : hash;
+}
+
 } // namespace
 
 std::string_view metricIntentKey(MetricIntent value) noexcept {
@@ -65,6 +75,7 @@ PerformanceScoreReport PerformanceScoreEngine::normalize(
     PerformanceScoreReport report;
     if (score.cells.size() > 64) score.cells.resize(64);
     std::set<std::string> ids;
+    std::set<std::string> themes;
     std::set<std::uint64_t> fingerprints;
     score.cells.erase(std::remove_if(score.cells.begin(), score.cells.end(), [&](auto& cell) {
         if (cell.id.empty() || !ids.insert(cell.id).second || !std::isfinite(cell.lengthBeats)) {
@@ -72,6 +83,12 @@ PerformanceScoreReport PerformanceScoreEngine::normalize(
             return true;
         }
         cell.lengthBeats = std::clamp(cell.lengthBeats, 0.25, 64.0);
+        if (cell.themeId.empty()) cell.themeId = cell.id;
+        if (cell.themeId.size() > 80) cell.themeId.resize(80);
+        if (cell.narrativeFunction.empty()) cell.narrativeFunction = "support";
+        if (cell.narrativeFunction.size() > 40) cell.narrativeFunction.resize(40);
+        themes.insert(cell.themeId);
+        if (cell.narrativeFunction != "support") ++report.narrativeCells;
         std::array<bool, static_cast<std::size_t>(VoiceId::Count)> owned{};
         cell.ownedVoices.erase(std::remove_if(cell.ownedVoices.begin(), cell.ownedVoices.end(), [&](VoiceId voice) {
             if (!validVoice(voice) || owned[static_cast<std::size_t>(voice)]) return true;
@@ -169,6 +186,7 @@ PerformanceScoreReport PerformanceScoreEngine::normalize(
     }), score.placements.end());
     report.novelty = report.cellsAccepted == 0 ? 1.0
         : 1.0 - static_cast<double>(report.exactDuplicateCells) / static_cast<double>(report.cellsAccepted);
+    report.namedThemes = themes.size();
     return report;
 }
 
@@ -263,7 +281,13 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
                     std::clamp(static_cast<int>(std::lround(authored.velocity * placement.velocityScale)), 1, 127),
                     definition.midiChannel, voice, 0,
                     authored.metricIntent != MetricIntent::StrictGrid ||
-                    placement.metricIntent != MetricIntent::StrictGrid});
+                    placement.metricIntent != MetricIntent::StrictGrid,
+                    placement.retrograde || placement.invertContour || placement.transpose != 0 ||
+                        std::abs(placement.timeScale - 1.0) > 0.001 ||
+                        placement.fragmentStart > 0.001 ||
+                        placement.fragmentEnd < cell->lengthBeats - 0.001 || !placement.voiceMap.empty()
+                        ? NoteOrigin::AiTransformed : NoteOrigin::AiAuthored,
+                    narrativeIdFor(*cell)});
             }
             for (const auto& authored : cell->controls) {
                 if (authored.beat < placement.fragmentStart || authored.beat >= placement.fragmentEnd)

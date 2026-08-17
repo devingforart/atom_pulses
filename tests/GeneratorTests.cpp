@@ -3,18 +3,23 @@
 #include "core/Generator.h"
 #include "core/HarmonyEngine.h"
 #include "core/MusicalCritic.h"
+#include "core/MusicalIdentityGate.h"
+#include "core/NarrativeScore.h"
 #include "core/CompositionModel.h"
 #include "core/PhraseDirector.h"
 #include "core/PerformanceExpression.h"
 #include "core/PerformanceTiming.h"
+#include "core/RhythmEngine.h"
 #include "core/Scale.h"
 #include "core/SongComposer.h"
 #include "core/TonalContract.h"
+#include "core/VerticalHarmonyGate.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <iterator>
+#include <map>
 #include <set>
 #include <string>
 #include <tuple>
@@ -309,8 +314,9 @@ void runGeneratorTests() {
 
     const auto longPlan = SongComposer::createLocalPlan(
         "A nine minute cinematic suite", 540, 120.0, 4.0, 99173, 0, ScaleKind::Minor);
-    require(longPlan.totalBars == 270 && longPlan.sections.size() >= 8,
-            "A requested nine-minute song must become a complete multi-section form");
+    require(longPlan.totalBars == 272 && longPlan.sections.size() >= 8 &&
+                SongComposer::phraseAlignedBars(225) == 224,
+            "Long songs must approximate wall-clock duration with a phrase-aligned complete form");
     require(!longPlan.rhythmMotifs.empty() &&
                 std::all_of(longPlan.sections.begin(), longPlan.sections.end(), [](const auto& section) {
                     return !section.rhythm.motifId.empty();
@@ -342,11 +348,13 @@ void runGeneratorTests() {
     const std::set<std::string> electronicCatalog{"kick_drum", "snare_clap", "hi_hats",
         "shakers", "latin_percussion", "orchestral_percussion", "sub_synth", "electric_bass",
         "poly_synth", "analog_pad", "lead_synth", "ambient_texture", "cymbals"};
+    std::string clubCast;
+    for (const auto& part : clubPlan.instruments) clubCast += part.instrumentId + ",";
     require(clubPlan.instruments.size() >= 12 &&
                 std::all_of(clubPlan.instruments.begin(), clubPlan.instruments.end(), [&](const auto& part) {
                     return electronicCatalog.contains(part.instrumentId) && part.divisiVoices == 1;
                 }),
-            "Electronic production must use functional drum, bass, synth, hook and FX roles without implicit orchestra");
+            "Electronic production must use functional drum, bass, synth, hook and FX roles without implicit orchestra: " + clubCast);
     require(std::all_of(clubPlan.sections.begin(), clubPlan.sections.end(), [](const auto& section) {
                 const auto melodicOwners = std::count(section.activeVoices.begin(), section.activeVoices.end(), VoiceId::Lead) +
                     std::count(section.activeVoices.begin(), section.activeVoices.end(), VoiceId::Countermelody);
@@ -364,6 +372,320 @@ void runGeneratorTests() {
                 return note.voice == VoiceId::HarmonicPulse && note.durationBeats > 1.001;
             }),
             "Electronic harmonic punctuation must never become a six-beat hanging chord");
+    require(std::none_of(renderedClub.notes.begin(), renderedClub.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::HarmonicFoundation && note.durationBeats > 3.938;
+            }),
+            "Electronic chord bodies must release before the next bar-level harmonic boundary");
+    require((clubReport.electronicProduction.thematicWindows < 6 ||
+             clubReport.electronicProduction.thematicRecurrenceRatio >= 0.24) &&
+            (clubReport.electronicProduction.percussionNotes < 12 ||
+             clubReport.electronicProduction.percussionArticulations >= 3),
+            "The publication contract must preserve hook memory and audible percussion articulation");
+    require(std::none_of(renderedClub.notes.begin(), renderedClub.notes.end(), [](const auto& note) {
+                return !isVoiceInFamily(note.voice, VoiceFamily::Rhythm) &&
+                       note.voice != VoiceId::Transitions && note.durationBeats < 0.124;
+            }),
+            "The audible production gate must remove or repair instrumental micro-fragments");
+    require(clubReport.electronicProduction.maximumKicklessBarsAfter <= 16,
+            "Published club arrangements must retain a macro pulse outside declared full silence");
+    require(std::none_of(renderedClub.notes.begin(), renderedClub.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::HarmonicUpper && note.pitch < 60;
+            }),
+            "Final continuity repairs must not pull upper harmony below its published register");
+    require(std::none_of(renderedClub.notes.begin(), renderedClub.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::HighPercussion && (note.pitch == 35 || note.pitch == 36);
+            }),
+            "Final high percussion must never collapse into another kick lane");
+    auto consecutiveForegroundSilence = 0;
+    auto maximumForegroundSilence = 0;
+    for (auto start = 0.0; start < renderedClub.lengthBeats; start += clubPlan.beatsPerBar * 8.0) {
+        const auto end = std::min(renderedClub.lengthBeats, start + clubPlan.beatsPerBar * 8.0);
+        const auto activeForeground = std::any_of(renderedClub.notes.begin(), renderedClub.notes.end(),
+            [&](const auto& note) {
+                const auto part = std::find_if(renderedClub.parts.begin(), renderedClub.parts.end(),
+                    [&](const auto& candidate) { return candidate.id == note.partId; });
+                return note.startBeat < end && note.endBeat() > start &&
+                       ((part != renderedClub.parts.end() &&
+                         part->department == ScoreDepartment::Melody) ||
+                        note.voice == VoiceId::Lead || note.voice == VoiceId::Countermelody);
+            });
+        consecutiveForegroundSilence = activeForeground ? 0 : consecutiveForegroundSilence + 1;
+        maximumForegroundSilence = std::max(maximumForegroundSilence, consecutiveForegroundSilence);
+    }
+    require(maximumForegroundSilence <= 1,
+            "A club arrangement may breathe for eight bars but never lose foreground narrative for 32 seconds");
+
+    auto identityPlan = clubPlan;
+    identityPlan.totalBars = 16;
+    identityPlan.sections.clear();
+    SongSection identitySection;
+    identitySection.name = "Identity test peak";
+    identitySection.startBar = 0;
+    identitySection.bars = 16;
+    identitySection.energy = 0.82;
+    identitySection.density = 0.74;
+    identityPlan.sections.push_back(identitySection);
+    Pattern identityPattern;
+    identityPattern.lengthBeats = 64.0;
+    identityPattern.parts = {
+        {1, "hi_hats", "Stable Hats", VoiceId::ClosedHats, ScoreDepartment::Rhythm,
+         "Groove", 42, 46, 0.7, InstrumentSoundModel::Hats, "body", "detached", 1,
+         "Drum Rack", "short closed hats"},
+        {2, "orchestral_percussion", "Boundary FX", VoiceId::HighPercussion,
+         ScoreDepartment::Rhythm, "Arrivals only", 35, 81, 0.4,
+         InstrumentSoundModel::Timpani, "transition", "detached", 1,
+         "Drum Rack", "reverse cymbal impact"},
+        {3, "lead_synth", "Hook", VoiceId::Lead, ScoreDepartment::Melody,
+         "Primary hook", 48, 96, 0.9, InstrumentSoundModel::LeadSynth, "body", "legato", 1,
+         "Meld", "expressive mono hook"},
+        {4, "alto_flute", "Answer", VoiceId::Countermelody, ScoreDepartment::Melody,
+         "Derived response", 55, 88, 0.6, InstrumentSoundModel::Flute, "counterpoint", "legato", 1,
+         "Instrument Rack", "breathy alto flute"},
+        {5, "guitar", "Second Answer", VoiceId::Countermelody, ScoreDepartment::Melody,
+         "Independent derived response", 48, 84, 0.55, InstrumentSoundModel::Guitar,
+         "counterpoint", "detached", 1, "Instrument Rack", "warm clean guitar"}
+    };
+    for (const auto beat : {0.5, 2.5, 4.5, 8.5, 10.5, 12.5})
+        identityPattern.notes.push_back({beat, 0.04, 42, 58, 10, VoiceId::ClosedHats, 1});
+    for (const auto beat : {32.25, 33.75, 36.25, 40.25, 42.25, 45.75})
+        identityPattern.notes.push_back({beat, 0.04, 42, 62, 10, VoiceId::ClosedHats, 1});
+    for (auto beat = 4.0; beat < 60.0; beat += 4.0)
+        identityPattern.notes.push_back({beat, 0.05, 63, 54, 10, VoiceId::HighPercussion, 2});
+    identityPattern.notes.push_back({60.0, 3.5, 49, 82, 10, VoiceId::HighPercussion, 2});
+    identityPattern.notes.push_back({63.75, 0.10, 56, 91, 10, VoiceId::HighPercussion, 2});
+    identityPattern.notes.push_back({0.0, 0.5, 64, 90, 3, VoiceId::Lead, 3});
+    identityPattern.notes.push_back({1.0, 0.5, 67, 86, 3, VoiceId::Lead, 3});
+    identityPattern.notes.push_back({2.0, 0.5, 71, 92, 3, VoiceId::Lead, 3});
+    identityPattern.notes.push_back({3.0, 0.5, 69, 80, 3, VoiceId::Lead, 3});
+    for (const auto [beat, pitch] : std::array<std::pair<double, int>, 4>{{
+             {32.5, 74}, {33.5, 61}, {34.5, 76}, {35.5, 58}}})
+        identityPattern.notes.push_back({beat, 0.5, pitch, 72, 4, VoiceId::Countermelody, 4});
+    for (const auto [beat, pitch] : std::array<std::pair<double, int>, 4>{{
+             {40.25, 48}, {41.25, 83}, {42.25, 51}, {43.25, 80}}})
+        identityPattern.notes.push_back({beat, 0.4, pitch, 70, 5, VoiceId::Countermelody, 5});
+    const auto identityReport = MusicalIdentityGate::enforce(identityPattern, identityPlan);
+    const auto remainingTransitions = std::count_if(identityPattern.notes.begin(), identityPattern.notes.end(),
+        [](const auto& note) { return note.partId == 2; });
+    require(identityReport.grooveRecallRatio >= 0.99 &&
+                identityReport.responseLineageRatio >= 0.99 && identityReport.responseParts == 2 &&
+                identityReport.transitionNotesRemoved >= 10 && remainingTransitions <= 2 &&
+                std::all_of(identityPattern.notes.begin(), identityPattern.notes.end(), [](const auto& note) {
+                    return note.partId != 1 || note.durationBeats >= 0.124;
+                }),
+            "The identity gate must recall groove DNA, derive responses, restrain transition lanes and author playable gates");
+
+    auto developedGroovePlan = identityPlan;
+    developedGroovePlan.totalBars = 32;
+    developedGroovePlan.sections.front().bars = 32;
+    Pattern developedGroove;
+    developedGroove.lengthBeats = 128.0;
+    developedGroove.parts = {identityPattern.parts.front()};
+    for (auto window = 0; window < 4; ++window)
+        for (auto bar = 0; bar < 8; ++bar)
+            for (const auto beat : {0.5, 2.5})
+                developedGroove.notes.push_back({window * 32.0 + bar * 4.0 + beat, 0.125, 42,
+                    58, 10, VoiceId::ClosedHats, 1});
+    const auto developedGrooveReport = MusicalIdentityGate::enforce(
+        developedGroove, developedGroovePlan);
+    std::set<std::string> grooveWindows;
+    for (auto window = 0; window < 4; ++window) {
+        std::string fingerprint;
+        for (const auto& note : developedGroove.notes)
+            if (note.startBeat >= window * 32.0 && note.startBeat < (window + 1) * 32.0)
+                fingerprint += std::to_string(std::lround((note.startBeat - window * 32.0) * 4.0)) +
+                    ":" + std::to_string(note.pitch) + "|";
+        grooveWindows.insert(std::move(fingerprint));
+    }
+    require(developedGrooveReport.groovePhraseDevelopments == 4 &&
+                developedGrooveReport.grooveDevelopmentNotes >= 2 && grooveWindows.size() >= 3,
+            "Groove recall must preserve its skeleton while developing phrase endings instead of cloning whole windows: phrases=" +
+                std::to_string(developedGrooveReport.groovePhraseDevelopments) + ", notes=" +
+                std::to_string(developedGrooveReport.grooveDevelopmentNotes) + ", windows=" +
+                std::to_string(grooveWindows.size()));
+
+    Pattern verticalPattern;
+    verticalPattern.lengthBeats = 4.0;
+    verticalPattern.parts = {
+        {1, "sub_synth", "Clean Sine Sub", VoiceId::SubBass, ScoreDepartment::Harmony,
+         "Low foundation", 24, 48, 0.8, InstrumentSoundModel::SubSynth, "foundation", "legato", 1,
+         "Operator", "clean mono sine sub"},
+        {2, "analog_pad", "Warm Pad", VoiceId::HarmonicFoundation, ScoreDepartment::Harmony,
+         "Harmonic support", 36, 84, 0.6, InstrumentSoundModel::AnalogPad, "body", "legato", 1,
+         "Wavetable", "warm analog pad"}
+    };
+    verticalPattern.notes = {
+        {0.25, 0.25, 34, 84, 1, VoiceId::SubBass, 1},
+        {0.0, 1.0, 45, 68, 2, VoiceId::HarmonicFoundation, 2}
+    };
+    const auto verticalReport = VerticalHarmonyGate::enforce(verticalPattern);
+    require(verticalReport.collisionsBefore == 1 && verticalReport.collisionsAfter == 0 &&
+                verticalReport.supportNotesDucked == 1 &&
+                VerticalHarmonyGate::audit(verticalPattern) == 0 &&
+                std::all_of(verticalPattern.notes.begin(), verticalPattern.notes.end(), [](const auto& note) {
+                    return note.pitch == 34 || note.pitch == 45;
+                }),
+            "Vertical harmony must preserve legal pitches while carving low semitone clashes out of sustained support");
+
+    Pattern lateUpper;
+    lateUpper.lengthBeats = 8.0;
+    lateUpper.parts = {{1, "analog_pad", "Upper Air", VoiceId::HarmonicUpper,
+        ScoreDepartment::Harmony, "Selective upper extension", 36, 96, 0.5,
+        InstrumentSoundModel::AnalogPad, "extension", "sustained", 1,
+        "Wavetable", "thin high spectral pad"}};
+    lateUpper.notes = {{0.0, 2.0, 36, 64, 5, VoiceId::HarmonicUpper, 1}};
+    const auto lateRegisterRepairs = OrchestrationScore::enforcePublishedRegisters(lateUpper);
+    require(lateRegisterRepairs == 1 && lateUpper.notes.front().pitch >= 60 &&
+                positiveModulo(lateUpper.notes.front().pitch, 12) == 0,
+            "A post-orchestration Upper Air note must remain upper without changing pitch class");
+
+    auto authoredClub = clubPlan;
+    authoredClub.timbrePalette.description =
+        "Dark felt piano and breathy alto-flute answers inside a restrained club spectrum";
+    authoredClub.instruments.push_back({"authored_flute", "alto_flute", "Breathy Alto Flute",
+        VoiceId::Countermelody, "Answers the hook", 55, 88, 0, 0.86, 0.84, 0.0, {}});
+    SongComposer::normalizePlan(authoredClub);
+    require(std::any_of(authoredClub.instruments.begin(), authoredClub.instruments.end(), [](const auto& part) {
+                return part.id == "authored_flute" && part.instrumentId == "alto_flute";
+            }) &&
+            std::any_of(authoredClub.instruments.begin(), authoredClub.instruments.end(), [](const auto& part) {
+                return part.instrumentId == "piano";
+            }),
+            "Club normalization must preserve GPT's authored cast and materialize instruments named by its sound world");
+
+    auto closedElectronicCast = clubPlan;
+    closedElectronicCast.instrumentCastAuthored = true;
+    closedElectronicCast.instruments.erase(std::remove_if(closedElectronicCast.instruments.begin(),
+        closedElectronicCast.instruments.end(), [](const auto& instrument) {
+            return instrument.sourceVoice == VoiceId::HighPercussion ||
+                   instrument.sourceVoice == VoiceId::HarmonicUpper;
+        }), closedElectronicCast.instruments.end());
+    SongComposer::normalizePlan(closedElectronicCast);
+    require(std::none_of(closedElectronicCast.instruments.begin(), closedElectronicCast.instruments.end(),
+                [](const auto& instrument) {
+                    return instrument.sourceVoice == VoiceId::HighPercussion ||
+                           instrument.sourceVoice == VoiceId::HarmonicUpper ||
+                           instrument.role == "Dedicated orchestral owner";
+                }) &&
+            std::none_of(closedElectronicCast.voices.begin(), closedElectronicCast.voices.end(),
+                [](const auto& voice) {
+                    return voice.id == VoiceId::HighPercussion || voice.id == VoiceId::HarmonicUpper;
+                }) && closedElectronicCast.implicitVoicesPruned >= 2,
+            "An AI-authored electronic cast must prune each unowned voice instead of reopening the whole orchestra");
+
+    auto macroPulsePlan = clubPlan;
+    macroPulsePlan.totalBars = 48;
+    macroPulsePlan.sections.resize(1);
+    macroPulsePlan.sections.front().startBar = 0;
+    macroPulsePlan.sections.front().bars = 48;
+    macroPulsePlan.sections.front().name = "Extended breakdown";
+    macroPulsePlan.sections.front().function = "Sustain tension with percussion and atmosphere";
+    macroPulsePlan.sections.front().rhythm.kickState = KickState::Muted;
+    macroPulsePlan.sections.front().rhythm.continuity = KickContinuity::Sectional;
+    Pattern macroPulse;
+    macroPulse.lengthBeats = 192.0;
+    const auto macroPulseReport = ElectronicProductionDirector::shapePerformance(
+        macroPulse, macroPulsePlan);
+    require(macroPulseReport.maximumKicklessBarsBefore == 48 &&
+                macroPulseReport.maximumKicklessBarsAfter <= 16 &&
+                macroPulseReport.macroKickAnchorBarsCreated >= 2,
+            "A club breakdown may breathe but cannot lose every pulse anchor for longer than sixteen bars: before=" +
+                std::to_string(macroPulseReport.maximumKicklessBarsBefore) + ", after=" +
+                std::to_string(macroPulseReport.maximumKicklessBarsAfter) + ", anchors=" +
+                std::to_string(macroPulseReport.macroKickAnchorBarsCreated));
+
+    auto bassDevelopmentPlan = clubPlan;
+    bassDevelopmentPlan.productionLanguage.grooveEvolution = 0.40;
+    bassDevelopmentPlan.totalBars = 16;
+    bassDevelopmentPlan.sections.resize(1);
+    bassDevelopmentPlan.sections.front().startBar = 0;
+    bassDevelopmentPlan.sections.front().bars = 16;
+    Pattern repeatedBassPattern;
+    repeatedBassPattern.lengthBeats = 64.0;
+    InstrumentPart movementPart;
+    movementPart.id = 1;
+    movementPart.catalogId = "electric_bass";
+    movementPart.name = "Movement Bass";
+    movementPart.sourceVoice = VoiceId::MovementBass;
+    movementPart.department = ScoreDepartment::Harmony;
+    movementPart.minimumPitch = 36;
+    movementPart.maximumPitch = 60;
+    repeatedBassPattern.parts.push_back(movementPart);
+    for (auto bar = 0; bar < 16; ++bar) {
+        repeatedBassPattern.notes.push_back({bar * 4.0 + 0.75, 0.25, 43, 76, 6,
+            VoiceId::MovementBass, 1, true});
+        for (auto beat = 0; beat < 4; ++beat)
+            repeatedBassPattern.notes.push_back({bar * 4.0 + beat, 0.125, 36, 92, 10,
+                VoiceId::CoreDrums, 0, true});
+    }
+    const auto bassDevelopmentReport = ElectronicProductionDirector::shapePerformance(
+        repeatedBassPattern, bassDevelopmentPlan);
+    require(bassDevelopmentReport.bassPhraseDevelopmentsCreated == 1 &&
+                bassDevelopmentReport.bassNotesDeveloped == 1 &&
+                std::all_of(repeatedBassPattern.notes.begin(), repeatedBassPattern.notes.end(), [](const auto& note) {
+                    return std::abs(note.startBeat * 4.0 - std::round(note.startBeat * 4.0)) < 0.001;
+                }),
+            "A repeated movement-bass phrase must develop its ending while remaining on the strict grid: phrases=" +
+                std::to_string(bassDevelopmentReport.bassPhraseDevelopmentsCreated) + ", notes=" +
+                std::to_string(bassDevelopmentReport.bassNotesDeveloped));
+
+    Pattern semanticPercussion;
+    semanticPercussion.lengthBeats = 64.0;
+    for (auto index = 0; index < 24; ++index) {
+        semanticPercussion.notes.push_back({index * 0.5, 0.08, 36, 70, 10, VoiceId::HighPercussion});
+        semanticPercussion.notes.push_back({index * 0.5 + 0.25, 0.08, 46, 58, 10, VoiceId::OpenHatsShaker});
+        if (index < 8)
+            semanticPercussion.notes.push_back({index * 1.25, 0.08, 45, 62, 10, VoiceId::LowPercussion});
+    }
+    const auto semanticReport = RhythmEngine::enforceContract(semanticPercussion, clubPlan);
+    std::set<int> highArticulations;
+    std::set<int> topArticulations;
+    std::set<int> lowArticulations;
+    for (const auto& note : semanticPercussion.notes) {
+        if (note.voice == VoiceId::HighPercussion) highArticulations.insert(note.pitch);
+        if (note.voice == VoiceId::OpenHatsShaker) topArticulations.insert(note.pitch);
+        if (note.voice == VoiceId::LowPercussion) lowArticulations.insert(note.pitch);
+    }
+    require(semanticReport.semanticPitchRepairs > 0 &&
+                semanticReport.articulationDiversifications > 0 &&
+                highArticulations.size() >= 3 && topArticulations.size() >= 2 &&
+                !highArticulations.contains(36) &&
+                std::none_of(lowArticulations.begin(), lowArticulations.end(), [](auto pitch) {
+                    return pitch >= 41 && pitch <= 50;
+                }),
+            "Authored percussion must be repaired into diverse GM articulations before orchestration");
+
+    Pattern latePercussion;
+    latePercussion.lengthBeats = 16.0;
+    for (auto index = 0; index < 24; ++index)
+        latePercussion.notes.push_back({index * 0.5, 0.125, 36, 62, 10,
+            VoiceId::HighPercussion, 1});
+    const auto latePercussionReport = RhythmEngine::enforceSemanticArticulations(
+        latePercussion, clubPlan);
+    std::set<int> lateArticulations;
+    for (const auto& note : latePercussion.notes) lateArticulations.insert(note.pitch);
+    require(latePercussionReport.semanticPitchRepairs == 24 && lateArticulations.size() >= 3 &&
+                !lateArticulations.contains(36),
+            "Late high-percussion notes must become concrete GM articulations without changing their attacks");
+
+    Pattern qualityWarningPattern;
+    qualityWarningPattern.productionReady = true;
+    qualityWarningPattern.productionScore = 0.92;
+    ElectronicProductionReport qualityOnly;
+    qualityOnly.active = true;
+    qualityOnly.score = 0.72;
+    qualityOnly.thematicWindows = 8;
+    qualityOnly.thematicRecurrenceRatio = 0.0;
+    qualityOnly.percussionNotes = 24;
+    qualityOnly.percussionArticulations = 1;
+    qualityOnly.expectedEssentialInstruments = 2;
+    qualityOnly.materializedEssentialInstruments = 1;
+    ElectronicProductionDirector::stamp(qualityWarningPattern, qualityOnly);
+    require(qualityWarningPattern.productionReady &&
+                std::count_if(qualityWarningPattern.productionIssues.begin(),
+                    qualityWarningPattern.productionIssues.end(), [](const auto& issue) {
+                        return issue.starts_with("warning:");
+                    }) >= 3,
+            "Recoverable musical-quality observations must warn without triggering the integrity gate");
     auto hybridPlan = SongComposer::createLocalPlan(
         "Deep electronic club production with an orchestral chamber dialogue", 64, 122.0, 4.0,
         88118, 2, ScaleKind::Minor);
@@ -524,8 +846,8 @@ void runGeneratorTests() {
     require(musicalQuality.overall > 0.35 && musicalQuality.variation > 0.45 &&
                 musicalQuality.negativeSpace > 0.30,
             "The rendered score must pass minimum symbolic quality, variation and breathing thresholds");
-    requireNear(longSong.lengthBeats, 1080.0, 0.001,
-                "Nine minutes at 120 BPM must render exactly 1080 beats");
+    requireNear(longSong.lengthBeats, 1088.0, 0.001,
+                "Nine minutes at 120 BPM must resolve to the nearest complete eight-bar phrase");
     require(!longSong.notes.empty() && longSong.notes.size() < 32768,
             "Long-form rendering must remain populated and safe for realtime publication");
     require(deepReport.longestGlobalSilenceAfter <= longPlan.beatsPerBar * 2.0 + 0.001,
@@ -560,7 +882,15 @@ void runGeneratorTests() {
                 longSong.productionReady && deepReport.production.metricViolations == 0 &&
                 deepReport.production.expressionEventsPerNote <= 12.0 &&
                 deepReport.expression.controlsAfter < deepReport.expression.controlsBefore,
-            "Only a metrically exact, tonally valid and expression-efficient score may be published");
+            "Only a metrically exact, tonally valid and expression-efficient score may be published: ready=" +
+                std::to_string(deepReport.production.ready) + ", metric=" +
+                std::to_string(deepReport.production.metricViolations) + ", unsafe=" +
+                std::to_string(deepReport.production.unsafeDurations) + ", orphan=" +
+                std::to_string(deepReport.production.orphanEvents) + ", chromatic=" +
+                std::to_string(deepReport.production.unsupportedChromaticNotes) + ", sustains=" +
+                std::to_string(deepReport.production.invalidSustains) + ", tonal_clashes=" +
+                std::to_string(deepReport.production.unintendedHarshOverlaps) + ", vertical=" +
+                std::to_string(deepReport.production.lowRegisterVerticalClashes));
     require(std::count_if(longSong.parts.begin(), longSong.parts.end(), [](const auto& part) {
                 return part.department == ScoreDepartment::Harmony &&
                        part.orchestralFunction != "body";
@@ -942,6 +1272,64 @@ void runGeneratorTests() {
                 consolidatedRepair.outOfScaleRepaired == 1 && consolidatedRepair.after.productionReady(),
             "A declared chord must not legalise an out-of-key structural tone in consolidated mode");
 
+    Pattern resolvedLeadingTone;
+    resolvedLeadingTone.lengthBeats = 2.0;
+    resolvedLeadingTone.notes = {
+        {0.0, 0.25, 61, 78, 3, VoiceId::Lead},
+        {0.5, 0.50, 62, 88, 3, VoiceId::Lead}
+    };
+    const std::vector<HarmonicWindow> cadentialWindow{
+        {0.0, 2.0, 9, 9, {1, 4, 9}, HarmonicFunction::Dominant,
+         VoicingStrategy::Close, 0.82, "a7_to_dm", "A7 resolving to D minor"}
+    };
+    const auto resolvedRepair = repairTonalContract(
+        resolvedLeadingTone, 2, ScaleKind::Minor, 4.0, cadentialWindow, 0.035,
+        TonalPolicy::Consolidated);
+    require(resolvedLeadingTone.notes.front().pitch == 61 &&
+                resolvedRepair.intentionalChromaticNotes == 1 &&
+                resolvedRepair.after.productionReady(),
+            "Consolidated minor may retain one declared leading tone only when it resolves by semitone to tonic");
+
+    Pattern pitchedTransition;
+    pitchedTransition.lengthBeats = 4.0;
+    pitchedTransition.parts.push_back({1, "ambient_texture", "Filtered Wake",
+        VoiceId::Transitions, ScoreDepartment::Harmony, "Pitched reverse texture", 36, 96,
+        0.4, InstrumentSoundModel::Texture, "transition", "natural", 1,
+        "Granulator III", "pitched filtered texture"});
+    pitchedTransition.notes.push_back({0.0, 1.0, 51, 54, 9, VoiceId::Transitions, 1});
+    const std::vector<HarmonicWindow> transitionHarmony{
+        {0.0, 4.0, 2, 2, {2, 5, 9}, HarmonicFunction::Tonic,
+         VoicingStrategy::Open, 0.20, "dm", "D minor"}
+    };
+    const auto transitionRepair = repairTonalContract(
+        pitchedTransition, 2, ScaleKind::Minor, 4.0, transitionHarmony, 0.035,
+        TonalPolicy::Consolidated);
+    require(pitchedTransition.notes.front().pitch != 51 &&
+                isPitchClassInScale(pitchedTransition.notes.front().pitch, 2, ScaleKind::Minor) &&
+                transitionRepair.after.productionReady(),
+            "A chromatic Live texture must remain tonal even when sourced by the transitions voice");
+
+    Pattern dominatedPercussion;
+    dominatedPercussion.lengthBeats = 64.0;
+    for (auto index = 0; index < 48; ++index)
+        dominatedPercussion.notes.push_back({index * 1.25, 0.08, 75, 58, 10,
+                                              VoiceId::HighPercussion});
+    auto percussionPlan = longPlan;
+    percussionPlan.totalBars = 16;
+    percussionPlan.sections = {{"Percussion", "Development", "", "", 0, 16,
+        0.72, 0.55, 0.62, 0, percussionPlan.rootPitchClass, "minor", {},
+        {VoiceId::HighPercussion}, {}}};
+    const auto percussionRepair = RhythmEngine::enforceContract(dominatedPercussion,
+                                                                 percussionPlan);
+    std::map<int, int> percussionCounts;
+    for (const auto& note : dominatedPercussion.notes) ++percussionCounts[note.pitch];
+    const auto dominantCount = std::max_element(percussionCounts.begin(), percussionCounts.end(),
+        [](const auto& left, const auto& right) { return left.second < right.second; })->second;
+    require(percussionRepair.articulationDiversifications > 0 &&
+                dominantCount <= static_cast<int>(dominatedPercussion.notes.size() * 2 / 3) &&
+                percussionCounts.size() >= 3,
+            "One percussion articulation must never monopolise a multi-articulation support lane");
+
     Pattern performedTail;
     performedTail.lengthBeats = 4.0;
     performedTail.seed = 91;
@@ -1033,8 +1421,10 @@ void runGeneratorTests() {
                 return note.voice == VoiceId::Lead;
             }) == 4 && std::any_of(authoredChunk.notes.begin(), authoredChunk.notes.end(), [](const auto& note) {
                 return note.voice == VoiceId::HarmonicFoundation;
+            }) && std::all_of(authoredChunk.notes.begin(), authoredChunk.notes.end(), [](const auto& note) {
+                return note.voice != VoiceId::Lead || note.origin == NoteOrigin::AiAuthored;
             }),
-            "Explicit performance must replace only owned voices while preserving local fallback parts");
+            "Explicit performance must replace only owned voices and preserve AI authorship provenance");
 
     PerformanceScore partialScore;
     partialScore.cells.push_back({"brief_answer", 2.0, {VoiceId::Lead},
@@ -1081,8 +1471,64 @@ void runGeneratorTests() {
             }) && std::any_of(dialogueChunk.notes.begin(), dialogueChunk.notes.end(), [](const auto& note) {
                 return note.voice == VoiceId::Countermelody && note.pitch == 63 &&
                        std::abs(note.startBeat - 1.5) < 0.001;
+            }) && std::all_of(dialogueChunk.notes.begin(), dialogueChunk.notes.end(), [](const auto& note) {
+                return note.origin == NoteOrigin::AiTransformed && note.narrativeId != 0;
             }),
             "AI placements must turn a cell into audible cross-instrument thematic transformation");
+
+    auto narrativePlan = SongComposer::createLocalPlan(
+        "Narrative authorship audit", 120, 120.0, 4.0, 818, 2, ScaleKind::Minor);
+    narrativePlan.productionModeSource = "gpt_plan";
+    PerformanceCell narrativeCell;
+    narrativeCell.id = "central_statement";
+    narrativeCell.themeId = "central_theme";
+    narrativeCell.narrativeFunction = "establish";
+    narrativeCell.lengthBeats = 4.0;
+    narrativeCell.ownedVoices = {VoiceId::Lead, VoiceId::MovementBass,
+        VoiceId::HarmonicFoundation, VoiceId::CoreDrums};
+    narrativeCell.notes = {
+        {0.0, 0.5, 74, 92, VoiceId::Lead}, {1.0, 0.5, 77, 84, VoiceId::Lead},
+        {2.5, 0.75, 81, 88, VoiceId::Lead}, {0.5, 0.25, 50, 86, VoiceId::MovementBass},
+        {1.5, 0.25, 53, 82, VoiceId::MovementBass}, {3.0, 0.25, 57, 88, VoiceId::MovementBass},
+        {0.0, 3.5, 62, 68, VoiceId::HarmonicFoundation},
+        {0.0, 0.125, 36, 110, VoiceId::CoreDrums}};
+    narrativePlan.performanceScore = {};
+    narrativePlan.performanceScore.cells.push_back(narrativeCell);
+    for (std::size_t section = 0; section < narrativePlan.sections.size(); ++section) {
+        PerformancePlacement placement;
+        placement.cellId = narrativeCell.id;
+        placement.sectionIndex = static_cast<int>(section);
+        placement.repeats = narrativePlan.sections[section].bars;
+        placement.fragmentEnd = narrativeCell.lengthBeats;
+        placement.purpose = section == 0 ? "establish central theme" : "develop central theme";
+        narrativePlan.performanceScore.placements.push_back(placement);
+    }
+    SongComposer::normalizePlan(narrativePlan);
+    GenerationContext narrativeContext;
+    narrativeContext.rootPitchClass = narrativePlan.rootPitchClass;
+    narrativeContext.scale = narrativePlan.scale;
+    narrativeContext.beatsPerBar = narrativePlan.beatsPerBar;
+    narrativeContext.seed = narrativePlan.seed;
+    CompositionRenderReport narrativeRender;
+    const auto narrativeSong = SongComposer{}.render(
+        narrativePlan, narrativeContext, {}, &narrativeRender);
+    require(narrativeRender.narrative.active &&
+                narrativeRender.narrative.primaryVoiceCoverage >= 0.45 &&
+                narrativeRender.narrative.thematicRecallRatio >= 0.90 &&
+                narrativeSong.narrativeAuditPerformed &&
+                narrativeSong.aiAuthoredNoteRatio > 0.25,
+            "A GPT-authored long-form score must expose measurable coverage, memory and note provenance: coverage=" +
+                std::to_string(narrativeRender.narrative.primaryVoiceCoverage) +
+                " recall=" + std::to_string(narrativeRender.narrative.thematicRecallRatio) +
+                " authored=" + std::to_string(narrativeSong.aiAuthoredNoteRatio));
+
+    auto weakNarrativePlan = narrativePlan;
+    weakNarrativePlan.performanceScore = {};
+    const auto weakAudit = NarrativeScoreGate::audit(Pattern{}, weakNarrativePlan);
+    require(weakAudit.primaryVoiceCoverage < 0.01 &&
+                std::find(weakAudit.issues.begin(), weakAudit.issues.end(),
+                          "insufficient_ai_phrase_coverage") != weakAudit.issues.end(),
+            "A semantic GPT plan without authored phrases must fail the narrative authorship contract");
 
     auto octavePlan = SongComposer::createLocalPlan(
         "octave normalization", 60, 120.0, 4.0, 91, 0, ScaleKind::Minor);

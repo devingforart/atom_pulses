@@ -28,6 +28,9 @@ struct ProductionAuditReport {
     int strongNonChordNotes{};
     int invalidSustains{};
     int unintendedHarshOverlaps{};
+    std::size_t lowRegisterVerticalClashes{};
+    std::size_t implicitCastParts{};
+    double longestGlobalSilenceBeats{};
     double registerClarity{1.0};
     double familyBalance{1.0};
     double score{};

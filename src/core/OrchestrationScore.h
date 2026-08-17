@@ -73,6 +73,9 @@ struct TimbrePalette {
     double acousticElectronicBalance{0.58};
     double cohesion{0.82};
     double contrast{0.55};
+    // Derived from concrete instrument names in the AI-authored palette. It is an internal
+    // binding contract and does not expand the public prompt schema.
+    std::vector<std::string> essentialInstrumentIds;
 };
 
 struct OrchestrationReport {
@@ -91,6 +94,8 @@ struct OrchestrationReport {
     std::size_t articulationChanges{};
     std::size_t registerRepairs{};
     std::size_t balanceRemovals{};
+    std::size_t implicitVoicesPruned{};
+    std::size_t implicitPerformanceNotesPruned{};
     double registerClarity{1.0};
     double familyBalance{1.0};
 };
@@ -103,6 +108,9 @@ struct OrchestrationReport {
 class OrchestrationScore final {
 public:
     [[nodiscard]] static OrchestrationReport realize(Pattern&, const SongPlan&);
+    // Continuity repair runs after realization and can create notes directly on a part.
+    // Re-apply the published part/voice register without changing pitch class.
+    [[nodiscard]] static std::size_t enforcePublishedRegisters(Pattern&);
     static void applyPartExpression(Pattern&, const SongPlan&, OrchestrationReport* = nullptr);
 };
 

@@ -114,7 +114,10 @@ STRICT_IDENTITY_CATALOGS = {
 
 # These roles must remain timbrally independent. Sharing the sub preset with the movement
 # bass collapses the low-end arrangement into one voice and defeats the AI's orchestration.
-EXCLUSIVE_SOUND_CATALOGS = {"sub_synth", "electric_bass"}
+EXCLUSIVE_SOUND_CATALOGS = {
+    "sub_synth", "electric_bass", "analog_pad", "poly_synth", "lead_synth",
+    "ambient_texture",
+}
 
 RHYTHM_CATALOGS = {
     "kick_drum", "snare_clap", "hi_hats", "timpani", "taiko_ensemble",
@@ -125,12 +128,71 @@ ONE_SHOT_PREFERRED_CATALOGS = {
     "kick_drum", "snare_clap", "hi_hats", "latin_percussion", "shakers", "cymbals",
 }
 
+RAW_AUDIO_EXTENSIONS = (".wav", ".aif", ".aiff", ".flac")
+
+ARTICULATION_GROUPS = {
+    "kick": {"kick"}, "snare": {"snare", "sidestick", "rim"},
+    "clap": {"clap"}, "hat": {"hat", "hihat"},
+    "ride": {"ride"}, "crash": {"crash"}, "splash": {"splash"},
+    "china": {"china", "chinese"}, "conga": {"conga"},
+    "bongo": {"bongo"}, "timbale": {"timbale"}, "tom": {"tom"},
+    "clave": {"clave", "claves"}, "cowbell": {"cowbell"},
+    "tambourine": {"tambourine", "tamb"}, "shaker": {"shaker"},
+    "maraca": {"maraca", "maracas"}, "vibraslap": {"vibraslap"},
+    "guiro": {"guiro"}, "cabasa": {"cabasa"},
+    "wood block": {"wood", "block"}, "triangle": {"triangle"},
+}
+
+# Words in live_preset_intent are part of the audible contract, not decorative prose.
+# We deliberately keep this vocabulary small and perceptually meaningful: it is better to
+# admit that a generic flute is only a character fallback than to claim it is the requested
+# breathy alto flute merely because both filenames contain "flute".
+CHARACTER_GROUPS = {
+    "breath": {"breath", "breathy", "airy"},
+    "glass": {"glass", "glassy", "crystal", "crystalline"},
+    "felt": {"felt"},
+    "mute": {"mute", "muted", "damped"},
+    "bright": {"bright", "luminous", "brilliant"},
+    "dark": {"dark", "dusky", "shadow"},
+    "warm": {"warm", "rounded", "mellow", "sweet", "vintage"},
+    "cold": {"cold", "icy", "metallic"},
+    "high": {"high", "upper", "treble", "piccolo"},
+    "low": {"low", "lower", "bass", "deep"},
+    "alto": {"alto"},
+    "soft": {"soft", "gentle", "delicate", "mellow"},
+    "hard": {"hard", "aggressive", "punchy"},
+    "dry": {"dry", "close", "intimate"},
+    "wet": {"wet", "reverb", "spacious", "ambient"},
+    "short": {"short", "tight", "pluck", "plucked"},
+    "long": {"long", "sustain", "sustained", "evolving"},
+    "sine": {"sine", "sinusoidal"},
+    "granular": {"granular", "grain", "granulator"},
+}
+
+CHARACTER_OPPOSITES = {
+    "bright": "dark", "dark": "bright", "warm": "cold", "cold": "warm",
+    "high": "low", "low": "high", "soft": "hard", "hard": "soft",
+    "dry": "wet", "wet": "dry", "short": "long", "long": "short",
+}
+
 
 def tokens(value):
     normalized = unicodedata.normalize("NFKD", str(value).casefold())
     ascii_value = "".join(character for character in normalized if not unicodedata.combining(character))
     result = []
     for token in re.sub(r"[^a-z0-9]+", " ", ascii_value).split():
+        if token in ("hi", "high"):
+            result.append("high")
+            continue
+        if token in ("lo", "low"):
+            result.append("low")
+            continue
+        if token in ("mute", "muted"):
+            result.append("mute")
+            continue
+        if token in ("close", "closed"):
+            result.append("closed")
+            continue
         if len(token) <= 2:
             continue
         result.append(token)
@@ -138,6 +200,90 @@ def tokens(value):
         if len(token) >= 4 and token.endswith("s") and not token.endswith("ss"):
             result.append(token[:-1])
     return result
+
+
+def intent_fidelity(name, path, spec):
+    """Measure whether a playable family match also realizes its requested character.
+
+    A score of 1 means either no binding character was requested or every requested
+    descriptor is present. Missing words are reported honestly; an explicit opposite is
+    penalized further. Instrument-family identity continues to be enforced separately.
+    """
+    requested_tokens = set(tokens(spec.get("preset_intent", "")))
+    available_tokens = set(tokens("{} {}".format(name, path)))
+    catalog_id = str(spec.get("catalog_id", "")).strip().casefold()
+    lowered_name = str(name).casefold()
+    # Browser filenames omit obvious physical properties. A raw isolated drum hit is dry
+    # and short unless explicitly labelled wet/long; a kick is inherently low. Encoding
+    # those observable facts avoids punishing a suitable 909 merely because its filename
+    # does not repeat GPT's adjectives.
+    if catalog_id == "kick_drum":
+        available_tokens.update(("low", "deep"))
+    if str(name).casefold().endswith(RAW_AUDIO_EXTENSIONS) and catalog_id in {
+            "kick_drum", "snare_clap", "hi_hats", "shakers", "latin_percussion"}:
+        if not available_tokens.intersection(CHARACTER_GROUPS["wet"]):
+            available_tokens.add("dry")
+        if not available_tokens.intersection(CHARACTER_GROUPS["long"]):
+            available_tokens.add("short")
+    if catalog_id == "sub_synth" and "sine" in available_tokens:
+        available_tokens.update(("clean", "low", "deep"))
+    requested_groups = [group for group, values in CHARACTER_GROUPS.items()
+                        if requested_tokens.intersection(values)]
+    if not requested_groups:
+        return 1.0
+    matched = sum(1 for group in requested_groups
+                  if available_tokens.intersection(CHARACTER_GROUPS[group]))
+    contradictions = sum(1 for group in requested_groups
+                         if CHARACTER_OPPOSITES.get(group) and
+                         available_tokens.intersection(
+                             CHARACTER_GROUPS[CHARACTER_OPPOSITES[group]]))
+    score = 0.35 + 0.65 * matched / len(requested_groups) - 0.20 * contradictions
+    return max(0.0, min(1.0, score))
+
+
+def select_track_sound_variants(items, spec, count=1, used_paths=None):
+    """Choose distinct audible realizations for one semantic articulation."""
+    count = max(1, min(3, int(count)))
+    used = set(str(value).casefold() for value in (used_paths or ()))
+    selected = []
+    selected_identities = set()
+    for _ in range(count):
+        match = select_track_sound(items, spec, used)
+        if match is None:
+            break
+        identity = (str(match[0]).casefold(), str(match[1]).casefold())
+        if identity in selected_identities:
+            break
+        selected.append(match)
+        selected_identities.add(identity)
+        used.add(identity[1])
+        used.add("name:" + identity[0])
+    return selected
+
+
+def spec_intent_consistency(spec):
+    """Detect contradictory character authorship before the Browser hides it.
+
+    Track names may be poetic, so a score is reduced only when both the visible identity
+    and preset intent contain concrete character groups and none of them agree.
+    """
+    # Role prose describes musical behaviour and often contains negated context (for
+    # example "absent during dry attacks"). It must not redefine the track's own timbre.
+    # The visible track name is the authored identity compared with preset intent.
+    label_tokens = set(tokens(spec.get("name", "")))
+    intent_tokens = set(tokens(spec.get("preset_intent", "")))
+    label_groups = {group for group, values in CHARACTER_GROUPS.items()
+                    if label_tokens.intersection(values)}
+    intent_groups = {group for group, values in CHARACTER_GROUPS.items()
+                     if intent_tokens.intersection(values)}
+    if not label_groups or not intent_groups:
+        return 1.0
+    if label_groups.intersection(intent_groups):
+        return 1.0
+    for group in label_groups:
+        if CHARACTER_OPPOSITES.get(group) in intent_groups:
+            return 0.0
+    return 0.5
 
 
 def is_playable_item(name):
@@ -154,6 +300,115 @@ def _identity_tier(catalog_id, haystack):
         if any(_matches_alias(haystack, alias) for alias in aliases):
             return index
     return None
+
+
+def _requested_articulation_group(articulation_aliases):
+    alias_values = [str(value).casefold() for value in articulation_aliases]
+    primary_tokens = set(tokens(alias_values[0])) if alias_values else set()
+    return next((group for group, values in ARTICULATION_GROUPS.items()
+                 if primary_tokens.intersection(values)), None)
+
+
+def _qualifier_conflict(name, articulation_aliases):
+    alias_values = [str(value).casefold() for value in articulation_aliases]
+    requested = set(tokens(alias_values[0])) if alias_values else set()
+    available = set(tokens(name))
+    if "high" in requested and "low" in available and "high" not in available:
+        return True
+    if "low" in requested and "high" in available and "low" not in available:
+        return True
+    if "open" in requested and available.intersection({"closed", "mute"}):
+        return True
+    if "open" in requested and "pedal" in available and "pedal" not in requested:
+        return True
+    if "closed" in requested and "open" in available:
+        return True
+    if "mute" in requested and "open" in available:
+        return True
+    if "pedal" in requested and "open" in available and "pedal" not in available:
+        return True
+    return False
+
+
+def _articulation_qualifier_score(name, articulation_aliases):
+    alias_values = [str(value).casefold() for value in articulation_aliases]
+    requested = set(tokens(alias_values[0])) if alias_values else set()
+    available = set(tokens(name))
+    score = 0
+    if requested.intersection({"open", "closed", "mute", "pedal"}).intersection(available):
+        score += 36
+    if requested.intersection({"high", "low"}).intersection(available):
+        score += 18
+    return score
+
+
+def _semantic_conflict(name, catalog_id, articulation_aliases=()):
+    """Reject compound or contradictory one-shots before lexical ranking.
+
+    A filename containing both "kick" and "open hat" is a valid production layer, but it
+    cannot represent an isolated hat articulation in an editable multi-track arrangement.
+    """
+    lowered = str(name).casefold()
+    item_tokens = set(tokens(name))
+    rhythm = str(catalog_id).casefold() in RHYTHM_CATALOGS
+    if rhythm and any(term in lowered for term in
+                      (" combo", "loop", "construction kit", "full kit", "drum mix")):
+        return True
+    alias_values = [str(value).casefold() for value in articulation_aliases]
+    aliases = " ".join(alias_values)
+    if ("open hat" in aliases or "open hihat" in aliases) and \
+            item_tokens.intersection({"kick", "snare", "clap", "tom"}):
+        return True
+    if ("closed hat" in aliases or "closed hihat" in aliases) and "open" in item_tokens:
+        return True
+    if "clap" in aliases and "kick" in item_tokens:
+        return True
+    if _qualifier_conflict(name, articulation_aliases):
+        return True
+    requested = _requested_articulation_group(articulation_aliases)
+    if requested is not None:
+        contradictory = set().union(*(values for group, values in ARTICULATION_GROUPS.items()
+                                      if group != requested))
+        # Libraries conventionally label a China cymbal as "Crash China".  "Crash" is
+        # descriptive in that compound identity; the explicit China token still wins.
+        if requested == "china":
+            contradictory.difference_update(ARTICULATION_GROUPS["crash"])
+        # A compound sample is not an isolated articulation even when its filename also
+        # contains the requested word ("Conga and Tambourine", for example). Triggering
+        # that file as one MIDI hit imports another rhythm and an uncontrolled tail.
+        if item_tokens.intersection(contradictory):
+            return True
+    return False
+
+
+def _matches_articulation_identity(haystack, articulation_aliases):
+    requested = _requested_articulation_group(articulation_aliases)
+    if requested is not None:
+        return bool(set(haystack).intersection(ARTICULATION_GROUPS[requested]))
+    return any(_matches_alias(haystack, alias) for alias in articulation_aliases)
+
+
+def _safe_isolated_articulation(name, path):
+    """Accept only tempo-independent raw hits for split percussion tracks.
+
+    Live presets can conceal a sequencer, a long envelope or a chromatically mapped rack.
+    Raw files in Drum Hits have one deterministic attack and can be remapped safely by the
+    playback adapter. Tempo-labelled material is a loop even when Browser categorises it
+    under Drum Hits, so it is never used as an individual GM articulation.
+    """
+    label = "{} {}".format(name, path).casefold()
+    if not str(name).casefold().endswith(RAW_AUDIO_EXTENSIONS):
+        return False
+    if re.search(r"\b\d{2,3}\s*bpm\b", label):
+        return False
+    if any(term in label for term in
+           (" construction kit", " drum loop", " percussion loop", " full loop")):
+        return False
+    return True
+
+
+def _is_used(name, path, used):
+    return str(path).casefold() in used or "name:" + str(name).casefold() in used
 
 
 def _rank_item(name, path, intent, requested_device, catalog_id=""):
@@ -194,8 +449,16 @@ def _rank_item(name, path, intent, requested_device, catalog_id=""):
         if "synth bass" in lowered_name or any(value in lowered_name for value in ("long tail", "boomy")):
             score -= 60
     if str(catalog_id).casefold() == "sub_synth":
-        if any(value in lowered_name for value in ("sub", "sine", "clean")):
-            score += 28
+        wanted = set(tokens(intent))
+        if "sub" in name_tokens:
+            score += 10
+        if "sine" in wanted:
+            score += 42 if "sine" in name_tokens else -42 if name_tokens.intersection(
+                {"saw", "complex", "wobble", "drive", "growl"}) else 0
+        if wanted.intersection({"clean", "mono"}):
+            score += 24 if name_tokens.intersection({"basic", "clean", "sine", "pure"}) else 0
+            if name_tokens.intersection({"complex", "wobble", "drive", "growl", "itchy"}):
+                score -= 32
         if any(value in lowered_name for value in ("electric", "finger", "pluck", "growl")):
             score -= 32
     if str(catalog_id).casefold() == "electric_bass":
@@ -203,6 +466,20 @@ def _rank_item(name, path, intent, requested_device, catalog_id=""):
             score += 30
         if any(value in lowered_name for value in ("sub sine", "pure sine", "clean sub")):
             score -= 55
+    if str(catalog_id).casefold() in {"analog_pad", "poly_synth", "lead_synth", "ambient_texture"}:
+        wanted = set(tokens(intent))
+        high_role = bool(wanted.intersection({"high", "upper", "bright", "air", "luminous", "treble"}))
+        low_role = bool(wanted.intersection({"low", "lower", "dark", "body", "foundation", "bass"}))
+        named_high = bool(name_tokens.intersection({"high", "upper", "bright", "air"}))
+        named_low = bool(name_tokens.intersection({"low", "lower", "dark", "bass"}))
+        if high_role and named_high:
+            score += 24
+        if low_role and named_low:
+            score += 24
+        if high_role and named_low:
+            score -= 36
+        if low_role and named_high:
+            score -= 36
     device_tokens = set(tokens(requested_device))
     if device_tokens and device_tokens.issubset(item_tokens):
         score += 2
@@ -214,7 +491,10 @@ def select_track_sound(items, spec, used_paths=None):
     catalog_id = str(spec.get("catalog_id", "")).strip().casefold()
     # Identity remains the hard contract; the shared palette resolves ties so a large
     # ensemble inhabits one sound world instead of selecting unrelated presets.
-    intent = "{} {}".format(spec.get("preset_intent", ""), spec.get("sound_world", "")).strip()
+    # Per-track intent owns sound selection. The global palette is already reflected in
+    # GPT's authored intent and must never leak words such as "muted" from a bass into the
+    # lead, or "glassy" from a piano into a pad.
+    intent = str(spec.get("preset_intent", "")).strip()
     requested_device = str(spec.get("native_device", ""))
     articulation_aliases = tuple(str(value).strip() for value in
                                  spec.get("articulation_aliases", ()) if str(value).strip())
@@ -223,36 +503,56 @@ def select_track_sound(items, spec, used_paths=None):
     for name, path, item in items:
         if not is_playable_item(name):
             continue
+        if _semantic_conflict(name, catalog_id, articulation_aliases):
+            continue
+        if articulation_aliases and catalog_id in RHYTHM_CATALOGS and \
+                not _safe_isolated_articulation(name, path):
+            continue
         lowered_name = str(name).casefold()
         if catalog_id == "kick_drum" and ("synth bass" in lowered_name or
-                any(value in lowered_name for value in ("click layer", "top layer", "transient layer"))):
+                any(value in lowered_name for value in
+                    ("click layer", "top layer", "transient layer", "open hat combo"))):
             continue
         if catalog_id in KIT_REQUIRED_CATALOGS and not (lowered_name.endswith(".adg") and "kit" in tokens(name)):
             continue
         haystack = set(tokens(str(name) + " " + str(path)))
-        articulation_match = articulation_aliases and any(
-            _matches_alias(haystack, alias) for alias in articulation_aliases)
+        articulation_match = articulation_aliases and _matches_articulation_identity(
+            haystack, articulation_aliases)
         identity_tier = _identity_tier(catalog_id, haystack)
         tier = 0 if articulation_match else (
             identity_tier + 1 if articulation_aliases and identity_tier is not None
             else identity_tier)
         if tier is not None:
-            tiered.append((tier, str(path).casefold() in used,
-                           -_rank_item(name, path, intent, requested_device, catalog_id),
+            fidelity = intent_fidelity(name, path, spec)
+            tiered.append((tier, _is_used(name, path, used),
+                           -(_rank_item(name, path, intent, requested_device, catalog_id) +
+                             _articulation_qualifier_score(name, articulation_aliases) +
+                             fidelity * 48.0),
                            str(path).casefold(), name, path, item))
     if tiered:
+        if articulation_aliases and catalog_id in RHYTHM_CATALOGS:
+            # A split GM articulation is an exact audible identity, not a suggestion.
+            # Skipping an unavailable ride is safer than silently turning it into a clap.
+            tiered = [candidate for candidate in tiered if candidate[0] == 0]
         if catalog_id in STRICT_IDENTITY_CATALOGS:
             tiered = [candidate for candidate in tiered if candidate[0] == 0]
         elif catalog_id in RHYTHM_CATALOGS and catalog_id != "production_drums" and \
                 not any(candidate[0] == 0 for candidate in tiered):
             tiered = [candidate for candidate in tiered
-                      if str(candidate[5]).casefold().endswith((".wav", ".aif", ".aiff", ".flac"))]
+                      if str(candidate[5]).casefold().endswith(RAW_AUDIO_EXTENSIONS)]
         if catalog_id in EXCLUSIVE_SOUND_CATALOGS:
             tiered = [candidate for candidate in tiered if not candidate[1]]
     if tiered:
         tiered.sort(key=lambda value: value[:4])
         tier, shared, _, _, name, path, item = tiered[0]
-        return name, path, item, "identity" if tier == 0 else "family_fallback", shared
+        fidelity = intent_fidelity(name, path, spec)
+        quality = "identity" if tier == 0 else "family_fallback"
+        if fidelity < 0.78:
+            quality = "character_fallback"
+        return name, path, item, quality, shared
+
+    if articulation_aliases and catalog_id in RHYTHM_CATALOGS:
+        return None
 
     # Only explicit audible native instruments may rescue an unavailable family.
     # Empty Rack/Sampler containers never qualify.
@@ -264,7 +564,7 @@ def select_track_sound(items, spec, used_paths=None):
             continue
         for name, path, item in items:
             if is_playable_item(name) and candidate.casefold() == str(name).strip().casefold():
-                return name, path, item, "device_fallback", str(path).casefold() in used
+                return name, path, item, "device_fallback", _is_used(name, path, used)
 
     # Last-resort playback is explicit and audible, never an empty Rack. Rhythm receives a
     # one-shot from Drum Hits; pitched parts receive a neutral native synth rather than a
@@ -273,11 +573,13 @@ def select_track_sound(items, spec, used_paths=None):
         emergency = []
         for name, path, item in items:
             lowered_path = str(path).casefold().replace("\\", "/")
-            if not str(name).casefold().endswith((".wav", ".aif", ".aiff", ".flac")) or \
+            if _semantic_conflict(name, catalog_id, articulation_aliases):
+                continue
+            if not str(name).casefold().endswith(RAW_AUDIO_EXTENSIONS) or \
                     "/drum hits/" not in lowered_path:
                 continue
             emergency.append((-_rank_item(name, path, intent, requested_device, catalog_id),
-                              str(path).casefold() in used, str(path).casefold(), name, path, item))
+                              _is_used(name, path, used), str(path).casefold(), name, path, item))
         if emergency:
             emergency.sort(key=lambda value: value[:3])
             _, shared, _, name, path, item = emergency[0]
@@ -286,7 +588,7 @@ def select_track_sound(items, spec, used_paths=None):
         for safe_name in ("Drift", "Wavetable", "Operator"):
             for name, path, item in items:
                 if str(name).strip().casefold() == safe_name.casefold() and is_playable_item(name):
-                    return name, path, item, "emergency_instrument", str(path).casefold() in used
+                    return name, path, item, "emergency_instrument", _is_used(name, path, used)
     return None
 
 

@@ -238,16 +238,33 @@ int main(int argc, char** argv) {
         const auto sectionsWithTwoChords = std::count_if(plan.sections.begin(), plan.sections.end(), [](const auto& section) {
             return section.harmonicEvents.size() >= 2;
         });
+        pulso::GenerationContext liveContext;
+        liveContext.rootPitchClass = plan.rootPitchClass;
+        liveContext.scale = plan.scale;
+        liveContext.beatsPerBar = plan.beatsPerBar;
+        liveContext.seed = plan.seed;
+        pulso::CompositionRenderReport liveReport;
+        const auto liveSong = pulso::SongComposer{}.render(plan, liveContext, {}, &liveReport);
         std::cout << "[INFO] Live plan | error=" << error << " voices=" << plan.voices.size()
                   << " authored_voices=" << authoredVoices << " instruments=" << plan.instruments.size()
                   << " sections=" << plan.sections.size() << " sections_with_2_chords=" << sectionsWithTwoChords
                   << " bars=" << plan.totalBars << " motifs=" << plan.rhythmMotifs.size()
-                  << " chords=" << plan.chordPalette.size() << '\n';
+                  << " chords=" << plan.chordPalette.size()
+                  << " cells=" << plan.performanceScore.cells.size()
+                  << " narrative=" << liveReport.narrative.score
+                  << " coverage=" << liveReport.narrative.primaryVoiceCoverage
+                  << " recall=" << liveReport.narrative.thematicRecallRatio << '\n';
         require(error.isEmpty(), "Live OpenAI song-plan request failed: " + error.toStdString());
         require(plan.sections.size() >= 3 && plan.voices.size() >= 7 && plan.instruments.size() >= 12 &&
                     plan.totalBars == 30 &&
                     plan.rhythmMotifs.size() >= 2 && !plan.rhythmLanguage.description.empty() &&
                     plan.chordPalette.size() >= 4 && !plan.harmonicLanguage.description.empty() &&
+                    !liveSong.notes.empty() && !plan.performanceScore.cells.empty() &&
+                    std::all_of(plan.performanceScore.cells.begin(), plan.performanceScore.cells.end(), [](const auto& cell) {
+                        return !cell.themeId.empty() && !cell.narrativeFunction.empty();
+                    }) && liveReport.narrative.primaryVoiceCoverage >= 0.45 &&
+                    (liveReport.narrative.thematicPlacements < 3 ||
+                     liveReport.narrative.thematicRecallRatio >= 0.35) &&
                     std::all_of(plan.voices.begin(), plan.voices.end(), [](const auto& voice) {
                         return voice.performance.authored &&
                                voice.performance.expressionDepth >= 0.0 &&
@@ -814,6 +831,7 @@ int main(int argc, char** argv) {
             "Structured GPT song architecture must validate independently from MIDI rendering");
     require(parsedSongPlan.sections.size() == 3 && parsedSongPlan.voices.size() >= 10 &&
                 parsedSongPlan.instruments.size() >= 12 &&
+                !parsedSongPlan.instrumentCastAuthored &&
                 parsedSongPlan.sections[1].activeVoices.size() >= 8 && parsedSongPlan.totalBars == 32 &&
                 parsedSongPlan.sections.back().startBar == 24 && parsedSongPlan.key == "D minor" &&
                 parsedSongPlan.sections[1].rhythm.kickState == pulso::KickState::FourOnFloor &&
@@ -1221,7 +1239,15 @@ int main(int argc, char** argv) {
     // This executable is not launched by an ASIO real-time thread, so Windows may
     // occasionally deschedule it for Defender/GUI work. Require the distribution to
     // meet the real 5.33 ms budget and separately reject catastrophic host stalls.
-    require(callbackP99 < std::chrono::milliseconds(5) && longestCallback < std::chrono::milliseconds(50),
+   #if JUCE_DEBUG
+    // Bounds-checked, unoptimised JUCE rendering is a diagnostic build, not the binary
+    // delivered to Live. Keep it protected against stalls without pretending it has the
+    // same deadline as Release; the Release suite below the packaging gate retains 5 ms.
+    constexpr auto callbackBudget = std::chrono::milliseconds(8);
+   #else
+    constexpr auto callbackBudget = std::chrono::milliseconds(5);
+   #endif
+    require(callbackP99 < callbackBudget && longestCallback < std::chrono::milliseconds(50),
             "At 48 kHz/256 samples the callback distribution must fit its 5.33 ms deadline; p99=" +
             std::to_string(callbackP99.count()) + " us max=" + std::to_string(longestCallback.count()) + " us");
 
@@ -1287,6 +1313,7 @@ int main(int argc, char** argv) {
     if (originalPlan != nullptr && !originalPlan->sections.empty())
         require(restoredPlan != nullptr &&
                     restoredPlan->chordPalette.size() == originalPlan->chordPalette.size() &&
+                    restoredPlan->instrumentCastAuthored == originalPlan->instrumentCastAuthored &&
                     restoredPlan->harmonicLanguage.description == originalPlan->harmonicLanguage.description &&
                     restoredPlan->sections.size() == originalPlan->sections.size() &&
                     !restoredPlan->sections.empty() &&
@@ -1360,7 +1387,7 @@ int main(int argc, char** argv) {
         bridgeTestDirectory.getChildFile("request.json").loadFileAsString());
     auto* deploymentObject = deploymentJson.getDynamicObject();
     require(deploymentObject != nullptr &&
-                static_cast<int>(deploymentObject->getProperty("schema_version")) == 6 &&
+                static_cast<int>(deploymentObject->getProperty("schema_version")) == 8 &&
                 deploymentObject->getProperty("sound_engine").toString() == "ableton_live_native" &&
                 deploymentObject->getProperty("expression_delivery").toString() ==
                     "native_editable_with_lossless_midi_source" &&
@@ -1370,21 +1397,31 @@ int main(int argc, char** argv) {
                 !deploymentObject->hasProperty("electronic_production_score") &&
                 deploymentObject->getProperty("sound_world").toString().isNotEmpty() &&
                 deploymentObject->getProperty("deployment_mode").toString() == "full_orchestration" &&
+                deploymentObject->hasProperty("narrative_audited") &&
                 deploymentObject->getProperty("tracks").getArray() != nullptr &&
                 deploymentObject->getProperty("tracks").getArray()->size() == 3,
             "Full orchestration must create one versioned editable Live track per populated instrument");
     const auto* nativeTracks = deploymentObject->getProperty("tracks").getArray();
     require(nativeTracks != nullptr && std::all_of(nativeTracks->begin(), nativeTracks->end(), [](const auto& value) {
                 const auto* track = value.getDynamicObject();
+                const auto* notes = track == nullptr ? nullptr : track->getProperty("notes").getArray();
                 return track != nullptr && track->getProperty("sound_source").toString() == "live_native" &&
                        track->getProperty("native_device").toString().isNotEmpty() &&
                        track->getProperty("playback_mode").toString().isNotEmpty() &&
                        track->getProperty("same_pitch_overlap_policy").toString() == "trim_previous" &&
+                       track->getProperty("timbre_priority").toString().isNotEmpty() &&
+                       static_cast<double>(track->getProperty("minimum_intent_fidelity")) >= 0.35 &&
+                       static_cast<double>(track->getProperty("release_max_seconds")) > 0.0 &&
                        track->getProperty("controls").getArray() != nullptr &&
                        track->getProperty("expressions").getArray() != nullptr &&
                        static_cast<int>(track->getProperty("expression_projection_version")) == 1 &&
                        track->getProperty("sound_world").toString().isNotEmpty() &&
-                       track->getProperty("device_candidates").getArray() != nullptr;
+                       track->getProperty("device_candidates").getArray() != nullptr &&
+                       notes != nullptr && std::all_of(notes->begin(), notes->end(), [](const auto& noteValue) {
+                           const auto* note = noteValue.getDynamicObject();
+                           return note != nullptr && note->hasProperty("origin") &&
+                                  note->hasProperty("narrative_id");
+                       });
             }), "Every deployed part must carry a validated Live-native sound contract without VST identifiers");
     const auto* kickDeployment = (*nativeTracks)[0].getDynamicObject();
     require(kickDeployment != nullptr && kickDeployment->getProperty("native_device").toString() == "Drum Rack" &&

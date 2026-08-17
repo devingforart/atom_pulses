@@ -17,7 +17,7 @@ constexpr std::array catalog{
     InstrumentDefinition{"hi_hats", "Hi-Hats", ScoreDepartment::Rhythm, VoiceId::ClosedHats, 42, 46, false, 0.7},
     InstrumentDefinition{"timpani", "Timpani", ScoreDepartment::Rhythm, VoiceId::LowPercussion, 36, 57, false, 0.8},
     InstrumentDefinition{"taiko_ensemble", "Taiko Ensemble", ScoreDepartment::Rhythm, VoiceId::LowPercussion, 35, 60, false, 0.9},
-    InstrumentDefinition{"latin_percussion", "Latin Percussion", ScoreDepartment::Rhythm, VoiceId::HighPercussion, 56, 81, false, 0.65},
+    InstrumentDefinition{"latin_percussion", "Latin Percussion", ScoreDepartment::Rhythm, VoiceId::LowPercussion, 41, 77, false, 0.65},
     InstrumentDefinition{"shakers", "Shakers", ScoreDepartment::Rhythm, VoiceId::OpenHatsShaker, 46, 82, false, 0.45},
     InstrumentDefinition{"cymbals", "Cymbals", ScoreDepartment::Rhythm, VoiceId::Transitions, 49, 57, false, 0.5},
     InstrumentDefinition{"piano", "Piano", ScoreDepartment::Harmony, VoiceId::HarmonicFoundation, 36, 96, true, 0.8},
@@ -45,7 +45,7 @@ constexpr std::array catalog{
     InstrumentDefinition{"guitar", "Guitar", ScoreDepartment::Harmony, VoiceId::HarmonicPulse, 40, 88, true, 0.62},
     InstrumentDefinition{"ambient_texture", "Ambient Texture", ScoreDepartment::Harmony, VoiceId::Atmosphere, 36, 100, true, 0.45},
     InstrumentDefinition{"piccolo", "Piccolo", ScoreDepartment::Melody, VoiceId::Lead, 74, 108, false, 0.45},
-    InstrumentDefinition{"alto_flute", "Alto Flute", ScoreDepartment::Harmony, VoiceId::HarmonicUpper, 55, 88, false, 0.54},
+    InstrumentDefinition{"alto_flute", "Alto Flute", ScoreDepartment::Melody, VoiceId::Countermelody, 55, 88, false, 0.54},
     InstrumentDefinition{"english_horn", "English Horn", ScoreDepartment::Melody, VoiceId::Countermelody, 52, 84, false, 0.60},
     InstrumentDefinition{"contrabassoon", "Contrabassoon", ScoreDepartment::Harmony, VoiceId::HarmonicFoundation, 22, 58, false, 0.72},
     InstrumentDefinition{"bass_trombone", "Bass Trombone", ScoreDepartment::Harmony, VoiceId::HarmonicFoundation, 28, 65, false, 0.76},
@@ -241,6 +241,8 @@ std::vector<InstrumentAssignment> defaultOrchestrationAssignments() {
 
 OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan& plan) {
     OrchestrationReport report;
+    report.implicitVoicesPruned = plan.implicitVoicesPruned;
+    report.implicitPerformanceNotesPruned = plan.implicitPerformanceNotesPruned;
     if (pattern.notes.empty() || plan.sections.empty()) return report;
     const auto& assignments = plan.instruments;
     if (assignments.empty()) return report;
@@ -250,7 +252,10 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
     for (std::size_t index = 0; index < assignments.size(); ++index) {
         const auto& assignment = assignments[index];
         const auto* definition = instrumentDefinition(assignment.instrumentId);
-        const auto department = definition == nullptr ?
+        const auto melodicCounterpoint = voiceDefinition(assignment.sourceVoice).family ==
+                                          VoiceFamily::Melodic &&
+                                          assignment.orchestralFunction == "counterpoint";
+        const auto department = melodicCounterpoint ? ScoreDepartment::Melody : definition == nullptr ?
             (isVoiceInFamily(assignment.sourceVoice, VoiceFamily::Rhythm) ? ScoreDepartment::Rhythm :
              isVoiceInFamily(assignment.sourceVoice, VoiceFamily::Melodic) ? ScoreDepartment::Melody :
              ScoreDepartment::Harmony) : definition->department;
@@ -275,6 +280,8 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
     }
 
     std::map<std::pair<int, VoiceId>, std::size_t> foregroundByPhrase;
+    std::map<VoiceId, std::size_t> previousForegroundOwner;
+    std::map<VoiceId, int> foregroundOwnerRun;
     std::vector<NoteEvent> realized;
     realized.reserve(std::min<std::size_t>(32768, pattern.notes.size() * 2));
     for (const auto& source : pattern.notes) {
@@ -286,11 +293,15 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
         for (std::size_t index = 0; index < assignments.size(); ++index) {
             const auto effectiveActivity = std::clamp(assignments[index].activity * ensembleGain *
                 (1.0 - chamberAmount * (0.18 + assignments[index].prominence * 0.16)), 0.08, 1.0);
+            const auto melodicForeground = source.voice == VoiceId::Lead ||
+                                             source.voice == VoiceId::Countermelody;
+            const auto passesActivity = melodicForeground ? effectiveActivity >= 0.08 :
+                mixedUnit(plan.seed, static_cast<std::uint64_t>(section.startBar * 97) + index * 17U) <=
+                    effectiveActivity;
             if (assignments[index].sourceVoice == source.voice && activeInSection(assignments[index], section) &&
                 source.pitch >= assignments[index].minimumPitch - 12 &&
                 source.pitch <= assignments[index].maximumPitch + 12 &&
-                mixedUnit(plan.seed, static_cast<std::uint64_t>(section.startBar * 97) + index * 17U) <=
-                    effectiveActivity)
+                passesActivity)
                 candidates.push_back(index);
         }
         if (candidates.empty())
@@ -339,12 +350,45 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
                     (0.18 + plan.orchestrationLanguage.foregroundRotation * 0.55);
                 if (score > bestScore) { bestScore = score; primaryIndex = candidate; }
             }
+            const auto melodicForeground = source.voice == VoiceId::Lead ||
+                                             source.voice == VoiceId::Countermelody;
+            const auto previous = previousForegroundOwner.find(source.voice);
+            const auto run = foregroundOwnerRun.find(source.voice);
+            if (melodicForeground && candidates.size() > 1 &&
+                previous != previousForegroundOwner.end() &&
+                run != foregroundOwnerRun.end() && run->second >= 2 &&
+                primaryIndex == previous->second) {
+                auto alternativeScore = -1.0;
+                for (const auto candidate : candidates) {
+                    if (candidate == previous->second) continue;
+                    const auto score = assignments[candidate].prominence * 0.72 +
+                        mixedUnit(plan.seed, static_cast<std::uint64_t>(phrase * 37 +
+                            static_cast<int>(source.voice) * 11) + candidate * 101U) *
+                        (0.18 + plan.orchestrationLanguage.foregroundRotation * 0.55);
+                    if (score > alternativeScore) {
+                        alternativeScore = score;
+                        primaryIndex = candidate;
+                    }
+                }
+            }
             foregroundByPhrase[key] = primaryIndex;
+            if (melodicForeground) {
+                if (previous != previousForegroundOwner.end() && previous->second == primaryIndex)
+                    ++foregroundOwnerRun[source.voice];
+                else {
+                    previousForegroundOwner[source.voice] = primaryIndex;
+                    foregroundOwnerRun[source.voice] = 1;
+                }
+            }
             ++report.foregroundChanges;
         }
         const auto& primary = assignments[primaryIndex];
         auto note = source;
-        note.pitch = fitPitch(note.pitch, primary);
+        // GM percussion pitches describe articulations, not musical register. Octave fitting
+        // a drum lane can silently turn a clave into a kick or a hat into a tom.
+        note.pitch = isVoiceInFamily(source.voice, VoiceFamily::Rhythm) ||
+                     source.voice == VoiceId::Transitions
+            ? source.pitch : fitPitch(note.pitch, primary);
         note.partId = static_cast<std::uint16_t>(primaryIndex + 1);
         realized.push_back(note);
         ++report.notesAssigned;
@@ -363,7 +407,9 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
             const auto doubleIndex = candidates[(primaryPosition + 1) % candidates.size()];
             const auto& doubling = assignments[doubleIndex];
             auto doubled = source;
-            doubled.pitch = fitPitch(doubled.pitch, doubling);
+            doubled.pitch = isVoiceInFamily(source.voice, VoiceFamily::Rhythm) ||
+                            source.voice == VoiceId::Transitions
+                ? source.pitch : fitPitch(doubled.pitch, doubling);
             doubled.velocity = std::clamp(doubled.velocity - 8, 1, 127);
             doubled.partId = static_cast<std::uint16_t>(doubleIndex + 1);
             if (doubled.partId != note.partId || doubled.pitch != note.pitch) {
@@ -503,6 +549,8 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
         note.durationBeats = std::min(note.durationBeats, maximumSustain);
         if (electronicCore) {
             const auto roleMaximum = note.voice == VoiceId::HarmonicPulse ? plan.beatsPerBar * 0.25
+                : note.voice == VoiceId::HarmonicFoundation
+                    ? std::max(0.25, plan.beatsPerBar - 1.0 / 16.0)
                 : note.voice == VoiceId::CoreDrums || note.voice == VoiceId::SnareClap ||
                   note.voice == VoiceId::ClosedHats || note.voice == VoiceId::OpenHatsShaker ? 0.25
                 : note.voice == VoiceId::LowPercussion || note.voice == VoiceId::HighPercussion ? 0.50
@@ -569,6 +617,28 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
     report.familyBalance = pattern.parts.empty() ? 0.0 :
         static_cast<double>(populatedParts) / static_cast<double>(pattern.parts.size());
     return report;
+}
+
+std::size_t OrchestrationScore::enforcePublishedRegisters(Pattern& pattern) {
+    std::size_t repaired{};
+    for (auto& note : pattern.notes) {
+        if (note.partId == 0 || isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
+            note.voice == VoiceId::Transitions) continue;
+        const auto part = std::find_if(pattern.parts.begin(), pattern.parts.end(), [&](const auto& candidate) {
+            return candidate.id == note.partId;
+        });
+        if (part == pattern.parts.end()) continue;
+        const auto& voice = voiceDefinition(part->sourceVoice);
+        const auto minimum = std::max(part->minimumPitch, voice.minimumPitch);
+        const auto maximum = std::min(part->maximumPitch, voice.maximumPitch);
+        if (minimum > maximum) continue;
+        const auto original = note.pitch;
+        while (note.pitch < minimum && note.pitch + 12 <= maximum) note.pitch += 12;
+        while (note.pitch > maximum && note.pitch - 12 >= minimum) note.pitch -= 12;
+        note.pitch = std::clamp(note.pitch, minimum, maximum);
+        if (note.pitch != original) ++repaired;
+    }
+    return repaired;
 }
 
 void OrchestrationScore::applyPartExpression(Pattern& pattern, const SongPlan& plan,

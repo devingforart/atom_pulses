@@ -1,6 +1,7 @@
 #include "ProductionPolish.h"
 
 #include "Orchestration.h"
+#include "VerticalHarmonyGate.h"
 
 #include <algorithm>
 #include <cmath>
@@ -157,6 +158,22 @@ ProductionAuditReport ProductionPolish::audit(const Pattern& pattern, const Tona
     report.strongNonChordNotes = tonal.strongNonChordNotes;
     report.invalidSustains = tonal.invalidSustains;
     report.unintendedHarshOverlaps = tonal.unintendedHarshOverlaps;
+    report.lowRegisterVerticalClashes = VerticalHarmonyGate::audit(pattern);
+    report.implicitCastParts = std::count_if(pattern.parts.begin(), pattern.parts.end(), [](const auto& part) {
+        return part.role == "Dedicated orchestral owner" || part.id == 0;
+    });
+    auto orderedNotes = pattern.notes;
+    std::sort(orderedNotes.begin(), orderedNotes.end(), [](const auto& left, const auto& right) {
+        return left.startBeat < right.startBeat;
+    });
+    auto soundingUntil = 0.0;
+    for (const auto& note : orderedNotes) {
+        report.longestGlobalSilenceBeats = std::max(
+            report.longestGlobalSilenceBeats, note.startBeat - soundingUntil);
+        soundingUntil = std::max(soundingUntil, note.endBeat());
+    }
+    report.longestGlobalSilenceBeats = std::max(
+        report.longestGlobalSilenceBeats, pattern.lengthBeats - soundingUntil);
     report.registerClarity = std::clamp(registerClarity, 0.0, 1.0);
     report.familyBalance = std::clamp(familyBalance, 0.0, 1.0);
     using RhythmSignature = std::vector<std::tuple<int, int, int>>;
@@ -203,12 +220,14 @@ ProductionAuditReport ProductionPolish::audit(const Pattern& pattern, const Tona
     // with fewer active families or a dense-but-valid expression curve can all be intentional.
     const auto blocking = tonal.unsupportedChromaticNotes + tonal.invalidSustains +
         tonal.unintendedHarshOverlaps + report.metricViolations + report.unsafeDurations +
-        report.orphanEvents;
+        report.orphanEvents + report.lowRegisterVerticalClashes;
     const auto nonChordRatio = static_cast<double>(tonal.strongNonChordNotes) /
         std::max(1, tonal.pitchedNotes);
     report.score = std::clamp(1.0 - std::min(0.48, blocking * 0.08) - nonChordRatio * 0.18 -
         report.rhythmRepeatRatio * 0.12 - std::max(0.0, 0.70 - report.registerClarity) * 0.55 -
         std::max(0.0, 0.45 - report.familyBalance) * 0.35 -
+        std::min(0.16, report.implicitCastParts * 0.04) -
+        std::max(0.0, report.longestGlobalSilenceBeats - beatsPerBar) * 0.015 -
         std::max(0.0, report.expressionEventsPerNote - 8.0) * 0.01, 0.0, 1.0);
     report.ready = blocking == 0;
     return report;
@@ -225,6 +244,12 @@ void ProductionPolish::stamp(Pattern& pattern, const ProductionAuditReport& repo
     if (report.unsupportedChromaticNotes) pattern.productionIssues.push_back("unsupported_chromatic_note");
     if (report.invalidSustains) pattern.productionIssues.push_back("invalid_harmonic_sustain");
     if (report.unintendedHarshOverlaps) pattern.productionIssues.push_back("unintended_harsh_overlap");
+    if (report.lowRegisterVerticalClashes)
+        pattern.productionIssues.push_back("low_register_vertical_clash");
+    if (report.implicitCastParts)
+        pattern.productionIssues.push_back("warning:implicit_orchestral_cast");
+    if (report.longestGlobalSilenceBeats > 4.0)
+        pattern.productionIssues.push_back("warning:undeclared_global_silence");
     if (report.strongNonChordNotes) pattern.productionIssues.push_back("warning:non_chord_tension");
     if (report.maximumRhythmRun > 4) pattern.productionIssues.push_back("warning:repeated_rhythm_run");
     if (report.registerClarity < 0.70) pattern.productionIssues.push_back("warning:register_clarity");

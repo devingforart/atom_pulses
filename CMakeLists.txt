@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.33.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.42.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,6 +26,10 @@ add_library(pulso_core STATIC
     src/core/MusicTypes.h
     src/core/MusicalCritic.cpp
     src/core/MusicalCritic.h
+    src/core/MusicalIdentityGate.cpp
+    src/core/MusicalIdentityGate.h
+    src/core/NarrativeScore.cpp
+    src/core/NarrativeScore.h
     src/core/Orchestration.cpp
     src/core/Orchestration.h
     src/core/OrchestrationScore.cpp
@@ -53,6 +57,8 @@ add_library(pulso_core STATIC
     src/core/SongComposer.h
     src/core/TonalContract.cpp
     src/core/TonalContract.h
+    src/core/VerticalHarmonyGate.cpp
+    src/core/VerticalHarmonyGate.h
 )
 target_include_directories(pulso_core PUBLIC src)
 target_compile_features(pulso_core PUBLIC cxx_std_20)

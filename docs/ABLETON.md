@@ -1,5 +1,118 @@
 # Probar PULSO en Ableton Live
 
+## Contrato 0.42
+
+La solicitud de Live usa schema 8 y conserva `origin` y `narrative_id` en cada nota. En la raíz
+publica `narrative_score`, `ai_authored_note_ratio`, `primary_voice_authorship_coverage`,
+`thematic_recall_ratio` y los defectos narrativos detectados. Estos campos auditan exclusivamente
+la composición MIDI; no dependen del preset ni del audio elegido en Live.
+
+Una transformación de una célula GPT continúa siendo autoría AI; una nota agregada únicamente
+para impedir un silencio accidental aparece como `local_continuity`. Así puede comprobarse si
+la identidad musical procede realmente del modelo o del fallback procedural.
+
+## Contrato 0.41
+
+Antes de crear pistas, Live resuelve el score completo. Si kick, sub, bajo de movimiento o lead
+no tienen una realización que supere el piso tímbrico, el estado muestra `AUDIBLE TIMBRE GATE
+REJECTED` y el despliegue anterior permanece intacto. Las voces featured pueden degradarse de
+forma explícita sin fingir que el preset coincide.
+
+Closed hats, clap, snare y shaker con suficientes ataques buscan dos o tres muestras aisladas
+distintas. Cada variante recibe una pista `RR` y una porción determinista de las notas; la suma
+de todas las variantes reproduce exactamente el MIDI original. `status.json` informa contratos,
+variantes y parámetros de release limitados.
+
+Al reproducir Arrangement, el puente escribe `%LOCALAPPDATA%\PULSO\LiveBridge\audible_audit.json`.
+El archivo mide presencia real y colas mediante los meters de Live. No contiene análisis espectral
+porque el Control Surface no recibe buffers de audio; para FFT o masking medido haría falta un
+dispositivo de captura insertado en cada pista o en el master.
+
+## Contrato 0.40
+
+La pista exportada conserva el reparto exacto que GPT escribió. PULSO no añade familias genéricas
+para completar una cuota y realiza una última auditoría de registro y articulación sobre el MIDI
+que realmente llegará a Live. El informe expone los compases sin kick antes/después, los compases
+de ancla creados y cualquier reparación percusiva tardía.
+
+En música club puede existir una bajada extensa, pero no más de dieciséis compases consecutivos sin
+ancla de kick salvo un silencio completo explícito. Las frases de hats, clap, shaker y percusión
+desarrollan su cierre sin desplazar ataques: la reproducción original continúa cuantizada y la
+interpretación humana sigue siendo una transformación opcional y reversible.
+
+El matcher decide la coherencia del preset desde el nombre/intención propia de la pista. El texto
+descriptivo del rol no contamina la búsqueda; por ejemplo, «ausente durante ataques secos» no hace
+que un pad ambiental compatible sea rechazado por contener la palabra «seco».
+
+## Contrato 0.39
+
+El reparto electrónico creado por GPT es vinculante: PULSO no completa silenciosamente una
+voz sin dueño con una pista orquestal genérica. El audit de composición informa voces y notas
+implícitas podadas, respuestas derivadas por instrumento, choques verticales antes/después y
+la pausa global más larga. El crítico debe corregir la autoría para que esas reparaciones sean
+cero en la siguiente propuesta.
+
+El puente de Live resuelve cada pista usando exclusivamente `live_preset_intent`; las palabras
+de otras pistas presentes en la paleta global no contaminan la búsqueda. `status.json` añade
+`intent_consistency` por pista y `mean_intent_consistency` global. Una pista llamada, por
+ejemplo, “Glassy Piano” con intención “soft felt piano” queda degradada explícitamente.
+
+Los cortes que evitan una colisión grave son timing musical intencional en una grilla de 1/16,
+no humanización irreversible. El MIDI exportado continúa exacto; el botón Human Performance
+sigue siendo la única capa reversible que desplaza la interpretación.
+
+## Contrato 0.38
+
+La música electrónica publicada atraviesa un gate de identidad posterior a la orquestación.
+El groove recuerda su esqueleto durante pares de frases, las contestaciones provienen del ADN
+del hook y los efectos de transición sólo aparecen alrededor de cambios de sección. Las notas
+de percusión reciben duraciones reproducibles antes de exportarse, sin desplazar sus ataques.
+
+La selección de Live distingue identidad instrumental de fidelidad de carácter. Un preset de
+flauta genérico puede mantener audible una parte pedida como `breathy alto flute`, pero queda
+registrado como `character_fallback` con `intent_fidelity` baja. `mean_intent_fidelity` entra
+en `deployed_audible_score`, de modo que una carga completa ya no oculta un reparto tímbrico
+incorrecto.
+
+## Contrato 0.37
+
+- `High/Low`, `Open/Closed/Pedal/Muted` y `China/Crash/Splash/Ride` son identidades audibles.
+- Los pitches GM 65 y 66 seleccionan timbal alto y bajo; ya no caen en percusión genérica.
+- Una articulación ausente puede usar únicamente una sustitución declarada de su familia.
+  La pista conserva los ataques, muestra `(for <identidad original>)` y el estado registra
+  `authored`, `deployed` y `reason`.
+- `deployed_audible_score` evalúa lo que Live verificó después de cargar dispositivos y crear
+  clips; penaliza faltantes, fallbacks y reparaciones necesarias para volver audibles las notas.
+
+## Contrato 0.36
+
+Las pistas de percusión divididas por articulación solo cargan muestras crudas y
+tempo-independientes. Archivos con BPM, loops, muestras combinadas y presets `.adv/.adg`
+no pueden representar un único golpe GM. Si no existe un golpe semánticamente correcto,
+la pista se omite y el despliegue queda explícitamente degradado en lugar de cargar un
+sonido engañoso.
+
+El `status.json` informa `duration_floor`, `duration_repairs` e
+`inaudible_notes_removed` para cada pista. Las duraciones se adaptan por familia antes de
+crear el clip y los ataques nunca se desplazan.
+
+## Contrato 0.35
+
+- Un pitch GM separado exige un sample de esa articulación; un ride ausente no se sustituye por un clap.
+- Congas generadas usan 62–64; los pitches 41–50 se identifican honestamente como toms.
+- Presets con el mismo nombre cuentan como un único timbre aunque aparezcan en dos rutas del Browser.
+- Las palabras de registro del rol (`low`, `upper`, `foundation`, `air`) penalizan presets invertidos.
+- Texturas cromáticas usadas como transición obedecen la tonalidad consolidada.
+- Canciones de 32 compases o más terminan en la frase de ocho compases más cercana a la duración pedida.
+
+## Contrato 0.34
+
+- Las articulaciones de percusión se separan en pistas reproducibles y conservan su identidad GM.
+- Los samples compuestos (`combo`, loops o mezclas completas) no pueden representar una articulación aislada.
+- Un open hat nunca selecciona un sample que también contenga kick, snare, clap o tom.
+- La exportación mantiene `Live.Clip.MidiNoteSpecification`; un fallback queda registrado explícitamente.
+- El mundo sonoro de GPT es vinculante: los instrumentos concretos que nombra deben existir como partes audibles.
+
 ## 1. Instalar y encontrar el plugin
 
 Compila e instala `PULSO.vst3`. El script usa por defecto la ubicación oficial de

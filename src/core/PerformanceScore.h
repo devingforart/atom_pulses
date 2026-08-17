@@ -36,6 +36,8 @@ struct PerformanceCell {
     std::vector<VoiceId> ownedVoices;
     std::vector<AuthoredNote> notes;
     std::vector<AuthoredControl> controls;
+    std::string themeId;
+    std::string narrativeFunction{"support"};
 };
 
 struct VoiceRemap {
@@ -78,6 +80,8 @@ struct PerformanceScoreReport {
     std::size_t notesRejected{};
     std::size_t exactDuplicateCells{};
     double novelty{1.0};
+    std::size_t namedThemes{};
+    std::size_t narrativeCells{};
 };
 
 class PerformanceScoreEngine final {

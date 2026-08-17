@@ -4,12 +4,15 @@
 #include "ElectronicProductionDirector.h"
 #include "HarmonyPlan.h"
 #include "MusicalCritic.h"
+#include "MusicalIdentityGate.h"
+#include "NarrativeScore.h"
 #include "OrchestrationScore.h"
 #include "PerformanceExpression.h"
 #include "PerformanceScore.h"
 #include "ProductionPolish.h"
 #include "RhythmPlan.h"
 #include "TonalContract.h"
+#include "VerticalHarmonyGate.h"
 
 #include <functional>
 #include <string>
@@ -68,8 +71,14 @@ struct SongPlan {
     std::vector<RhythmMotif> rhythmMotifs;
     std::vector<PlannedVoice> voices;
     std::vector<InstrumentAssignment> instruments;
+    // True when the instrument list came from the structured AI score. In that case the
+    // cast is authoritative per voice: missing ownership is critic feedback, not permission
+    // to inject generic instruments behind the composer's back.
+    bool instrumentCastAuthored{};
     std::vector<SongSection> sections;
     PerformanceScore performanceScore;
+    std::size_t implicitVoicesPruned{};
+    std::size_t implicitPerformanceNotesPruned{};
 };
 
 struct CompositionRenderReport {
@@ -79,11 +88,21 @@ struct CompositionRenderReport {
     OrchestrationReport orchestration;
     std::size_t harmonicWindows{};
     std::size_t unintendedSilenceWindowsRepaired{};
+    std::size_t sparseStructuralWindowsRepaired{};
+    std::size_t structuralContinuityNotesCreated{};
+    std::size_t extendedForegroundWindowsRepaired{};
+    std::size_t foregroundContinuityNotesCreated{};
+    std::size_t earlyRhythmNotesCreated{};
+    std::size_t audibleDurationRepairs{};
+    std::size_t inaudibleNotesRemoved{};
     double longestGlobalSilenceBefore{};
     double longestGlobalSilenceAfter{};
     ExpressionCompactionReport expression;
     ProductionAuditReport production;
     ElectronicProductionReport electronicProduction;
+    MusicalIdentityReport musicalIdentity;
+    NarrativeScoreReport narrative;
+    VerticalHarmonyReport verticalHarmony;
 
     [[nodiscard]] bool productionReady() const noexcept {
         return production.ready;
@@ -98,6 +117,7 @@ public:
                                                   int targetSeconds, double bpm,
                                                   double beatsPerBar, std::uint64_t seed,
                                                   int rootPitchClass, ScaleKind scale);
+    [[nodiscard]] static int phraseAlignedBars(int rawBars) noexcept;
     static void normalizePlan(SongPlan&);
     [[nodiscard]] Pattern render(const SongPlan&, const GenerationContext& foundation,
                                  const ProgressCallback& = {},

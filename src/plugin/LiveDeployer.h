@@ -22,6 +22,7 @@ struct LiveDeploymentOptions {
 [[nodiscard]] juce::String readLiveNativeInventorySummary();
 [[nodiscard]] juce::String readLiveNativeCapabilitiesSummary();
 [[nodiscard]] juce::String readLiveDeploymentReport();
+[[nodiscard]] juce::String readLiveAudibleExecutionFeedback();
 [[nodiscard]] bool liveNativeInventoryIsReady();
 
 } // namespace pulso::plugin

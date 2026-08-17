@@ -11,10 +11,14 @@ import traceback
 import Live  # pyright: ignore[reportMissingImports]
 from _Framework.ControlSurface import ControlSurface  # pyright: ignore[reportMissingImports]
 from .request_guard import RequestGuard
-from .playback_adapter import (adapt_notes, build_drum_pitch_map, deployment_outcome,
-                               expand_percussion_specs, is_one_shot_path,
+from .playback_adapter import (adapt_notes,
+                               audible_deployment_score, build_drum_pitch_map,
+                               deployment_outcome, expand_percussion_specs, is_one_shot_path,
                                note_specification_arguments, project_expression)
-from .sound_matcher import catalog_capabilities, select_track_sound
+from .sound_matcher import catalog_capabilities, intent_fidelity, spec_intent_consistency
+from .audible_contract import (aggregate_meter_snapshots, apply_release_contract,
+                               meter_snapshot)
+from .deployment_planner import resolve_deployment
 
 
 class PulsoDeployRemote(ControlSurface):
@@ -30,6 +34,7 @@ class PulsoDeployRemote(ControlSurface):
         self._status_file = os.path.join(self._bridge_dir, "status.json")
         self._heartbeat_file = os.path.join(self._bridge_dir, "heartbeat.json")
         self._inventory_file = os.path.join(self._bridge_dir, "inventory.json")
+        self._audible_audit_file = os.path.join(self._bridge_dir, "audible_audit.json")
         # request.json intentionally remains on disk as the latest deployment snapshot.
         # Adopt it before the first poll so opening PULSO or restarting Live can never
         # replay an old command. Only CREATE IN LIVE writes a different UUID.
@@ -46,11 +51,18 @@ class PulsoDeployRemote(ControlSurface):
         self._fallback_devices = 0
         self._missing_devices = []
         self._sound_report = []
+        self._substitutions = []
+        self._timbre_contracts = []
+        self._meter_probe_tracks = []
+        self._meter_snapshots = []
+        self._meter_track_snapshots = {}
+        self._probe_bpm = 120.0
         self._deployment_total = 0
         self._deployment_busy = False
         self._running = True
         self.schedule_message(2, self._start_inventory)
         self.schedule_message(10, self._poll)
+        self.schedule_message(12, self._probe_audible_output)
         self._write_status("ready", "LIVE NATIVE BRIDGE READY")
 
     def disconnect(self):
@@ -128,22 +140,25 @@ class PulsoDeployRemote(ControlSurface):
             self._write_status("busy", "LIVE DEPLOYMENT ALREADY IN PROGRESS")
             return
         tracks = expand_percussion_specs(request.get("tracks", []))
-        if request.get("schema_version") not in (2, 3, 4, 5, 6) or not tracks:
+        if request.get("schema_version") not in (2, 3, 4, 5, 6, 7, 8) or not tracks:
             raise RuntimeError("invalid or empty deployment request")
         if request.get("sound_engine", "ableton_live_native") != "ableton_live_native":
             raise RuntimeError("unsupported sound engine")
         # Resolve the complete playback contract before touching the Set. This catches
         # unavailable identities and empty-container fallbacks without creating tracks.
-        resolved = []
-        used_paths = set()
-        unresolved = []
-        for spec in tracks:
-            match = select_track_sound(self._native_items, spec, used_paths)
-            if match is None:
-                unresolved.append(str(spec.get("name", "PULSO Part")))
-                continue
-            used_paths.add(str(match[1]).casefold())
-            resolved.append((spec, match))
+        plan = resolve_deployment(self._native_items, tracks)
+        resolved = plan["resolved"]
+        unresolved = plan["unresolved"]
+        substitutions = plan["substitutions"]
+        timbre_contracts = plan["timbre_contracts"]
+        blocking_timbres = plan["blocking_timbres"]
+        if blocking_timbres:
+            self._write_status("rejected", "AUDIBLE TIMBRE GATE REJECTED - CRITICAL SOUND MISMATCH",
+                               {"critical_timbre_failures": blocking_timbres,
+                                "timbre_contracts": timbre_contracts,
+                                "committed_tracks": 0,
+                                "previous_deployment_preserved": bool(self._deployed_tracks)})
+            return
         if not resolved:
             self._write_status("rejected", "LIVE PREFLIGHT REJECTED - NO AUDIBLE SOUNDS AVAILABLE",
                                {"missing": unresolved, "committed_tracks": 0,
@@ -160,7 +175,18 @@ class PulsoDeployRemote(ControlSurface):
         self._missing_devices = list(unresolved)
         self._sound_report = [{"track": name, "state": "preflight_no_playable_match"}
                               for name in unresolved]
-        self._deployment_total = len(tracks)
+        self._substitutions = substitutions
+        self._timbre_contracts = timbre_contracts
+        self._deployment_total = len(resolved) + len(unresolved)
+        self._meter_probe_tracks = []
+        self._meter_snapshots = []
+        self._meter_track_snapshots = {}
+        self._probe_bpm = max(20.0, min(999.0, float(request.get("bpm", 120.0))))
+        try:
+            if os.path.isfile(self._audible_audit_file):
+                os.remove(self._audible_audit_file)
+        except OSError:
+            pass
         self._deployment_busy = True
         if hasattr(song, "tempo"):
             song.tempo = max(20.0, min(999.0, float(request.get("bpm", song.tempo))))
@@ -194,7 +220,11 @@ class PulsoDeployRemote(ControlSurface):
         total = self._deployment_total
         if not self._device_queue:
             details = {"loaded": self._loaded_devices, "fallbacks": self._fallback_devices,
-                       "missing": self._missing_devices, "sounds": self._sound_report}
+                       "missing": self._missing_devices, "sounds": self._sound_report,
+                       "declared_substitutions": self._substitutions,
+                       "timbre_contracts": self._timbre_contracts,
+                       "audible_meter_audit": {"state": "awaiting_transport_playback",
+                                                "observations": 0}}
             if self._loaded_devices == 0:
                 self._remove_tracks(self.song(), self._deployed_tracks)
                 self._deployed_tracks = self._previous_deployed_tracks
@@ -209,9 +239,45 @@ class PulsoDeployRemote(ControlSurface):
             self._deployed_tracks = list(self._verified_tracks)
             state, message = deployment_outcome(self._loaded_devices, total,
                                                 len(self._missing_devices), self._fallback_devices)
+            featured_timbre_failures = [contract["track"] for contract in self._timbre_contracts
+                                        if not contract.get("passed", True)]
+            if featured_timbre_failures and state == "complete":
+                state = "degraded"
+                message += " - {} FEATURED TIMBRE MISMATCHES".format(
+                    len(featured_timbre_failures))
+            chromatic_repairs = sum(int((report.get("adaptation") or {}).get(
+                "duration_repairs", 0)) for report in self._sound_report
+                if (report.get("adaptation") or {}).get("source_kind") == "chromatic")
+            removed = sum(int((report.get("adaptation") or {}).get(
+                "inaudible_notes_removed", 0)) for report in self._sound_report)
+            fidelities = [float(report.get("intent_fidelity", 1.0))
+                          for report in self._sound_report if report.get("state") == "verified"]
+            mean_fidelity = sum(fidelities) / len(fidelities) if fidelities else 0.0
+            consistencies = [float(report.get("intent_consistency", 1.0))
+                             for report in self._sound_report if report.get("state") == "verified"]
+            mean_consistency = sum(consistencies) / len(consistencies) if consistencies else 0.0
+            details["deployed_audible_score"] = audible_deployment_score(
+                self._loaded_devices, total, len(self._missing_devices),
+                self._fallback_devices, chromatic_repairs, removed, mean_fidelity,
+                mean_consistency)
+            details["mean_intent_fidelity"] = mean_fidelity
+            details["mean_intent_consistency"] = mean_consistency
+            details["chromatic_duration_repairs"] = chromatic_repairs
+            details["inaudible_notes_removed"] = removed
             details["committed_tracks"] = self._loaded_devices
             details["skipped_tracks"] = len(self._missing_devices)
             details["previous_deployment_preserved"] = False
+            details["featured_timbre_failures"] = featured_timbre_failures
+            details["audible_variant_tracks"] = sum(
+                1 for contract in self._timbre_contracts
+                if int(contract.get("audible_variant_count", 1)) > 1)
+            details["release_parameters_capped"] = sum(int(
+                ((report.get("adaptation") or {}).get("release_contract") or {}).get(
+                    "parameters_capped", 0)) for report in self._sound_report)
+            details["release_contract_unresolved_tracks"] = sum(
+                1 for report in self._sound_report
+                if ((report.get("adaptation") or {}).get("release_contract") or {}).get(
+                    "status") == "partially_unresolved")
             self._remove_tracks(self.song(), self._previous_deployed_tracks)
             self._previous_deployed_tracks = []
             self._deployment_busy = False
@@ -289,6 +355,7 @@ class PulsoDeployRemote(ControlSurface):
                 elif valid:
                     notes, adaptation = adapt_notes(spec, "chromatic")
                 if valid:
+                    release_contract = apply_release_contract(device, spec)
                     notes, expression_report = project_expression(
                         spec, notes, adaptation.get("source_kind", "chromatic"))
                     adaptation["expression"] = expression_report
@@ -299,6 +366,7 @@ class PulsoDeployRemote(ControlSurface):
                     adaptation["note_insertion"] = insertion
                     if insertion_error:
                         adaptation["modern_note_error"] = insertion_error
+                    adaptation["release_contract"] = release_contract
         except Exception as error:
             # A Browser load may briefly leave Live's Python wrapper without its native
             # Track handle. A fresh wrapper on a later tick is safe; rejecting the whole
@@ -314,11 +382,18 @@ class PulsoDeployRemote(ControlSurface):
                   "catalog_id": str(spec.get("catalog_id", "")), "matched": matched_name,
                   "path": matched_path, "quality": quality, "shared_sound": bool(shared),
                   "adaptation": adaptation,
+                  "intent_fidelity": intent_fidelity(matched_name, matched_path, spec),
+                  "intent_consistency": spec_intent_consistency(spec),
                   "state": "verified" if valid else reason}
+        if spec.get("authored_articulation_identity"):
+            report["authored_articulation"] = str(spec.get("authored_articulation_identity"))
+            report["deployed_articulation"] = str(spec.get("articulation_identity", ""))
+            report["substitution_reason"] = str(spec.get("substitution_reason", ""))
         self._sound_report.append(report)
         if valid:
             self._loaded_devices += 1
             self._verified_tracks.append(track)
+            self._meter_probe_tracks.append((track, dict(spec)))
             if quality != "identity":
                 self._fallback_devices += 1
             track.name = (str(spec.get("name", track.name)) + " | " + matched_name)[:120]
@@ -415,6 +490,61 @@ class PulsoDeployRemote(ControlSurface):
             return "legacy_notes_with_baked_expression", modern_error
         if notes:
             raise RuntimeError("this Live version does not expose MIDI note insertion")
+
+    @staticmethod
+    def _track_meter(track):
+        values = []
+        for owner in (track, getattr(track, "mixer_device", None)):
+            if owner is None:
+                continue
+            for attribute in ("output_meter_level", "output_meter_left", "output_meter_right"):
+                try:
+                    values.append(float(getattr(owner, attribute)))
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    pass
+        return max(values) if values else 0.0
+
+    def _probe_audible_output(self):
+        if not self._running:
+            return
+        try:
+            song = self.song()
+            if not self._deployment_busy and self._meter_probe_tracks and bool(song.is_playing):
+                beat = float(song.current_song_time)
+                observations = []
+                for track, spec in list(self._meter_probe_tracks):
+                    try:
+                        if bool(getattr(track, "mute", False)):
+                            continue
+                        snapshot = meter_snapshot(spec, self._track_meter(track), beat,
+                                                  self._probe_bpm)
+                        snapshot["track"] = str(spec.get("name", "PULSO Part"))
+                        observations.append(snapshot)
+                        history = self._meter_track_snapshots.setdefault(snapshot["track"], [])
+                        history.append(snapshot)
+                        if len(history) > 2048:
+                            del history[:-2048]
+                    except (RuntimeError, TypeError):
+                        continue
+                self._meter_snapshots.extend(observations)
+                if len(self._meter_snapshots) > 16384:
+                    del self._meter_snapshots[:-16384]
+                aggregate = aggregate_meter_snapshots(self._meter_snapshots)
+                aggregate["state"] = "measuring_rendered_output"
+                aggregate["current_beat"] = beat
+                aggregate["tracks"] = []
+                for name, snapshots in sorted(self._meter_track_snapshots.items()):
+                    report = aggregate_meter_snapshots(snapshots)
+                    report["track"] = name
+                    aggregate["tracks"].append(report)
+                os.makedirs(self._bridge_dir, exist_ok=True)
+                temp = self._audible_audit_file + ".pending"
+                with open(temp, "w", encoding="utf-8") as target:
+                    json.dump(aggregate, target, ensure_ascii=False)
+                os.replace(temp, self._audible_audit_file)
+        except Exception:
+            pass
+        self.schedule_message(6, self._probe_audible_output)
 
     def _write_heartbeat(self):
         try:

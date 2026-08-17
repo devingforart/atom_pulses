@@ -1,5 +1,164 @@
 # Arquitectura
 
+### Autoría narrativa 0.42
+
+`performance_score` es la capa compositiva vinculante. Sus células declaran un `theme_id` y
+una función narrativa; sus placements establecen autoría temporal exacta por voz. El render
+conserva esa procedencia en cada `NoteEvent`, incluso después de remap, inversión, fragmentación,
+orquestación y publicación.
+
+`NarrativeScoreGate` audita el MIDI final y el plan conjuntamente. Mide cobertura de lead,
+respuestas, bajo y armonía; recurrencia temática entre secciones; continuidad de frases de bajo;
+dirección armónica y desarrollo rítmico. Esas métricas vuelven al segundo pase GPT, que debe
+reparar células y placements, y la revisión solo sustituye al borrador si mejora el resultado.
+
+Para planes GPT, `ElectronicProductionDirector` conserva contratos de seguridad e interpretación,
+pero no crea material compositivo correctivo. La continuidad local queda identificada como tal y
+nunca puede hacerse pasar por autoría de la IA.
+
+### Realización audible 0.41
+
+El despliegue separa planificación pura y mutación del Set. `deployment_planner` recibe el
+inventario, resuelve identidades, sustituciones declaradas, variantes y contratos tímbricos;
+recién después `PulsoDeployRemote` crea las pistas de staging. Un incumplimiento crítico rechaza
+la transacción completa y mantiene la producción anterior.
+
+`split_audible_variants()` distribuye un pitch percusivo repetido entre un máximo de tres hits
+exactos y distintos. La selección evita duplicados por ruta y nombre; si el inventario sólo
+contiene una muestra válida, conserva una pista única. Esto escala con la biblioteca sin imponer
+una cantidad fija de capas ni convertir articulaciones ausentes en instrumentos incorrectos.
+
+`audible_contract` recorre dispositivos y chains hasta profundidad acotada. Sólo limita parámetros
+de release con unidad temporal demostrable y reporta lo que no puede resolver. Durante playback,
+el puente compara los medidores reales con las ventanas de nota y release, publicando presencia y
+colas en `audible_audit.json`. Live Remote Scripts no exponen audio PCM ni FFT, por lo que el informe
+declara `spectral_analysis_available=false`; armonía vertical y registro siguen auditándose sobre
+el score exacto en C++.
+
+El desarrollo de movement bass ocurre después del interlock kick-bajo. Detecta fingerprints de
+ocho compases por parte y transforma un evento de los dos compases finales de una repetición,
+manteniendo grilla de 1/16, rango, tonalidad y distancia respecto del kick.
+
+### Contratos de publicación 0.40
+
+`instrumentCastAuthored` distingue un reparto propuesto por GPT de un plan local incompleto.
+Cuando está activo, el reparto es cerrado: la normalización remapea material huérfano a un dueño
+compatible ya existente o lo poda, pero nunca inventa una nueva pista para cubrir una plantilla.
+
+Después de todas las reparaciones de continuidad, `enforcePublishedRegisters()` vuelve a cruzar
+el rango de la parte con el rango de su voz fuente y desplaza por octavas conservando la clase de
+altura. `enforceSemanticArticulations()` realiza el equivalente para percusión sin modificar
+ataques ni duraciones. Así, los pasos tardíos no pueden invalidar los contratos publicados.
+
+El director electrónico mide el máximo de compases consecutivos sin kick antes y después de la
+macro-reparación. Fuera de un silencio completo declarado, inserta un único compás four-on-the-floor
+cuando se alcanzarían más de dieciséis compases sin ancla; el resto del breakdown permanece libre.
+`MusicalIdentityGate` desarrolla sólo los dos últimos compases de cada frase de ocho para conservar
+memoria rítmica y, al mismo tiempo, evitar ventanas literales repetidas.
+
+### Contratos de realización 0.39
+
+En un plan electrónico completamente instrumentado, `normalizePlan()` trata el reparto de
+GPT como autoritativo. Toda voz de ejecución usada por `performance_score` necesita un dueño
+instrumental compatible; las voces implícitas, sus notas, controles y mappings se retiran y
+se informan al crítico. Una guitarra o un sintetizador pueden conservar `Countermelody` si
+cumplen una función de contrapunto, evitando convertir todas las respuestas en pulsos armónicos.
+
+`MusicalIdentityGate` agrupa respuestas por `partId` y ventana de frase. Cada instrumento
+deriva su propia transformación del núcleo —original, inversión, retrogradación o ambas—
+dentro de rango y escala, sin mezclar notas de varias partes antes de calcular el contorno.
+
+`VerticalHarmonyGate` se ejecuta sobre la orquestación realizada y vuelve a auditar después
+de reparar releases. Detecta intervalos graves sostenidos de clase 1 o 6 entre la fundación
+y el soporte armónico. Conserva pitches y armonía, pero recorta el soporte durante el choque,
+con mínimos de duración específicos para pads, orquesta y synths. `ProductionPolish` bloquea
+la publicación si todavía queda alguna colisión objetiva.
+
+La continuidad global ya no usa un umbral universal. En electrónica permite como máximo
+medio compás fuera de secciones de energía baja; una sección marcada literalmente como
+`full silence` conserva una pausa estructural mayor. El reparador inserta pulsos escasos y
+el arranque club puede incorporar hats/shaker cada dos compases cuando todavía no existe
+ninguna responsabilidad rítmica.
+
+### Musical Identity Gate 0.38
+
+`MusicalIdentityGate` corre después de materializar el reparto instrumental y antes de los
+contratos finales de continuidad, tonalidad y expresión. En producción electrónica aplica
+tres invariantes que no dictan el contenido creativo: memoria de onset durante los primeros
+seis compases de cada par de frases, parentesco intervalar entre hook y respuesta, y ubicación
+de transiciones exclusivamente en límites formales. GPT sigue decidiendo notas, instrumentación,
+forma, densidad y los dos compases de transformación de cada frase.
+
+`TonalContract` reconoce una sensible cromática en modo menor sólo cuando la ventana armónica
+es dominante o transicional, la voz es melódica, la nota es breve y resuelve un semitono arriba
+a la tónica dentro de un beat. Todo otro cromatismo estructural continúa reparándose.
+
+En Live, `intent_fidelity()` evalúa descriptores perceptuales del `live_preset_intent` después
+de la puerta de familia instrumental. El selector usa esa fidelidad para ordenar candidatos,
+clasifica los incumplimientos como `character_fallback` y el adaptador la incorpora al score
+del despliegue realmente audible.
+
+### Contrato de articulación y score desplegado 0.37
+
+`sound_matcher` aplica dos puertas antes de ordenar candidatos: identidad física de percusión
+y calificadores de registro/estado. Un nombre descriptivamente parecido no puede invertir un
+bongó alto por uno bajo, un pedal hat por un open hat ni un China por un crash normal.
+
+Cuando la biblioteca no contiene la identidad autoral, `playback_adapter` ofrece una lista
+cerrada de sustituciones acústicamente compatibles. `pulso_deploy` vuelve a ejecutar el mismo
+selector sobre cada alternativa, conserva notas y ataques, y registra la diferencia en
+`declared_substitutions`. Tras la verificación asíncrona de Live calcula
+`deployed_audible_score`; por lo tanto, el score describe el Set audible y no sólo el plan MIDI.
+
+### Audible Production Gate 0.36
+
+El contrato de publicación tiene ahora dos niveles. El score C++ repara o elimina notas
+instrumentales más cortas que el ataque mínimo de su familia, limita a ocho compases la
+ausencia consecutiva de foreground en música electrónica y fuerza una rotación tímbrica
+después de dos frases. El adaptador de Live vuelve a validar esas duraciones contra el
+instrumento cargado. Para una articulación GM separada, el selector admite únicamente un
+archivo de audio sin etiqueta de tempo ni identidades acústicas compuestas.
+
+Las correcciones se contabilizan en `CompositionRenderReport`. GPT recibe esas cifras en
+su crítica: un plan ideal produce cero reparaciones de duración, cero notas inaudibles y
+ninguna ventana de foreground reconstruida por el motor local.
+
+### Continuidad musical 0.35
+
+El render electrónico aplica cinco contratos antes de publicar. `ThematicMemory` conserva el
+ritmo y contorno de una declaración canónica en apariciones posteriores, después de arbitrar
+qué voz ocupa el foreground. `StructuralContinuity` revisa ventanas de ocho compases sobre la
+orquestación realizada: si sólo queda una parte, añade respiración armónica y dos fragmentos
+del ADN en partes ya existentes, y vuelve a ejecutar tonalidad, overlaps y expresión.
+
+`RhythmEngine` separa ADN de ataques e identidad de articulación. El patrón conserva sus
+onsets, mientras la instrumentación GM rota por frases entre conga, bongo, tambourine,
+cowbell, clave, ride y hats. Un reequilibrador limita cualquier articulación a dos tercios de
+una capa. El kick sólo recibe una puntuación adicional cuando ya existe un four-on-the-floor
+completo y no hay un gesto autoral en esa frase.
+
+El contrato tonal consulta `partId`: transiciones materializadas con partes armónicas o
+texturas cromáticas son eventos afinados y se reparan igual que pads, bajos o melodías. Las
+duraciones largas se alinean a la frase de ocho compases más cercana antes de pedir el plan a
+GPT, evitando codas accidentales de uno o dos compases.
+
+### Integrity Gate 0.34.1
+
+El gate de publicación bloquea exclusivamente defectos objetivos que no pudieron repararse.
+Recurrencia temática insuficiente, articulación percusiva escasa o una parte tímbrica no
+materializada permanecen visibles como advertencias del crítico y reducen el score, pero la
+canción se publica. Los rechazos incluyen diagnóstico exacto en el log de Live.
+
+## Director de identidad 0.34
+
+El pipeline separa libertad creativa y contratos de publicación. GPT decide forma, reparto,
+material armónico, motivo y timbre. Después, un director temático recupera periódicamente el
+núcleo del hook sin congelar sus transformaciones; el contrato rítmico corrige únicamente
+pitches incompatibles con la función GM; la orquestación conserva el reparto autoral y añade
+sólo infraestructura electrónica ausente. Finalmente se evalúan releases, cruces armónicos,
+recurrencia temática, articulaciones y materialización del mundo sonoro sobre la partitura
+realizada. Los defectos objetivos bloquean publicación y conservan la idea anterior.
+
 ## Capas
 
 ```text

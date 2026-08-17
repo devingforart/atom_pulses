@@ -41,6 +41,27 @@ struct InstrumentPart {
     friend bool operator==(const InstrumentPart&, const InstrumentPart&) = default;
 };
 
+// Survives every rendering and orchestration stage so the published MIDI can be
+// audited without guessing which musical decisions came from the AI score.
+enum class NoteOrigin : std::uint8_t {
+    Procedural = 0,
+    AiAuthored,
+    AiTransformed,
+    LocalContinuity,
+    LocalRepair
+};
+
+[[nodiscard]] constexpr std::string_view noteOriginKey(NoteOrigin origin) noexcept {
+    switch (origin) {
+        case NoteOrigin::AiAuthored: return "ai_authored";
+        case NoteOrigin::AiTransformed: return "ai_transformed";
+        case NoteOrigin::LocalContinuity: return "local_continuity";
+        case NoteOrigin::LocalRepair: return "local_repair";
+        case NoteOrigin::Procedural: return "procedural";
+    }
+    return "procedural";
+}
+
 struct NoteEvent {
     double startBeat{};
     double durationBeats{0.25};
@@ -50,6 +71,8 @@ struct NoteEvent {
     VoiceId voice{VoiceId::Unspecified};
     std::uint16_t partId{};
     bool authoredTiming{};
+    NoteOrigin origin{NoteOrigin::Procedural};
+    std::uint32_t narrativeId{};
 
     [[nodiscard]] double endBeat() const noexcept { return startBeat + durationBeats; }
     friend bool operator==(const NoteEvent&, const NoteEvent&) = default;
@@ -143,6 +166,12 @@ struct Pattern {
     bool productionReady{};
     double productionScore{};
     std::vector<std::string> productionIssues;
+    bool narrativeAuditPerformed{};
+    double narrativeScore{};
+    double aiAuthoredNoteRatio{};
+    double primaryVoiceAuthorshipCoverage{};
+    double thematicRecallRatio{};
+    std::vector<std::string> narrativeIssues;
 };
 
 constexpr std::array<std::string_view, 4> roleNames{"Bass", "Percussion", "Countermelody", "Ensemble"};

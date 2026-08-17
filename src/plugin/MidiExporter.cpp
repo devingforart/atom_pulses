@@ -61,11 +61,16 @@ double maximumPedalSpan(InstrumentSoundModel model) noexcept {
 bool writeCompanionManifest(const Pattern& pattern, const juce::File& midi,
                             const MidiExportOptions& options) {
     auto root = new juce::DynamicObject();
-    root->setProperty("schema_version", 1);
+    root->setProperty("schema_version", 2);
     root->setProperty("midi_file", midi.getFileName());
     root->setProperty("title", options.clipName);
     root->setProperty("bpm", options.bpm);
     root->setProperty("length_beats", pattern.lengthBeats);
+    root->setProperty("narrative_audited", pattern.narrativeAuditPerformed);
+    root->setProperty("narrative_score", pattern.narrativeScore);
+    root->setProperty("ai_authored_note_ratio", pattern.aiAuthoredNoteRatio);
+    root->setProperty("primary_voice_authorship_coverage", pattern.primaryVoiceAuthorshipCoverage);
+    root->setProperty("thematic_recall_ratio", pattern.thematicRecallRatio);
     juce::Array<juce::var> parts;
     for (const auto& part : pattern.parts) {
         const auto noteCount = std::count_if(pattern.notes.begin(), pattern.notes.end(),
@@ -251,13 +256,13 @@ bool writePatternToMidiFile(const Pattern& pattern, const juce::File& destinatio
                 if (firstNote == pattern.notes.end()) continue;
                 const auto pedalOnBeat = std::max(sourceOn, firstNote->startBeat);
                 const auto hardOff = std::min(pattern.lengthBeats, pedalOnBeat + span);
-                auto phraseEnd = firstNote->endBeat();
+                auto pedalPhraseEnd = firstNote->endBeat();
                 for (auto note = std::next(firstNote); note != pattern.notes.end(); ++note) {
                     if (!noteBelongsToTarget(*note)) continue;
-                    if (note->startBeat >= hardOff || note->startBeat > phraseEnd + 0.25) break;
-                    phraseEnd = std::max(phraseEnd, note->endBeat());
+                    if (note->startBeat >= hardOff || note->startBeat > pedalPhraseEnd + 0.25) break;
+                    pedalPhraseEnd = std::max(pedalPhraseEnd, note->endBeat());
                 }
-                const auto pedalOffBeat = std::min(hardOff, phraseEnd + 0.125);
+                const auto pedalOffBeat = std::min(hardOff, pedalPhraseEnd + 0.125);
                 if (pedalOffBeat <= pedalOnBeat + 1.0 / ticksPerQuarterNote) continue;
                 auto pedalOn = juce::MidiMessage::controllerEvent(
                     std::clamp(control.channel, 1, 16), 64, 96);

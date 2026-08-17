@@ -6,6 +6,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <map>
+#include <set>
+#include <span>
 
 namespace pulso {
 namespace {
@@ -65,6 +68,86 @@ bool kickNear(const Pattern& pattern, double beat) {
     });
 }
 
+template <std::size_t Size>
+bool containsPitch(const std::array<int, Size>& pitches, int pitch) noexcept {
+    return std::find(pitches.begin(), pitches.end(), pitch) != pitches.end();
+}
+
+int canonicalPercussionPitch(VoiceId voice, int pitch, std::size_t ordinal) noexcept {
+    constexpr std::array kicks{35, 36};
+    constexpr std::array backbeats{37, 38, 39, 40};
+    constexpr std::array closedHats{42, 44};
+    constexpr std::array openTops{46, 58, 70};
+    constexpr std::array lowPercussion{41, 43, 45, 47, 48, 50, 60, 61, 64, 65, 66};
+    constexpr std::array highPercussion{49, 51, 53, 54, 56, 62, 63, 67, 68, 69, 70,
+                                        75, 76, 77, 80, 81};
+    constexpr std::array transitions{49, 51, 52, 55, 57};
+    switch (voice) {
+        case VoiceId::CoreDrums: return containsPitch(kicks, pitch) ? pitch : 36;
+        case VoiceId::SnareClap: return containsPitch(backbeats, pitch) ? pitch : 39;
+        case VoiceId::ClosedHats: return containsPitch(closedHats, pitch) ? pitch : 42;
+        case VoiceId::OpenHatsShaker:
+            return containsPitch(openTops, pitch) ? pitch : openTops[ordinal % openTops.size()];
+        case VoiceId::LowPercussion:
+            return containsPitch(lowPercussion, pitch) ? pitch : lowPercussion[ordinal % lowPercussion.size()];
+        case VoiceId::HighPercussion:
+            return containsPitch(highPercussion, pitch) ? pitch : highPercussion[ordinal % highPercussion.size()];
+        case VoiceId::Transitions:
+            return containsPitch(transitions, pitch) ? pitch : transitions[ordinal % transitions.size()];
+        default: return pitch;
+    }
+}
+
+int diversifyPercussion(Pattern& pattern, VoiceId voice, std::span<const int> palette,
+                        std::size_t minimumNotes, std::size_t minimumArticulations) {
+    std::vector<std::size_t> indices;
+    std::set<int> pitches;
+    std::map<int, std::size_t> counts;
+    for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
+        if (pattern.notes[index].voice != voice) continue;
+        indices.push_back(index);
+        pitches.insert(pattern.notes[index].pitch);
+        ++counts[pattern.notes[index].pitch];
+    }
+    if (indices.size() < minimumNotes || palette.empty()) return 0;
+    auto changed = 0;
+    if (!counts.empty()) {
+        const auto dominant = std::max_element(counts.begin(), counts.end(),
+            [](const auto& left, const auto& right) { return left.second < right.second; })->first;
+        const auto maximumDominance = std::max<std::size_t>(1, indices.size() * 2 / 3);
+        auto excess = counts[dominant] > maximumDominance
+            ? counts[dominant] - maximumDominance : 0;
+        std::vector<std::size_t> dominantIndices;
+        for (const auto index : indices)
+            if (pattern.notes[index].pitch == dominant) dominantIndices.push_back(index);
+        const auto changesNeeded = excess;
+        for (std::size_t change = 0; change < changesNeeded && !dominantIndices.empty(); ++change) {
+            const auto position = std::min(dominantIndices.size() - 1,
+                (change * dominantIndices.size() + dominantIndices.size() / 2) /
+                std::max<std::size_t>(1, changesNeeded));
+            auto& note = pattern.notes[dominantIndices[position]];
+            auto target = palette[(change + 1) % palette.size()];
+            if (target == dominant) target = palette[(change + 2) % palette.size()];
+            if (target == dominant) continue;
+            note.pitch = target;
+            pitches.insert(target);
+            --excess;
+            ++changed;
+        }
+    }
+    if (pitches.size() >= minimumArticulations) return changed;
+    for (std::size_t ordinal = 0; ordinal < indices.size(); ++ordinal) {
+        // Stable cells retain their main articulation; phrase answers receive a contrasting
+        // physically valid GM articulation. This changes timbre without inventing attacks.
+        if (ordinal % 4 != 3 && ordinal % 11 != 7) continue;
+        auto& note = pattern.notes[indices[ordinal]];
+        const auto target = palette[(ordinal / 4) % palette.size()];
+        if (note.pitch != target) { note.pitch = target; pitches.insert(target); ++changed; }
+        if (pitches.size() >= minimumArticulations) break;
+    }
+    return changed;
+}
+
 const RhythmMotif* motifFor(const SongPlan& plan, const SongSection& section) {
     const auto found = std::find_if(plan.rhythmMotifs.begin(), plan.rhythmMotifs.end(), [&](const auto& motif) {
         return motif.id == section.rhythm.motifId;
@@ -78,8 +161,30 @@ constexpr std::array laneInfo{
     LaneInfo{RhythmLane::SnareClap, VoiceId::SnareClap, 39, 82},
     LaneInfo{RhythmLane::ClosedHats, VoiceId::ClosedHats, 42, 54},
     LaneInfo{RhythmLane::OpenHatsShaker, VoiceId::OpenHatsShaker, 46, 62},
-    LaneInfo{RhythmLane::LowPercussion, VoiceId::LowPercussion, 45, 58},
+    LaneInfo{RhythmLane::LowPercussion, VoiceId::LowPercussion, 64, 58},
     LaneInfo{RhythmLane::HighPercussion, VoiceId::HighPercussion, 75, 51}};
+
+int evolvingLanePitch(RhythmLane lane, int absoluteBar, int step, int stepsPerBar,
+                      int fallback) noexcept {
+    // A rhythmic motif owns onset DNA, not one immutable sample for the whole song.
+    // Rotate only at phrase-scale boundaries so the gesture remains recognisable while
+    // Live receives honest GM articulations that can be resolved to distinct one-shots.
+    const auto phrase = std::max(0, absoluteBar) / 4;
+    const auto secondHalf = step >= std::max(1, stepsPerBar / 2) ? 1 : 0;
+    if (lane == RhythmLane::ClosedHats)
+        return positiveModulo(absoluteBar, 8) == 7 && secondHalf != 0 ? 44 : 42;
+    if (lane == RhythmLane::LowPercussion) {
+        constexpr std::array palette{64, 62, 63, 61}; // low/muted/open conga, low bongo
+        return palette[static_cast<std::size_t>(positiveModulo(
+            phrase + secondHalf, static_cast<int>(palette.size())))];
+    }
+    if (lane == RhythmLane::HighPercussion) {
+        constexpr std::array palette{75, 54, 56, 63, 51}; // clave, tambourine, cowbell, conga, ride
+        return palette[static_cast<std::size_t>(positiveModulo(
+            phrase + secondHalf, static_cast<int>(palette.size())))];
+    }
+    return fallback;
+}
 
 const std::string& maskFor(const RhythmMotif& motif, RhythmLane lane) {
     switch (lane) {
@@ -169,7 +274,9 @@ bool renderMotifBar(Pattern& pattern, const SongPlan& plan, const SongSection& s
             const auto velocity = static_cast<int>((info.velocity - (symbol == '1' ? contrast * 7.0 : 0.0) +
                 (symbol == '2' ? 8.0 + contrast * 13.0 : 0.0) + backbeat + offbeat + responseShape +
                 pulseAnchor + human(plan.seed, absoluteBar, static_cast<int>(info.lane), step) * humanRange) * weight);
-            addHit(pattern, barStart + step * stepDuration + micro + swing, info.pitch, velocity,
+            const auto pitch = evolvingLanePitch(info.lane, absoluteBar, step,
+                                                  motif.stepsPerBar, info.pitch);
+            addHit(pattern, barStart + step * stepDuration + micro + swing, pitch, velocity,
                    info.voice, info.lane == RhythmLane::OpenHatsShaker ? 0.14 : 0.055);
         }
     }
@@ -288,7 +395,7 @@ void RhythmEngine::renderChunk(Pattern& pattern, const SongPlan& plan, const Son
                 }
             }
             if (fill && active(section, VoiceId::LowPercussion)) {
-                constexpr std::array pitches{45, 47, 50, 43};
+                constexpr std::array pitches{64, 63, 62, 61};
                 for (std::size_t index = 0; index < pitches.size(); ++index)
                     addHit(pattern, barStart + (3.0 + index * 0.25) * beatScale, pitches[index],
                            67 + static_cast<int>(index) * 7, VoiceId::LowPercussion, 0.065);
@@ -370,7 +477,7 @@ void RhythmEngine::renderChunk(Pattern& pattern, const SongPlan& plan, const Son
             for (auto index = 0; index < count; ++index)
                 addHit(pattern, barStart + (positions[static_cast<std::size_t>(index)] +
                        human(plan.seed, absoluteBar, 4, index) * 0.018) * beatScale,
-                       index == 0 ? 45 : 43, static_cast<int>((53 + section.energy * 25.0) * weight),
+                       index == 0 ? 64 : 62, static_cast<int>((53 + section.energy * 25.0) * weight),
                        VoiceId::LowPercussion, 0.10);
         }
         if (drumsPresent && active(section, VoiceId::HighPercussion) &&
@@ -380,12 +487,14 @@ void RhythmEngine::renderChunk(Pattern& pattern, const SongPlan& plan, const Son
                 if (index == 1 && section.rhythm.percussionDensity < 0.55) continue;
                 addHit(pattern, barStart + (positions[static_cast<std::size_t>(index)] +
                        human(plan.seed, absoluteBar, 5, index) * 0.022) * beatScale,
-                       index == 0 ? 75 : 76, static_cast<int>((44 + section.energy * 22.0) * weight),
+                       evolvingLanePitch(RhythmLane::HighPercussion, absoluteBar,
+                           index == 0 ? 0 : 8, 16, 75),
+                       static_cast<int>((44 + section.energy * 22.0) * weight),
                        VoiceId::HighPercussion, 0.055);
             }
         }
         if (fill && active(section, VoiceId::LowPercussion)) {
-            constexpr std::array pitches{45, 47, 50, 43};
+            constexpr std::array pitches{64, 63, 62, 61};
             for (std::size_t index = 0; index < pitches.size(); ++index)
                 addHit(pattern, barStart + (3.0 + index * 0.25) * beatScale, pitches[index],
                        67 + static_cast<int>(index) * 7, VoiceId::LowPercussion, 0.065);
@@ -415,8 +524,42 @@ void RhythmEngine::coordinateBassWithKick(Pattern& pattern, const SongSection& s
     }
 }
 
-RhythmValidationReport RhythmEngine::enforceContract(Pattern& pattern, const SongPlan& plan) {
+RhythmValidationReport RhythmEngine::enforceSemanticArticulations(Pattern& pattern,
+                                                                  const SongPlan& plan) {
     RhythmValidationReport report;
+    const auto latinLowLane = std::any_of(plan.instruments.begin(), plan.instruments.end(),
+        [](const auto& instrument) {
+            return instrument.sourceVoice == VoiceId::LowPercussion &&
+                   instrument.instrumentId == "latin_percussion";
+        });
+    constexpr std::array latinLowPitches{60, 61, 62, 63, 64, 65, 66};
+    std::array<std::size_t, static_cast<std::size_t>(VoiceId::Count)> ordinals{};
+    for (auto& note : pattern.notes) {
+        if (!isVoiceInFamily(note.voice, VoiceFamily::Rhythm) && note.voice != VoiceId::Transitions) continue;
+        auto& ordinal = ordinals[static_cast<std::size_t>(note.voice)];
+        auto repaired = canonicalPercussionPitch(note.voice, note.pitch, ordinal++);
+        // The AI may request a tom ensemble through its own orchestral assignment. A lane
+        // explicitly realised as Latin percussion, however, must not silently accumulate
+        // floor toms and become a different instrument family while retaining a conga role.
+        if (latinLowLane && note.voice == VoiceId::LowPercussion &&
+            !containsPitch(latinLowPitches, repaired))
+            repaired = latinLowPitches[(ordinal - 1) % latinLowPitches.size()];
+        if (repaired != note.pitch) { note.pitch = repaired; ++report.semanticPitchRepairs; }
+    }
+    constexpr std::array openPalette{46, 70, 58};
+    constexpr std::array lowPalette{64, 62, 63, 61};
+    constexpr std::array highPalette{75, 54, 56, 63, 51};
+    report.articulationDiversifications += diversifyPercussion(
+        pattern, VoiceId::OpenHatsShaker, openPalette, 16, 2);
+    report.articulationDiversifications += diversifyPercussion(
+        pattern, VoiceId::LowPercussion, lowPalette, 12, 2);
+    report.articulationDiversifications += diversifyPercussion(
+        pattern, VoiceId::HighPercussion, highPalette, 12, 3);
+    return report;
+}
+
+RhythmValidationReport RhythmEngine::enforceContract(Pattern& pattern, const SongPlan& plan) {
+    auto report = enforceSemanticArticulations(pattern, plan);
     pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
         if (note.voice != VoiceId::CoreDrums || note.pitch != 36) return false;
         const auto bar = static_cast<int>(std::floor(note.startBeat / plan.beatsPerBar));

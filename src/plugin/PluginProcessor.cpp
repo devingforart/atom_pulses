@@ -136,6 +136,7 @@ juce::String songPlanToJson(const SongPlan& plan) {
     jsonRoot->setProperty("title", juce::String::fromUTF8(plan.title.c_str()));
     jsonRoot->setProperty("key", juce::String::fromUTF8(plan.key.c_str()));
     jsonRoot->setProperty("summary", juce::String::fromUTF8(plan.summary.c_str()));
+    jsonRoot->setProperty("instrument_cast_authored", plan.instrumentCastAuthored);
     jsonRoot->setProperty("root_pitch_class", plan.rootPitchClass);
     jsonRoot->setProperty("mode", plan.scale == ScaleKind::Major ? "major" :
                               plan.scale == ScaleKind::Dorian ? "dorian" :
@@ -310,6 +311,8 @@ juce::String songPlanToJson(const SongPlan& plan) {
     for (const auto& cell : plan.performanceScore.cells) {
         auto* item = new juce::DynamicObject();
         item->setProperty("id", juce::String::fromUTF8(cell.id.c_str()));
+        item->setProperty("theme_id", juce::String::fromUTF8(cell.themeId.c_str()));
+        item->setProperty("narrative_function", juce::String::fromUTF8(cell.narrativeFunction.c_str()));
         item->setProperty("length_beats", cell.lengthBeats);
         juce::Array<juce::var> owners;
         for (const auto voice : cell.ownedVoices)
@@ -1317,6 +1320,8 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             }
             if (const auto capabilities = readLiveNativeCapabilitiesSummary(); capabilities.isNotEmpty())
                 songDirection += "\n" + capabilities;
+            if (const auto audibleFeedback = readLiveAudibleExecutionFeedback(); audibleFeedback.isNotEmpty())
+                songDirection += "\n" + audibleFeedback;
             if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::ClubElectronic))
                 songDirection += "\nProduction mode: club electronic. Think as a producer and DJ: build kick-bass interlock, evolving groove DNA, one foreground hook, subtractive arrangement, automation, spectral restraint and useful mix-in/mix-out energy. Do not add orchestral instruments unless explicitly requested.";
             else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::DeepProduction))
@@ -1324,8 +1329,8 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Symphonic))
                 songDirection += "\nOrchestration mode: symphonic. Treat the orchestra as multiple independent choirs with divisi strings, woodwind and brass dialogue, orchestral percussion, register-aware counterpoint, articulation contrast and a long-range chamber-to-tutti arc.";
             if (isSongRequest) {
-                const auto totalBars = std::clamp(static_cast<int>(std::lround(
-                    newest.targetSongSeconds * currentTempo() / 60.0 / newest.beatsPerBar)), 8, 512);
+                const auto totalBars = SongComposer::phraseAlignedBars(static_cast<int>(std::lround(
+                    newest.targetSongSeconds * currentTempo() / 60.0 / newest.beatsPerBar)));
                 auto plan = SongPlan{};
                 auto reusedPlan = false;
                 if (action == IdeaAction::Regenerate) {
@@ -1445,6 +1450,14 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     : reusedPlan ? "SONG RECOMPOSED - STRUCTURE PRESERVED"
                     : aiError.isNotEmpty() ? "LOCAL SONG FALLBACK - GPT UNAVAILABLE"
                                            : "LOCAL LONG-FORM ENGINE";
+                if (usedAiPlan && generated.narrativeAuditPerformed) {
+                    metadata->status = "GPT NARRATIVE " +
+                        juce::String(generated.narrativeScore * 100.0, 0) + "% - FULL SONG";
+                    metadata->description += " Authorship " +
+                        juce::String(generated.primaryVoiceAuthorshipCoverage * 100.0, 0) +
+                        "%, thematic recall " +
+                        juce::String(generated.thematicRecallRatio * 100.0, 0) + "%.";
+                }
                 if (aiError.isNotEmpty())
                     metadata->description += " Local rendering remained available because: " + aiError;
             } else {
@@ -1516,11 +1529,14 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             juce::StringArray issues;
             for (const auto& issue : generated.productionIssues)
                 issues.add(juce::String::fromUTF8(issue.c_str()));
+            juce::Logger::writeToLog("PULSO INTEGRITY GATE: score=" +
+                juce::String(generated.productionScore * 100.0, 1) + "% issues=" +
+                (issues.isEmpty() ? juce::String("unknown") : issues.joinIntoString(", ")));
             rejected->description = "The rendered score contained a non-publishable MIDI integrity defect. "
                 "The previous composition was kept unchanged. Score " +
                 juce::String(generated.productionScore * 100.0, 1) + "%. Issues: " +
                 (issues.isEmpty() ? juce::String("unknown") : issues.joinIntoString(", "));
-            rejected->status = "PRODUCTION GATE - CURRENT IDEA KEPT";
+            rejected->status = "INTEGRITY GATE - CURRENT IDEA KEPT";
             ideaMetadata.store(std::move(rejected), std::memory_order_release);
             activeGenerationCancellation.store(nullptr, std::memory_order_release);
             generationInProgress.store(false, std::memory_order_release);
@@ -1554,6 +1570,12 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->productionReady = generated.productionReady;
         playbackPattern->productionScore = generated.productionScore;
         playbackPattern->productionIssues = generated.productionIssues;
+        playbackPattern->narrativeAuditPerformed = generated.narrativeAuditPerformed;
+        playbackPattern->narrativeScore = generated.narrativeScore;
+        playbackPattern->aiAuthoredNoteRatio = generated.aiAuthoredNoteRatio;
+        playbackPattern->primaryVoiceAuthorshipCoverage = generated.primaryVoiceAuthorshipCoverage;
+        playbackPattern->thematicRecallRatio = generated.thematicRecallRatio;
+        playbackPattern->narrativeIssues = generated.narrativeIssues;
         realtime.pattern = std::move(playbackPattern);
         realtime.lengthBeats = generated.lengthBeats;
         realtime.maximumNoteDuration = std::accumulate(generated.notes.begin(), generated.notes.end(), 0.25,
@@ -1954,7 +1976,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(11); // Binary composition state version.
+        composition.writeInt(12); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -1967,6 +1989,8 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
             composition.writeInt(static_cast<int>(note.voice));
             composition.writeInt(static_cast<int>(note.partId));
             composition.writeBool(note.authoredTiming);
+            composition.writeInt(static_cast<int>(note.origin));
+            composition.writeInt(static_cast<int>(note.narrativeId));
         }
         composition.writeInt(static_cast<int>(pattern->controls.size()));
         for (const auto& control : pattern->controls) {
@@ -2025,6 +2049,14 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
         composition.writeDouble(pattern->electronicProductionScore);
         composition.writeString(juce::String::fromUTF8(pattern->productionModeSource.c_str()));
         composition.writeBool(pattern->electronicProductionAudited);
+        composition.writeBool(pattern->narrativeAuditPerformed);
+        composition.writeDouble(pattern->narrativeScore);
+        composition.writeDouble(pattern->aiAuthoredNoteRatio);
+        composition.writeDouble(pattern->primaryVoiceAuthorshipCoverage);
+        composition.writeDouble(pattern->thematicRecallRatio);
+        composition.writeInt(static_cast<int>(pattern->narrativeIssues.size()));
+        for (const auto& issue : pattern->narrativeIssues)
+            composition.writeString(juce::String::fromUTF8(issue.c_str()));
         state.setProperty("compositionData", composition.getMemoryBlock().toBase64Encoding(), nullptr);
         if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) {
             state.setProperty("ideaTitle", metadata->title, nullptr);
@@ -2084,7 +2116,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 11) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 12) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2104,6 +2136,12 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                         note.partId = static_cast<std::uint16_t>(
                             std::clamp(composition.readInt(), 0, 65535));
                     if (version >= 8) note.authoredTiming = composition.readBool();
+                    if (version >= 12) {
+                        const auto origin = composition.readInt();
+                        note.origin = origin >= 0 && origin <= static_cast<int>(NoteOrigin::LocalRepair)
+                            ? static_cast<NoteOrigin>(origin) : NoteOrigin::Procedural;
+                        note.narrativeId = static_cast<std::uint32_t>(composition.readInt());
+                    }
                     if (std::isfinite(note.startBeat) && std::isfinite(note.durationBeats) &&
                         note.startBeat >= 0.0 && note.startBeat < restoredPattern->lengthBeats &&
                         note.durationBeats > 0.0 && note.pitch >= 0 && note.pitch <= 127 &&
@@ -2245,6 +2283,22 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                 restoredPattern->productionModeSource =
                                     composition.readString().substring(0, 48).toStdString();
                                 restoredPattern->electronicProductionAudited = composition.readBool();
+                                if (version >= 12) {
+                                    restoredPattern->narrativeAuditPerformed = composition.readBool();
+                                    restoredPattern->narrativeScore =
+                                        std::clamp(composition.readDouble(), 0.0, 1.0);
+                                    restoredPattern->aiAuthoredNoteRatio =
+                                        std::clamp(composition.readDouble(), 0.0, 1.0);
+                                    restoredPattern->primaryVoiceAuthorshipCoverage =
+                                        std::clamp(composition.readDouble(), 0.0, 1.0);
+                                    restoredPattern->thematicRecallRatio =
+                                        std::clamp(composition.readDouble(), 0.0, 1.0);
+                                    const auto narrativeIssueCount = composition.readInt();
+                                    if (narrativeIssueCount >= 0 && narrativeIssueCount <= 32)
+                                        for (auto index = 0; index < narrativeIssueCount; ++index)
+                                            restoredPattern->narrativeIssues.push_back(
+                                                composition.readString().substring(0, 96).toStdString());
+                                }
                             }
                         }
                     }

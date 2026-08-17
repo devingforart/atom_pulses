@@ -15,6 +15,10 @@
 namespace pulso {
 namespace {
 
+bool aiAuthored(const NoteEvent& note) noexcept {
+    return note.origin == NoteOrigin::AiAuthored || note.origin == NoteOrigin::AiTransformed;
+}
+
 using Signature = std::vector<std::tuple<int, int, int>>;
 
 int barFor(const NoteEvent& note, const SongPlan& plan) noexcept {
@@ -48,6 +52,7 @@ std::size_t varyLiteralRhythmRuns(Pattern& pattern, const SongPlan& plan) {
     std::map<std::pair<VoiceId, int>, std::vector<std::size_t>> notesByVoiceBar;
     for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
         const auto& note = pattern.notes[index];
+        if (aiAuthored(note)) continue;
         if (isVoiceInFamily(note.voice, VoiceFamily::Rhythm) && note.voice != VoiceId::CoreDrums)
             notesByVoiceBar[{note.voice, barFor(note, plan)}].push_back(index);
     }
@@ -189,7 +194,7 @@ MusicalQualityReport MusicalCritic::reviewAndRefine(Pattern& pattern, const Song
     std::map<std::pair<int, VoiceId>, int> onsets;
     auto removed = std::size_t{};
     pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
-        if (note.authoredTiming) return false;
+        if (note.authoredTiming || aiAuthored(note)) return false;
         if (isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
             note.voice == VoiceId::Transitions || note.voice == VoiceId::Atmosphere)
             return false;

@@ -1,5 +1,115 @@
 # PULSO
 
+### 0.42 — autoría narrativa verificable
+
+- GPT escribe células con `theme_id` y función narrativa explícita; statement, answer,
+  development y resolution comparten memoria comprobable a través de la forma.
+- Cada nota conserva procedencia (`ai_authored`, `ai_transformed`, `procedural` o
+  `local_continuity`) hasta Live y el manifiesto MIDI.
+- `NarrativeScoreGate` mide cobertura autoral de voces principales, retorno temático,
+  continuidad del bajo, dirección armónica y desarrollo rítmico.
+- El crítico compara el render inicial y su revisión; una revisión musicalmente peor ya no
+  reemplaza automáticamente un plan superior.
+- En canciones GPT, los motores locales validan y realizan la interpretación, pero dejan de
+  inventar hooks, variaciones, recuerdos temáticos y desarrollos de bajo posteriormente.
+
+### 0.41 — realización audible vinculante
+
+- `Audible Timbre Gate` resuelve el reparto completo antes de tocar el Set. Kick, sub,
+  movement bass y lead deben alcanzar su piso perceptual; un fallo crítico conserva el
+  despliegue anterior en vez de publicar una instrumentación engañosa.
+- Hats, clap, snare y shaker repetidos pueden usar entre dos y tres muestras exactas distintas.
+  Los ataques se distribuyen mediante round-robin determinista sensible a frase y velocity,
+  conservando timing, identidad GM y edición MIDI independiente.
+- Cada pista publica un release máximo por función. El puente limita únicamente parámetros
+  de envelope cuyo tiempo puede verificar en la API de Live y nunca reescribe releases de
+  compresores, reverbs o delays como si fueran el instrumento.
+- El bajo de movimiento reconoce frases de ocho compases copiadas y desarrolla los dos
+  compases finales sin salir de la grilla, chocar con el kick ni cambiar la tonalidad.
+- `audible_audit.json` observa los medidores reales mientras Live reproduce: confirma presencia
+  durante notas y detecta colas después de la ventana de release. La API Remote Script no entrega
+  buffers ni espectro; esa limitación queda declarada explícitamente y nunca se inventa un análisis.
+
+### 0.40 — reparto cerrado, macroforma y percusión con fraseo
+
+- El reparto instrumental explícito de GPT es un contrato cerrado: los normalizadores ya no
+  agregan `Upper Air`, `High Percussion` ni instrumentos esenciales genéricos que la IA no escribió.
+- Un pase final restablece el registro de cada parte después de continuidad y orquestación; una
+  voz superior no puede reaparecer en registro de bajo ni la percusión alta convertirse en kick.
+- La macroforma electrónica admite breakdowns largos, pero recupera un ancla de kick antes de
+  superar dieciséis compases sin pulso, salvo que GPT declare un silencio completo real.
+- Hats, shaker, clap y percusiones conservan seis compases de identidad y desarrollan los dos
+  compases finales mediante articulación, respuesta y sustracción, no sólo cambios de velocity.
+- El selector de Live evalúa la intención de cada pista sin interpretar frases negadas del rol
+  como características del preset, evitando falsos fallbacks de sonidos correctos.
+
+### 0.39 — reparto autoral, armonía vertical y continuidad electrónica
+
+- Una composición electrónica con reparto completo conserva únicamente las voces que GPT
+  asignó a instrumentos concretos. Ya no aparecen propietarios orquestales genéricos ni una
+  pista de percusión multipropósito agregada por el normalizador.
+- `VerticalHarmonyGate` audita lo que realmente suena después de orquestar, cuantizar y
+  reparar releases. Elimina choques graves de semitono/tritono mediante respiraciones exactas
+  de soporte, sin cambiar la tonalidad ni inventar otras notas.
+- Las respuestas del hook se vinculan por instrumento y frase; guitarra, sintetizador, cello
+  u otra voz conservan identidades contrapuntísticas independientes en vez de fusionarse.
+- Los silencios electrónicos se regulan según energía y función: una pausa completa debe
+  declararse; una introducción club sin ritmo recibe continuidad superior escasa, nunca un
+  kick automático ni una cama continua.
+- Live selecciona cada sonido sólo desde la intención de esa pista, distingue un sub seno
+  limpio de un sub saw/complex y publica también la coherencia entre nombre, rol e intención.
+
+### 0.38 — identidad musical y fidelidad tímbrica
+
+- El groove conserva seis compases de ADN reconocible entre frases de ocho y reserva los dos
+  últimos para variación, evitando tanto el patrón congelado como el random permanente.
+- Las respuestas melódicas se derivan del hook mediante inversión o retrogradación dentro de
+  la tonalidad, en lugar de funcionar como melodías independientes sin parentesco.
+- Las transiciones sólo pueden vivir alrededor de límites formales y se limitan a dos gestos
+  por parte y llegada; una pista etiquetada como transición ya no se convierte en percusión continua.
+- La tonalidad consolidada permite la sensible elevada del modo menor únicamente en una
+  dominante o transición declarada y con resolución inmediata al centro tonal.
+- Los descriptores de sonido (`breathy`, `glassy`, `felt`, `muted`, registro, espacio y
+  envolvente) son vinculantes. Live informa `intent_fidelity`, su promedio y un score audible
+  que penaliza coincidencias de familia cuyo carácter real no cumple la intención de GPT.
+
+### 0.36 — Audible Production Gate
+
+- Live rechaza loops con BPM, muestras compuestas y presets cromáticos cuando necesita un golpe aislado.
+- Cada familia instrumental recibe una duración mínima físicamente audible; los fragmentos irrepresentables se eliminan.
+- Una pista latina conserva congas, bongos y timbales, sin convertirse silenciosamente en una colección de toms.
+- El foreground rota después de dos frases consecutivas y ninguna reducción club pierde su narrativa por más de ocho compases.
+- El crítico GPT recibe las reparaciones audibles como defectos concretos y debe corregirlas en el score siguiente.
+
+### 0.35 — memoria, continuidad y ejecución semántica
+
+La canción publicada conserva ahora memoria temática reconocible, evita breakdowns de ocho
+compases sostenidos por una única textura y redondea duraciones largas a la frase de ocho
+compases más cercana. El groove mantiene el four-on-the-floor pero incorpora puntuaciones de
+frase deterministas y escasas. Congas, toms, rides, claves, hats y metales conservan su
+articulación GM exacta; ninguna articulación de soporte puede superar dos tercios de su capa.
+
+El contrato tonal revisa el modelo de reproducción real: una voz de transición cargada como
+textura cromática deja de estar exenta. El director de sonidos distingue registros graves y
+agudos, evita duplicar presets con el mismo nombre y rechaza una articulación ausente antes de
+convertir, por ejemplo, un ride en un clap.
+
+### 0.34.1 — gate de integridad transparente
+
+Los criterios artísticos reparables producen advertencias y afectan la puntuación, pero no
+descartan una composición completa. Sólo MIDI corrupto, duraciones inseguras, ownership
+inválido o colisiones tonales sin resolver activan el Integrity Gate. Cada rechazo real queda
+registrado con su lista exacta de causas en el log del host.
+
+## 0.34 — identidad musical vinculante
+
+PULSO conserva ahora el reparto instrumental creado por GPT en vez de sustituirlo por una
+plantilla electrónica fija. Los instrumentos mencionados explícitamente en el mundo sonoro
+se convierten en partes reales; el hook recupera un núcleo reconocible durante la forma; la
+percusión escrita por la IA se valida contra articulaciones GM; y el gate revisa recurrencia,
+diversidad percusiva y materialización tímbrica antes de publicar. La auditoría tonal final se
+ejecuta después de cuantización, articulación y releases, sobre el MIDI exacto enviado a Live.
+
 PULSO es una suite de composición MIDI. GPT propone una obra completa
 con armonía, melodía, bajo y batería; un motor local valida y reproduce el resultado
 sin bloquear el audio. Sin credencial o red, PULSO continúa con un compositor local
@@ -187,6 +297,13 @@ docs/           Producto, arquitectura, Ableton y desarrollo
 ```
 
 ## Estado del producto
+
+La versión 0.37.0 hace vinculante la identidad acústica que llega a Live: registro alto/bajo,
+estado abierto/cerrado/pedal/mute y familia China/Crash/Splash/Ride forman parte del contrato,
+no simples palabras de ranking. GM 65/66 se publican como timbales. Si una articulación no
+existe en la biblioteca, sólo se permite una sustitución declarada de la misma familia que
+conserva exactamente los ataques y deja la identidad original en telemetría. El estado final
+incluye un `deployed_audible_score` calculado sobre los dispositivos y clips realmente creados.
 
 La versión 0.33.0 convierte la naturalidad electrónica en contratos verificables: notas de Live 12
 mediante `MidiNoteSpecification`, articulaciones de percusión resueltas por identidad, kicks completos

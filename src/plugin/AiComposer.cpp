@@ -225,7 +225,9 @@ const juce::String songPlanSchema = juce::String(R"json({
     "performance_score":{"type":"object","properties":{
       "cells":{"type":"array","minItems":1,"maxItems":64,"items":{
         "type":"object","properties":{
-          "id":{"type":"string"},"length_beats":{"type":"number"},
+          "id":{"type":"string"},"theme_id":{"type":"string"},
+          "narrative_function":{"type":"string","enum":["establish","question","answer","develop","withdraw","intensify","resolve","support"]},
+          "length_beats":{"type":"number"},
           "owned_voices":{"type":"array","minItems":1,"maxItems":15,"items":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]}},
           "notes":{"type":"array","maxItems":768,"items":{"type":"object","properties":{
             "beat":{"type":"number"},"duration":{"type":"number"},"pitch":{"type":"integer"},
@@ -236,7 +238,7 @@ const juce::String songPlanSchema = juce::String(R"json({
             "beat":{"type":"number"},"controller":{"type":"integer"},"value":{"type":"integer"},
             "voice":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]}
           },"required":["beat","controller","value","voice"],"additionalProperties":false}}
-        },"required":["id","length_beats","owned_voices","notes","controls"],"additionalProperties":false
+        },"required":["id","theme_id","narrative_function","length_beats","owned_voices","notes","controls"],"additionalProperties":false
       }},
       "placements":{"type":"array","maxItems":512,"items":{"type":"object","properties":{
         "cell_id":{"type":"string"},"section_index":{"type":"integer"},"start_beat":{"type":"number"},
@@ -837,8 +839,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "Above those execution voices, design a production cast of 8-36 instrument instances from the supplied catalog. "
         "Use the smallest cast that can realize the requested depth. It has three coordinated departments: rhythm and "
         "percussion, harmonic fabric, and hooks or melodic speakers. source_voice is the playable archetype feeding an instrument, not its identity, and MUST reference "
-        "an id present in the voices array. Assign each instance "
+        "an id present in the voices array. Every execution voice used by performance_score MUST have at least one "
+        "explicit instrument owner with a compatible source_voice; never rely on an unnamed or automatically invented "
+        "orchestral owner. A guitar or synth may own countermelody when its orchestral_function is counterpoint. Assign each instance "
         "a distinct role, playable register, prominence, restrained doubling probability and optional named sections. "
+        "A role named upper, high, air or extension must actually begin at MIDI 60 or above unless it is an explicitly "
+        "named alto instrument. Never describe a high spectral layer while assigning it to the bass register. "
         "For every instrument, author orchestral_function, articulation_intent and divisi_voices. The functions "
         "foundation, body, extension, counterpoint, color and transition are compositional responsibilities: distribute "
         "them across the families actually required by production_language. In club_electronic, prefer synth, drum, bass, "
@@ -849,7 +855,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "in live_preset_intent with concise English browser-search nouns, even when the user writes in another language "
         "(for example: solo cello, closed hi-hat, chamber strings, warm analog pad). Never invent a factory preset name. "
         "The local Live resolver matches that intent against installed content and will never treat an empty Rack, "
-        "Sampler or Simpler container as a playable sound. "
+        "Sampler or Simpler container as a playable sound. Never use generic intents such as balanced natural. The "
+        "track name, role, articulation and live_preset_intent must describe one compatible audible identity; do not "
+        "name a part glassy while requesting felt, or clean while requesting distorted. "
         "When the creative direction includes an Ableton playback inventory, treat it as an execution constraint: "
         "prefer exact installed identities, use family-only substitutions deliberately, and do not build important "
         "counterpoint around unavailable identities. Preserve creative freedom through roles, register and form, not "
@@ -861,17 +869,30 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "never turn orchestration into indiscriminate unison doubling. Bass remains an independent bridge between "
         "harmony and rhythm. Write orchestration_language as the global orchestral argument and author one "
         "timbre_palette before selecting individual sounds. Its material and space define a single mix world; all "
+        "Concrete instruments named in timbre_palette are binding: each must have a matching instruments entry and an audible role; never describe a flute, piano, string, brass or acoustic voice that the score does not instantiate. "
         "numeric palette dimensions are 0 to 1. Interpret every live_preset_intent as a relative role inside that "
-        "palette, never as an unrelated sound search. Use active_sections to reserve colours for meaningful moments. "
+        "palette, never as an unrelated sound search. Concrete perceptual descriptors such as felt, muted, breathy, "
+        "glassy, dark, bright, high, low, dry, wet, short or sustained are binding audible requirements: choose only "
+        "the few descriptors the role truly needs, because Live reports a character fallback when its installed sound "
+        "does not realize them. Use active_sections to reserve colours for meaningful moments. "
         "Instrument names must be clear DAW track names. Complexity must come "
         "from coordinated independence, negative space and long-range development, never indiscriminate density. "
+        "Negative space still needs dramatic continuity: outside an explicitly authored full silence, no eight-bar "
+        "window may be carried by only one repeated texture. A breakdown should normally preserve at least three "
+        "complementary responsibilities across the window, such as harmonic memory, a sparse motif fragment and "
+        "atmospheric or low-frequency continuity, without making them play continuously. "
         "Treat active_voices as an available cast, not a command to play continuously: design implied entrances, "
         "responses, withdrawals, breath before arrivals, tension plateaus and genuine low-density descents. "
         "Harmonic tension must follow the dramatic curve. minimum_pitch and maximum_pitch are MIDI pitches. "
+        "Audit the exact vertical voicing, not only scale membership: below MIDI 55, avoid sustained minor-second, "
+        "major-seventh/minor-ninth and tritone collisions between sub, moving bass and harmonic support. Resolve them "
+        "with inversion, register, voice leading or deliberate support gaps rather than adding more pitches. "
         "The key label, root_pitch_class and mode define the binding perceptual tonal centre for ordinary requests. "
         "Use consolidated tonality by default: structural notes, chord roots, basses and pitch-class sets remain in "
         "the home scale, while extensions, inversions and voice leading create richness inside it. A chromatic melodic "
-        "passing or neighbour note must be short, weak, approached stepwise and immediately resolve stepwise. Never let "
+        "passing or neighbour note must be short, weak, approached stepwise and immediately resolve stepwise. In minor, "
+        "a raised leading tone is permitted only inside a declared dominant or transitional cadence and must resolve "
+        "upward by semitone to the tonic within one beat. Never let "
         "a label such as colour, cluster or dominant legalise an otherwise unsupported pitch. Use limited modal "
         "interchange, secondary dominants or brief modulation only when the creative direction explicitly requests "
         "that harmonic device, and prepare and resolve every departure back to the home centre. Use free chromatic or "
@@ -917,7 +938,17 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "the user explicitly requests constant quarter-note kick or when a section deliberately mutes it. "
         "The section bars MUST sum exactly to ") + juce::String(totalBars) + ". Use between 5 and 14 sections. Energy, tension "
         "and density are values from 0 to 1. Motif intervals are semitones relative to the "
-        "tonic and form the immutable thematic DNA. Author the actual performance in performance_score. "
+        "tonic and form the immutable thematic DNA. Establish one compact primary statement, then make at least "
+        "one of every two to four later foreground appearances preserve its recognisable onset rhythm and contour; "
+        "transform register, harmony, instrumentation, dynamics or fragments around that memory instead of replacing "
+        "it with unrelated material. Author the actual performance in performance_score. "
+        "This is the authoritative compositional layer, not an optional sketch. Give every cell a stable theme_id "
+        "shared by its recognisable transformations and a narrative_function describing what it does. Across active "
+        "lead, countermelody, bass and harmonic voices, placements must author at least 45 percent of their available "
+        "timeline, concentrating that authorship in statements, answers, developments, breakdown memory, climax and "
+        "resolution. Procedural continuity may connect authored phrases but must never invent the principal hook, bass "
+        "argument or cadence. Write movement-bass cells as coherent four-to-eight-bar lines with pocket, breath and a "
+        "recognisable developed return; do not represent a bass argument as unrelated isolated notes. "
         "A cell is a compact reusable passage measured in quarter-note beats, not a genre template. Its "
         "owned_voices are authoritative: their notes and deliberate silences replace local procedural notes "
         "in every section where the cell is placed. Write independent attacks, releases, pitches and velocities "
@@ -926,8 +957,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "withdrawal and arrival; never duplicate a cell under another name. placements use a zero-based section_index "
         "and start_beat relative to that section. A placement owns only its exact time interval; cover every interval "
         "that must be explicitly authored and leave gaps only when procedural continuity is desired. Never create an "
-        "unmarked global silence longer than two bars. Repetition is permitted only when musically intentional: no "
+        "unmarked global silence longer than two bars. If complete silence is structurally intended, write the exact "
+        "phrase full silence in that section's function; otherwise preserve sparse rhythmic, harmonic or atmospheric "
+        "continuity. Repetition is permitted only when musically intentional: no "
         "foreground or bass cell may repeat verbatim more than twice, and a stable percussion cell no more than four "
+        "The primary hook is the exception to novelty: state one identifiable two-to-four-bar nucleus, recall its onset pattern and contour in at least one quarter of later hook windows, and develop it by cadence, register, orchestration or one controlled interval change. Hook response must derive from that nucleus rather than introduce unrelated material. "
         "times before a materially different companion cell answers it. Use new cells and interleaved placements for "
         "structural variation. Build audible dialogue by reusing strong cells through voice_map: establish an idea in "
         "one voice, answer it in another, then transform it using time_scale, transpose, fragment boundaries, contour "
@@ -943,7 +977,21 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "low-end grammar and the current foreground remain legible. HarmonicPulse is punctuation: its individual notes "
         "must not exceed one quarter-note beat in club_electronic, and HarmonicFoundation must breathe or revoice before "
         "nine literal bars. Treat open hat, shaker, clap, rim, tom, hand percussion, metal and transition FX as distinct "
-        "audible articulations. "
+        "audible articulations. Every performance_score percussion pitch must match the GM articulation owned by its voice: never put kick pitches 35/36 into low_percussion, high_percussion, hats or transitions. High percussion must name concrete physical responsibilities such as ride, rim, tambourine or cowbell, never generic percussion, and should normally expose at least three purposeful articulations across a full song. "
+        "If an instrument is named conga, use GM conga pitches 62-64 rather than tom pitches 41-50. Do not let claves, "
+        "closed hats or any single articulation own more than roughly two thirds of a multi-articulation support lane. "
+        "Keep each named percussion lane inside its declared acoustic family; request a separate tom or metal lane instead "
+        "of hiding unrelated articulations inside a conga role. Never describe tempo-labelled loops or compound samples as "
+        "isolated drum hits. A club reduction may withdraw the drums and hook for eight bars, but the next eight-bar window "
+        "must restore a recognisable thematic foreground gesture even if the full drop is still delayed. A club song may "
+        "sustain a breakdown, but unless full silence is explicitly declared it must not exceed sixteen consecutive bars "
+        "without at least one full pulse-anchor bar. Develop hats, clap and shaker in the final two bars of each eight-bar "
+        "phrase through articulation, phase, subtraction or call-response; velocity-only changes do not count. Rotate the actual "
+        "foreground instrument after at most two consecutive phrases; changing velocity alone is not rotation. Avoid tonal "
+        "notes shorter than one eighth beat, and give bowed strings, winds and brass at least one quarter beat unless a "
+        "physically intentional extended-technique articulation explicitly requires otherwise. "
+        "Give timbrally independent pads, responses and textures contrasting live_preset_intent descriptions; never "
+        "request the same preset identity for two different orchestration functions. "
         "octave_shift is strictly an octave displacement: -24, -12, 0, 12 or 24 semitones. "
         "Every authored note and placement MUST declare metric_intent=strict_grid. Source MIDI timing is always exact; "
         "anticipation, feel and microtiming belong exclusively to PULSO's reversible Human Performance playback layer. "
@@ -1046,6 +1094,21 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                  << ", chamber_sections=" << static_cast<int>(draftReport.orchestration.chamberSections)
                  << ", tutti_sections=" << static_cast<int>(draftReport.orchestration.tuttiSections)
                  << ", musical_quality=" << juce::String(draftReport.musical.overall, 3)
+                 << ", narrative_score=" << juce::String(draftReport.narrative.score, 3)
+                 << ", ai_authored_note_ratio="
+                 << juce::String(draftReport.narrative.aiAuthoredNoteRatio, 3)
+                 << ", primary_voice_authorship_coverage="
+                 << juce::String(draftReport.narrative.primaryVoiceCoverage, 3)
+                 << ", groove_authorship_coverage="
+                 << juce::String(draftReport.narrative.grooveAuthorshipCoverage, 3)
+                 << ", narrative_thematic_recall="
+                 << juce::String(draftReport.narrative.thematicRecallRatio, 3)
+                 << ", bass_phrase_continuity="
+                 << juce::String(draftReport.narrative.bassPhraseContinuity, 3)
+                 << ", harmonic_direction="
+                 << juce::String(draftReport.narrative.harmonicDirection, 3)
+                 << ", rhythmic_development="
+                 << juce::String(draftReport.narrative.rhythmicDevelopment, 3)
                  << ", repeated_rendered_bars=" << static_cast<int>(draftReport.musical.repeatedBars)
                  << ", literal_rhythm_bars_varied="
                  << static_cast<int>(draftReport.musical.literalRhythmBarsVaried)
@@ -1070,12 +1133,80 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                  << juce::String(draftReport.production.expressionEventsPerNote, 2)
                  << ", literal_rhythm_bars=" << static_cast<int>(draftReport.production.literalRhythmBars)
                  << ", maximum_rhythm_run=" << static_cast<int>(draftReport.production.maximumRhythmRun)
+                 << ", thematic_windows="
+                 << static_cast<int>(draftReport.electronicProduction.thematicWindows)
+                 << ", recurring_thematic_windows="
+                 << static_cast<int>(draftReport.electronicProduction.recurringThematicWindows)
+                 << ", thematic_recurrence_ratio="
+                 << juce::String(draftReport.electronicProduction.thematicRecurrenceRatio, 3)
+                 << ", sparse_structural_windows_repaired="
+                 << static_cast<int>(draftReport.sparseStructuralWindowsRepaired)
+                 << ", structural_continuity_notes_created="
+                 << static_cast<int>(draftReport.structuralContinuityNotesCreated)
+                 << ", extended_foreground_windows_repaired="
+                 << static_cast<int>(draftReport.extendedForegroundWindowsRepaired)
+                 << ", foreground_continuity_notes_created="
+                 << static_cast<int>(draftReport.foregroundContinuityNotesCreated)
+                 << ", early_rhythm_notes_created="
+                 << static_cast<int>(draftReport.earlyRhythmNotesCreated)
+                 << ", audible_duration_repairs="
+                 << static_cast<int>(draftReport.audibleDurationRepairs)
+                 << ", inaudible_notes_removed="
+                 << static_cast<int>(draftReport.inaudibleNotesRemoved)
+                 << ", groove_phrase_pairs="
+                 << static_cast<int>(draftReport.musicalIdentity.groovePhrasePairs)
+                 << ", groove_recall_ratio="
+                 << juce::String(draftReport.musicalIdentity.grooveRecallRatio, 3)
+                 << ", groove_phrase_developments="
+                 << static_cast<int>(draftReport.musicalIdentity.groovePhraseDevelopments)
+                 << ", groove_development_notes="
+                 << static_cast<int>(draftReport.musicalIdentity.grooveDevelopmentNotes)
+                 << ", response_phrases="
+                 << static_cast<int>(draftReport.musicalIdentity.responsePhrases)
+                 << ", response_parts="
+                 << static_cast<int>(draftReport.musicalIdentity.responseParts)
+                 << ", response_lineage_ratio="
+                 << juce::String(draftReport.musicalIdentity.responseLineageRatio, 3)
+                 << ", transition_notes_before="
+                 << static_cast<int>(draftReport.musicalIdentity.transitionNotesBefore)
+                 << ", transition_notes_after="
+                 << static_cast<int>(draftReport.musicalIdentity.transitionNotesAfter)
+                 << ", percussion_durations_authored="
+                 << static_cast<int>(draftReport.musicalIdentity.percussionDurationsAuthored)
                  << ", expression_events_before="
                  << static_cast<int>(draftReport.expression.controlsBefore +
                                      draftReport.expression.expressionsBefore)
                  << ", expression_events_after="
                  << static_cast<int>(draftReport.expression.controlsAfter +
-                                     draftReport.expression.expressionsAfter) << ".\n";
+                                     draftReport.expression.expressionsAfter)
+                 << ", low_vertical_collisions_before="
+                 << static_cast<int>(draftReport.verticalHarmony.collisionsBefore)
+                 << ", low_vertical_collisions_after="
+                 << static_cast<int>(draftReport.verticalHarmony.collisionsAfter)
+                 << ", support_notes_ducked="
+                 << static_cast<int>(draftReport.verticalHarmony.supportNotesDucked)
+                 << ", implicit_voices_pruned="
+                 << static_cast<int>(draftReport.orchestration.implicitVoicesPruned)
+                 << ", implicit_performance_notes_pruned="
+                 << static_cast<int>(draftReport.orchestration.implicitPerformanceNotesPruned)
+                 << ", production_low_vertical_clashes="
+                 << static_cast<int>(draftReport.production.lowRegisterVerticalClashes)
+                 << ", production_implicit_cast_parts="
+                 << static_cast<int>(draftReport.production.implicitCastParts)
+                 << ", production_longest_global_silence_beats="
+                 << juce::String(draftReport.production.longestGlobalSilenceBeats, 2)
+                 << ", maximum_kickless_bars_before="
+                 << static_cast<int>(draftReport.electronicProduction.maximumKicklessBarsBefore)
+                 << ", maximum_kickless_bars_after="
+                 << static_cast<int>(draftReport.electronicProduction.maximumKicklessBarsAfter)
+                 << ", macro_kick_anchor_bars_created="
+                 << static_cast<int>(draftReport.electronicProduction.macroKickAnchorBarsCreated)
+                 << ", bass_phrase_developments_created="
+                 << static_cast<int>(draftReport.electronicProduction.bassPhraseDevelopmentsCreated)
+                 << ", bass_notes_developed="
+                 << static_cast<int>(draftReport.electronicProduction.bassNotesDeveloped)
+                 << ", late_percussion_articulation_repairs="
+                 << static_cast<int>(draftReport.electronicProduction.latePercussionArticulationRepairs) << ".\n";
     if (!draftReport.finalTonalPass.before.issues.empty()) {
         auditSummary << "Representative exact-timeline issues:\n";
         for (const auto& issue : draftReport.finalTonalPass.before.issues) {
@@ -1115,9 +1246,29 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "question/answer or developmental cells, not cosmetic velocity changes. If thematic_voice_mappings is zero or "
         "dialogue_voices is below three, create meaningful cross-instrument mappings and transformations across separate "
         "sections; do not merely double the same notes. Rewrite only weak cells "
-        "and their placements while keeping strong material intact. Use rhythm masks as supporting cells and sparse "
+        "and their placements while keeping strong material intact. Every related statement, answer and development "
+        "must carry the same theme_id, while narrative_function must express its actual role. Raise "
+        "primary_voice_authorship_coverage to at least 0.45, narrative_thematic_recall to at least 0.35, "
+        "bass_phrase_continuity to at least 0.55 and harmonic_direction to at least 0.70. Repair those metrics by "
+        "writing and placing musical cells, never by changing descriptions or adding arbitrary notes. Use rhythm masks as supporting cells and sparse "
         "mutations as development; do not merely add density. production_ready must become true: strict-grid material "
-        "must be exact, every metric exception must be declared, consolidated tonality must contain zero external "
+        "must also leave zero sparse_structural_windows_repaired and establish a thematic_recurrence_ratio of at least "
+        "0.20 whenever six or more thematic windows exist; repair those causes in the score rather than changing labels. "
+        "It must also leave zero extended_foreground_windows_repaired, zero audible_duration_repairs and zero "
+        "inaudible_notes_removed: distribute foreground ownership in the authored score and write playable gates directly. "
+        "A transition role must contain only boundary arrivals, reverses or impacts, never a continuous percussion pattern. "
+        "Every performed voice must have an explicit compatible instrument owner: leave implicit_voices_pruned, "
+        "implicit_performance_notes_pruned and production_implicit_cast_parts at zero. Repair the authored cast instead "
+        "of accepting an invented generic orchestral lane. Leave low_vertical_collisions_after and "
+        "production_low_vertical_clashes at zero; prefer correct voicing and intentional support rests over relying on "
+        "the deterministic safety duck. Track names and live_preset_intent descriptors must be mutually consistent. "
+        "For club_electronic leave maximum_kickless_bars_after at sixteen or less unless the form explicitly declares "
+        "full silence, and leave late_percussion_articulation_repairs at zero by writing concrete GM identities directly. "
+        "A movement-bass phrase may repeat exactly to establish identity, but the third occurrence must develop its last "
+        "two bars through a pickup, subtraction, gate change or answer that preserves kick interlock and tonal function. "
+        "Preserve one onset skeleton for two adjacent groove phrases before changing it; reserve fills and mutations for "
+        "the final two bars. Every response phrase must audibly derive its interval contour from the primary hook. "
+        "Strict-grid material must be exact, every metric exception must be declared, consolidated tonality must contain zero external "
         "notes, and expressive controls must be phrase-local rather than continuous through silence. The final "
         "JSON must be self-contained. Original creative direction: ") + direction +
         auditSummary + "\nCandidate plan to critique and revise:\n" + outputText;
@@ -1129,7 +1280,19 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         if (parseSongPlanJson(revisedText, targetSeconds, totalBars, bpm, beatsPerBar,
                               seed, revised, criticError,
                               tonalPolicyForDirection(direction.toStdString()))) {
-            result = std::move(revised);
+            GenerationContext revisedFoundation = auditFoundation;
+            revisedFoundation.rootPitchClass = revised.rootPitchClass;
+            revisedFoundation.scale = revised.scale;
+            CompositionRenderReport revisedReport;
+            [[maybe_unused]] const auto auditedRevision = SongComposer{}.render(
+                revised, revisedFoundation, {}, &revisedReport);
+            const auto draftNarrative = draftReport.narrative.score * 0.78 +
+                draftReport.musical.overall * 0.22;
+            const auto revisedNarrative = revisedReport.narrative.score * 0.78 +
+                revisedReport.musical.overall * 0.22;
+            const auto safer = revisedReport.production.ready || !draftReport.production.ready;
+            if (safer && revisedNarrative + 0.015 >= draftNarrative)
+                result = std::move(revised);
         }
     }
     applyExplicitRhythmRequest(result, direction);
@@ -1288,6 +1451,9 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
             result.instruments.push_back(std::move(assignment));
         }
     }
+    result.instrumentCastAuthored = object->hasProperty("instrument_cast_authored")
+        ? static_cast<bool>(object->getProperty("instrument_cast_authored"))
+        : !result.instruments.empty();
     if (const auto* motifs = object->getProperty("rhythm_motifs").getArray()) {
         for (const auto& item : *motifs) {
             const auto* motif = item.getDynamicObject();
@@ -1445,6 +1611,8 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
                 if (cell == nullptr) continue;
                 PerformanceCell parsedCell;
                 parsedCell.id = cell->getProperty("id").toString().trim().toStdString();
+                parsedCell.themeId = cell->getProperty("theme_id").toString().trim().toStdString();
+                parsedCell.narrativeFunction = cell->getProperty("narrative_function").toString().trim().toStdString();
                 parsedCell.lengthBeats = static_cast<double>(cell->getProperty("length_beats"));
                 if (const auto* owners = cell->getProperty("owned_voices").getArray())
                     for (const auto& owner : *owners)

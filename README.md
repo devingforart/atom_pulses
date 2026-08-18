@@ -1,5 +1,19 @@
 # PULSO
 
+### 0.47 — identidad tímbrica y variación real
+
+- GPT compone una firma tímbrica por pista: fuente, envolvente, espectro, movimiento,
+  espacio, textura y grado de exploración. Ya no entrega solamente la palabra `lead`.
+- Live elige de un top-K de presets compatibles mediante la semilla de la canción. La
+  identidad instrumental y el piso de fidelidad siguen siendo restricciones estrictas.
+- El historial persistente evita repetir los mismos presets entre canciones; la elección
+  sigue siendo reproducible y un sonido bloqueado se conserva en despliegues posteriores.
+- En el menú de cada pista, `BLOQUEAR SONIDO` conserva la elección y `BUSCAR OTRA VARIANTE`
+  incrementa únicamente su variación para el siguiente `CREATE IN LIVE`.
+- Drift, Wavetable, Operator, Analog y Meld reciben ajustes conservadores de envolvente,
+  filtro, movimiento y anchura derivados de la firma; los presets acústicos se preservan.
+- El inventario nativo sube de 6.000 a 16.000 sonidos sin escanear plug-ins externos.
+
 ### 0.46 — propiedad musical y pocket de bajo
 
 - La selección de revisiones es lexicográfica: primero reduce déficit de autoría principal,

@@ -5,6 +5,7 @@ User Library. It deliberately never visits the Plug-Ins browser root.
 """
 
 import json
+import hashlib
 import os
 import traceback
 
@@ -24,7 +25,7 @@ from .deployment_planner import resolve_deployment
 class PulsoDeployRemote(ControlSurface):
     POLL_TICKS = 45
     INVENTORY_BATCH = 80
-    INVENTORY_LIMIT = 6000
+    INVENTORY_LIMIT = 16000
 
     def __init__(self, c_instance):
         super(PulsoDeployRemote, self).__init__(c_instance)
@@ -35,6 +36,7 @@ class PulsoDeployRemote(ControlSurface):
         self._heartbeat_file = os.path.join(self._bridge_dir, "heartbeat.json")
         self._inventory_file = os.path.join(self._bridge_dir, "inventory.json")
         self._audible_audit_file = os.path.join(self._bridge_dir, "audible_audit.json")
+        self._sound_history_file = os.path.join(self._bridge_dir, "sound_history.json")
         # request.json intentionally remains on disk as the latest deployment snapshot.
         # Adopt it before the first poll so opening PULSO or restarting Live can never
         # replay an old command. Only CREATE IN LIVE writes a different UUID.
@@ -46,6 +48,9 @@ class PulsoDeployRemote(ControlSurface):
         self._device_queue = []
         self._native_items = []
         self._inventory_queue = []
+        self._inventory_queues = []
+        self._inventory_cursor = 0
+        self._inventory_root_counts = {}
         self._inventory_complete = False
         self._loaded_devices = 0
         self._fallback_devices = 0
@@ -94,23 +99,35 @@ class PulsoDeployRemote(ControlSurface):
             root = getattr(browser, attribute, None)
             if root is not None:
                 roots.append((root, attribute, 0))
-        self._inventory_queue = roots
+        # One independent breadth-first frontier per Browser root prevents a very large
+        # factory Sounds tree from consuming the cap before User Library is visited.
+        self._inventory_queues = [[entry] for entry in roots]
+        self._inventory_queue = []  # retained for compatibility with older diagnostics
+        self._inventory_cursor = 0
+        self._inventory_root_counts = {attribute: 0 for _, attribute, _ in roots}
         self._native_items = []
         self.schedule_message(1, self._scan_inventory_batch)
 
     def _scan_inventory_batch(self):
         processed = 0
-        while self._inventory_queue and processed < self.INVENTORY_BATCH and len(self._native_items) < self.INVENTORY_LIMIT:
-            item, parent_path, depth = self._inventory_queue.pop(0)
+        while any(self._inventory_queues) and processed < self.INVENTORY_BATCH and \
+                len(self._native_items) < self.INVENTORY_LIMIT:
+            available = [index for index, queue in enumerate(self._inventory_queues) if queue]
+            queue_index = available[self._inventory_cursor % len(available)]
+            self._inventory_cursor += 1
+            queue = self._inventory_queues[queue_index]
+            item, parent_path, depth = queue.pop(0)
             processed += 1
             name = str(getattr(item, "name", "")).strip()
             path = parent_path + ("/" + name if name else "")
             if bool(getattr(item, "is_loadable", False)):
                 self._native_items.append((name, path, item))
+                root_name = parent_path.split("/", 1)[0]
+                self._inventory_root_counts[root_name] = self._inventory_root_counts.get(root_name, 0) + 1
             if depth < 9:
                 for child in getattr(item, "children", ()):
-                    self._inventory_queue.append((child, path, depth + 1))
-        if self._inventory_queue and len(self._native_items) < self.INVENTORY_LIMIT:
+                    queue.append((child, path, depth + 1))
+        if any(self._inventory_queues) and len(self._native_items) < self.INVENTORY_LIMIT:
             self.schedule_message(1, self._scan_inventory_batch)
             return
         self._inventory_complete = True
@@ -125,6 +142,8 @@ class PulsoDeployRemote(ControlSurface):
                 "source": "ableton_live_native",
                 "complete": self._inventory_complete,
                 "loadable_count": len(self._native_items),
+                "root_counts": self._inventory_root_counts,
+                "truncated": any(self._inventory_queues),
                 "items": [{"name": name, "path": path} for name, path, _ in self._native_items],
                 "capabilities": catalog_capabilities(self._native_items),
             }
@@ -140,13 +159,25 @@ class PulsoDeployRemote(ControlSurface):
             self._write_status("busy", "LIVE DEPLOYMENT ALREADY IN PROGRESS")
             return
         tracks = expand_percussion_specs(request.get("tracks", []))
-        if request.get("schema_version") not in (2, 3, 4, 5, 6, 7, 8) or not tracks:
+        if request.get("schema_version") not in (2, 3, 4, 5, 6, 7, 8, 9) or not tracks:
             raise RuntimeError("invalid or empty deployment request")
         if request.get("sound_engine", "ableton_live_native") != "ableton_live_native":
             raise RuntimeError("unsupported sound engine")
         # Resolve the complete playback contract before touching the Set. This catches
         # unavailable identities and empty-container fallbacks without creating tracks.
-        plan = resolve_deployment(self._native_items, tracks)
+        history = self._read_sound_history()
+        recent_by_catalog = history.get("recent_by_catalog", {})
+        last_by_track = history.get("last_by_track", {})
+        enriched_tracks = []
+        for source in tracks:
+            spec = dict(source)
+            catalog = str(spec.get("catalog_id", ""))
+            track_key = str(spec.get("track_key", spec.get("name", "")))
+            spec["recent_sound_paths"] = list(recent_by_catalog.get(catalog, ()))
+            if bool(spec.get("sound_locked", False)) and track_key in last_by_track:
+                spec["locked_sound_path"] = str(last_by_track[track_key])
+            enriched_tracks.append(spec)
+        plan = resolve_deployment(self._native_items, enriched_tracks)
         resolved = plan["resolved"]
         unresolved = plan["unresolved"]
         substitutions = plan["substitutions"]
@@ -280,6 +311,7 @@ class PulsoDeployRemote(ControlSurface):
                     "status") == "partially_unresolved")
             self._remove_tracks(self.song(), self._previous_deployed_tracks)
             self._previous_deployed_tracks = []
+            self._remember_verified_sounds()
             self._deployment_busy = False
             self._write_status(state, message, details)
             return
@@ -355,6 +387,7 @@ class PulsoDeployRemote(ControlSurface):
                 elif valid:
                     notes, adaptation = adapt_notes(spec, "chromatic")
                 if valid:
+                    timbre_patch = self._apply_timbre_patch(device, spec)
                     release_contract = apply_release_contract(device, spec)
                     notes, expression_report = project_expression(
                         spec, notes, adaptation.get("source_kind", "chromatic"))
@@ -367,6 +400,7 @@ class PulsoDeployRemote(ControlSurface):
                     if insertion_error:
                         adaptation["modern_note_error"] = insertion_error
                     adaptation["release_contract"] = release_contract
+                    adaptation["timbre_patch"] = timbre_patch
         except Exception as error:
             # A Browser load may briefly leave Live's Python wrapper without its native
             # Track handle. A fresh wrapper on a later tick is safe; rejecting the whole
@@ -379,6 +413,7 @@ class PulsoDeployRemote(ControlSurface):
             valid = False
             reason = "playback_adaptation_error:" + str(error)[:120]
         report = {"track": str(spec.get("name", "PULSO Part")),
+                  "track_key": str(spec.get("track_key", spec.get("name", "PULSO Part"))),
                   "catalog_id": str(spec.get("catalog_id", "")), "matched": matched_name,
                   "path": matched_path, "quality": quality, "shared_sound": bool(shared),
                   "adaptation": adaptation,
@@ -544,6 +579,61 @@ class PulsoDeployRemote(ControlSurface):
                 os.replace(temp, self._audible_audit_file)
         except Exception:
             pass
+
+    @staticmethod
+    def _apply_timbre_patch(device, spec):
+        """Translate the semantic GPT signature into conservative native-synth edits."""
+        signature = spec.get("timbre_signature", {}) or {}
+        if not signature:
+            return {"status": "not_requested", "parameters_changed": []}
+        spectrum = {"dark": .30, "warm": .44, "neutral": .56,
+                    "bright": .72, "glassy": .84}.get(str(signature.get("spectrum")), .56)
+        envelope = str(signature.get("envelope", "natural"))
+        attack = {"percussive": .01, "pluck": .02, "short": .03, "gated": .04,
+                  "natural": .12, "sustained": .20, "swelling": .46}.get(envelope, .12)
+        release = {"percussive": .05, "pluck": .10, "short": .14, "gated": .08,
+                   "natural": .28, "sustained": .48, "swelling": .62}.get(envelope, .28)
+        motion = {"static": .03, "subtle": .16, "evolving": .36,
+                  "rhythmic": .48, "chaotic": .65}.get(str(signature.get("motion")), .16)
+        width = {"dry": .12, "close": .24, "wide": .62,
+                 "deep": .48, "wet": .72}.get(str(signature.get("space")), .24)
+        uniqueness = max(0.0, min(1.0, float(signature.get("uniqueness", .5))))
+        seed_text = "{}:{}".format(spec.get("sound_selection_seed", "0"),
+                                    spec.get("sound_variation", 0))
+        jitter = (int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest()[:8], 16) /
+                  float(0xffffffff) - .5) * .12 * uniqueness
+        targets = (("filter cutoff", ("filter freq", "filter cutoff", "cutoff"), spectrum + jitter),
+                   ("attack", ("attack",), attack),
+                   ("release", ("release",), release),
+                   ("motion", ("lfo amount", "lfo amt", "mod amount"), motion + jitter),
+                   ("width", ("stereo width", "spread", "unison amount"), width + jitter))
+        class_name = str(getattr(device, "class_name", "")).casefold()
+        device_name = str(getattr(device, "name", "")).casefold()
+        synth = any(value in class_name + " " + device_name for value in
+                    ("drift", "wavetable", "operator", "analog", "meld"))
+        if not synth:
+            return {"status": "preset_preserved", "parameters_changed": []}
+        parameters = list(getattr(device, "parameters", ()))
+        changed = []
+        claimed = set()
+        for semantic, aliases, normalized in targets:
+            for parameter in parameters:
+                name = str(getattr(parameter, "name", "")).casefold()
+                if id(parameter) in claimed or not any(alias in name for alias in aliases):
+                    continue
+                try:
+                    low = float(parameter.min)
+                    high = float(parameter.max)
+                    value = low + max(0.0, min(1.0, normalized)) * (high - low)
+                    parameter.value = value
+                    claimed.add(id(parameter))
+                    changed.append({"semantic": semantic, "parameter": str(parameter.name),
+                                    "normalized": round(max(0.0, min(1.0, normalized)), 4)})
+                    break
+                except (AttributeError, RuntimeError, TypeError, ValueError):
+                    continue
+        return {"status": "applied" if changed else "no_supported_parameters",
+                "parameters_changed": changed}
         self.schedule_message(6, self._probe_audible_output)
 
     def _write_heartbeat(self):
@@ -554,6 +644,36 @@ class PulsoDeployRemote(ControlSurface):
                 json.dump({"alive": True, "native_inventory": len(self._native_items)}, target)
             os.replace(temp, self._heartbeat_file)
         except Exception:
+            pass
+
+    def _read_sound_history(self):
+        try:
+            with open(self._sound_history_file, "r", encoding="utf-8") as source:
+                payload = json.load(source)
+            return payload if isinstance(payload, dict) else {}
+        except (OSError, ValueError, TypeError):
+            return {}
+
+    def _remember_verified_sounds(self):
+        history = self._read_sound_history()
+        recent = history.setdefault("recent_by_catalog", {})
+        last = history.setdefault("last_by_track", {})
+        for report in self._sound_report:
+            if report.get("state") != "verified" or not report.get("path"):
+                continue
+            catalog = str(report.get("catalog_id", ""))
+            path = str(report["path"])
+            values = [value for value in recent.get(catalog, ()) if value != path]
+            recent[catalog] = ([path] + values)[:12]
+            last[str(report.get("track_key", report.get("track", "")))] = path
+        history["schema_version"] = 1
+        try:
+            os.makedirs(self._bridge_dir, exist_ok=True)
+            temp = self._sound_history_file + ".pending"
+            with open(temp, "w", encoding="utf-8") as target:
+                json.dump(history, target, ensure_ascii=False)
+            os.replace(temp, self._sound_history_file)
+        except OSError:
             pass
 
     def _write_status(self, state, message, details=None):

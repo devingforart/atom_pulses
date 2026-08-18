@@ -41,6 +41,7 @@ struct InstrumentAssignment {
     int divisiVoices{1};
     std::string liveDevice{"auto"};
     std::string livePresetIntent{"balanced natural"};
+    TimbreSignature timbre;
 };
 
 struct OrchestrationLanguage {

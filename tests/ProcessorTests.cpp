@@ -1399,7 +1399,7 @@ int main(int argc, char** argv) {
         bridgeTestDirectory.getChildFile("request.json").loadFileAsString());
     auto* deploymentObject = deploymentJson.getDynamicObject();
     require(deploymentObject != nullptr &&
-                static_cast<int>(deploymentObject->getProperty("schema_version")) == 8 &&
+                static_cast<int>(deploymentObject->getProperty("schema_version")) == 9 &&
                 deploymentObject->getProperty("sound_engine").toString() == "ableton_live_native" &&
                 deploymentObject->getProperty("expression_delivery").toString() ==
                     "native_editable_with_lossless_midi_source" &&
@@ -1428,6 +1428,10 @@ int main(int argc, char** argv) {
                        track->getProperty("expressions").getArray() != nullptr &&
                        static_cast<int>(track->getProperty("expression_projection_version")) == 1 &&
                        track->getProperty("sound_world").toString().isNotEmpty() &&
+                       track->getProperty("timbre_signature").getDynamicObject() != nullptr &&
+                       track->hasProperty("sound_selection_seed") &&
+                       track->hasProperty("sound_variation") &&
+                       track->hasProperty("sound_locked") &&
                        track->getProperty("device_candidates").getArray() != nullptr &&
                        notes != nullptr && std::all_of(notes->begin(), notes->end(), [](const auto& noteValue) {
                            const auto* note = noteValue.getDynamicObject();

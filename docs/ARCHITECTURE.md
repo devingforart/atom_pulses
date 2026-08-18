@@ -600,6 +600,12 @@ El índice excluye explícitamente `Plug-Ins`. La carga se serializa por pista p
 responsiva la interfaz y el estado distingue coincidencias, fallbacks y faltantes.
 Consulta `docs/SOUND_STAGE.md` para el protocolo completo.
 
+Desde 0.47, `InstrumentAssignment` también conserva una `TimbreSignature` semántica. El
+resolver usa identidad estricta y después selecciona un top-K sembrado; el Remote Script
+mantiene cooldown persistente entre canciones y puede bloquear la última ruta verificada
+por `track_key`. Los sintetizadores nativos compatibles reciben una realización de patch
+limitada y auditable, mientras que muestras y presets acústicos permanecen intactos.
+
 `LiveDeployer` schema 5 publica CC y eventos expresivos junto a cada parte, la paleta tímbrica
 global y el resultado de la puerta de producción. El Remote Script
 los convierte en propiedades extendidas de nota de Live 12 cuando están disponibles y en

@@ -4,6 +4,7 @@ Musical identity is a hard gate. Descriptive words ("solo", "warm", "section")
 can rank two valid cellos, but can never turn a bass or riser into a cello.
 """
 
+import hashlib
 import re
 import unicodedata
 
@@ -544,7 +545,10 @@ def select_track_sound(items, spec, used_paths=None):
     # Per-track intent owns sound selection. The global palette is already reflected in
     # GPT's authored intent and must never leak words such as "muted" from a bass into the
     # lead, or "glassy" from a piano into a pad.
-    intent = str(spec.get("preset_intent", "")).strip()
+    signature = spec.get("timbre_signature", {}) or {}
+    signature_words = " ".join(str(signature.get(key, "")) for key in
+                               ("source", "envelope", "spectrum", "motion", "space", "texture"))
+    intent = (str(spec.get("preset_intent", "")).strip() + " " + signature_words).strip()
     requested_device = str(spec.get("native_device", ""))
     articulation_aliases = tuple(str(value).strip() for value in
                                  spec.get("articulation_aliases", ()) if str(value).strip())
@@ -594,7 +598,34 @@ def select_track_sound(items, spec, used_paths=None):
             tiered = [candidate for candidate in tiered if not candidate[1]]
     if tiered:
         tiered.sort(key=lambda value: value[:4])
-        tier, shared, _, _, name, path, item = tiered[0]
+        chosen = tiered[0]
+        locked_path = str(spec.get("locked_sound_path", "")).casefold()
+        if bool(spec.get("sound_locked", False)) and locked_path:
+            locked = next((candidate for candidate in tiered
+                           if str(candidate[5]).casefold() == locked_path), None)
+            if locked is not None:
+                chosen = locked
+        elif spec.get("sound_selection_seed") is not None:
+            best_tier, best_used, best_rank = tiered[0][:3]
+            floor = float(spec.get("minimum_intent_fidelity", 0.0))
+            recent = {str(value).casefold() for value in spec.get("recent_sound_paths", ())}
+            eligible = [candidate for candidate in tiered
+                        if candidate[0] == best_tier and candidate[1] == best_used and
+                        candidate[2] <= best_rank + 20.0 and
+                        intent_fidelity(candidate[4], candidate[5], spec) >= floor]
+            fresh = [candidate for candidate in eligible
+                     if str(candidate[5]).casefold() not in recent]
+            if fresh:
+                eligible = fresh
+            uniqueness = max(0.0, min(1.0, float(signature.get("uniqueness", 0.5))))
+            top_k = max(1, min(len(eligible), 1 + int(round(uniqueness * 7.0))))
+            if top_k:
+                seed = "{}:{}:{}:{}".format(spec.get("sound_selection_seed", "0"),
+                                             spec.get("sound_variation", 0), catalog_id,
+                                             spec.get("track_key", spec.get("name", "")))
+                index = int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16], 16) % top_k
+                chosen = eligible[index]
+        tier, shared, _, _, name, path, item = chosen
         fidelity = intent_fidelity(name, path, spec)
         quality = "identity" if tier == 0 else "family_fallback"
         if fidelity < 0.78:

@@ -85,6 +85,8 @@ public:
     [[nodiscard]] InstrumentSoundModel partPreviewSound(std::uint16_t partId) const noexcept;
     void setPartPreviewSound(std::uint16_t partId, InstrumentSoundModel, bool restoreAiChoice = false);
     void setPartLiveDevice(std::uint16_t partId, const juce::String&, bool restoreAiChoice = false);
+    void setPartLiveSoundLocked(std::uint16_t partId, bool locked);
+    void regeneratePartLiveSound(std::uint16_t partId);
     [[nodiscard]] static juce::StringArray liveNativeDeviceChoices();
     [[nodiscard]] juce::String currentAiStatus() const;
     [[nodiscard]] juce::String currentIdeaTitle() const;

@@ -180,8 +180,17 @@ const juce::String songPlanSchema = juce::String(R"json({
         "divisi_voices":{"type":"integer"},
         "live_device":{"type":"string","enum":["auto","Drum Rack","Instrument Rack","Simpler","Sampler","Drift","Meld","Wavetable","Operator","Analog","Electric","Tension","Collision","Granulator III"]},
         "live_preset_intent":{"type":"string"},
+        "timbre_signature":{"type":"object","properties":{
+          "source":{"type":"string","enum":["sine","triangle","saw","square","fm","noise","physical","sample","hybrid","acoustic"]},
+          "envelope":{"type":"string","enum":["percussive","pluck","short","gated","natural","sustained","swelling"]},
+          "spectrum":{"type":"string","enum":["dark","warm","neutral","bright","glassy"]},
+          "motion":{"type":"string","enum":["static","subtle","evolving","rhythmic","chaotic"]},
+          "space":{"type":"string","enum":["dry","close","wide","deep","wet"]},
+          "texture":{"type":"string","enum":["clean","organic","metallic","gritty","airy","vocal"]},
+          "uniqueness":{"type":"number"}
+        },"required":["source","envelope","spectrum","motion","space","texture","uniqueness"],"additionalProperties":false},
         "active_sections":{"type":"array","maxItems":20,"items":{"type":"string"}}
-      },"required":["id","instrument","name","source_voice","role","minimum_pitch","maximum_pitch","octave_shift","activity","prominence","doubling","orchestral_function","articulation_intent","divisi_voices","live_device","live_preset_intent","active_sections"],"additionalProperties":false
+      },"required":["id","instrument","name","source_voice","role","minimum_pitch","maximum_pitch","octave_shift","activity","prominence","doubling","orchestral_function","articulation_intent","divisi_voices","live_device","live_preset_intent","timbre_signature","active_sections"],"additionalProperties":false
     }},
     "rhythm_motifs":{"type":"array","minItems":2,"maxItems":6,"items":{
       "type":"object","properties":{
@@ -883,6 +892,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "articulation_contrast, family_dialogue and hybrid_production to define how that ensemble thinks. "
         "Choose live_device only from the supplied Ableton-native device enum and describe the desired installed sound "
         "in live_preset_intent with concise English browser-search nouns, even when the user writes in another language "
+        "and author timbre_signature as the actual perceptual patch identity. Give featured parts clearly distinct "
+        "source, envelope, spectrum, motion, space and texture combinations; uniqueness controls how far the sound "
+        "may explore while preserving its catalog identity. Do not repeat one signature across unrelated parts. "
         "(for example: solo cello, closed hi-hat, chamber strings, warm analog pad). Never invent a factory preset name. "
         "The local Live resolver matches that intent against installed content and will never treat an empty Rack, "
         "Sampler or Simpler container as a playable sound. Never use generic intents such as balanced natural. The "
@@ -1601,6 +1613,16 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
             assignment.divisiVoices = static_cast<int>(instrument->getProperty("divisi_voices"));
             assignment.liveDevice = instrument->getProperty("live_device").toString().trim().toStdString();
             assignment.livePresetIntent = instrument->getProperty("live_preset_intent").toString().trim().toStdString();
+            if (const auto* timbre = instrument->getProperty("timbre_signature").getDynamicObject()) {
+                assignment.timbre.source = timbre->getProperty("source").toString().trim().toStdString();
+                assignment.timbre.envelope = timbre->getProperty("envelope").toString().trim().toStdString();
+                assignment.timbre.spectrum = timbre->getProperty("spectrum").toString().trim().toStdString();
+                assignment.timbre.motion = timbre->getProperty("motion").toString().trim().toStdString();
+                assignment.timbre.space = timbre->getProperty("space").toString().trim().toStdString();
+                assignment.timbre.texture = timbre->getProperty("texture").toString().trim().toStdString();
+                assignment.timbre.uniqueness = std::clamp(
+                    static_cast<double>(timbre->getProperty("uniqueness")), 0.0, 1.0);
+            }
             if (const auto* sections = instrument->getProperty("active_sections").getArray())
                 for (const auto& section : *sections)
                     assignment.activeSections.push_back(section.toString().trim().toStdString());

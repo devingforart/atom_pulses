@@ -161,6 +161,22 @@ void addSoundWorldProperties(juce::DynamicObject& track, const Pattern& pattern)
     track.setProperty("acoustic_electronic_balance", pattern.acousticElectronicBalance);
 }
 
+void addTimbreSignature(juce::DynamicObject& track, const TimbreSignature& timbre,
+                        std::uint64_t seed, std::uint32_t variation, bool locked) {
+    auto* signature = new juce::DynamicObject();
+    signature->setProperty("source", juce::String::fromUTF8(timbre.source.c_str()));
+    signature->setProperty("envelope", juce::String::fromUTF8(timbre.envelope.c_str()));
+    signature->setProperty("spectrum", juce::String::fromUTF8(timbre.spectrum.c_str()));
+    signature->setProperty("motion", juce::String::fromUTF8(timbre.motion.c_str()));
+    signature->setProperty("space", juce::String::fromUTF8(timbre.space.c_str()));
+    signature->setProperty("texture", juce::String::fromUTF8(timbre.texture.c_str()));
+    signature->setProperty("uniqueness", juce::jlimit(0.0, 1.0, timbre.uniqueness));
+    track.setProperty("timbre_signature", juce::var(signature));
+    track.setProperty("sound_selection_seed", juce::String(static_cast<juce::int64>(seed)));
+    track.setProperty("sound_variation", static_cast<int>(variation));
+    track.setProperty("sound_locked", locked);
+}
+
 } // namespace
 
 bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOptions& options,
@@ -174,7 +190,7 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
         return false;
     }
     auto root = new juce::DynamicObject();
-    root->setProperty("schema_version", 8);
+    root->setProperty("schema_version", 9);
     root->setProperty("request_id", juce::Uuid().toString());
     root->setProperty("created_utc_ms", juce::Time::getCurrentTime().toMilliseconds());
     auto safeTitle = options.title.isNotEmpty() ? options.title : juce::String("PULSO Song");
@@ -257,6 +273,7 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
                 department == ScoreDepartment::Rhythm ? "production_drums" :
                 department == ScoreDepartment::Harmony ? "harmonic_ensemble" : "foreground_voice");
             addSoundWorldProperties(*track, pattern);
+            addTimbreSignature(*track, TimbreSignature{}, pattern.seed + departmentIndex, 0, false);
             addPerformanceProperties(*track, pattern, [&](std::uint16_t partId, VoiceId voice) {
                 if (partId != 0) {
                     const auto found = std::find_if(pattern.parts.begin(), pattern.parts.end(),
@@ -300,6 +317,9 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
             juce::String::fromUTF8(part.livePresetIntent.c_str()), part.prominence,
             part.department, juce::String::fromUTF8(part.catalogId.c_str()));
         addSoundWorldProperties(*track, pattern);
+        addTimbreSignature(*track, part.timbre,
+            pattern.seed ^ (static_cast<std::uint64_t>(part.id) * 0x9e3779b97f4a7c15ULL),
+            part.liveSoundVariation, part.liveSoundLocked);
         addPerformanceProperties(*track, pattern, [&](std::uint16_t partId, VoiceId voice) {
             return partId == part.id || (partId == 0 && voice == part.sourceVoice);
         });

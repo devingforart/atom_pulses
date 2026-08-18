@@ -264,7 +264,7 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
             assignment.minimumPitch, assignment.maximumPitch, assignment.prominence,
             instrumentSoundModel(assignment.instrumentId), assignment.orchestralFunction,
             assignment.articulation, assignment.divisiVoices, assignment.liveDevice,
-            assignment.livePresetIntent});
+            assignment.livePresetIntent, assignment.timbre});
         ++report.parts;
         if (department == ScoreDepartment::Rhythm) ++report.rhythmParts;
         else if (department == ScoreDepartment::Melody) ++report.melodyParts;

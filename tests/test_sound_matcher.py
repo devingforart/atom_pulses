@@ -8,6 +8,27 @@ from ableton.PulsoDeployRemote.sound_matcher import (
 
 
 class SoundMatcherTests(unittest.TestCase):
+    def test_seeded_top_k_varies_but_lock_and_history_are_binding(self):
+        items = [("Warm Lead A.adv", "Sounds/Lead/Warm Lead A.adv", object()),
+                 ("Warm Lead B.adv", "Sounds/Lead/Warm Lead B.adv", object()),
+                 ("Warm Lead C.adv", "Sounds/Lead/Warm Lead C.adv", object())]
+        base = {"catalog_id": "lead_synth", "preset_intent": "warm lead",
+                "track_key": "part:7", "sound_selection_seed": "1234",
+                "timbre_signature": {"source": "saw", "envelope": "pluck",
+                                     "spectrum": "warm", "motion": "subtle",
+                                     "space": "wide", "texture": "clean",
+                                     "uniqueness": 1.0}}
+        first = select_track_sound(items, dict(base, sound_variation=0))
+        alternatives = {select_track_sound(items, dict(base, sound_variation=index))[1]
+                        for index in range(8)}
+        self.assertGreater(len(alternatives), 1)
+        fresh = select_track_sound(items, dict(base, sound_variation=0,
+                                   recent_sound_paths=[first[1]]))
+        self.assertNotEqual(first[1], fresh[1])
+        locked = select_track_sound(items, dict(base, sound_variation=99,
+                                    sound_locked=True, locked_sound_path=first[1]))
+        self.assertEqual(first[1], locked[1])
+
     def setUp(self):
         self.items = [
             ("Drum Rack", "drums/Drums/Drum Rack", "empty-drum-rack"),

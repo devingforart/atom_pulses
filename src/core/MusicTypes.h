@@ -21,6 +21,18 @@ enum class InstrumentSoundModel : std::uint8_t {
     LeadSynth, Guitar, Texture
 };
 
+struct TimbreSignature {
+    std::string source{"hybrid"};
+    std::string envelope{"natural"};
+    std::string spectrum{"neutral"};
+    std::string motion{"subtle"};
+    std::string space{"close"};
+    std::string texture{"clean"};
+    double uniqueness{0.5};
+
+    friend bool operator==(const TimbreSignature&, const TimbreSignature&) = default;
+};
+
 struct InstrumentPart {
     std::uint16_t id{};
     std::string catalogId;
@@ -37,6 +49,9 @@ struct InstrumentPart {
     int divisiVoices{1};
     std::string liveDevice{"auto"};
     std::string livePresetIntent{"balanced natural"};
+    TimbreSignature timbre;
+    bool liveSoundLocked{};
+    std::uint32_t liveSoundVariation{};
 
     friend bool operator==(const InstrumentPart&, const InstrumentPart&) = default;
 };

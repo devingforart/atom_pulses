@@ -413,6 +413,16 @@ void PatternView::showTimbreMenu(VoiceId voice, const juce::MouseEvent& event) {
         const auto liveBase = 5000 + static_cast<int>(partIndex) * 32;
         liveSounds.addItem(liveBase, (processor.uiLanguage() == UiLanguage::Spanish ? "IA: " : "AI: ") +
                            juce::String::fromUTF8(part.liveDevice.c_str()), true, true);
+        liveSounds.addItem(liveBase + 20,
+            processor.uiLanguage() == UiLanguage::Spanish
+                ? (part.liveSoundLocked ? "DESBLOQUEAR SONIDO" : "BLOQUEAR SONIDO")
+                : (part.liveSoundLocked ? "UNLOCK SOUND" : "LOCK SOUND"));
+        liveSounds.addItem(liveBase + 21,
+            processor.uiLanguage() == UiLanguage::Spanish ? "BUSCAR OTRA VARIANTE" : "FIND ANOTHER VARIANT");
+        liveSounds.addSectionHeader(
+            juce::String::fromUTF8(part.timbre.source.c_str()) + " / " +
+            juce::String::fromUTF8(part.timbre.envelope.c_str()) + " / " +
+            juce::String::fromUTF8(part.timbre.spectrum.c_str()));
         liveSounds.addSeparator();
         const auto devices = PulsoAudioProcessor::liveNativeDeviceChoices();
         for (auto deviceIndex = 0; deviceIndex < devices.size(); ++deviceIndex)
@@ -440,6 +450,22 @@ void PatternView::showTimbreMenu(VoiceId voice, const juce::MouseEvent& event) {
                 const auto partIndex = (result - 5000) / 32;
                 const auto choice = (result - 5000) % 32;
                 if (partIndex < 0 || partIndex >= static_cast<int>(parts.size())) return;
+                if (choice == 20) {
+                    const auto& part = parts[static_cast<std::size_t>(partIndex)];
+                    safe->processor.setPartLiveSoundLocked(part.id, !part.liveSoundLocked);
+                    safe->feedback = safe->processor.uiLanguage() == UiLanguage::Spanish
+                        ? "BLOQUEO DE SONIDO ACTUALIZADO" : "SOUND LOCK UPDATED";
+                    safe->repaint();
+                    return;
+                }
+                if (choice == 21) {
+                    safe->processor.regeneratePartLiveSound(parts[static_cast<std::size_t>(partIndex)].id);
+                    safe->feedback = safe->processor.uiLanguage() == UiLanguage::Spanish
+                        ? "NUEVA VARIANTE LISTA PARA CREATE IN LIVE"
+                        : "NEW VARIANT READY FOR CREATE IN LIVE";
+                    safe->repaint();
+                    return;
+                }
                 if (choice == 0)
                     safe->processor.setPartLiveDevice(parts[static_cast<std::size_t>(partIndex)].id, {}, true);
                 else {

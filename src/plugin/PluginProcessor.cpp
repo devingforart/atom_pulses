@@ -777,6 +777,33 @@ void PulsoAudioProcessor::setPartLiveDevice(std::uint16_t partId, const juce::St
                           .withNonParameterStateChanged(true));
 }
 
+void PulsoAudioProcessor::setPartLiveSoundLocked(std::uint16_t partId, bool locked) {
+    const auto current = currentPattern();
+    if (current == nullptr) return;
+    auto updated = std::make_shared<Pattern>(*current);
+    const auto part = std::find_if(updated->parts.begin(), updated->parts.end(),
+        [partId](const auto& item) { return item.id == partId; });
+    if (part == updated->parts.end()) return;
+    part->liveSoundLocked = locked;
+    uiPatternSnapshot.store(std::move(updated), std::memory_order_release);
+    updateHostDisplay(juce::AudioProcessorListener::ChangeDetails{}
+                          .withNonParameterStateChanged(true));
+}
+
+void PulsoAudioProcessor::regeneratePartLiveSound(std::uint16_t partId) {
+    const auto current = currentPattern();
+    if (current == nullptr) return;
+    auto updated = std::make_shared<Pattern>(*current);
+    const auto part = std::find_if(updated->parts.begin(), updated->parts.end(),
+        [partId](const auto& item) { return item.id == partId; });
+    if (part == updated->parts.end()) return;
+    part->liveSoundLocked = false;
+    ++part->liveSoundVariation;
+    uiPatternSnapshot.store(std::move(updated), std::memory_order_release);
+    updateHostDisplay(juce::AudioProcessorListener::ChangeDetails{}
+                          .withNonParameterStateChanged(true));
+}
+
 float PulsoAudioProcessor::voicePreviewLevelDb(VoiceId voice) const noexcept {
     const auto index = static_cast<std::size_t>(voice);
     if (index >= voiceLevelParameters.size() || voiceLevelParameters[index] == nullptr) return 0.0f;
@@ -2000,7 +2027,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(14); // Binary composition state version.
+        composition.writeInt(15); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -2058,6 +2085,15 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
             composition.writeInt(part.divisiVoices);
             composition.writeString(juce::String::fromUTF8(part.liveDevice.c_str()));
             composition.writeString(juce::String::fromUTF8(part.livePresetIntent.c_str()));
+            composition.writeString(juce::String::fromUTF8(part.timbre.source.c_str()));
+            composition.writeString(juce::String::fromUTF8(part.timbre.envelope.c_str()));
+            composition.writeString(juce::String::fromUTF8(part.timbre.spectrum.c_str()));
+            composition.writeString(juce::String::fromUTF8(part.timbre.motion.c_str()));
+            composition.writeString(juce::String::fromUTF8(part.timbre.space.c_str()));
+            composition.writeString(juce::String::fromUTF8(part.timbre.texture.c_str()));
+            composition.writeDouble(part.timbre.uniqueness);
+            composition.writeBool(part.liveSoundLocked);
+            composition.writeInt(static_cast<int>(part.liveSoundVariation));
         }
         composition.writeString(juce::String::fromUTF8(pattern->soundWorld.c_str()));
         composition.writeDouble(pattern->soundWarmth);
@@ -2146,7 +2182,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 14) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 15) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2275,6 +2311,18 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                 if (version >= 7) {
                                     part.liveDevice = composition.readString().substring(0, 48).toStdString();
                                     part.livePresetIntent = composition.readString().substring(0, 96).toStdString();
+                                }
+                                if (version >= 15) {
+                                    part.timbre.source = composition.readString().substring(0, 24).toStdString();
+                                    part.timbre.envelope = composition.readString().substring(0, 24).toStdString();
+                                    part.timbre.spectrum = composition.readString().substring(0, 24).toStdString();
+                                    part.timbre.motion = composition.readString().substring(0, 24).toStdString();
+                                    part.timbre.space = composition.readString().substring(0, 24).toStdString();
+                                    part.timbre.texture = composition.readString().substring(0, 24).toStdString();
+                                    part.timbre.uniqueness = std::clamp(composition.readDouble(), 0.0, 1.0);
+                                    part.liveSoundLocked = composition.readBool();
+                                    part.liveSoundVariation = static_cast<std::uint32_t>(
+                                        std::max(0, composition.readInt()));
                                 }
                                 if (part.id > 0 && !part.name.empty()) restoredPattern->parts.push_back(std::move(part));
                             }

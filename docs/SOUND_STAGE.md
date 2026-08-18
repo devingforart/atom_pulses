@@ -13,6 +13,10 @@ Cada parte contiene:
 - `catalog_id`: identidad instrumental estable de PULSO.
 - `native_device`: dispositivo nativo elegido por GPT o por el usuario.
 - `preset_intent`: descripción tímbrica; nunca un nombre de preset inventado.
+- `timbre_signature`: identidad perceptual estructurada (`source`, `envelope`, `spectrum`,
+  `motion`, `space`, `texture`, `uniqueness`).
+- `sound_selection_seed`, `sound_variation` y `sound_locked`: variedad reproducible,
+  regeneración por pista y conservación explícita del sonido elegido.
 - `device_candidates`: intentos ordenados para resolver contenido instalado.
 - función orquestal, articulación, divisi y prominencia.
 
@@ -30,6 +34,16 @@ El Remote Script indexa incrementalmente `Sounds`, `Drums`, `Instruments`, `Max 
 y `User Library`. Nunca visita `Plug-Ins`. Publica el inventario real en
 `%LOCALAPPDATA%\PULSO\LiveBridge\inventory.json` y procesa el Browser en lotes pequeños
 para no congelar Live.
+
+El schema 9 elige entre los mejores candidatos que cumplen identidad y fidelidad. La
+semilla evita azar opaco, `sound_history.json` aplica un cooldown de doce elecciones por
+catálogo y el lock recupera la última ruta verificada de esa pista. El historial sólo se
+actualiza después de que Live cargó y verificó realmente el dispositivo.
+
+Cuando el dispositivo cargado es Drift, Wavetable, Operator, Analog o Meld, el puente
+traduce la firma a cambios conservadores de filtro, ataque, release, modulación y anchura.
+Los parámetros ausentes se omiten y el contrato de release se aplica después como límite
+de seguridad.
 
 Al desplegar, puntúa nombres y rutas por intención, instrumento y dispositivo. Un `Drum
 Rack`, `Instrument Rack`, `Sampler` o `Simpler` vacío nunca cuenta como sonido. El resolver
@@ -84,10 +98,10 @@ con el contenido instalado, sin convertir el inventario en una plantilla creativ
 
 ```text
 GPT SongPlan
-  -> InstrumentAssignment(native_device, preset_intent)
+  -> InstrumentAssignment(native_device, preset_intent, timbre_signature)
   -> OrchestrationScore / Pattern(partId)
   -> ProductionPolish (metric + tonal + rhythm + expression gate)
-  -> request.json schema 5 (notes + controls + expressions + sound world)
+  -> request.json schema 9 (notes + expression + sound world + timbre + variation/lock)
   -> PulsoDeployRemote
        -> pistas + clips MIDI
        -> resolución contra inventario nativo

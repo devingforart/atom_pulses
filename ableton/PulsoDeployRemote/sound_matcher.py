@@ -152,19 +152,19 @@ CHARACTER_GROUPS = {
     "glass": {"glass", "glassy", "crystal", "crystalline"},
     "felt": {"felt"},
     "mute": {"mute", "muted", "damped"},
-    "bright": {"bright", "luminous", "brilliant"},
-    "dark": {"dark", "dusky", "shadow"},
-    "warm": {"warm", "rounded", "mellow", "sweet", "vintage"},
+    "bright": {"bright", "luminous", "brilliant", "brillante", "luminoso"},
+    "dark": {"dark", "dusky", "shadow", "oscuro", "oscura"},
+    "warm": {"warm", "rounded", "mellow", "sweet", "vintage", "calido", "calida"},
     "cold": {"cold", "icy", "metallic"},
-    "high": {"high", "upper", "treble", "piccolo"},
-    "low": {"low", "lower", "bass", "deep"},
+    "high": {"high", "upper", "treble", "piccolo", "alto", "agudo"},
+    "low": {"low", "lower", "bass", "deep", "grave", "profundo", "profunda"},
     "alto": {"alto"},
-    "soft": {"soft", "gentle", "delicate", "mellow"},
-    "hard": {"hard", "aggressive", "punchy"},
-    "dry": {"dry", "close", "intimate"},
-    "wet": {"wet", "reverb", "spacious", "ambient"},
-    "short": {"short", "tight", "pluck", "plucked"},
-    "long": {"long", "sustain", "sustained", "evolving"},
+    "soft": {"soft", "gentle", "delicate", "mellow", "suave"},
+    "hard": {"hard", "aggressive", "punchy", "duro", "agresivo"},
+    "dry": {"dry", "close", "intimate", "seco", "seca"},
+    "wet": {"wet", "reverb", "spacious", "ambient", "humedo", "reverberante"},
+    "short": {"short", "tight", "pluck", "plucked", "corto", "corta"},
+    "long": {"long", "sustain", "sustained", "evolving", "largo", "larga", "sostenido"},
     "sine": {"sine", "sinusoidal"},
     "granular": {"granular", "grain", "granulator"},
 }
@@ -174,6 +174,58 @@ CHARACTER_OPPOSITES = {
     "high": "low", "low": "high", "soft": "hard", "hard": "soft",
     "dry": "wet", "wet": "dry", "short": "long", "long": "short",
 }
+
+NEGATION_WORDS = {"no", "not", "without", "sin", "sans", "kein", "keine"}
+TIMING_WORDS = {
+    "gate", "gated", "gating", "attack", "release", "decay", "duration",
+    "millisecond", "milliseconds", "second", "seconds", "tail", "envelope",
+}
+
+
+def _normalized_words(value):
+    """Return unfiltered words so negation and numeric timing context survive."""
+    normalized = unicodedata.normalize("NFKD", str(value).casefold())
+    ascii_value = "".join(character for character in normalized
+                          if not unicodedata.combining(character))
+    return re.sub(r"[^a-z0-9]+", " ", ascii_value).split()
+
+
+def _requested_character_groups(value):
+    """Extract positive audible traits without mistaking prose for a contract.
+
+    GPT often writes execution instructions beside timbre, for example
+    ``hard 180 ms gate; no reverb``. ``hard`` there describes the gate operation and
+    ``reverb`` is explicitly prohibited. Treating both as positive sound character
+    produced false critical deployment failures.
+    """
+    words = _normalized_words(value)
+    requested = set()
+    for index, word in enumerate(words):
+        groups = [group for group, aliases in CHARACTER_GROUPS.items() if word in aliases]
+        if not groups:
+            continue
+        preceding = words[max(0, index - 3):index]
+        nearby = words[max(0, index - 2):min(len(words), index + 5)]
+        negated = any(token in NEGATION_WORDS for token in preceding)
+        has_timing_word = any(token in TIMING_WORDS for token in nearby)
+        has_numeric_timing = any(token.isdigit() for token in nearby) and (
+            "ms" in nearby or "millisecond" in nearby or "milliseconds" in nearby or
+            "second" in nearby or "seconds" in nearby)
+        for group in groups:
+            # Short/long beside a gate or release belongs to playback adaptation, not
+            # preset character. Hard/soft is ignored only for an explicit numeric gate.
+            technical = ((group in {"short", "long"} and has_timing_word) or
+                         (group in {"hard", "soft"} and
+                          (has_numeric_timing or "gate" in nearby or "gated" in nearby)))
+            if technical:
+                continue
+            if negated:
+                opposite = CHARACTER_OPPOSITES.get(group)
+                if opposite:
+                    requested.add(opposite)
+                continue
+            requested.add(group)
+    return requested
 
 
 def tokens(value):
@@ -209,7 +261,6 @@ def intent_fidelity(name, path, spec):
     descriptor is present. Missing words are reported honestly; an explicit opposite is
     penalized further. Instrument-family identity continues to be enforced separately.
     """
-    requested_tokens = set(tokens(spec.get("preset_intent", "")))
     available_tokens = set(tokens("{} {}".format(name, path)))
     catalog_id = str(spec.get("catalog_id", "")).strip().casefold()
     lowered_name = str(name).casefold()
@@ -227,8 +278,7 @@ def intent_fidelity(name, path, spec):
             available_tokens.add("short")
     if catalog_id == "sub_synth" and "sine" in available_tokens:
         available_tokens.update(("clean", "low", "deep"))
-    requested_groups = [group for group, values in CHARACTER_GROUPS.items()
-                        if requested_tokens.intersection(values)]
+    requested_groups = sorted(_requested_character_groups(spec.get("preset_intent", "")))
     if not requested_groups:
         return 1.0
     matched = sum(1 for group in requested_groups

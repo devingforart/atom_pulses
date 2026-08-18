@@ -18,6 +18,8 @@ struct NarrativeScoreReport {
     std::size_t recurringThematicPlacements{};
     std::size_t audibleThematicWindows{};
     std::size_t audiblyRecurringThematicWindows{};
+    std::size_t comparableThematicReturns{};
+    std::size_t literalThematicReturns{};
     std::size_t bassWindows{};
     std::size_t developedBassWindows{};
     std::size_t bassPhrases{};
@@ -30,6 +32,8 @@ struct NarrativeScoreReport {
     double thematicRecallRatio{};
     double declaredThematicRecallRatio{};
     double audibleThematicSimilarity{};
+    double literalThematicReturnRatio{};
+    double thematicDevelopment{1.0};
     double bassPhraseContinuity{};
     double densityControl{1.0};
     double harmonicDirection{};

@@ -1,5 +1,45 @@
 # Arquitectura
 
+### Propiedad musical 0.46
+
+La revisión de candidatos usa `targetDeficit`: cobertura temporal principal pesa por encima del
+promedio narrativo, seguida por continuidad de bajo, memoria audible, desarrollo, densidad y
+contrato electrónico. Dos pases focalizados pueden iterar sobre el mejor candidato; cada uno
+recibe las métricas renderizadas y debe reemplazar ownership procedural mediante material
+explícito, no etiquetas.
+
+El segmentador de `MovementBass` separa articulación y sintaxis. Gates breves conservan su función
+dentro de una frase de hasta ocho compases; una nueva frase exige una pausa superior a 1,25
+compases o el cierre del horizonte. Así un pocket sparse no se confunde con 32 gestos aislados.
+
+### Intención y observabilidad 0.45
+
+El texto de usuario y el contexto de ejecución son canales separados. `userSongDirection`
+alimenta inferencia de dominio, título y fallback local; el prompt enriquecido puede incluir
+inventario y auditoría de Live sin contaminar la semántica musical solicitada.
+
+Las llamadas largas de Responses API conservan estado y detalle de terminación. Un HTTP 200 sin
+salida ya no se describe genéricamente: `status`, `incomplete_details.reason` y errores del response
+se propagan a UI, log y despliegue. La salida estructurada admite 100k tokens para obras extensas.
+
+### Desarrollo musical humano 0.44
+
+La salida de `performance_score` pasa por un editor posterior común a material local y GPT.
+La procedencia AI sigue siendo auditable, pero no convierte una decisión en intocable: el editor
+puede retirar un ataque secundario, crear una respiración, resolver el interlock kick-bajo o
+transformar un retorno literal. Todas las intervenciones son deterministas, métricas y conservan
+el contrato tonal consolidado.
+
+La identidad temática tiene ahora dos ejes independientes: `audibleThematicSimilarity` mide si
+el oyente reconoce el linaje, mientras `thematicDevelopment` penaliza una serie de copias casi
+idénticas. Un ancla literal es válida; la forma larga exige consecuencias posteriores. La selección
+de planes usa un score compuesto de narrativa, lenguaje electrónico, crítica simbólica e integridad,
+en vez de elegir por cobertura o tonalidad solamente.
+
+`productionReady` queda reservado a corrupción objetiva: notas externas no resueltas, duraciones
+inválidas, ownership huérfano, colisiones verticales o violaciones métricas. La calidad musical
+genera revisión y advertencias visibles; nunca elimina una canción válida de la interfaz.
+
 ### Memoria musical 0.43
 
 `NarrativeScoreGate` ya no confía en identidad nominal. Agrupa el MIDI AI de lead y respuesta

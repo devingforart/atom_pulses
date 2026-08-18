@@ -194,6 +194,10 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     root->setProperty("production_score", pattern.productionScore);
     root->setProperty("production_domain", juce::String::fromUTF8(pattern.productionDomain.c_str()));
     root->setProperty("production_mode_source", juce::String::fromUTF8(pattern.productionModeSource.c_str()));
+    juce::Array<juce::var> productionIssues;
+    for (const auto& issue : pattern.productionIssues)
+        productionIssues.add(juce::String::fromUTF8(issue.c_str()));
+    root->setProperty("production_issues", productionIssues);
     root->setProperty("electronic_production_audited", pattern.electronicProductionAudited);
     if (pattern.electronicProductionAudited)
         root->setProperty("electronic_production_score", pattern.electronicProductionScore);
@@ -204,6 +208,8 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     root->setProperty("primary_voice_authorship_coverage", pattern.primaryVoiceAuthorshipCoverage);
     root->setProperty("thematic_recall_ratio", pattern.thematicRecallRatio);
     root->setProperty("audible_thematic_similarity", pattern.audibleThematicSimilarity);
+    root->setProperty("literal_thematic_return_ratio", pattern.literalThematicReturnRatio);
+    root->setProperty("thematic_development", pattern.thematicDevelopment);
     root->setProperty("bass_phrase_continuity", pattern.bassPhraseContinuity);
     root->setProperty("density_control", pattern.densityControl);
     root->setProperty("peak_active_voices", static_cast<int>(pattern.peakActiveVoices));

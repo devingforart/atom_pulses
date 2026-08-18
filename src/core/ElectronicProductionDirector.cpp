@@ -443,8 +443,13 @@ std::pair<std::size_t, std::size_t> developRepeatedBassPhrases(
     std::map<std::uint16_t, std::set<Signature>> seen;
     std::size_t developedPhrases{};
     std::size_t developedNotes{};
-    for (const auto& part : pattern.parts) {
-        if (part.sourceVoice != VoiceId::MovementBass) continue;
+    // Performance cells are shaped before orchestration. Their partId is therefore
+    // commonly zero; using only realized parts made the GPT bass-development pass a
+    // silent no-op. Treat each authored owner (including zero) as a phrase stream.
+    std::set<std::uint16_t> owners;
+    for (const auto& note : pattern.notes)
+        if (note.voice == VoiceId::MovementBass) owners.insert(note.partId);
+    for (const auto owner : owners) {
         for (auto phrase = 0; phrase < phrases; ++phrase) {
             const auto start = phrase * phraseBeats;
             const auto end = std::min(pattern.lengthBeats, start + phraseBeats);
@@ -452,14 +457,15 @@ std::pair<std::size_t, std::size_t> developRepeatedBassPhrases(
             Signature signature;
             for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
                 const auto& note = pattern.notes[index];
-                if (note.partId != part.id || note.startBeat < start || note.startBeat >= end) continue;
+                if (note.voice != VoiceId::MovementBass || note.partId != owner ||
+                    note.startBeat < start || note.startBeat >= end) continue;
                 indices.push_back(index);
                 signature.emplace_back(
                     static_cast<int>(std::lround((note.startBeat - start) * 4.0)),
                     note.pitch, static_cast<int>(std::lround(note.durationBeats * 8.0)));
             }
             std::sort(signature.begin(), signature.end());
-            if (signature.empty() || seen[part.id].insert(signature).second) continue;
+            if (signature.empty() || seen[owner].insert(signature).second) continue;
             const auto developmentStart = start + phraseBeats - plan.beatsPerBar * 2.0;
             std::vector<std::size_t> candidates;
             std::copy_if(indices.begin(), indices.end(), std::back_inserter(candidates), [&](auto index) {
@@ -475,7 +481,7 @@ std::pair<std::size_t, std::size_t> developRepeatedBassPhrases(
             for (const auto index : candidates) {
                 auto& note = pattern.notes[index];
                 const auto barStart = std::floor(note.startBeat / plan.beatsPerBar) * plan.beatsPerBar;
-                const auto direction = positiveModulo(phrase + static_cast<int>(part.id), 2) == 0
+                const auto direction = positiveModulo(phrase + static_cast<int>(owner), 2) == 0
                     ? 0.25 : -0.25;
                 for (const auto offset : {direction, -direction}) {
                     const auto target = note.startBeat + offset;
@@ -485,7 +491,8 @@ std::pair<std::size_t, std::size_t> developRepeatedBassPhrases(
                         if (&other == &note) return false;
                         if (other.voice == VoiceId::CoreDrums && (other.pitch == 35 || other.pitch == 36) &&
                             std::abs(other.startBeat - target) < 0.08) return true;
-                        return other.partId == part.id && std::abs(other.startBeat - target) < 0.10;
+                        return other.voice == VoiceId::MovementBass && other.partId == owner &&
+                               std::abs(other.startBeat - target) < 0.10;
                     });
                     if (occupied) continue;
                     note.startBeat = target;
@@ -610,11 +617,19 @@ std::pair<std::size_t, std::size_t> reinforceThematicMemory(Pattern& pattern,
         return replaceWindows.contains(static_cast<int>(std::floor(note.startBeat / windowBeats)));
     }), pattern.notes.end());
     std::size_t notesCreated{};
+    auto recallOrdinal = std::size_t{};
     for (const auto window : replaceWindows) {
         const auto targetStart = window * windowBeats;
         auto targetAnchor = material[static_cast<std::size_t>(window)].front().pitch;
         const auto transpose = targetAnchor - sourceAnchor;
-        for (const auto& source : canonical) {
+        const auto literalAnchor = recallOrdinal++ % 3 == 0;
+        for (std::size_t sourceIndex = 0; sourceIndex < canonical.size(); ++sourceIndex) {
+            const auto& source = canonical[sourceIndex];
+            // Keep one unmistakable return, then make later recalls consequential.
+            // Fragmenting a weak penultimate note and displacing the cadence keeps the
+            // listener's contour memory without pasting the same four-bar MIDI block.
+            if (!literalAnchor && canonical.size() >= 5 && sourceIndex + 2 == canonical.size() &&
+                positiveModulo(window, 3) == 0) continue;
             const auto relative = source.startBeat - sourceStart;
             if (relative < -0.001 || relative >= windowBeats || targetStart + relative >= pattern.lengthBeats) continue;
             auto recalled = source;
@@ -622,6 +637,14 @@ std::pair<std::size_t, std::size_t> reinforceThematicMemory(Pattern& pattern,
             recalled.pitch = nearestScalePitch(source.pitch + transpose,
                                                 definition.minimumPitch, definition.maximumPitch, scale);
             recalled.velocity = std::clamp(source.velocity - 3 + positiveModulo(window, 3) * 3, 1, 127);
+            if (!literalAnchor && sourceIndex + 1 == canonical.size()) {
+                const auto displacement = positiveModulo(window, 2) == 0 ? -0.25 : 0.25;
+                recalled.startBeat = std::clamp(recalled.startBeat + displacement,
+                    targetStart, targetStart + windowBeats - 0.25);
+                recalled.durationBeats = std::clamp(recalled.durationBeats *
+                    (displacement > 0.0 ? 0.75 : 1.25), 0.125, plan.beatsPerBar);
+                recalled.origin = NoteOrigin::AiTransformed;
+            }
             recalled.partId = 0;
             pattern.notes.push_back(recalled);
             ++notesCreated;
@@ -831,14 +854,11 @@ ElectronicProductionReport ElectronicProductionDirector::shapePerformance(Patter
     ElectronicProductionReport report;
     report.active = electronicCoreActive(plan.productionLanguage);
     if (!report.active) return report;
-    const auto aiNarrative = plan.productionModeSource == "gpt_plan";
     report.lowEndCollisionsBefore = lowEndCollisions(pattern);
     report.kickOrnamentsRemoved = restrainKickOrnaments(pattern, plan);
-    if (!aiNarrative)
-        report.kickPhraseDevelopmentsCreated = createKickPhraseDevelopment(pattern, plan);
+    report.kickPhraseDevelopmentsCreated = createKickPhraseDevelopment(pattern, plan);
     report.maximumKicklessBarsBefore = maximumKicklessBars(pattern, plan);
-    if (!aiNarrative)
-        report.macroKickAnchorBarsCreated = createMacroKickAnchors(pattern, plan);
+    report.macroKickAnchorBarsCreated = createMacroKickAnchors(pattern, plan);
     report.maximumKicklessBarsAfter = maximumKicklessBars(pattern, plan);
 
     std::vector<double> kicks;
@@ -852,9 +872,7 @@ ElectronicProductionReport ElectronicProductionDirector::shapePerformance(Patter
         const auto collision = std::find_if(kicks.begin(), kicks.end(), [&](double kick) {
             return std::abs(note.startBeat - kick) < 0.08;
         });
-        const auto aiNote = note.origin == NoteOrigin::AiAuthored ||
-                            note.origin == NoteOrigin::AiTransformed;
-        if (!aiNote && collision != kicks.end() && (++bassOrdinal % 4) != 0) {
+        if (collision != kicks.end() && (++bassOrdinal % 4) != 0) {
             const auto originalEnd = note.endBeat();
             note.startBeat = std::min(pattern.lengthBeats - 0.0625, *collision + 0.25);
             note.durationBeats = std::max(0.0625, originalEnd - note.startBeat);
@@ -877,22 +895,19 @@ ElectronicProductionReport ElectronicProductionDirector::shapePerformance(Patter
         const auto remove = (phraseEnd && beat >= beatsPerBar - 0.51) ||
             (halfPhrase && (note.voice == VoiceId::OpenHatsShaker || note.voice == VoiceId::HighPercussion) &&
              beat < 0.51);
-        if (remove && note.origin != NoteOrigin::AiAuthored &&
-            note.origin != NoteOrigin::AiTransformed) {
+        if (remove) {
             ++report.phraseBreathsCreated;
             return true;
         }
         return false;
     }), pattern.notes.end());
-    if (!aiNarrative) {
-        report.phraseVariationsCreated = createPhraseVariations(pattern, beatsPerBar);
-        report.rhythmNotesEvolved = evolveLiteralRhythm(pattern, beatsPerBar);
-        const auto bassDevelopment = developRepeatedBassPhrases(pattern, plan);
-        report.bassPhraseDevelopmentsCreated = bassDevelopment.first;
-        report.bassNotesDeveloped = bassDevelopment.second;
-        report.harmonicBreathsCreated = createHarmonicPhraseBreaths(pattern, beatsPerBar);
-        report.supportNotesRotated = rotatePeakSupport(pattern, plan);
-    }
+    report.phraseVariationsCreated = createPhraseVariations(pattern, beatsPerBar);
+    report.rhythmNotesEvolved = evolveLiteralRhythm(pattern, beatsPerBar);
+    const auto bassDevelopment = developRepeatedBassPhrases(pattern, plan);
+    report.bassPhraseDevelopmentsCreated = bassDevelopment.first;
+    report.bassNotesDeveloped = bassDevelopment.second;
+    report.harmonicBreathsCreated = createHarmonicPhraseBreaths(pattern, beatsPerBar);
+    report.supportNotesRotated = rotatePeakSupport(pattern, plan);
     const auto bars = static_cast<int>(std::ceil(pattern.lengthBeats / beatsPerBar));
     for (auto bar = 0; bar < bars; ++bar) {
         const auto start = bar * beatsPerBar;
@@ -903,7 +918,7 @@ ElectronicProductionReport ElectronicProductionDirector::shapePerformance(Patter
         const auto counterCount = std::count_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
             return note.voice == VoiceId::Countermelody && note.startBeat >= start && note.startBeat < end;
         });
-        if (aiNarrative || leadCount == 0 || counterCount == 0) continue;
+        if (leadCount == 0 || counterCount == 0) continue;
         ++report.competingForegroundBars;
         const auto removeVoice = positiveModulo(bar / 2, 2) == 0 ? VoiceId::Countermelody : VoiceId::Lead;
         const auto before = pattern.notes.size();
@@ -915,11 +930,9 @@ ElectronicProductionReport ElectronicProductionDirector::shapePerformance(Patter
 
     // Foreground arbitration must happen first. Otherwise it can delete pieces of the
     // recalled motif and leave a formally "repeated" idea unrecognisable in final MIDI.
-    if (!aiNarrative) {
-        const auto thematicRecall = reinforceThematicMemory(pattern, plan);
-        report.thematicRecallWindowsCreated = thematicRecall.first;
-        report.thematicRecallNotesCreated = thematicRecall.second;
-    }
+    const auto thematicRecall = reinforceThematicMemory(pattern, plan);
+    report.thematicRecallWindowsCreated = thematicRecall.first;
+    report.thematicRecallNotesCreated = thematicRecall.second;
 
     constexpr std::array automatedVoices{VoiceId::MovementBass, VoiceId::HarmonicFoundation,
         VoiceId::HarmonicPulse, VoiceId::HarmonicUpper, VoiceId::Lead, VoiceId::Atmosphere};

@@ -380,7 +380,11 @@ void runGeneratorTests() {
              clubReport.electronicProduction.thematicRecurrenceRatio >= 0.24) &&
             (clubReport.electronicProduction.percussionNotes < 12 ||
              clubReport.electronicProduction.percussionArticulations >= 3),
-            "The publication contract must preserve hook memory and audible percussion articulation");
+            "The publication contract must preserve hook memory and audible percussion articulation: windows=" +
+                std::to_string(clubReport.electronicProduction.thematicWindows) + ", recall=" +
+                std::to_string(clubReport.electronicProduction.thematicRecurrenceRatio) + ", percussion=" +
+                std::to_string(clubReport.electronicProduction.percussionNotes) + ", articulations=" +
+                std::to_string(clubReport.electronicProduction.percussionArticulations));
     require(std::none_of(renderedClub.notes.begin(), renderedClub.notes.end(), [](const auto& note) {
                 return !isVoiceInFamily(note.voice, VoiceFamily::Rhythm) &&
                        note.voice != VoiceId::Transitions && note.durationBeats < 0.124;
@@ -915,12 +919,17 @@ void runGeneratorTests() {
     rhythmGuardPlan.sections.resize(1);
     rhythmGuardPlan.sections.front().startBar = 0;
     rhythmGuardPlan.sections.front().bars = 4;
+    auto copiedAiRhythm = copiedRhythm;
     const auto copiedRhythmReport = MusicalCritic::reviewAndRefine(copiedRhythm, rhythmGuardPlan);
     require(copiedRhythmReport.literalRhythmBarsVaried > 0 &&
                 std::count_if(copiedRhythm.notes.begin(), copiedRhythm.notes.end(), [](const auto& note) {
                     return note.voice == VoiceId::CoreDrums;
                 }) == 4,
             "The rhythm critic must break copied percussion runs without damaging a stable kick contract");
+    for (auto& note : copiedAiRhythm.notes) note.origin = NoteOrigin::AiAuthored;
+    const auto copiedAiReport = MusicalCritic::reviewAndRefine(copiedAiRhythm, rhythmGuardPlan);
+    require(copiedAiReport.literalRhythmBarsVaried > 0,
+            "GPT provenance must not exempt a copied percussion loop from musical editing");
     Pattern intentionalOstinato;
     intentionalOstinato.lengthBeats = 32.0;
     for (auto bar = 0; bar < 8; ++bar) {
@@ -1567,6 +1576,36 @@ void runGeneratorTests() {
     require(audibleMemoryAudit.thematicRecallRatio > 0.99 &&
                 audibleMemoryAudit.audibleThematicSimilarity > 0.90,
             "Transposed statements with the same rhythm and contour must pass audible thematic memory");
+
+    Pattern overCopiedMemory;
+    overCopiedMemory.lengthBeats = 48.0;
+    overCopiedMemory.productionReady = true;
+    for (auto window = 0; window < 6; ++window)
+        for (auto note = 0; note < 3; ++note)
+            overCopiedMemory.notes.push_back({window * 8.0 + note,
+                0.5, 60 + std::array{0, 3, 7}[note], 88, 2, VoiceId::Lead, 0, false,
+                window == 0 ? NoteOrigin::AiAuthored : NoteOrigin::AiTransformed, 6161});
+    const auto overCopiedAudit = NarrativeScoreGate::audit(overCopiedMemory, narrativePlan);
+    NarrativeScoreGate::stamp(overCopiedMemory, overCopiedAudit);
+    require(overCopiedAudit.literalThematicReturnRatio > 0.99 &&
+                overCopiedAudit.thematicDevelopment < 0.01 &&
+                std::find(overCopiedAudit.issues.begin(), overCopiedAudit.issues.end(),
+                          "literal_theme_copy_without_development") != overCopiedAudit.issues.end() &&
+                overCopiedMemory.productionReady,
+            "A recognisable but verbatim long-form theme must receive critic feedback without hiding valid MIDI");
+
+    Pattern sparsePocketBass;
+    sparsePocketBass.lengthBeats = 32.0;
+    for (auto bar = 0; bar < 8; ++bar) {
+        sparsePocketBass.notes.push_back({bar * 4.0 + (bar % 2 == 0 ? 0.75 : 1.25),
+            0.25, bar % 4 == 3 ? 41 : 38, 78 + bar % 3, 6,
+            VoiceId::MovementBass, 0, true, NoteOrigin::AiAuthored, 7171});
+    }
+    const auto sparsePocketAudit = NarrativeScoreGate::audit(sparsePocketBass, narrativePlan);
+    require(sparsePocketAudit.bassPhrases == 1 &&
+                sparsePocketAudit.singleNoteBassPhrases == 0 &&
+                sparsePocketAudit.bassPhraseContinuity > 0.99,
+            "Short bass gates with one answer per bar must remain one coherent eight-bar phrase");
 
     auto octavePlan = SongComposer::createLocalPlan(
         "octave normalization", 60, 120.0, 4.0, 91, 0, ScaleKind::Minor);

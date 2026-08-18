@@ -350,6 +350,29 @@ class SoundMatcherTests(unittest.TestCase):
         fidelity = intent_fidelity("Kick 909 1.aif", "Drums/Drum Hits/Kick/Kick 909 1.aif", spec)
         self.assertGreaterEqual(fidelity, 0.65)
 
+    def test_negated_reverb_and_numeric_gate_do_not_create_false_character_failure(self):
+        english = {
+            "catalog_id": "kick_drum",
+            "preset_intent": "deep dry techno kick; hard 180 ms gate; no reverb",
+        }
+        spanish = {
+            "catalog_id": "kick_drum",
+            "preset_intent": "bombo profundo y seco; gate duro de 180 ms; sin reverb",
+        }
+        for spec in (english, spanish):
+            fidelity = intent_fidelity(
+                "Kick 909 1.aif", "Drums/Drum Hits/Kick/Kick 909 1.aif", spec)
+            self.assertEqual(fidelity, 1.0)
+
+    def test_genuine_aggressive_character_remains_binding(self):
+        aggressive = {
+            "catalog_id": "kick_drum",
+            "preset_intent": "deep dry aggressive punchy kick",
+        }
+        fidelity = intent_fidelity(
+            "Kick 909 1.aif", "Drums/Drum Hits/Kick/Kick 909 1.aif", aggressive)
+        self.assertLess(fidelity, 1.0)
+
     def test_round_robin_sound_selection_returns_distinct_exact_hits(self):
         matches = select_track_sound_variants([
             ("Hihat Closed Chirp.wav", "Drums/Drum Hits/Hihat/Hihat Closed Chirp.wav", "a"),

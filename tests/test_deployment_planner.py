@@ -41,6 +41,19 @@ class DeploymentPlannerTests(unittest.TestCase):
         self.assertEqual(plan["resolved"], [])
         self.assertEqual(plan["blocking_timbres"], ["Glassy Lead"])
 
+    def test_preflight_accepts_negated_reverb_and_technical_gate_language(self):
+        plan = resolve_deployment([
+            ("Kick 909 1.aif", "Drums/Drum Hits/Kick/Kick 909 1.aif", "kick"),
+        ], [{
+            "name": "Deep Dry Anchor", "track_key": "kick", "catalog_id": "kick_drum",
+            "preset_intent": "deep dry techno kick; hard 180 ms gate; no reverb",
+            "timbre_priority": "critical", "minimum_intent_fidelity": 0.65,
+            "notes": [{"pitch": 36, "start": 0.0, "duration": 0.25}],
+        }])
+        self.assertEqual(len(plan["resolved"]), 1)
+        self.assertFalse(plan["blocking_timbres"])
+        self.assertEqual(plan["timbre_contracts"][0]["fidelity"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

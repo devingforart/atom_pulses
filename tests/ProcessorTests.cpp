@@ -1299,12 +1299,24 @@ int main(int argc, char** argv) {
             "Per-voice solo and mute choices must survive an Ableton project reload");
     const auto restoredPatternSnapshot = restored.currentPattern();
     const auto originalPatternSnapshot = processor.currentPattern();
+    const auto reloadCounts = [&] {
+        if (restoredPatternSnapshot == nullptr || originalPatternSnapshot == nullptr)
+            return std::string{"null snapshot"};
+        return std::string{"notes "} + std::to_string(originalPatternSnapshot->notes.size()) + "/" +
+            std::to_string(restoredPatternSnapshot->notes.size()) + ", controls " +
+            std::to_string(originalPatternSnapshot->controls.size()) + "/" +
+            std::to_string(restoredPatternSnapshot->controls.size()) + ", expressions " +
+            std::to_string(originalPatternSnapshot->expressions.size()) + "/" +
+            std::to_string(restoredPatternSnapshot->expressions.size()) + ", parts " +
+            std::to_string(originalPatternSnapshot->parts.size()) + "/" +
+            std::to_string(restoredPatternSnapshot->parts.size());
+    }();
     require(restoredPatternSnapshot != nullptr && originalPatternSnapshot != nullptr &&
                 restoredPatternSnapshot->notes == originalPatternSnapshot->notes &&
                 restoredPatternSnapshot->controls == originalPatternSnapshot->controls &&
                 restoredPatternSnapshot->expressions == originalPatternSnapshot->expressions &&
                 restoredPatternSnapshot->parts == originalPatternSnapshot->parts,
-            "The complete approved AI composition must survive a DAW project reload exactly");
+            "The complete approved AI composition must survive a DAW project reload exactly: " + reloadCounts);
     require(restoredPatternSnapshot->parts.empty() ||
                 restoredPatternSnapshot->parts.front().liveDevice == "Instrument Rack",
             "A manual Live-native instrument choice must survive a DAW project reload");

@@ -607,12 +607,31 @@ juce::String apiErrorMessage(const HttpResponse& response) {
     return error;
 }
 
+juce::String structuredResponseError(const juce::String& body,
+                                     const juce::String& fallback) {
+    const auto parsed = juce::JSON::parse(body);
+    const auto* object = parsed.getDynamicObject();
+    if (object == nullptr) return fallback;
+    auto result = fallback;
+    const auto status = object->getProperty("status").toString();
+    if (status.isNotEmpty()) result += " (response status: " + status + ")";
+    if (const auto* details = object->getProperty("incomplete_details").getDynamicObject()) {
+        const auto reason = details->getProperty("reason").toString();
+        if (reason.isNotEmpty()) result += ": " + reason;
+    }
+    if (const auto* responseError = object->getProperty("error").getDynamicObject()) {
+        const auto message = responseError->getProperty("message").toString();
+        if (message.isNotEmpty()) result += ": " + message;
+    }
+    return result;
+}
+
 juce::String requestRevisedSongPlan(const juce::String& prompt, const juce::String& apiKey,
                                     std::stop_token token, std::chrono::milliseconds budget) {
     if (token.stop_requested()) return {};
     const auto body = juce::String("{\"model\":\"") + model +
         "\",\"background\":true,\"reasoning\":{\"effort\":\"medium\"},"
-        "\"max_output_tokens\":64000,\"input\":" +
+        "\"max_output_tokens\":100000,\"input\":" +
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_plan_critic\","
         "\"strict\":true,\"schema\":" + songPlanSchema + "}}}";
@@ -1016,7 +1035,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
 
     const auto body = juce::String("{\"model\":\"") + model +
         "\",\"background\":true,\"reasoning\":{\"effort\":\"high\"},"
-        "\"max_output_tokens\":64000,\"input\":" +
+        "\"max_output_tokens\":100000,\"input\":" +
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_plan\","
         "\"strict\":true,\"schema\":" + songPlanSchema + "}}}";
@@ -1035,7 +1054,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     }
     const auto outputText = extractOutputText(juce::JSON::parse(http.body));
     if (outputText.isEmpty()) {
-        error = "OpenAI returned no structured song plan";
+        error = structuredResponseError(http.body,
+            "OpenAI returned no structured song plan");
         return result;
     }
     if (!parseSongPlanJson(outputText, targetSeconds, totalBars, bpm, beatsPerBar,
@@ -1269,7 +1289,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "and their placements while keeping strong material intact. Every related statement, answer and development "
         "must carry the same theme_id, while narrative_function must express its actual role. Raise "
         "primary_voice_authorship_coverage to at least 0.60, narrative_thematic_recall to at least 0.40, "
-        "audible_thematic_similarity to at least 0.66, density_control to at least 0.82, "
+        "audible_thematic_similarity into a recognisable but developed 0.66-0.96 band, "
+        "literal_thematic_return_ratio below 0.70, thematic_development above 0.55, "
+        "density_control to at least 0.82, "
         "bass_phrase_continuity to at least 0.55 and harmonic_direction to at least 0.70. Repair those metrics by "
         "writing and placing musical cells, never by changing theme_id, descriptions or adding arbitrary notes. The "
         "audible audit is transposition-invariant and compares actual onset rhythm and interval contour, so labels cannot "
@@ -1316,17 +1338,52 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                      report.narrative.audibleThematicSimilarity >= 0.66);
                 const auto bassReady = report.narrative.bassPhrases < 4 ||
                     report.narrative.bassPhraseContinuity >= 0.55;
+                const auto developmentReady = report.narrative.comparableThematicReturns < 4 ||
+                    (report.narrative.literalThematicReturnRatio <= 0.70 &&
+                     report.narrative.thematicDevelopment >= 0.55);
+                const auto electronicReady = !report.electronicProduction.active ||
+                    (report.electronicProduction.score >= 0.68 &&
+                     report.electronicProduction.maximumRhythmRun <= 6);
                 return report.production.ready && report.narrative.primaryVoiceCoverage >= 0.60 &&
-                    memoryReady && bassReady && report.narrative.densityControl >= 0.82;
+                    memoryReady && bassReady && developmentReady && electronicReady &&
+                    report.narrative.densityControl >= 0.82;
+            };
+            const auto targetDeficit = [](const CompositionRenderReport& report) {
+                auto deficit = std::max(0.0, 0.60 - report.narrative.primaryVoiceCoverage) * 1.8;
+                if (report.narrative.bassPhrases >= 4)
+                    deficit += std::max(0.0, 0.55 - report.narrative.bassPhraseContinuity) * 1.25;
+                if (report.narrative.audibleThematicWindows >= 3) {
+                    deficit += std::max(0.0, 0.40 - report.narrative.thematicRecallRatio);
+                    deficit += std::max(0.0, 0.66 - report.narrative.audibleThematicSimilarity);
+                }
+                if (report.narrative.comparableThematicReturns >= 4) {
+                    deficit += std::max(0.0,
+                        report.narrative.literalThematicReturnRatio - 0.70);
+                    deficit += std::max(0.0, 0.55 - report.narrative.thematicDevelopment);
+                }
+                deficit += std::max(0.0, 0.82 - report.narrative.densityControl);
+                if (report.electronicProduction.active) {
+                    deficit += std::max(0.0, 0.68 - report.electronicProduction.score);
+                    deficit += std::max(0.0,
+                        static_cast<double>(report.electronicProduction.maximumRhythmRun) - 6.0) * 0.03;
+                }
+                return deficit;
+            };
+            const auto candidateQuality = [](const CompositionRenderReport& report) {
+                const auto electronic = report.electronicProduction.active
+                    ? report.electronicProduction.score : report.production.score;
+                return report.narrative.score * 0.38 + electronic * 0.28 +
+                    report.musical.overall * 0.22 + report.production.score * 0.12;
             };
 
             auto bestRevision = std::move(revised);
             auto bestReport = revisedReport;
             auto bestRevisionText = revisedText;
-            const auto elapsedAfterFirstCritic = std::chrono::steady_clock::now() - aiStarted;
-            const auto remainingAfterFirstCritic = std::chrono::duration_cast<std::chrono::milliseconds>(
-                totalAiBudget - elapsedAfterFirstCritic);
-            if (!meetsNarrativeTarget(bestReport) && remainingAfterFirstCritic > std::chrono::seconds(30)) {
+            for (auto repairPass = 0; repairPass < 2 && !meetsNarrativeTarget(bestReport); ++repairPass) {
+                const auto elapsedForRepair = std::chrono::steady_clock::now() - aiStarted;
+                const auto remainingForRepair = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    totalAiBudget - elapsedForRepair);
+                if (remainingForRepair <= std::chrono::seconds(30)) break;
                 const auto focusedPrompt = juce::String(
                     "Return a complete corrected PULSO song plan using the required schema. This is a focused "
                     "note-level repair, not a fresh stylistic rewrite. Preserve the candidate's strong form, harmony, "
@@ -1335,16 +1392,25 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     "audible onset rhythm and interval contour, not merely theme_id. Movement bass must form coherent "
                     "four-to-eight-bar pocket phrases with breaths and a developed return. Club bars must contain no "
                     "more than nine sounding execution voices and no more than two foreground owners. Do not add notes "
-                    "to raise a score; use ownership, subtraction, recurrence and transformation. Exact failed metrics: "
-                    "coverage=") + juce::String(bestReport.narrative.primaryVoiceCoverage, 3) +
+                    "to raise a score; use ownership, subtraction, recurrence and transformation. Allow a literal theme "
+                    "anchor, but develop later returns through fragmentation, displacement, changed cadence or a real "
+                    "answer; do not copy the same MIDI cell throughout the arrangement. Replace procedural ownership "
+                    "of lead, response, movement bass and harmonic identity with explicit performance cells and "
+                    "placements; do not merely add labels or duplicate notes. Repair pass ") +
+                    juce::String(repairPass + 1) + ". Exact failed metrics: " +
+                    "coverage=" + juce::String(bestReport.narrative.primaryVoiceCoverage, 3) +
                     ", recall=" + juce::String(bestReport.narrative.thematicRecallRatio, 3) +
                     ", audible_similarity=" + juce::String(bestReport.narrative.audibleThematicSimilarity, 3) +
+                    ", literal_theme_returns=" + juce::String(
+                        bestReport.narrative.literalThematicReturnRatio, 3) +
+                    ", thematic_development=" + juce::String(
+                        bestReport.narrative.thematicDevelopment, 3) +
                     ", bass_continuity=" + juce::String(bestReport.narrative.bassPhraseContinuity, 3) +
                     ", density_control=" + juce::String(bestReport.narrative.densityControl, 3) +
                     ", peak_voices=" + juce::String(static_cast<int>(bestReport.narrative.peakActiveVoices)) +
                     ". Original direction: " + direction + "\nCandidate to repair:\n" + bestRevisionText;
                 if (const auto focusedText = requestRevisedSongPlan(focusedPrompt, apiKey, token,
-                        std::min(remainingAfterFirstCritic,
+                        std::min(remainingForRepair,
                             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::minutes(4))));
                     focusedText.isNotEmpty()) {
                     SongPlan focused;
@@ -1358,24 +1424,30 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         CompositionRenderReport focusedReport;
                         [[maybe_unused]] const auto auditedFocused = SongComposer{}.render(
                             focused, focusedFoundation, {}, &focusedReport);
-                        const auto bestQuality = bestReport.narrative.score * 0.82 +
-                            bestReport.musical.overall * 0.18;
-                        const auto focusedQuality = focusedReport.narrative.score * 0.82 +
-                            focusedReport.musical.overall * 0.18;
-                        if ((meetsNarrativeTarget(focusedReport) && !meetsNarrativeTarget(bestReport)) ||
-                            (focusedReport.production.ready && focusedQuality > bestQuality + 0.01)) {
+                        const auto bestQuality = candidateQuality(bestReport);
+                        const auto focusedQuality = candidateQuality(focusedReport);
+                        const auto bestDeficit = targetDeficit(bestReport);
+                        const auto focusedDeficit = targetDeficit(focusedReport);
+                        if (focusedReport.production.ready &&
+                            ((meetsNarrativeTarget(focusedReport) && !meetsNarrativeTarget(bestReport)) ||
+                             focusedDeficit + 0.015 < bestDeficit ||
+                             (std::abs(focusedDeficit - bestDeficit) <= 0.015 &&
+                              focusedQuality > bestQuality + 0.01))) {
                             bestRevision = std::move(focused);
                             bestReport = focusedReport;
+                            bestRevisionText = focusedText;
                         }
                     }
                 }
             }
-            const auto draftNarrative = draftReport.narrative.score * 0.78 +
-                draftReport.musical.overall * 0.22;
-            const auto revisedNarrative = bestReport.narrative.score * 0.78 +
-                bestReport.musical.overall * 0.22;
+            const auto draftNarrative = candidateQuality(draftReport);
+            const auto revisedNarrative = candidateQuality(bestReport);
+            const auto draftDeficit = targetDeficit(draftReport);
+            const auto revisedDeficit = targetDeficit(bestReport);
             const auto safer = bestReport.production.ready || !draftReport.production.ready;
-            if (safer && revisedNarrative + 0.015 >= draftNarrative)
+            if (safer && (revisedDeficit + 0.015 < draftDeficit ||
+                          (std::abs(revisedDeficit - draftDeficit) <= 0.015 &&
+                           revisedNarrative + 0.015 >= draftNarrative)))
                 result = std::move(bestRevision);
         }
     }

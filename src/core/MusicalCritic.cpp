@@ -52,7 +52,6 @@ std::size_t varyLiteralRhythmRuns(Pattern& pattern, const SongPlan& plan) {
     std::map<std::pair<VoiceId, int>, std::vector<std::size_t>> notesByVoiceBar;
     for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
         const auto& note = pattern.notes[index];
-        if (aiAuthored(note)) continue;
         if (isVoiceInFamily(note.voice, VoiceFamily::Rhythm) && note.voice != VoiceId::CoreDrums)
             notesByVoiceBar[{note.voice, barFor(note, plan)}].push_back(index);
     }
@@ -79,8 +78,9 @@ std::size_t varyLiteralRhythmRuns(Pattern& pattern, const SongPlan& plan) {
             if (!signature.empty() && signature == previous) ++run;
             else run = signature.empty() ? 0 : 1;
             if (run >= 3 && !indices.empty()) {
-                // Negative space is the safest style-independent mutation: it preserves
-                // the grid, tuning and sound identity while breaking a copied bar.
+                // Negative space is the safest style-independent editorial mutation: it
+                // preserves GPT's grid, tuning and sound identity while breaking a copied
+                // bar. AI authorship is provenance, not immunity from the critic.
                 const auto selected = indices[(static_cast<std::size_t>(bar) + voiceIndex) % indices.size()];
                 remove[selected] = true;
                 const auto token = std::tuple{

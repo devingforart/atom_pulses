@@ -13,6 +13,11 @@ bajo severamente fragmentado o acumulación persistente de voces, la interfaz mu
 `COMPOSITION GATE - CURRENT IDEA KEPT`. Este rechazo es musical y se diferencia de un defecto de
 integridad MIDI o de un fallo tímbrico del despliegue.
 
+El contrato tímbrico interpreta únicamente atributos positivos. Las negaciones `no`, `not`,
+`without`, `sin` y `sans` invierten el atributo correspondiente; por ejemplo, `no reverb`
+refuerza `dry`. Indicaciones numéricas de gate, release o duración se entregan al adaptador de
+playback y no se califican como carácter del preset.
+
 ## Contrato 0.42
 
 La solicitud de Live usa schema 8 y conserva `origin` y `narrative_id` en cada nota. En la raíz

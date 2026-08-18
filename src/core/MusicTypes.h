@@ -172,6 +172,8 @@ struct Pattern {
     double primaryVoiceAuthorshipCoverage{};
     double thematicRecallRatio{};
     double audibleThematicSimilarity{};
+    double literalThematicReturnRatio{};
+    double thematicDevelopment{1.0};
     double bassPhraseContinuity{};
     double densityControl{1.0};
     std::size_t peakActiveVoices{};

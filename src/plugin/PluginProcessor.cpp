@@ -1318,6 +1318,10 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 const std::scoped_lock lock(creativeDirectionMutex);
                 songDirection = creativeDirection;
             }
+            // Genre/domain inference must only read the musician's words. Live inventory
+            // and execution feedback are useful context for GPT, but contain terms such as
+            // "orchestral", "strings" or "Drum Rack" that must never reclassify techno.
+            const auto userSongDirection = songDirection;
             if (const auto capabilities = readLiveNativeCapabilitiesSummary(); capabilities.isNotEmpty())
                 songDirection += "\n" + capabilities;
             if (const auto audibleFeedback = readLiveAudibleExecutionFeedback(); audibleFeedback.isNotEmpty())
@@ -1382,13 +1386,14 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     continue;
                 }
                 if (plan.sections.empty()) {
-                    plan = SongComposer::createLocalPlan(songDirection.toStdString(),
+                    plan = SongComposer::createLocalPlan(userSongDirection.toStdString(),
                         newest.targetSongSeconds, currentTempo(), newest.beatsPerBar,
                         newest.seed, context.rootPitchClass, context.scale);
                 }
                 plan.seed = newest.seed;
                 plan.targetSeconds = newest.targetSongSeconds;
-                const auto inferredProduction = ElectronicProductionDirector::infer(songDirection.toStdString());
+                const auto inferredProduction = ElectronicProductionDirector::infer(
+                    userSongDirection.toStdString());
                 if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Adaptive) &&
                     inferredProduction.electronicIntent > plan.productionLanguage.electronicIntent) {
                     plan.productionLanguage = inferredProduction;
@@ -1445,10 +1450,16 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                             juce::String::fromUTF8(section.name.c_str()).toUpperCase();
                         ideaMetadata.store(progressMetadata, std::memory_order_release);
                     });
+                if (!usedAiPlan && aiError.isNotEmpty()) {
+                    generated.productionModeSource = "local_fallback";
+                    generated.productionIssues.push_back("warning:ai_fallback:" +
+                        aiError.substring(0, 160).toStdString());
+                    juce::Logger::writeToLog("PULSO AI FALLBACK: " + aiError);
+                }
                 generated.seed = newest.seed;
                 metadata->status = usedAiPlan ? "GPT SONG PLAN - VALIDATED - FULL SONG"
                     : reusedPlan ? "SONG RECOMPOSED - STRUCTURE PRESERVED"
-                    : aiError.isNotEmpty() ? "LOCAL SONG FALLBACK - GPT UNAVAILABLE"
+                    : aiError.isNotEmpty() ? "GPT FAILED - " + aiError.substring(0, 72).toUpperCase()
                                            : "LOCAL LONG-FORM ENGINE";
                 if (usedAiPlan && generated.narrativeAuditPerformed) {
                     metadata->status = "GPT NARRATIVE " +
@@ -1459,6 +1470,8 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                         juce::String(generated.thematicRecallRatio * 100.0, 0) +
                         "%, motif similarity " +
                         juce::String(generated.audibleThematicSimilarity * 100.0, 0) +
+                        "%, thematic development " +
+                        juce::String(generated.thematicDevelopment * 100.0, 0) +
                         "%, density control " +
                         juce::String(generated.densityControl * 100.0, 0) + "%.";
                 }
@@ -1581,6 +1594,8 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->primaryVoiceAuthorshipCoverage = generated.primaryVoiceAuthorshipCoverage;
         playbackPattern->thematicRecallRatio = generated.thematicRecallRatio;
         playbackPattern->audibleThematicSimilarity = generated.audibleThematicSimilarity;
+        playbackPattern->literalThematicReturnRatio = generated.literalThematicReturnRatio;
+        playbackPattern->thematicDevelopment = generated.thematicDevelopment;
         playbackPattern->bassPhraseContinuity = generated.bassPhraseContinuity;
         playbackPattern->densityControl = generated.densityControl;
         playbackPattern->peakActiveVoices = generated.peakActiveVoices;
@@ -1985,7 +2000,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(13); // Binary composition state version.
+        composition.writeInt(14); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -2064,6 +2079,8 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
         composition.writeDouble(pattern->primaryVoiceAuthorshipCoverage);
         composition.writeDouble(pattern->thematicRecallRatio);
         composition.writeDouble(pattern->audibleThematicSimilarity);
+        composition.writeDouble(pattern->literalThematicReturnRatio);
+        composition.writeDouble(pattern->thematicDevelopment);
         composition.writeDouble(pattern->bassPhraseContinuity);
         composition.writeDouble(pattern->densityControl);
         composition.writeInt(static_cast<int>(pattern->peakActiveVoices));
@@ -2129,7 +2146,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 13) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 14) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2309,6 +2326,12 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                     if (version >= 13) {
                                         restoredPattern->audibleThematicSimilarity =
                                             std::clamp(composition.readDouble(), 0.0, 1.0);
+                                        if (version >= 14) {
+                                            restoredPattern->literalThematicReturnRatio =
+                                                std::clamp(composition.readDouble(), 0.0, 1.0);
+                                            restoredPattern->thematicDevelopment =
+                                                std::clamp(composition.readDouble(), 0.0, 1.0);
+                                        }
                                         restoredPattern->bassPhraseContinuity =
                                             std::clamp(composition.readDouble(), 0.0, 1.0);
                                         restoredPattern->densityControl =

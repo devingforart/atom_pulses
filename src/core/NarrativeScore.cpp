@@ -157,8 +157,12 @@ void auditBassPhrasing(const Pattern& pattern, const SongPlan& plan,
     });
     std::vector<std::vector<const NoteEvent*>> phrases;
     for (const auto* note : notes) {
+        // Short gates are articulation, not phrase boundaries. A progressive bass can
+        // answer once per bar and still form one coherent eight-bar pocket. Only a rest
+        // longer than a complete bar plus pickup space, or the eight-bar horizon itself,
+        // starts a new musical phrase.
         const auto newPhrase = phrases.empty() || phrases.back().empty() ||
-            note->startBeat - phrases.back().back()->endBeat() >= plan.beatsPerBar * 0.50 ||
+            note->startBeat - phrases.back().back()->endBeat() >= plan.beatsPerBar * 1.25 ||
             note->startBeat - phrases.back().front()->startBeat >= plan.beatsPerBar * 8.0;
         if (newPhrase) phrases.push_back({});
         phrases.back().push_back(note);
@@ -272,12 +276,25 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         ++comparable;
         similarityTotal += best;
         if (best >= 0.70) ++report.audiblyRecurringThematicWindows;
+        // Similarity near one is not automatically excellent. Across a long form it
+        // usually means that the cell was copied instead of remembered and developed.
+        if (best >= 0.985) ++report.literalThematicReturns;
     }
+    report.comparableThematicReturns = comparable;
     report.audibleThematicSimilarity = comparable == 0 ? 0.0 :
         similarityTotal / static_cast<double>(comparable);
     report.thematicRecallRatio = comparable == 0 ? 0.0 :
         static_cast<double>(report.audiblyRecurringThematicWindows) /
         static_cast<double>(comparable);
+    report.literalThematicReturnRatio = comparable == 0 ? 0.0 :
+        static_cast<double>(report.literalThematicReturns) /
+        static_cast<double>(comparable);
+    // A human long-form theme needs both memory and consequence. Roughly one third of
+    // its returns may be literal anchors; the rest should answer, fragment, displace or
+    // cadence. Short ideas are not penalised before they have room to develop.
+    report.thematicDevelopment = comparable < 3 ? 1.0 : std::clamp(
+        1.0 - std::max(0.0, report.literalThematicReturnRatio - 0.35) / 0.65,
+        0.0, 1.0);
 
     auto primaryAvailable = 0.0;
     auto primaryAuthored = 0.0;
@@ -344,8 +361,11 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     const auto motifIdentity = std::clamp(static_cast<double>(usedMotifs.size()) / 3.0, 0.0, 1.0);
     report.rhythmicDevelopment = sectionDevelopment * 0.72 + motifIdentity * 0.28;
 
+    const auto audibleLineage = std::clamp(
+        (report.audibleThematicSimilarity - 0.55) / 0.25, 0.0, 1.0);
     report.score = std::clamp(report.primaryVoiceCoverage * 0.22 +
-        report.thematicRecallRatio * 0.17 + report.audibleThematicSimilarity * 0.13 +
+        report.thematicRecallRatio * 0.17 + audibleLineage * 0.08 +
+        report.thematicDevelopment * 0.05 +
         report.bassPhraseContinuity * 0.15 + report.densityControl * 0.12 +
         report.harmonicDirection * 0.10 + report.rhythmicDevelopment * 0.07 +
         std::min(1.0, report.aiAuthoredNoteRatio / 0.50) * 0.04, 0.0, 1.0);
@@ -354,6 +374,9 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         report.issues.push_back("weak_long_range_theme_memory");
     if (report.active && report.audibleThematicWindows >= 3 && report.audibleThematicSimilarity < 0.66)
         report.issues.push_back("theme_labels_without_audible_lineage");
+    if (report.active && report.comparableThematicReturns >= 4 &&
+        report.literalThematicReturnRatio > 0.70)
+        report.issues.push_back("literal_theme_copy_without_development");
     if (report.bassWindows >= 3 && report.bassPhraseContinuity < 0.55)
         report.issues.push_back("fragmented_movement_bass");
     if (report.densityControl < 0.82) report.issues.push_back("overcrowded_arrangement");
@@ -369,19 +392,23 @@ void NarrativeScoreGate::stamp(Pattern& pattern, const NarrativeScoreReport& rep
     pattern.primaryVoiceAuthorshipCoverage = report.primaryVoiceCoverage;
     pattern.thematicRecallRatio = report.thematicRecallRatio;
     pattern.audibleThematicSimilarity = report.audibleThematicSimilarity;
+    pattern.literalThematicReturnRatio = report.literalThematicReturnRatio;
+    pattern.thematicDevelopment = report.thematicDevelopment;
     pattern.bassPhraseContinuity = report.bassPhraseContinuity;
     pattern.densityControl = report.densityControl;
     pattern.peakActiveVoices = report.peakActiveVoices;
     pattern.narrativeIssues = report.issues;
+    if (report.thematicRecallRatio >= 0.40 && report.audibleThematicSimilarity >= 0.66) {
+        pattern.productionIssues.erase(std::remove(
+            pattern.productionIssues.begin(), pattern.productionIssues.end(),
+            "warning:thematic_identity_needs_stronger_recall"),
+            pattern.productionIssues.end());
+    }
     for (const auto& issue : report.issues)
         pattern.productionIssues.push_back("narrative:" + issue);
-    if (report.active) {
-        const auto blocking = report.primaryVoiceCoverage < 0.35 ||
-            (report.audibleThematicWindows >= 3 && report.thematicRecallRatio < 0.20) ||
-            (report.bassPhrases >= 4 && report.bassPhraseContinuity < 0.25) ||
-            report.densityControl < 0.55;
-        if (blocking) pattern.productionReady = false;
-    }
+    // Narrative quality selects and revises candidates, but it must never make a valid
+    // composition disappear from the UI. productionReady remains the MIDI-integrity
+    // contract; narrative defects are published as explicit critic diagnostics.
 }
 
 } // namespace pulso

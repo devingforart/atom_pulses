@@ -1,5 +1,50 @@
 # PULSO
 
+### 0.46 — propiedad musical y pocket de bajo
+
+- La selección de revisiones es lexicográfica: primero reduce déficit de autoría principal,
+  fraseo de bajo, memoria, densidad y groove; el score agregado solo desempata candidatos con
+  cumplimiento equivalente.
+- Hasta dos reparaciones focalizadas adicionales pueden sustituir relleno procedural de lead,
+  respuesta, bajo y armonía por células y placements explícitos de GPT.
+- Una mejora real de cobertura gana aunque reduzca levemente un score cosmético; una canción
+  tonalmente limpia ya no puede ocultar que el foreground fue compuesto por fallback.
+- La auditoría de bajo reconoce una nota corta por compás como parte de un pocket de ocho
+  compases. Solo una pausa estructural superior a un compás más pickup abre otra frase.
+- El warning electrónico de memoria exacta se elimina cuando la auditoría audible confirma
+  retorno temático reconocible y desarrollado, evitando diagnósticos contradictorios.
+
+### 0.45 — intención limpia y fallback observable
+
+- La clasificación musical usa exclusivamente el texto escrito por el músico. El inventario
+  de Live y el feedback técnico siguen llegando a GPT, pero ya no pueden convertir techno o
+  progressive house en una producción híbrida por contener nombres orquestales.
+- Los planes largos disponen de hasta 100k tokens estructurados. Si una respuesta termina
+  incompleta, PULSO muestra su estado y `incomplete_details` en lugar de sustituirla en silencio.
+- Un fallback local publica `production_mode_source=local_fallback`, registra el error exacto y
+  lo incorpora a `production_issues` en el request de Live.
+- La autenticación y el acceso a `gpt-5.6-terra` se verificaron contra Responses API; el motor
+  local deja de confundirse con una composición AI en las auditorías posteriores.
+
+### 0.44 — desarrollo musical humano
+
+- La autoría de GPT conserva procedencia, pero ya no queda exenta del crítico musical. Una
+  pista AI con barras copiadas recibe sustracción, respiración o puntuación de frase sin salir
+  de la grilla ni de la tonalidad.
+- El kick mantiene el contrato solicitado de negras y desarrolla finales de frase con gestos
+  escasos; clap, hats y percusión ya no pueden repetir indefinidamente el mismo compás.
+- El bajo se edita antes de que existan las partes orquestadas y forma frases de ocho compases
+  con retornos desarrollados, interlock con el kick y respiraciones audibles.
+- La memoria temática distingue identidad de copia. Aproximadamente un retorno de cada tres
+  puede ser literal; los demás deben fragmentar, desplazar, responder o cambiar su cadencia.
+- La selección de candidatos pondera narrativa, producción electrónica, calidad simbólica e
+  integridad MIDI. Para club, un candidato con loop rítmico extenso ya no gana por tener buena
+  tonalidad o densidad.
+- Los defectos musicales quedan visibles como diagnóstico y provocan revisión/selección, pero
+  nunca hacen desaparecer un MIDI técnicamente válido ni restauran silenciosamente la idea anterior.
+- Live recibe `literal_thematic_return_ratio` y `thematic_development`, además de las métricas
+  de memoria, bajo, densidad y adecuación electrónica existentes.
+
 ### 0.43 — memoria musical audible
 
 - La recurrencia temática se calcula sobre el MIDI final mediante ritmo de ataques,
@@ -17,6 +62,8 @@
   demorados, sin copiar ninguna grabación.
 - `request.json` y el manifiesto MIDI publican `audible_thematic_similarity`,
   `bass_phrase_continuity`, `density_control` y `peak_active_voices`.
+- El resolver tímbrico entiende negaciones y separa instrucciones técnicas del carácter:
+  `no reverb`, `sin reverb` o `hard 180 ms gate` ya no generan falsos rechazos del kick.
 
 ### 0.42 — autoría narrativa verificable
 

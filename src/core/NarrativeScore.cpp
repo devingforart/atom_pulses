@@ -390,6 +390,7 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     auto primaryAuthored = 0.0;
     auto grooveAvailable = 0.0;
     auto grooveAuthored = 0.0;
+    auto movementBassAvailable = 0.0;
     for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
         const auto& section = plan.sections[sectionIndex];
         const auto length = section.bars * plan.beatsPerBar;
@@ -402,10 +403,13 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
                 grooveAvailable += length;
                 grooveAuthored += unionLength(authoredSpans[{static_cast<int>(sectionIndex), voice}]);
             }
+            if (voice == VoiceId::MovementBass) movementBassAvailable += length;
         }
     }
     report.primaryVoiceCoverage = primaryAvailable > 0.0 ? primaryAuthored / primaryAvailable : 1.0;
     report.grooveAuthorshipCoverage = grooveAvailable > 0.0 ? grooveAuthored / grooveAvailable : 1.0;
+    report.foregroundExpected = primaryAvailable >= plan.beatsPerBar * 4.0;
+    report.movementBassExpected = movementBassAvailable >= plan.beatsPerBar * 4.0;
 
     const auto window = std::max(4.0, plan.beatsPerBar * 4.0);
     for (auto start = 0.0; start < pattern.lengthBeats; start += window) {
@@ -464,22 +468,26 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
             std::max(0.0, static_cast<double>(report.maximumClubDrumGapBars) - 12.0) / 20.0 -
             std::max(0.0, static_cast<double>(report.maximumClubLowEndGapBars) - 12.0) / 24.0,
             0.0, 1.0);
-    report.score = std::clamp(report.primaryVoiceCoverage * 0.16 +
-        report.foregroundAiAuthorshipRatio * 0.13 +
-        report.movementBassAiAuthorshipRatio * 0.12 +
-        report.grooveAuthorshipCoverage * 0.07 +
-        report.thematicRecallRatio * 0.10 + audibleLineage * 0.06 +
+    report.score = std::clamp(report.primaryVoiceCoverage * 0.13 +
+        report.foregroundAiAuthorshipRatio * 0.18 +
+        report.movementBassAiAuthorshipRatio * 0.14 +
+        report.grooveAuthorshipCoverage * 0.08 +
+        report.thematicRecallRatio * 0.09 + audibleLineage * 0.06 +
         report.thematicDevelopment * 0.05 +
-        report.bassPhraseContinuity * 0.11 + report.densityControl * 0.07 +
-        report.harmonicDirection * 0.05 + report.rhythmicDevelopment * 0.03 +
-        melodicSpeech * 0.03 + clubContinuity * 0.02, 0.0, 1.0);
+        report.bassPhraseContinuity * 0.08 + report.densityControl * 0.06 +
+        report.harmonicDirection * 0.04 + report.rhythmicDevelopment * 0.03 +
+        melodicSpeech * 0.04 + clubContinuity * 0.02, 0.0, 1.0);
     if (report.active && report.primaryVoiceCoverage < 0.65) report.issues.push_back("insufficient_ai_phrase_coverage");
-    if (report.active && report.foregroundNotes >= 8 && report.foregroundAiAuthorshipRatio < 0.55)
+    if (report.active && report.foregroundExpected && report.foregroundNotes < 8)
+        report.issues.push_back("ai_foreground_missing");
+    if (report.active && report.foregroundNotes >= 8 && report.foregroundAiAuthorshipRatio < 0.85)
         report.issues.push_back("procedural_foreground_dominates");
-    if (report.active && report.movementBassNotes >= 8 && report.movementBassAiAuthorshipRatio < 0.60)
+    if (report.active && report.movementBassExpected && report.movementBassNotes < 8)
+        report.issues.push_back("ai_movement_bass_missing");
+    if (report.active && report.movementBassNotes >= 8 && report.movementBassAiAuthorshipRatio < 0.75)
         report.issues.push_back("movement_bass_not_ai_authored");
     if (report.active && plan.productionLanguage.domain == ProductionDomain::ClubElectronic &&
-        report.grooveAuthorshipCoverage < 0.30)
+        report.grooveAuthorshipCoverage < 0.45)
         report.issues.push_back("groove_structure_not_ai_authored");
     if (report.active && report.audibleThematicWindows >= 3 && report.thematicRecallRatio < 0.40)
         report.issues.push_back("weak_long_range_theme_memory");
@@ -507,15 +515,17 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     const auto developmentReady = report.comparableThematicReturns < 4 ||
         (report.literalThematicReturnRatio <= 0.70 && report.thematicDevelopment >= 0.55);
     const auto bassReady = report.bassPhrases < 4 || report.bassPhraseContinuity >= 0.60;
-    const auto foregroundReady = report.foregroundNotes < 8 || report.foregroundAiAuthorshipRatio >= 0.55;
-    const auto movementBassReady = report.movementBassNotes < 8 || report.movementBassAiAuthorshipRatio >= 0.60;
+    const auto foregroundReady = !report.foregroundExpected ||
+        (report.foregroundNotes >= 8 && report.foregroundAiAuthorshipRatio >= 0.85);
+    const auto movementBassReady = !report.movementBassExpected ||
+        (report.movementBassNotes >= 8 && report.movementBassAiAuthorshipRatio >= 0.75);
     const auto clubReady = plan.productionLanguage.domain != ProductionDomain::ClubElectronic ||
-        (report.grooveAuthorshipCoverage >= 0.30 && report.maximumClubDrumGapBars <= 16 &&
+        (report.grooveAuthorshipCoverage >= 0.45 && report.maximumClubDrumGapBars <= 16 &&
          report.maximumClubLowEndGapBars <= 16);
     report.creativeReady = !report.active || (report.primaryVoiceCoverage >= 0.65 &&
         foregroundReady && movementBassReady && memoryReady && developmentReady && bassReady &&
         clubReady && report.densityControl >= 0.82 && report.maximumMelodicStepRun <= 5 &&
-        report.score >= 0.72);
+        report.score >= 0.76);
     return report;
 }
 

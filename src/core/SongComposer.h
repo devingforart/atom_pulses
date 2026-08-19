@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Generator.h"
+#include "CreativeAuthority.h"
 #include "ElectronicProductionDirector.h"
 #include "HarmonyPlan.h"
 #include "MusicalCritic.h"
@@ -103,6 +104,7 @@ struct CompositionRenderReport {
     MusicalIdentityReport musicalIdentity;
     NarrativeScoreReport narrative;
     VerticalHarmonyReport verticalHarmony;
+    CreativeAuthorityReport creativeAuthority;
 
     [[nodiscard]] bool productionReady() const noexcept {
         return production.ready;

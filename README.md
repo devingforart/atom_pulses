@@ -1,5 +1,20 @@
 # PULSO
 
+### 0.48.1 — autoridad creativa GPT
+
+- En modo GPT, `Lead`, `Countermelody` y `MovementBass` son voces de identidad exclusivamente
+  autorales. El motor local ya no completa sus huecos con frases genéricas: un hueco es silencio
+  intencional o una carencia que el crítico devuelve al modelo.
+- Cuando GPT reclama una voz armónica o rítmica mediante `performance_score`, también se elimina
+  el relleno procedural de esa voz. Las anclas técnicas `local_repair` se conservan para proteger
+  integridad, transporte y continuidad física sin apropiarse de la composición.
+- El gate exige al resultado publicado —no al JSON declarado— al menos 85% de autoría AI en
+  foreground, 75% en bajo de movimiento y 45% de cobertura GPT del groove electrónico.
+- La selección vuelve a evaluar tonalidad, fraseo, densidad, memoria, desarrollo y forma después
+  de aplicar la frontera de autoría. Más libertad no permite publicar material incoherente.
+- Los destinos de `voice_map` participan ahora realmente en expresión y orquestación. Además, la
+  compactación MIDI conserva inflexiones breves de pitch bend y aftertouch.
+
 ### 0.48 — autoría audible y criterio creativo
 
 - GPT deja de ser sólo un planificador: el gate exige autoría audible suficiente en foreground,

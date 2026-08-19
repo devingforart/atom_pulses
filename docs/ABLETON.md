@@ -1,5 +1,16 @@
 # Probar PULSO en Ableton Live
 
+## Contrato 0.48.1
+
+En una composición GPT, el MIDI entregado a Live ya no contiene relleno local oculto en lead,
+contramelodía o bajo de movimiento. Si GPT declaró ownership armónico o rítmico, tampoco conserva
+el patrón procedural correspondiente. Los silencios forman parte de la propuesta; si eliminarlos
+deja una voz requerida vacía, el gate solicita una revisión al modelo en lugar de inventar notas.
+
+El bridge considera aprobada la autoría creativa con foreground AI >= 0,85, bajo de movimiento AI
+>= 0,75 y groove GPT >= 0,45 para dominio electrónico. Estas métricas se calculan sobre las notas
+publicadas y conviven con los controles de tonalidad, timing, densidad, memoria temática y MIDI.
+
 ## Contrato 0.48
 
 El schema 10 publica `creative_ready`, `creative_score`, autoría audible de foreground y bajo,

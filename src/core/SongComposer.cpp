@@ -1,5 +1,6 @@
 #include "SongComposer.h"
 
+#include "CreativeAuthority.h"
 #include "Random.h"
 #include "HarmonyEngine.h"
 #include "ElectronicProductionDirector.h"
@@ -1587,6 +1588,27 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     for (const auto& section : plan.sections)
         sectionLengths.push_back(section.bars * plan.beatsPerBar);
     PerformanceScoreEngine::normalize(plan.performanceScore, plan.sections.size(), sectionLengths);
+    // A voice-map is audible orchestration, not metadata. Its destination must participate
+    // in expression, register realization and authorship coverage even when the section's
+    // original active_voices list mentioned only the source voice.
+    for (const auto& placement : plan.performanceScore.placements) {
+        if (placement.sectionIndex < 0 ||
+            placement.sectionIndex >= static_cast<int>(plan.sections.size())) continue;
+        const auto cell = std::find_if(plan.performanceScore.cells.begin(),
+            plan.performanceScore.cells.end(), [&](const auto& item) {
+                return item.id == placement.cellId;
+            });
+        if (cell == plan.performanceScore.cells.end()) continue;
+        auto& active = plan.sections[static_cast<std::size_t>(placement.sectionIndex)].activeVoices;
+        for (const auto source : cell->ownedVoices) {
+            const auto mapping = std::find_if(placement.voiceMap.begin(), placement.voiceMap.end(),
+                [&](const auto& item) { return item.from == source; });
+            const auto target = mapping == placement.voiceMap.end() ? source : mapping->to;
+            if (target != VoiceId::Unspecified &&
+                std::find(active.begin(), active.end(), target) == active.end())
+                active.push_back(target);
+        }
+    }
 }
 
 Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext& foundation,
@@ -1768,7 +1790,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     const auto tonalReport = repairTonalContract(
         song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
         plan.harmonicLanguage.tonalPolicy);
-    const auto qualityReport = MusicalCritic::reviewAndRefine(song, plan);
+    auto qualityReport = MusicalCritic::reviewAndRefine(song, plan);
     [[maybe_unused]] const auto structuralTonalReport = repairTonalContract(
         song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
         plan.harmonicLanguage.tonalPolicy);
@@ -1821,6 +1843,10 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     // authored hooks, bass phrases and intentional declared silence remain untouched.
     const auto electronicPublication =
         ElectronicProductionDirector::finalizePublication(song, plan);
+    // GPT-owned narrative voices remain authoritative after orchestration and all
+    // continuity passes. Any missing phrase is critic feedback, not permission for
+    // the local engine to write a replacement behind the model's back.
+    const auto creativeAuthority = CreativeAuthority::enforce(song, plan);
     // Continuity operates on realized parts. Re-assert the two physical contracts it can
     // otherwise bypass: upper parts remain upper, and every late percussion note carries a
     // concrete GM articulation rather than generic pitch 36.
@@ -1869,6 +1895,9 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
               static_cast<double>(verticalHarmony.collisionsBefore);
     [[maybe_unused]] const auto finalVerticalOverlapRepairs = repairSamePitchOverlaps(song);
     const auto expressionReport = ProductionPolish::compactExpression(song);
+    // Candidate selection grades the exact published music after fallback suppression,
+    // tonal repair, vertical phrasing and duration repair have converged.
+    qualityReport = MusicalCritic::review(song, plan);
     const auto productionReport = ProductionPolish::audit(
         song, publishedTonalReport.after, plan.beatsPerBar, orchestrationReport.registerClarity,
         orchestrationReport.familyBalance);
@@ -1926,6 +1955,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     NarrativeScoreGate::stamp(song, narrativeReport);
     if (renderReport != nullptr) {
         renderReport->orchestration = orchestrationReport;
+        renderReport->musical = qualityReport;
         renderReport->finalTonalPass = publishedTonalReport;
         renderReport->unintendedSilenceWindowsRepaired = continuityReport.windowsRepaired;
         renderReport->sparseStructuralWindowsRepaired = structuralContinuity.windowsRepaired;
@@ -1944,6 +1974,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         renderReport->musicalIdentity = musicalIdentity;
         renderReport->narrative = narrativeReport;
         renderReport->verticalHarmony = verticalHarmony;
+        renderReport->creativeAuthority = creativeAuthority;
     }
     std::sort(song.controls.begin(), song.controls.end(), [](const auto& left, const auto& right) {
         if (left.beat != right.beat) return left.beat < right.beat;

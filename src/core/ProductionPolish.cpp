@@ -82,7 +82,11 @@ void reduceCurves(std::vector<Event>& events, const std::map<EventOwner, std::ve
             for (std::size_t index = 1; index + 1 < audible.size(); ++index) {
                 const auto timeChanged = audible[index].beat - meaningful.back().beat >= 1.0;
                 const auto valueChanged = std::abs(value(audible[index]) - value(meaningful.back())) >= 5;
-                if (timeChanged && valueChanged) meaningful.push_back(audible[index]);
+                // A short expressive gesture can complete inside one beat. Requiring
+                // both elapsed time and value movement erased bend extrema and retained
+                // only neutral resets. Either a meaningful value change or a new time
+                // landmark deserves preservation; the phrase point cap still bounds data.
+                if (timeChanged || valueChanged) meaningful.push_back(audible[index]);
             }
             if (audible.size() > 1 && audible.back().beat > meaningful.back().beat + 0.001)
                 meaningful.push_back(audible.back());

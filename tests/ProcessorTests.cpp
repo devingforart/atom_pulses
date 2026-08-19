@@ -263,6 +263,12 @@ int main(int argc, char** argv) {
                     std::all_of(plan.performanceScore.cells.begin(), plan.performanceScore.cells.end(), [](const auto& cell) {
                         return !cell.themeId.empty() && !cell.narrativeFunction.empty();
                     }) && liveReport.narrative.primaryVoiceCoverage >= 0.45 &&
+                    (!liveReport.narrative.foregroundExpected ||
+                     (liveReport.narrative.foregroundNotes >= 8 &&
+                      liveReport.narrative.foregroundAiAuthorshipRatio >= 0.85)) &&
+                    (!liveReport.narrative.movementBassExpected ||
+                     (liveReport.narrative.movementBassNotes >= 8 &&
+                      liveReport.narrative.movementBassAiAuthorshipRatio >= 0.75)) &&
                     (liveReport.narrative.thematicPlacements < 3 ||
                      liveReport.narrative.thematicRecallRatio >= 0.35) &&
                     std::all_of(plan.voices.begin(), plan.voices.end(), [](const auto& voice) {
@@ -869,14 +875,14 @@ int main(int argc, char** argv) {
                                                                    authoredPerformanceContext);
     require(std::any_of(authoredPerformance.expressions.begin(), authoredPerformance.expressions.end(),
                 [](const auto& event) {
-                    return event.voice == pulso::VoiceId::Lead &&
+                    return event.voice == pulso::VoiceId::Countermelody &&
                            event.type == pulso::ExpressionEventType::PitchBend && event.value != 8192;
                 }) && std::any_of(authoredPerformance.expressions.begin(), authoredPerformance.expressions.end(),
                 [](const auto& event) {
-                    return event.voice == pulso::VoiceId::Lead &&
+                    return event.voice == pulso::VoiceId::Countermelody &&
                            event.type == pulso::ExpressionEventType::PolyAftertouch;
                 }),
-            "AI-authored performance intent must reach note-level bends and aftertouch");
+            "AI-authored remapped performance must reach its audible target with bends and aftertouch");
     require(std::any_of(authoredPerformance.notes.begin(), authoredPerformance.notes.end(),
                 [](const auto& note) {
                     return note.voice == pulso::VoiceId::Countermelody &&

@@ -991,11 +991,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "shared by its recognisable transformations and a narrative_function describing what it does. Across active "
         "lead, countermelody, bass and harmonic voices, placements must author at least 65 percent of their available "
         "timeline, concentrating that authorship in statements, answers, developments, breakdown memory, climax and "
-        "resolution. Procedural continuity may connect authored phrases but must never invent the principal hook, bass "
-        "argument or cadence. Write movement-bass cells as coherent four-to-eight-bar lines with pocket, breath and a "
+        "resolution. In a GPT plan, lead, countermelody and movement bass are exclusively AI-authored: unfilled time "
+        "is intentional silence and the local engine is forbidden to invent connecting notes. Write movement-bass "
+        "cells as coherent four-to-eight-bar lines with pocket, breath and a "
         "recognisable developed return; do not represent a bass argument as unrelated isolated notes. "
-        "The audible result, not the JSON labels, is graded: at least 55 percent of rendered lead/counter notes and 60 "
-        "percent of rendered movement-bass notes must come from performance_score. Author at least 30 percent of the "
+        "The audible result, not the JSON labels, is graded: at least 85 percent of rendered lead/counter notes and 75 "
+        "percent of rendered movement-bass notes must come from performance_score. Author at least 45 percent of the "
         "available groove timeline with reusable kick, clap, hat or percussion cells so GPT decides structural rhythm "
         "while the local engine only validates and fills non-defining continuity. A primary hook is a two-to-five-note "
         "rhythmic identity with rests, held consequence, one characteristic interval and a derived answer; never write "
@@ -1007,13 +1008,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "CC11, CC64 or timbral movement. Create contrasting cells for establishment, question, answer, development, "
         "withdrawal and arrival; never duplicate a cell under another name. placements use a zero-based section_index "
         "and start_beat relative to that section. A placement owns only its exact time interval; cover every interval "
-        "that must be explicitly authored and leave gaps only when procedural continuity is desired. Never create an "
+        "that must be explicitly authored; uncovered foreground and movement-bass time remains silent. Never create an "
         "unmarked global silence longer than two bars. If complete silence is structurally intended, write the exact "
         "phrase full silence in that section's function; otherwise preserve sparse rhythmic, harmonic or atmospheric "
         "continuity. Repetition is permitted only when musically intentional: no "
         "foreground or bass cell may repeat verbatim more than twice, and a stable percussion cell no more than four "
+        "times before a materially different companion cell answers it. "
         "The primary hook is the exception to novelty: state one identifiable two-to-four-bar nucleus, recall its onset pattern and contour in at least one quarter of later hook windows, and develop it by cadence, register, orchestration or one controlled interval change. Hook response must derive from that nucleus rather than introduce unrelated material. "
-        "times before a materially different companion cell answers it. Use new cells and interleaved placements for "
+        "Use new cells and interleaved placements for "
         "structural variation. Build audible dialogue by reusing strong cells through voice_map: establish an idea in "
         "one voice, answer it in another, then transform it using time_scale, transpose, fragment boundaries, contour "
         "inversion or retrograde only when the dramatic purpose calls for it. purpose must state establish, answer, "
@@ -1280,6 +1282,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                  << static_cast<int>(draftReport.electronicProduction.lowEndContinuityBarsRepaired)
                  << ", procedural_scalar_notes_removed="
                  << static_cast<int>(draftReport.electronicProduction.proceduralScalarNotesRemoved)
+                 << ", creative_authority_foreground_removed="
+                 << static_cast<int>(draftReport.creativeAuthority.foregroundFallbackNotesRemoved)
+                 << ", creative_authority_bass_removed="
+                 << static_cast<int>(draftReport.creativeAuthority.movementBassFallbackNotesRemoved)
+                 << ", creative_authority_harmony_removed="
+                 << static_cast<int>(draftReport.creativeAuthority.ownedHarmonyProceduralNotesRemoved)
+                 << ", creative_authority_groove_removed="
+                 << static_cast<int>(draftReport.creativeAuthority.ownedGrooveProceduralNotesRemoved)
                  << ", macro_kick_anchor_bars_created="
                  << static_cast<int>(draftReport.electronicProduction.macroKickAnchorBarsCreated)
                  << ", bass_phrase_developments_created="
@@ -1329,8 +1339,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "sections; do not merely double the same notes. Rewrite only weak cells "
         "and their placements while keeping strong material intact. Every related statement, answer and development "
         "must carry the same theme_id, while narrative_function must express its actual role. Raise "
-        "primary_voice_authorship_coverage to at least 0.65, foreground_ai_authorship_ratio to at least 0.55, "
-        "movement_bass_ai_authorship_ratio to at least 0.60, groove_authorship_coverage to at least 0.30, "
+        "primary_voice_authorship_coverage to at least 0.65, foreground_ai_authorship_ratio to at least 0.85, "
+        "movement_bass_ai_authorship_ratio to at least 0.75, groove_authorship_coverage to at least 0.45, "
         "narrative_thematic_recall to at least 0.40, "
         "audible_thematic_similarity into a recognisable but developed 0.66-0.96 band, "
         "literal_thematic_return_ratio below 0.70, thematic_development above 0.55, "
@@ -1392,12 +1402,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                      report.electronicProduction.maximumKicklessBarsAfter <= 12 &&
                      report.electronicProduction.maximumLowEndGapBarsAfter <= 12);
                 const auto audibleAuthorship =
-                    (report.narrative.foregroundNotes < 8 ||
-                     report.narrative.foregroundAiAuthorshipRatio >= 0.55) &&
-                    (report.narrative.movementBassNotes < 8 ||
-                     report.narrative.movementBassAiAuthorshipRatio >= 0.60) &&
+                    (!report.narrative.foregroundExpected ||
+                     (report.narrative.foregroundNotes >= 8 &&
+                      report.narrative.foregroundAiAuthorshipRatio >= 0.85)) &&
+                    (!report.narrative.movementBassExpected ||
+                     (report.narrative.movementBassNotes >= 8 &&
+                      report.narrative.movementBassAiAuthorshipRatio >= 0.75)) &&
                     (!report.electronicProduction.active ||
-                     report.narrative.grooveAuthorshipCoverage >= 0.30);
+                     report.narrative.grooveAuthorshipCoverage >= 0.45);
                 return report.production.ready && report.narrative.creativeReady &&
                     report.narrative.primaryVoiceCoverage >= 0.65 && audibleAuthorship &&
                     memoryReady && bassReady && developmentReady && electronicReady &&
@@ -1407,11 +1419,15 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             const auto targetDeficit = [](const CompositionRenderReport& report) {
                 auto deficit = std::max(0.0, 0.65 - report.narrative.primaryVoiceCoverage) * 1.8;
                 if (report.narrative.foregroundNotes >= 8)
-                    deficit += std::max(0.0, 0.55 - report.narrative.foregroundAiAuthorshipRatio) * 1.5;
+                    deficit += std::max(0.0, 0.85 - report.narrative.foregroundAiAuthorshipRatio) * 1.8;
+                else if (report.narrative.foregroundExpected)
+                    deficit += 1.4;
                 if (report.narrative.movementBassNotes >= 8)
-                    deficit += std::max(0.0, 0.60 - report.narrative.movementBassAiAuthorshipRatio) * 1.5;
+                    deficit += std::max(0.0, 0.75 - report.narrative.movementBassAiAuthorshipRatio) * 1.7;
+                else if (report.narrative.movementBassExpected)
+                    deficit += 1.2;
                 if (report.electronicProduction.active)
-                    deficit += std::max(0.0, 0.30 - report.narrative.grooveAuthorshipCoverage) * 1.2;
+                    deficit += std::max(0.0, 0.45 - report.narrative.grooveAuthorshipCoverage) * 1.3;
                 if (report.narrative.bassPhrases >= 4)
                     deficit += std::max(0.0, 0.60 - report.narrative.bassPhraseContinuity) * 1.25;
                 if (report.narrative.audibleThematicWindows >= 3) {
@@ -1465,7 +1481,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     "answer; do not copy the same MIDI cell throughout the arrangement. Replace procedural ownership "
                     "of lead, response, movement bass and harmonic identity with explicit performance cells and "
                     "placements; do not merely add labels or duplicate notes. The rendered foreground AI ratio must "
-                    "reach 0.55, movement-bass AI ratio 0.60, groove coverage 0.30, and scalar runs must stop after "
+                    "reach 0.85, movement-bass AI ratio 0.75, groove coverage 0.45, and scalar runs must stop after "
                     "five steps. Club drum and low-end gaps must remain at twelve bars or less. Repair pass ") +
                     juce::String(repairPass + 1) + ". Exact failed metrics: " +
                     "coverage=" + juce::String(bestReport.narrative.primaryVoiceCoverage, 3) +

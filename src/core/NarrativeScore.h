@@ -51,6 +51,8 @@ struct NarrativeScoreReport {
     double harmonicDirection{};
     double rhythmicDevelopment{};
     double score{};
+    bool foregroundExpected{};
+    bool movementBassExpected{};
     bool creativeReady{true};
     std::vector<std::string> issues;
 };

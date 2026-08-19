@@ -31,22 +31,22 @@ def evaluate_creative_quality(request):
     score = _number(request, "creative_score", request.get("narrative_score", 0.0))
 
     codes = []
-    if foreground_notes >= 8 and foreground < 0.55:
+    if foreground_notes >= 8 and foreground < 0.85:
         codes.append("procedural_foreground")
-    if movement_bass_notes >= 8 and movement_bass < 0.60:
+    if movement_bass_notes >= 8 and movement_bass < 0.75:
         codes.append("procedural_movement_bass")
     if movement_bass_notes >= 8 and bass_continuity < 0.60:
         codes.append("fragmented_bass_narrative")
     if scalar_run > 5:
         codes.append("scalar_melody_without_speech")
     if domain == "club_electronic":
-        if groove < 0.30:
+        if groove < 0.45:
             codes.append("groove_not_ai_authored")
         if drum_gap > 16:
             codes.append("club_pulse_absent_too_long")
         if low_end_gap > 16:
             codes.append("low_end_absent_too_long")
-    if score < 0.72:
+    if score < 0.76:
         codes.append("creative_score_below_gate")
     if request.get("creative_ready") is False and "creative_score_below_gate" not in codes:
         codes.append("composer_marked_for_revision")

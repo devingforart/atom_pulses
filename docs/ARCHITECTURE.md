@@ -1,5 +1,23 @@
 # Arquitectura
 
+### Autoridad creativa GPT 0.48.1
+
+`CreativeAuthority` es la última frontera de autoría del render. En planes GPT elimina cualquier
+nota local de `Lead`, `Countermelody` y `MovementBass`; en voces armónicas o rítmicas reclamadas por
+el `performance_score`, elimina únicamente notas de origen `procedural`. Las reparaciones técnicas
+marcadas `local_repair` siguen disponibles para sostener contratos físicos sin escribir la idea.
+El modo local no cambia.
+
+La frontera se ejecuta después de composición, orquestación y continuidad. A continuación se
+repiten los contratos tonal, vertical, de duración y expresión, y `MusicalCritic` revisa el MIDI
+exacto que será publicado. Por eso la libertad del modelo no evade los gates: una voz esperada sin
+material, una melodía escalar, un bajo inconexo, una densidad excesiva o un groove sin estructura
+obligan a otra propuesta en vez de ser ocultados con fallback.
+
+Los destinos declarados por `voice_map` se incorporan al reparto activo antes del render. De ese
+modo reciben registro, articulación, dinámica, pitch bend y aftertouch como la voz que realmente
+se oye, y su procedencia puede auditarse correctamente.
+
 ### Soul Gate 0.48
 
 `NarrativeScore` audita la partitura ya renderizada, no la intención declarada. Mide autoría AI

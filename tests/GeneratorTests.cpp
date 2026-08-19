@@ -1460,6 +1460,39 @@ void runGeneratorTests() {
             }),
             "A placed cell must own only its covered interval, never erase the rest of a section");
 
+    SongPlan authorityPlan;
+    authorityPlan.productionModeSource = "gpt_plan";
+    authorityPlan.performanceScore.cells.push_back({"authority", 4.0,
+        {VoiceId::Lead, VoiceId::MovementBass, VoiceId::HarmonicFoundation,
+         VoiceId::CoreDrums},
+        {{0.0, 0.5, 64, 90, VoiceId::Lead}}, {}});
+    authorityPlan.performanceScore.placements.push_back(
+        {"authority", 0, 0.0, 1, 0, 1.0, 1.0});
+    Pattern authorityPattern;
+    authorityPattern.lengthBeats = 8.0;
+    authorityPattern.notes = {
+        {0.0, 0.5, 64, 90, 2, VoiceId::Lead, 0, false, NoteOrigin::AiAuthored, 41},
+        {1.0, 0.5, 67, 72, 2, VoiceId::Lead, 0, false, NoteOrigin::Procedural},
+        {2.0, 0.5, 69, 68, 7, VoiceId::Countermelody, 0, false, NoteOrigin::LocalContinuity},
+        {0.5, 0.25, 43, 84, 6, VoiceId::MovementBass, 0, false, NoteOrigin::Procedural},
+        {0.0, 2.0, 55, 62, 3, VoiceId::HarmonicFoundation, 0, false, NoteOrigin::Procedural},
+        {0.0, 0.2, 36, 96, 10, VoiceId::CoreDrums, 0, false, NoteOrigin::LocalRepair},
+        {4.0, 2.0, 72, 35, 8, VoiceId::Atmosphere, 0, false, NoteOrigin::Procedural},
+    };
+    const auto authorityReport = CreativeAuthority::enforce(authorityPattern, authorityPlan);
+    require(authorityReport.active && authorityReport.foregroundFallbackNotesRemoved == 2 &&
+                authorityReport.movementBassFallbackNotesRemoved == 1 &&
+                authorityReport.ownedHarmonyProceduralNotesRemoved == 1 &&
+                authorityReport.foregroundAiRatioAfter > 0.999 &&
+                authorityPattern.notes.size() == 3 &&
+                std::any_of(authorityPattern.notes.begin(), authorityPattern.notes.end(), [](const auto& note) {
+                    return note.voice == VoiceId::CoreDrums && note.origin == NoteOrigin::LocalRepair;
+                }) &&
+                std::any_of(authorityPattern.notes.begin(), authorityPattern.notes.end(), [](const auto& note) {
+                    return note.voice == VoiceId::Atmosphere;
+                }),
+            "GPT authority must remove hidden creative fallback while preserving AI notes and safety anchors");
+
     PerformanceScore dialogueScore;
     dialogueScore.cells.push_back({"lead_question", 4.0, {VoiceId::Lead},
         {{0.5, 0.5, 62, 90, VoiceId::Lead}, {2.0, 0.5, 65, 78, VoiceId::Lead}}, {}});

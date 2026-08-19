@@ -156,6 +156,9 @@ void addNativeSoundProperties(juce::DynamicObject& track, const juce::String& de
 
 void addSoundWorldProperties(juce::DynamicObject& track, const Pattern& pattern) {
     track.setProperty("sound_world", juce::String::fromUTF8(pattern.soundWorld.c_str()));
+    track.setProperty("production_domain", juce::String::fromUTF8(pattern.productionDomain.c_str()));
+    track.setProperty("creative_ready", pattern.creativeReady);
+    track.setProperty("creative_score", pattern.creativeScore);
     track.setProperty("sound_warmth", pattern.soundWarmth);
     track.setProperty("sound_brightness", pattern.soundBrightness);
     track.setProperty("acoustic_electronic_balance", pattern.acousticElectronicBalance);
@@ -190,7 +193,7 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
         return false;
     }
     auto root = new juce::DynamicObject();
-    root->setProperty("schema_version", 9);
+    root->setProperty("schema_version", 10);
     root->setProperty("request_id", juce::Uuid().toString());
     root->setProperty("created_utc_ms", juce::Time::getCurrentTime().toMilliseconds());
     auto safeTitle = options.title.isNotEmpty() ? options.title : juce::String("PULSO Song");
@@ -220,13 +223,30 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     root->setProperty("sound_world", juce::String::fromUTF8(pattern.soundWorld.c_str()));
     root->setProperty("narrative_audited", pattern.narrativeAuditPerformed);
     root->setProperty("narrative_score", pattern.narrativeScore);
+    root->setProperty("creative_ready", pattern.creativeReady);
+    root->setProperty("creative_score", pattern.creativeScore);
     root->setProperty("ai_authored_note_ratio", pattern.aiAuthoredNoteRatio);
     root->setProperty("primary_voice_authorship_coverage", pattern.primaryVoiceAuthorshipCoverage);
+    root->setProperty("foreground_ai_authorship_ratio", pattern.foregroundAiAuthorshipRatio);
+    root->setProperty("movement_bass_ai_authorship_ratio", pattern.movementBassAiAuthorshipRatio);
+    const auto foregroundNotes = static_cast<int>(std::count_if(pattern.notes.begin(), pattern.notes.end(), [](const auto& note) {
+        return note.voice == VoiceId::Lead || note.voice == VoiceId::Countermelody;
+    }));
+    const auto movementBassNotes = static_cast<int>(std::count_if(pattern.notes.begin(), pattern.notes.end(), [](const auto& note) {
+        return note.voice == VoiceId::MovementBass;
+    }));
+    root->setProperty("foreground_note_count", foregroundNotes);
+    root->setProperty("movement_bass_note_count", movementBassNotes);
+    root->setProperty("groove_authorship_coverage", pattern.grooveAuthorshipCoverage);
     root->setProperty("thematic_recall_ratio", pattern.thematicRecallRatio);
     root->setProperty("audible_thematic_similarity", pattern.audibleThematicSimilarity);
     root->setProperty("literal_thematic_return_ratio", pattern.literalThematicReturnRatio);
     root->setProperty("thematic_development", pattern.thematicDevelopment);
     root->setProperty("bass_phrase_continuity", pattern.bassPhraseContinuity);
+    root->setProperty("melodic_stepwise_ratio", pattern.melodicStepwiseRatio);
+    root->setProperty("maximum_melodic_step_run", static_cast<int>(pattern.maximumMelodicStepRun));
+    root->setProperty("maximum_club_drum_gap_bars", static_cast<int>(pattern.maximumClubDrumGapBars));
+    root->setProperty("maximum_club_low_end_gap_bars", static_cast<int>(pattern.maximumClubLowEndGapBars));
     root->setProperty("density_control", pattern.densityControl);
     root->setProperty("peak_active_voices", static_cast<int>(pattern.peakActiveVoices));
     juce::Array<juce::var> narrativeIssues;

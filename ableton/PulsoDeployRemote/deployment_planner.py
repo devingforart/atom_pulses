@@ -13,6 +13,7 @@ def resolve_deployment(items, tracks, used_paths=None):
     substitutions = []
     contracts = []
     blocking = []
+    warnings = []
     for source_spec in tracks:
         spec = source_spec
         matches = select_track_sound_variants(
@@ -53,8 +54,16 @@ def resolve_deployment(items, tracks, used_paths=None):
                 variant_spec.get("audible_variant_count", 1))
             contracts.append(contract)
             if contract["blocking"]:
-                blocking.append(contract["track"])
-                continue
+                warnings.append(contract["track"])
+                strict = bool(variant_spec.get("strict_timbre_gate", False))
+                contract["deployment_blocking"] = strict
+                contract["deployment_policy"] = "strict_reject" if strict else "audible_degraded_fallback"
+                if strict:
+                    blocking.append(contract["track"])
+                    continue
+            else:
+                contract["deployment_blocking"] = False
+                contract["deployment_policy"] = "accepted"
             used.add(str(match[1]).casefold())
             used.add("name:" + str(match[0]).casefold())
             resolved.append((variant_spec, match))
@@ -64,5 +73,6 @@ def resolve_deployment(items, tracks, used_paths=None):
         "substitutions": substitutions,
         "timbre_contracts": contracts,
         "blocking_timbres": blocking,
+        "timbre_warnings": warnings,
         "used_paths": used,
     }

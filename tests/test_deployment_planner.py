@@ -29,13 +29,28 @@ class DeploymentPlannerTests(unittest.TestCase):
         self.assertEqual(len(hat_specs), 2)
         self.assertNotEqual(plan["resolved"][1][1][1], plan["resolved"][2][1][1])
 
-    def test_preflight_blocks_critical_character_mismatch_transactionally(self):
+    def test_preflight_degrades_playable_critical_character_mismatch(self):
         plan = resolve_deployment([
             ("Basic Lead.adg", "Sounds/Synth Lead/Basic Lead.adg", "lead"),
         ], [{
             "name": "Glassy Lead", "track_key": "lead", "catalog_id": "lead_synth",
             "preset_intent": "glassy crystalline lead", "timbre_priority": "critical",
             "minimum_intent_fidelity": 0.65,
+            "notes": [{"pitch": 72, "start": 0.0}],
+        }])
+        self.assertEqual(len(plan["resolved"]), 1)
+        self.assertEqual(plan["blocking_timbres"], [])
+        self.assertEqual(plan["timbre_warnings"], ["Glassy Lead"])
+        self.assertEqual(plan["timbre_contracts"][0]["deployment_policy"],
+                         "audible_degraded_fallback")
+
+    def test_explicit_strict_timbre_gate_remains_transactional(self):
+        plan = resolve_deployment([
+            ("Basic Lead.adg", "Sounds/Synth Lead/Basic Lead.adg", "lead"),
+        ], [{
+            "name": "Glassy Lead", "track_key": "lead", "catalog_id": "lead_synth",
+            "preset_intent": "glassy crystalline lead", "timbre_priority": "critical",
+            "minimum_intent_fidelity": 0.65, "strict_timbre_gate": True,
             "notes": [{"pitch": 72, "start": 0.0}],
         }])
         self.assertEqual(plan["resolved"], [])

@@ -1607,6 +1607,101 @@ void runGeneratorTests() {
                 sparsePocketAudit.bassPhraseContinuity > 0.99,
             "Short bass gates with one answer per bar must remain one coherent eight-bar phrase");
 
+    auto soulPlan = SongComposer::createLocalPlan(
+        "deep hypnotic progressive club", 128, 120.0, 4.0, 919, 2, ScaleKind::Minor);
+    soulPlan.productionLanguage.domain = ProductionDomain::ClubElectronic;
+    soulPlan.productionLanguage.electronicIntent = 1.0;
+    soulPlan.productionLanguage.clubFocus = 1.0;
+    soulPlan.productionLanguage.orchestralAllowance = 0.0;
+    soulPlan.productionModeSource = "gpt_plan";
+    soulPlan.performanceScore = partialScore;
+    SongComposer::normalizePlan(soulPlan);
+    Pattern proceduralSoul;
+    proceduralSoul.lengthBeats = soulPlan.totalBars * soulPlan.beatsPerBar;
+    for (auto bar = 0; bar < soulPlan.totalBars; ++bar) {
+        proceduralSoul.notes.push_back({bar * 4.0, 0.25, 36, 100, 10,
+            VoiceId::CoreDrums, 0, true, NoteOrigin::Procedural});
+        if (bar % 8 == 0)
+            proceduralSoul.notes.push_back({bar * 4.0 + 0.5, 0.25, 38, 76, 6,
+                VoiceId::MovementBass, 0, true, NoteOrigin::Procedural});
+        for (auto step = 0; step < 8; ++step)
+            proceduralSoul.notes.push_back({bar * 4.0 + step * 0.5, 0.25,
+                62 + step * 2, 72, 2, VoiceId::Lead, 0, true, NoteOrigin::Procedural});
+    }
+    const auto proceduralSoulAudit = NarrativeScoreGate::audit(proceduralSoul, soulPlan);
+    require(!proceduralSoulAudit.creativeReady &&
+                proceduralSoulAudit.foregroundAiAuthorshipRatio < 0.01 &&
+                proceduralSoulAudit.movementBassAiAuthorshipRatio < 0.01 &&
+                proceduralSoulAudit.maximumMelodicStepRun > 5 &&
+                std::find(proceduralSoulAudit.issues.begin(), proceduralSoulAudit.issues.end(),
+                          "procedural_foreground_dominates") != proceduralSoulAudit.issues.end() &&
+                std::find(proceduralSoulAudit.issues.begin(), proceduralSoulAudit.issues.end(),
+                          "movement_bass_not_ai_authored") != proceduralSoulAudit.issues.end() &&
+                std::find(proceduralSoulAudit.issues.begin(), proceduralSoulAudit.issues.end(),
+                          "scalar_melody_without_speech") != proceduralSoulAudit.issues.end(),
+            "The creative gate must reject clean-but-procedural foreground, bass and scalar filler: ready=" +
+                std::to_string(proceduralSoulAudit.creativeReady) + " foreground=" +
+                std::to_string(proceduralSoulAudit.foregroundAiAuthorshipRatio) + " bass=" +
+                std::to_string(proceduralSoulAudit.movementBassAiAuthorshipRatio) + " scalar=" +
+                std::to_string(proceduralSoulAudit.maximumMelodicStepRun));
+
+    Pattern continuityPublication;
+    continuityPublication.lengthBeats = soulPlan.totalBars * soulPlan.beatsPerBar;
+    continuityPublication.parts = {
+        {1, "kick_drum", "Club Kick", VoiceId::CoreDrums, ScoreDepartment::Rhythm,
+         "pulse", 35, 36, 1.0, InstrumentSoundModel::Kick},
+        {2, "sub_synth", "Club Sub", VoiceId::SubBass, ScoreDepartment::Harmony,
+         "low end", 26, 50, 0.9, InstrumentSoundModel::SubSynth}
+    };
+    const auto continuityPublicationReport =
+        ElectronicProductionDirector::finalizePublication(continuityPublication, soulPlan);
+    const auto continuityPublicationAudit =
+        ElectronicProductionDirector::audit(continuityPublication, soulPlan);
+    require(continuityPublicationReport.publicationKickBarsRepaired > 0 &&
+                continuityPublicationReport.lowEndContinuityBarsRepaired > 0 &&
+                continuityPublicationAudit.maximumKicklessBarsAfter <= 12 &&
+                continuityPublicationAudit.maximumLowEndGapBarsAfter <= 16 &&
+                std::all_of(continuityPublication.notes.begin(), continuityPublication.notes.end(),
+                    [](const auto& note) {
+                        return note.origin == NoteOrigin::LocalRepair && note.partId != 0;
+                    }),
+            "Published club MIDI must cap undeclared pulse and low-end gaps on concrete parts");
+
+    Pattern scalarFiller;
+    scalarFiller.lengthBeats = soulPlan.totalBars * soulPlan.beatsPerBar;
+    for (auto bar = 0; bar < soulPlan.totalBars; ++bar)
+        scalarFiller.notes.push_back({bar * soulPlan.beatsPerBar, 0.125, 36, 96, 10,
+            VoiceId::CoreDrums, 0, true, NoteOrigin::AiAuthored});
+    for (auto note = 0; note < 10; ++note)
+        scalarFiller.notes.push_back({note * 0.5, 0.25, 60 + note * 2, 70, 2,
+            VoiceId::Lead, 0, true, NoteOrigin::Procedural});
+    const auto scalarReport = ElectronicProductionDirector::finalizePublication(scalarFiller, soulPlan);
+    const auto retainedLead = std::count_if(scalarFiller.notes.begin(), scalarFiller.notes.end(),
+        [](const auto& note) { return note.voice == VoiceId::Lead; });
+    require(scalarReport.proceduralScalarNotesRemoved > 0 && retainedLead < 10,
+            "Publication taste repair must remove local scale-walk filler without touching AI phrases");
+
+    auto timbrePlan = soulPlan;
+    timbrePlan.instruments.clear();
+    InstrumentAssignment mallet;
+    mallet.id = "gamey_hook";
+    mallet.instrumentId = "marimba";
+    mallet.name = "Glassy Marimba Hook";
+    mallet.sourceVoice = VoiceId::HarmonicPulse;
+    mallet.minimumPitch = 48;
+    mallet.maximumPitch = 84;
+    mallet.liveDevice = "Sampler";
+    mallet.livePresetIntent = "glassy marimba";
+    timbrePlan.instruments.push_back(mallet);
+    SongComposer::normalizePlan(timbrePlan);
+    require(std::none_of(timbrePlan.instruments.begin(), timbrePlan.instruments.end(),
+                [](const auto& instrument) {
+                    return instrument.instrumentId == "marimba" ||
+                           instrument.instrumentId == "vibraphone" ||
+                           instrument.instrumentId == "celesta";
+                }) && timbrePlan.instruments.front().instrumentId == "poly_synth",
+            "A non-orchestral club score must replace game-like pitched mallets with electronic timbre");
+
     auto octavePlan = SongComposer::createLocalPlan(
         "octave normalization", 60, 120.0, 4.0, 91, 0, ScaleKind::Minor);
     require(!octavePlan.instruments.empty(), "Local orchestration must expose instruments");

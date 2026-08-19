@@ -1,5 +1,12 @@
 # Live Native Sound Director
 
+## Criterio tímbrico electrónico 0.48
+
+Cuando el dominio es `club_electronic` y la intención orquestal es baja, la materialización y la
+resolución de Browser aplican el mismo contrato: mallets afinados, chiptune, 8-bit, toy y game-like
+no pueden convertirse accidentalmente en el foreground. Se sustituyen por synths, pads o texturas
+compatibles con la función de la pista. Una petición explícita del músico sigue teniendo prioridad.
+
 ## Objetivo
 
 PULSO compone MIDI y Ableton Live produce el sonido final. El plugin no aloja instrumentos

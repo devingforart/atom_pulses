@@ -9,16 +9,16 @@ const { loadPyodide } = require("pyodide");
   py.FS.mkdirTree("/workspace/tests");
   py.FS.writeFile("/workspace/ableton/__init__.py", "");
   py.FS.writeFile("/workspace/ableton/PulsoDeployRemote/__init__.py", "");
-  for (const file of ["sound_matcher.py", "playback_adapter.py", "audible_contract.py", "deployment_planner.py", "request_guard.py", "pulso_deploy.py"])
+  for (const file of ["sound_matcher.py", "playback_adapter.py", "audible_contract.py", "deployment_planner.py", "production_quality.py", "request_guard.py", "pulso_deploy.py"])
     py.FS.writeFile(`/workspace/ableton/PulsoDeployRemote/${file}`,
                     fs.readFileSync(`ableton/PulsoDeployRemote/${file}`, "utf8"));
-  for (const file of ["test_sound_matcher.py", "test_playback_adapter.py", "test_audible_contract.py", "test_deployment_planner.py", "test_request_guard.py"])
+  for (const file of ["test_sound_matcher.py", "test_playback_adapter.py", "test_audible_contract.py", "test_deployment_planner.py", "test_production_quality.py", "test_request_guard.py"])
     py.FS.writeFile(`/workspace/tests/${file}`, fs.readFileSync(`tests/${file}`, "utf8"));
   py.runPython(`
 import sys
 import unittest
 sys.path.insert(0, "/workspace")
-for module in ("sound_matcher.py", "playback_adapter.py", "audible_contract.py", "deployment_planner.py", "request_guard.py", "pulso_deploy.py"):
+for module in ("sound_matcher.py", "playback_adapter.py", "audible_contract.py", "deployment_planner.py", "production_quality.py", "request_guard.py", "pulso_deploy.py"):
     path = "/workspace/ableton/PulsoDeployRemote/" + module
     with open(path, encoding="utf-8") as source:
         compile(source.read(), path, "exec")

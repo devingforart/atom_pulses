@@ -1,5 +1,16 @@
 # Probar PULSO en Ableton Live
 
+## Contrato 0.48
+
+El schema 10 publica `creative_ready`, `creative_score`, autoría audible de foreground y bajo,
+cobertura autoral del groove, fraseo escalar y máximos huecos de batería/low-end. También publica
+los conteos de notas relevantes para no exigir lead o bajo a una obra que deliberadamente no los
+usa.
+
+El bridge devuelve `creative_quality_gate` dentro del estado de despliegue. Si falla, las pistas y
+clips se conservan y el estado queda `degraded` con códigos exactos; no se confunde una revisión
+musical con un error de conexión, dispositivo o MIDI.
+
 ## Contrato 0.43
 
 Además de procedencia y cobertura, la raíz de `request.json` publica

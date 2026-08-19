@@ -1,5 +1,22 @@
 # Arquitectura
 
+### Soul Gate 0.48
+
+`NarrativeScore` audita la partitura ya renderizada, no la intención declarada. Mide autoría AI
+real en lead/countermelody, autoría del bajo de movimiento, cobertura estructural del groove,
+continuidad del bajo, longitud de recorridos escalares y máximos silencios de pulso y low-end.
+`AiComposer` usa esas métricas para seleccionar y reparar candidatos; una buena tonalidad no puede
+ocultar que el material audible fue rellenado por el motor local.
+
+`ElectronicProductionDirector::finalizePublication` se ejecuta después de orquestar. Limita huecos
+accidentales de kick, restaura anclas graves conservadoras y elimina sólo recorridos escalares de
+origen procedural. Nunca borra ni reescribe notas autorales de GPT. El resultado conserva origen y
+`narrative_id`, por lo que cada decisión sigue siendo auditable.
+
+La integridad y el criterio artístico son estados distintos: `productionReady` protege MIDI válido;
+`creativeReady` expresa si la música alcanzó el contrato autoral. Live siempre conserva una idea
+íntegra y expone el diagnóstico creativo para revisión.
+
 ### Propiedad musical 0.46
 
 La revisión de candidatos usa `targetDeficit`: cobertura temporal principal pesa por encima del

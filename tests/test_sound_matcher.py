@@ -173,6 +173,18 @@ class SoundMatcherTests(unittest.TestCase):
         self.assertEqual(low[2], "low")
         self.assertEqual(high[2], "high")
 
+    def test_club_electronic_avoids_game_and_mallet_character(self):
+        items = [
+            ("8Bit Marimba Lead.adv", "Sounds/Synth Lead/8Bit Marimba Lead.adv", "game"),
+            ("Rounded Analog Lead.adv", "Sounds/Synth Lead/Rounded Analog Lead.adv", "analog"),
+        ]
+        selected = select_track_sound(items, {
+            "catalog_id": "lead_synth", "preset_intent": "rounded dark analog lead",
+            "native_device": "Meld", "production_domain": "club_electronic",
+        })
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected[2], "analog")
+
     def test_split_ride_never_falls_back_to_a_clap(self):
         result = select_track_sound([
             ("Claps and Caixa.wav", "drums/Drum Hits/Clap/Claps and Caixa.wav", "clap"),
@@ -404,6 +416,22 @@ class SoundMatcherTests(unittest.TestCase):
         }, 2)
         self.assertEqual(len(matches), 2)
         self.assertNotEqual(matches[0][1], matches[1][1])
+
+    def test_empty_seeded_fidelity_pool_falls_back_without_index_error(self):
+        result = select_track_sound([
+            ("Warm Analog Lead.adv", "Sounds/Lead/Warm Analog Lead.adv", "lead"),
+        ], {
+            "catalog_id": "lead_synth",
+            "preset_intent": "cold glass aggressive metallic lead",
+            "native_device": "Wavetable",
+            "device_candidates": [],
+            "minimum_intent_fidelity": 1.0,
+            "sound_selection_seed": "regression-empty-pool",
+            "sound_variation": 3,
+        })
+        self.assertIsNotNone(result)
+        self.assertEqual(result[2], "lead")
+        self.assertEqual(result[3], "character_fallback")
 
     def test_missing_contrabass_never_masquerades_as_violin(self):
         result = self.select("contrabass", "deep natural contrabass", "Sampler", ("Drift",))

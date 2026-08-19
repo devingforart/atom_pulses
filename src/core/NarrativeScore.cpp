@@ -213,16 +213,106 @@ void auditDensity(const Pattern& pattern, const SongPlan& plan,
         static_cast<double>(std::max<std::size_t>(1, soundingBars));
 }
 
+void auditMelodicSpeech(const Pattern& pattern, const SongPlan& plan,
+                        NarrativeScoreReport& report) {
+    for (const auto voice : {VoiceId::Lead, VoiceId::Countermelody}) {
+        std::vector<const NoteEvent*> notes;
+        for (const auto& note : pattern.notes)
+            if (note.voice == voice) notes.push_back(&note);
+        std::sort(notes.begin(), notes.end(), [](const auto* left, const auto* right) {
+            if (left->startBeat != right->startBeat) return left->startBeat < right->startBeat;
+            return left->pitch < right->pitch;
+        });
+        auto run = std::size_t{};
+        for (std::size_t index = 1; index < notes.size(); ++index) {
+            const auto gap = notes[index]->startBeat - notes[index - 1]->endBeat();
+            if (gap > plan.beatsPerBar * 0.50 ||
+                std::abs(notes[index]->startBeat - notes[index - 1]->startBeat) < 0.01) {
+                run = 0;
+                continue;
+            }
+            ++report.melodicIntervals;
+            const auto interval = std::abs(notes[index]->pitch - notes[index - 1]->pitch);
+            if (interval == 1 || interval == 2) {
+                ++report.melodicStepwiseIntervals;
+                ++run;
+                report.maximumMelodicStepRun = std::max(report.maximumMelodicStepRun, run);
+            } else {
+                run = 0;
+            }
+        }
+    }
+    report.melodicStepwiseRatio = static_cast<double>(report.melodicStepwiseIntervals) /
+        std::max<std::size_t>(1, report.melodicIntervals);
+}
+
+bool declaredFullSilence(const SongSection& section) {
+    const auto text = lower(section.name + " " + section.function);
+    if (text.find("no full silence") != std::string::npos ||
+        text.find("without full silence") != std::string::npos ||
+        text.find("sin silencio total") != std::string::npos) return false;
+    return text.find("full silence") != std::string::npos ||
+           text.find("complete silence") != std::string::npos ||
+           text.find("silencio total") != std::string::npos;
+}
+
+void auditClubContinuity(const Pattern& pattern, const SongPlan& plan,
+                         NarrativeScoreReport& report) {
+    if (plan.productionLanguage.domain != ProductionDomain::ClubElectronic) return;
+    auto drumRun = std::size_t{};
+    auto lowEndRun = std::size_t{};
+    for (auto bar = 0; bar < plan.totalBars; ++bar) {
+        const auto start = bar * plan.beatsPerBar;
+        const auto end = start + plan.beatsPerBar;
+        const auto section = std::find_if(plan.sections.begin(), plan.sections.end(), [&](const auto& item) {
+            return bar >= item.startBar && bar < item.startBar + item.bars;
+        });
+        if (section != plan.sections.end() && declaredFullSilence(*section)) {
+            drumRun = 0;
+            lowEndRun = 0;
+            continue;
+        }
+        const auto kick = std::any_of(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+            return note.voice == VoiceId::CoreDrums && (note.pitch == 35 || note.pitch == 36) &&
+                   note.startBeat >= start && note.startBeat < end;
+        });
+        const auto lowEnd = std::any_of(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+            return (note.voice == VoiceId::SubBass || note.voice == VoiceId::MovementBass) &&
+                   note.startBeat < end - 0.001 && note.endBeat() > start + 0.001;
+        });
+        drumRun = kick ? 0 : drumRun + 1;
+        lowEndRun = lowEnd ? 0 : lowEndRun + 1;
+        report.maximumClubDrumGapBars = std::max(report.maximumClubDrumGapBars, drumRun);
+        report.maximumClubLowEndGapBars = std::max(report.maximumClubLowEndGapBars, lowEndRun);
+    }
+}
+
 } // namespace
 
 NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const SongPlan& plan) {
     NarrativeScoreReport report;
-    report.active = plan.productionModeSource == "gpt_plan";
+    report.active = plan.productionModeSource == "gpt_plan" ||
+        (!plan.performanceScore.empty() && plan.productionModeSource != "local_fallback" &&
+         plan.productionModeSource != "local_engine");
     report.totalNotes = pattern.notes.size();
     report.aiAuthoredNotes = std::count_if(pattern.notes.begin(), pattern.notes.end(),
         [](const auto& note) { return aiOrigin(note.origin); });
     report.aiAuthoredNoteRatio = static_cast<double>(report.aiAuthoredNotes) /
         std::max<std::size_t>(1, report.totalNotes);
+    for (const auto& note : pattern.notes) {
+        if (note.voice == VoiceId::Lead || note.voice == VoiceId::Countermelody) {
+            ++report.foregroundNotes;
+            if (aiOrigin(note.origin)) ++report.aiAuthoredForegroundNotes;
+        }
+        if (note.voice == VoiceId::MovementBass) {
+            ++report.movementBassNotes;
+            if (aiOrigin(note.origin)) ++report.aiAuthoredMovementBassNotes;
+        }
+    }
+    report.foregroundAiAuthorshipRatio = static_cast<double>(report.aiAuthoredForegroundNotes) /
+        std::max<std::size_t>(1, report.foregroundNotes);
+    report.movementBassAiAuthorshipRatio = static_cast<double>(report.aiAuthoredMovementBassNotes) /
+        std::max<std::size_t>(1, report.movementBassNotes);
 
     using Spans = std::vector<std::pair<double, double>>;
     std::map<std::pair<int, VoiceId>, Spans> authoredSpans;
@@ -337,6 +427,8 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     }
     auditBassPhrasing(pattern, plan, report);
     auditDensity(pattern, plan, report);
+    auditMelodicSpeech(pattern, plan, report);
+    auditClubContinuity(pattern, plan, report);
 
     auto directedSections = std::size_t{};
     for (const auto& section : plan.sections) {
@@ -363,13 +455,32 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
 
     const auto audibleLineage = std::clamp(
         (report.audibleThematicSimilarity - 0.55) / 0.25, 0.0, 1.0);
-    report.score = std::clamp(report.primaryVoiceCoverage * 0.22 +
-        report.thematicRecallRatio * 0.17 + audibleLineage * 0.08 +
+    const auto melodicSpeech = std::clamp(1.0 - std::max(0.0,
+        report.melodicStepwiseRatio - 0.62) / 0.38 -
+        std::max(0.0, static_cast<double>(report.maximumMelodicStepRun) - 4.0) * 0.08,
+        0.0, 1.0);
+    const auto clubContinuity = plan.productionLanguage.domain != ProductionDomain::ClubElectronic
+        ? 1.0 : std::clamp(1.0 -
+            std::max(0.0, static_cast<double>(report.maximumClubDrumGapBars) - 12.0) / 20.0 -
+            std::max(0.0, static_cast<double>(report.maximumClubLowEndGapBars) - 12.0) / 24.0,
+            0.0, 1.0);
+    report.score = std::clamp(report.primaryVoiceCoverage * 0.16 +
+        report.foregroundAiAuthorshipRatio * 0.13 +
+        report.movementBassAiAuthorshipRatio * 0.12 +
+        report.grooveAuthorshipCoverage * 0.07 +
+        report.thematicRecallRatio * 0.10 + audibleLineage * 0.06 +
         report.thematicDevelopment * 0.05 +
-        report.bassPhraseContinuity * 0.15 + report.densityControl * 0.12 +
-        report.harmonicDirection * 0.10 + report.rhythmicDevelopment * 0.07 +
-        std::min(1.0, report.aiAuthoredNoteRatio / 0.50) * 0.04, 0.0, 1.0);
-    if (report.active && report.primaryVoiceCoverage < 0.60) report.issues.push_back("insufficient_ai_phrase_coverage");
+        report.bassPhraseContinuity * 0.11 + report.densityControl * 0.07 +
+        report.harmonicDirection * 0.05 + report.rhythmicDevelopment * 0.03 +
+        melodicSpeech * 0.03 + clubContinuity * 0.02, 0.0, 1.0);
+    if (report.active && report.primaryVoiceCoverage < 0.65) report.issues.push_back("insufficient_ai_phrase_coverage");
+    if (report.active && report.foregroundNotes >= 8 && report.foregroundAiAuthorshipRatio < 0.55)
+        report.issues.push_back("procedural_foreground_dominates");
+    if (report.active && report.movementBassNotes >= 8 && report.movementBassAiAuthorshipRatio < 0.60)
+        report.issues.push_back("movement_bass_not_ai_authored");
+    if (report.active && plan.productionLanguage.domain == ProductionDomain::ClubElectronic &&
+        report.grooveAuthorshipCoverage < 0.30)
+        report.issues.push_back("groove_structure_not_ai_authored");
     if (report.active && report.audibleThematicWindows >= 3 && report.thematicRecallRatio < 0.40)
         report.issues.push_back("weak_long_range_theme_memory");
     if (report.active && report.audibleThematicWindows >= 3 && report.audibleThematicSimilarity < 0.66)
@@ -377,24 +488,56 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     if (report.active && report.comparableThematicReturns >= 4 &&
         report.literalThematicReturnRatio > 0.70)
         report.issues.push_back("literal_theme_copy_without_development");
-    if (report.bassWindows >= 3 && report.bassPhraseContinuity < 0.55)
+    if (report.bassWindows >= 3 && report.bassPhraseContinuity < 0.60)
         report.issues.push_back("fragmented_movement_bass");
+    if (report.melodicIntervals >= 8 && (report.melodicStepwiseRatio > 0.78 ||
+        report.maximumMelodicStepRun > 5))
+        report.issues.push_back("scalar_melody_without_speech");
+    if (plan.productionLanguage.domain == ProductionDomain::ClubElectronic &&
+        report.maximumClubDrumGapBars > 16)
+        report.issues.push_back("club_pulse_absent_too_long");
+    if (plan.productionLanguage.domain == ProductionDomain::ClubElectronic &&
+        report.maximumClubLowEndGapBars > 16)
+        report.issues.push_back("low_end_narrative_absent_too_long");
     if (report.densityControl < 0.82) report.issues.push_back("overcrowded_arrangement");
     if (report.harmonicDirection < 0.70) report.issues.push_back("weak_harmonic_direction");
     if (report.rhythmicDevelopment < 0.45) report.issues.push_back("undeveloped_rhythm_narrative");
+    const auto memoryReady = report.audibleThematicWindows < 3 ||
+        (report.thematicRecallRatio >= 0.40 && report.audibleThematicSimilarity >= 0.66);
+    const auto developmentReady = report.comparableThematicReturns < 4 ||
+        (report.literalThematicReturnRatio <= 0.70 && report.thematicDevelopment >= 0.55);
+    const auto bassReady = report.bassPhrases < 4 || report.bassPhraseContinuity >= 0.60;
+    const auto foregroundReady = report.foregroundNotes < 8 || report.foregroundAiAuthorshipRatio >= 0.55;
+    const auto movementBassReady = report.movementBassNotes < 8 || report.movementBassAiAuthorshipRatio >= 0.60;
+    const auto clubReady = plan.productionLanguage.domain != ProductionDomain::ClubElectronic ||
+        (report.grooveAuthorshipCoverage >= 0.30 && report.maximumClubDrumGapBars <= 16 &&
+         report.maximumClubLowEndGapBars <= 16);
+    report.creativeReady = !report.active || (report.primaryVoiceCoverage >= 0.65 &&
+        foregroundReady && movementBassReady && memoryReady && developmentReady && bassReady &&
+        clubReady && report.densityControl >= 0.82 && report.maximumMelodicStepRun <= 5 &&
+        report.score >= 0.72);
     return report;
 }
 
 void NarrativeScoreGate::stamp(Pattern& pattern, const NarrativeScoreReport& report) {
     pattern.narrativeAuditPerformed = true;
     pattern.narrativeScore = report.score;
+    pattern.creativeScore = report.score;
+    pattern.creativeReady = report.creativeReady;
     pattern.aiAuthoredNoteRatio = report.aiAuthoredNoteRatio;
     pattern.primaryVoiceAuthorshipCoverage = report.primaryVoiceCoverage;
+    pattern.foregroundAiAuthorshipRatio = report.foregroundAiAuthorshipRatio;
+    pattern.movementBassAiAuthorshipRatio = report.movementBassAiAuthorshipRatio;
+    pattern.grooveAuthorshipCoverage = report.grooveAuthorshipCoverage;
     pattern.thematicRecallRatio = report.thematicRecallRatio;
     pattern.audibleThematicSimilarity = report.audibleThematicSimilarity;
     pattern.literalThematicReturnRatio = report.literalThematicReturnRatio;
     pattern.thematicDevelopment = report.thematicDevelopment;
     pattern.bassPhraseContinuity = report.bassPhraseContinuity;
+    pattern.melodicStepwiseRatio = report.melodicStepwiseRatio;
+    pattern.maximumMelodicStepRun = report.maximumMelodicStepRun;
+    pattern.maximumClubDrumGapBars = report.maximumClubDrumGapBars;
+    pattern.maximumClubLowEndGapBars = report.maximumClubLowEndGapBars;
     pattern.densityControl = report.densityControl;
     pattern.peakActiveVoices = report.peakActiveVoices;
     pattern.narrativeIssues = report.issues;
@@ -406,6 +549,8 @@ void NarrativeScoreGate::stamp(Pattern& pattern, const NarrativeScoreReport& rep
     }
     for (const auto& issue : report.issues)
         pattern.productionIssues.push_back("narrative:" + issue);
+    if (!report.creativeReady)
+        pattern.productionIssues.push_back("creative:soul_gate_needs_revision");
     // Narrative quality selects and revises candidates, but it must never make a valid
     // composition disappear from the UI. productionReady remains the MIDI-integrity
     // contract; narrative defects are published as explicit critic diagnostics.

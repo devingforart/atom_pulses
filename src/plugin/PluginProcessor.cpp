@@ -1489,10 +1489,17 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     : aiError.isNotEmpty() ? "GPT FAILED - " + aiError.substring(0, 72).toUpperCase()
                                            : "LOCAL LONG-FORM ENGINE";
                 if (usedAiPlan && generated.narrativeAuditPerformed) {
-                    metadata->status = "GPT NARRATIVE " +
-                        juce::String(generated.narrativeScore * 100.0, 0) + "% - FULL SONG";
+                    metadata->status = generated.creativeReady
+                        ? "GPT SOUL GATE PASSED " + juce::String(generated.creativeScore * 100.0, 0) + "%"
+                        : "GPT MUSICALITY NEEDS REVISION " + juce::String(generated.creativeScore * 100.0, 0) + "%";
                     metadata->description += " Authorship " +
                         juce::String(generated.primaryVoiceAuthorshipCoverage * 100.0, 0) +
+                        "%, foreground AI " +
+                        juce::String(generated.foregroundAiAuthorshipRatio * 100.0, 0) +
+                        "%, movement-bass AI " +
+                        juce::String(generated.movementBassAiAuthorshipRatio * 100.0, 0) +
+                        "%, groove AI " +
+                        juce::String(generated.grooveAuthorshipCoverage * 100.0, 0) +
                         "%, audible thematic recall " +
                         juce::String(generated.thematicRecallRatio * 100.0, 0) +
                         "%, motif similarity " +
@@ -1617,13 +1624,22 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->productionIssues = generated.productionIssues;
         playbackPattern->narrativeAuditPerformed = generated.narrativeAuditPerformed;
         playbackPattern->narrativeScore = generated.narrativeScore;
+        playbackPattern->creativeReady = generated.creativeReady;
+        playbackPattern->creativeScore = generated.creativeScore;
         playbackPattern->aiAuthoredNoteRatio = generated.aiAuthoredNoteRatio;
         playbackPattern->primaryVoiceAuthorshipCoverage = generated.primaryVoiceAuthorshipCoverage;
+        playbackPattern->foregroundAiAuthorshipRatio = generated.foregroundAiAuthorshipRatio;
+        playbackPattern->movementBassAiAuthorshipRatio = generated.movementBassAiAuthorshipRatio;
+        playbackPattern->grooveAuthorshipCoverage = generated.grooveAuthorshipCoverage;
         playbackPattern->thematicRecallRatio = generated.thematicRecallRatio;
         playbackPattern->audibleThematicSimilarity = generated.audibleThematicSimilarity;
         playbackPattern->literalThematicReturnRatio = generated.literalThematicReturnRatio;
         playbackPattern->thematicDevelopment = generated.thematicDevelopment;
         playbackPattern->bassPhraseContinuity = generated.bassPhraseContinuity;
+        playbackPattern->melodicStepwiseRatio = generated.melodicStepwiseRatio;
+        playbackPattern->maximumMelodicStepRun = generated.maximumMelodicStepRun;
+        playbackPattern->maximumClubDrumGapBars = generated.maximumClubDrumGapBars;
+        playbackPattern->maximumClubLowEndGapBars = generated.maximumClubLowEndGapBars;
         playbackPattern->densityControl = generated.densityControl;
         playbackPattern->peakActiveVoices = generated.peakActiveVoices;
         playbackPattern->narrativeIssues = generated.narrativeIssues;
@@ -2027,7 +2043,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(15); // Binary composition state version.
+        composition.writeInt(16); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -2123,6 +2139,15 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
         composition.writeInt(static_cast<int>(pattern->narrativeIssues.size()));
         for (const auto& issue : pattern->narrativeIssues)
             composition.writeString(juce::String::fromUTF8(issue.c_str()));
+        composition.writeBool(pattern->creativeReady);
+        composition.writeDouble(pattern->creativeScore);
+        composition.writeDouble(pattern->foregroundAiAuthorshipRatio);
+        composition.writeDouble(pattern->movementBassAiAuthorshipRatio);
+        composition.writeDouble(pattern->grooveAuthorshipCoverage);
+        composition.writeDouble(pattern->melodicStepwiseRatio);
+        composition.writeInt(static_cast<int>(pattern->maximumMelodicStepRun));
+        composition.writeInt(static_cast<int>(pattern->maximumClubDrumGapBars));
+        composition.writeInt(static_cast<int>(pattern->maximumClubLowEndGapBars));
         state.setProperty("compositionData", composition.getMemoryBlock().toBase64Encoding(), nullptr);
         if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) {
             state.setProperty("ideaTitle", metadata->title, nullptr);
@@ -2182,7 +2207,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 15) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 16) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2392,6 +2417,25 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                         for (auto index = 0; index < narrativeIssueCount; ++index)
                                             restoredPattern->narrativeIssues.push_back(
                                                 composition.readString().substring(0, 96).toStdString());
+                                    if (version >= 16) {
+                                        restoredPattern->creativeReady = composition.readBool();
+                                        restoredPattern->creativeScore =
+                                            std::clamp(composition.readDouble(), 0.0, 1.0);
+                                        restoredPattern->foregroundAiAuthorshipRatio =
+                                            std::clamp(composition.readDouble(), 0.0, 1.0);
+                                        restoredPattern->movementBassAiAuthorshipRatio =
+                                            std::clamp(composition.readDouble(), 0.0, 1.0);
+                                        restoredPattern->grooveAuthorshipCoverage =
+                                            std::clamp(composition.readDouble(), 0.0, 1.0);
+                                        restoredPattern->melodicStepwiseRatio =
+                                            std::clamp(composition.readDouble(), 0.0, 1.0);
+                                        restoredPattern->maximumMelodicStepRun = static_cast<std::size_t>(
+                                            std::max(0, composition.readInt()));
+                                        restoredPattern->maximumClubDrumGapBars = static_cast<std::size_t>(
+                                            std::max(0, composition.readInt()));
+                                        restoredPattern->maximumClubLowEndGapBars = static_cast<std::size_t>(
+                                            std::max(0, composition.readInt()));
+                                    }
                                 }
                             }
                         }

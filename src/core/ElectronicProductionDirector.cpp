@@ -120,6 +120,61 @@ void mergeElectronicInfrastructure(SongPlan& plan) {
     }
 }
 
+bool gameLikePitchedPercussion(std::string_view id) noexcept {
+    return id == "mallets" || id == "marimba" || id == "vibraphone" ||
+           id == "celesta" || id == "tubular_bells";
+}
+
+void sanitizeClubTimbres(SongPlan& plan) {
+    if (plan.productionLanguage.domain != ProductionDomain::ClubElectronic ||
+        plan.productionLanguage.orchestralAllowance > 0.24) return;
+    for (auto& instrument : plan.instruments) {
+        if (!gameLikePitchedPercussion(instrument.instrumentId)) continue;
+        if (instrument.sourceVoice == VoiceId::Lead ||
+            instrument.sourceVoice == VoiceId::Countermelody) {
+            instrument.instrumentId = "lead_synth";
+            instrument.name = instrument.sourceVoice == VoiceId::Lead
+                ? "Primary Analog Hook" : "Filtered Hook Response";
+            instrument.liveDevice = "Meld";
+            instrument.livePresetIntent =
+                "restrained rounded analog lead with expressive filter motion no bell or mallet attack";
+            instrument.timbre = {"oscillator", "rounded", "dark", "evolving", "close", "analog", 0.72};
+        } else if (instrument.sourceVoice == VoiceId::Atmosphere) {
+            instrument.instrumentId = "ambient_texture";
+            instrument.name = "Evolving Air Bed";
+            instrument.liveDevice = "Granulator III";
+            instrument.livePresetIntent =
+                "deep granular air and noise bed without pitched bell or mallet transients";
+            instrument.timbre = {"granular", "slow", "dark", "evolving", "wide", "diffuse", 0.76};
+        } else {
+            instrument.instrumentId = instrument.sourceVoice == VoiceId::HarmonicUpper
+                ? "analog_pad" : "poly_synth";
+            instrument.name = instrument.sourceVoice == VoiceId::HarmonicUpper
+                ? "Spectral Upper Air" : "Filtered Harmonic Pulse";
+            instrument.liveDevice = instrument.sourceVoice == VoiceId::HarmonicUpper ? "Wavetable" : "Drift";
+            instrument.livePresetIntent = instrument.sourceVoice == VoiceId::HarmonicUpper
+                ? "thin evolving analog spectral layer without bell or mallet character"
+                : "muted warm analog chord pulse with soft transient and filter movement";
+            instrument.timbre = {"oscillator", instrument.sourceVoice == VoiceId::HarmonicUpper ? "slow" : "short",
+                                 "warm", "subtle", "wide", "analog", 0.68};
+        }
+        if (const auto* definition = instrumentDefinition(instrument.instrumentId)) {
+            instrument.minimumPitch = std::clamp(instrument.minimumPitch,
+                definition->minimumPitch, definition->maximumPitch);
+            instrument.maximumPitch = std::clamp(instrument.maximumPitch,
+                instrument.minimumPitch, definition->maximumPitch);
+        }
+    }
+    for (auto& essential : plan.timbrePalette.essentialInstrumentIds)
+        if (gameLikePitchedPercussion(essential)) essential = "poly_synth";
+    std::sort(plan.timbrePalette.essentialInstrumentIds.begin(),
+              plan.timbrePalette.essentialInstrumentIds.end());
+    plan.timbrePalette.essentialInstrumentIds.erase(std::unique(
+        plan.timbrePalette.essentialInstrumentIds.begin(),
+        plan.timbrePalette.essentialInstrumentIds.end()),
+        plan.timbrePalette.essentialInstrumentIds.end());
+}
+
 bool sectionNamed(const SongSection& section, std::initializer_list<std::string_view> names) {
     const auto text = lower(section.name + " " + section.function);
     return containsAny(text, names);
@@ -321,7 +376,7 @@ std::size_t maximumKicklessBars(const Pattern& pattern, const SongPlan& plan) {
 std::size_t createMacroKickAnchors(Pattern& pattern, const SongPlan& plan) {
     if (plan.productionLanguage.domain != ProductionDomain::ClubElectronic ||
         plan.productionLanguage.clubFocus < 0.55 || plan.beatsPerBar <= 0.0) return 0;
-    constexpr auto maximumGapBars = std::size_t{16};
+    constexpr auto maximumGapBars = std::size_t{12};
     auto run = std::size_t{};
     auto created = std::size_t{};
     for (auto bar = 0; bar < plan.totalBars; ++bar) {
@@ -336,13 +391,118 @@ std::size_t createMacroKickAnchors(Pattern& pattern, const SongPlan& plan) {
         if (present) { run = 0; continue; }
         if (++run <= maximumGapBars) continue;
         const auto scale = plan.beatsPerBar / 4.0;
-        for (const auto quarter : {0.0, 1.0, 2.0, 3.0})
-            pattern.notes.push_back({start + quarter * scale, 0.125, 36,
-                quarter == 0.0 ? 101 : 94, 10, VoiceId::CoreDrums, 0, true});
-        run = 0;
+        const auto part = std::find_if(pattern.parts.begin(), pattern.parts.end(), [](const auto& item) {
+            return item.sourceVoice == VoiceId::CoreDrums;
+        });
+        const auto partId = part == pattern.parts.end() ? std::uint16_t{} : part->id;
+        for (const auto quarter : {0.0, 1.0, 2.0, 3.0}) {
+            NoteEvent note{start + quarter * scale, 0.125, 36,
+                quarter == 0.0 ? 101 : 94, 10, VoiceId::CoreDrums, partId, true};
+            note.origin = NoteOrigin::LocalRepair;
+            pattern.notes.push_back(note);
+        }
+        // Once a non-declared break exceeds the allowance, the physical pulse remains
+        // present until the authored arrangement resumes; isolated rescue bars merely
+        // turn one long dead zone into several equally unmusical gaps.
         ++created;
     }
     return created;
+}
+
+std::size_t maximumLowEndGapBars(const Pattern& pattern, const SongPlan& plan) {
+    auto run = std::size_t{};
+    auto maximum = std::size_t{};
+    for (auto bar = 0; bar < plan.totalBars; ++bar) {
+        const auto start = bar * plan.beatsPerBar;
+        const auto end = start + plan.beatsPerBar;
+        const auto* section = sectionAtBeat(plan, start);
+        if (declaredFullSilence(section)) { run = 0; continue; }
+        const auto present = std::any_of(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+            return (note.voice == VoiceId::SubBass || note.voice == VoiceId::MovementBass) &&
+                   note.startBeat < end - 0.001 && note.endBeat() > start + 0.001;
+        });
+        run = present ? 0 : run + 1;
+        maximum = std::max(maximum, run);
+    }
+    return maximum;
+}
+
+int rootPitchForPart(const InstrumentPart& part, int rootPitchClass) noexcept {
+    auto best = std::clamp(36 + rootPitchClass, part.minimumPitch, part.maximumPitch);
+    auto distance = 128;
+    for (auto pitch = part.minimumPitch; pitch <= part.maximumPitch; ++pitch) {
+        if (positiveModulo(pitch, 12) != positiveModulo(rootPitchClass, 12)) continue;
+        const auto candidateDistance = std::abs(pitch - 38);
+        if (candidateDistance < distance) { best = pitch; distance = candidateDistance; }
+    }
+    return best;
+}
+
+std::size_t repairLowEndContinuity(Pattern& pattern, const SongPlan& plan) {
+    if (plan.productionLanguage.domain != ProductionDomain::ClubElectronic) return 0;
+    const auto part = std::find_if(pattern.parts.begin(), pattern.parts.end(), [](const auto& item) {
+        return item.sourceVoice == VoiceId::SubBass;
+    });
+    if (part == pattern.parts.end()) return 0;
+    auto missingWhileKicking = std::size_t{};
+    auto created = std::size_t{};
+    for (auto bar = 0; bar < plan.totalBars; ++bar) {
+        const auto start = bar * plan.beatsPerBar;
+        const auto end = start + plan.beatsPerBar;
+        const auto* section = sectionAtBeat(plan, start);
+        if (declaredFullSilence(section)) { missingWhileKicking = 0; continue; }
+        const auto kick = std::any_of(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+            return note.voice == VoiceId::CoreDrums && (note.pitch == 35 || note.pitch == 36) &&
+                   note.startBeat >= start && note.startBeat < end;
+        });
+        const auto lowEnd = std::any_of(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+            return (note.voice == VoiceId::SubBass || note.voice == VoiceId::MovementBass) &&
+                   note.startBeat < end - 0.001 && note.endBeat() > start + 0.001;
+        });
+        if (!kick || lowEnd) { missingWhileKicking = 0; continue; }
+        if (++missingWhileKicking <= 2) continue;
+        NoteEvent note{start + 0.25, std::min(0.75, plan.beatsPerBar - 0.25),
+            rootPitchForPart(*part, plan.rootPitchClass), 66,
+            voiceDefinition(VoiceId::SubBass).midiChannel, VoiceId::SubBass, part->id, true};
+        note.origin = NoteOrigin::LocalRepair;
+        pattern.notes.push_back(note);
+        missingWhileKicking = 0;
+        ++created;
+    }
+    return created;
+}
+
+std::size_t restrainProceduralScalarRuns(Pattern& pattern, double beatsPerBar) {
+    std::set<std::size_t> remove;
+    for (const auto voice : {VoiceId::Lead, VoiceId::Countermelody}) {
+        std::vector<std::size_t> indices;
+        for (std::size_t index = 0; index < pattern.notes.size(); ++index)
+            if (pattern.notes[index].voice == voice) indices.push_back(index);
+        std::sort(indices.begin(), indices.end(), [&](auto left, auto right) {
+            return pattern.notes[left].startBeat < pattern.notes[right].startBeat;
+        });
+        auto run = std::size_t{};
+        for (std::size_t position = 1; position < indices.size(); ++position) {
+            const auto& previous = pattern.notes[indices[position - 1]];
+            const auto& current = pattern.notes[indices[position]];
+            const auto phraseGap = current.startBeat - previous.endBeat();
+            const auto interval = std::abs(current.pitch - previous.pitch);
+            if (phraseGap <= beatsPerBar * 0.50 && (interval == 1 || interval == 2)) ++run;
+            else { run = 0; continue; }
+            const auto local = current.origin == NoteOrigin::Procedural ||
+                current.origin == NoteOrigin::LocalContinuity || current.origin == NoteOrigin::LocalRepair;
+            if (run >= 3 && run % 2 == 1 && local && current.durationBeats < 1.0 &&
+                current.velocity < 104)
+                remove.insert(indices[position]);
+        }
+    }
+    if (remove.empty()) return 0;
+    std::vector<NoteEvent> retained;
+    retained.reserve(pattern.notes.size() - remove.size());
+    for (std::size_t index = 0; index < pattern.notes.size(); ++index)
+        if (!remove.contains(index)) retained.push_back(pattern.notes[index]);
+    pattern.notes = std::move(retained);
+    return remove.size();
 }
 
 std::size_t createKickPhraseDevelopment(Pattern& pattern, const SongPlan& plan) {
@@ -765,6 +925,7 @@ void ElectronicProductionDirector::normalizePlan(SongPlan& plan) {
                                                             club ? 0.92 : 0.84);
     if (!club) return;
     mergeElectronicInfrastructure(plan);
+    sanitizeClubTimbres(plan);
 
     for (auto& section : plan.sections) {
         const auto intro = sectionNamed(section, {"intro", "prologue", "entrada", "opening"});
@@ -954,12 +1115,29 @@ ElectronicProductionReport ElectronicProductionDirector::shapePerformance(Patter
     return report;
 }
 
+ElectronicProductionReport ElectronicProductionDirector::finalizePublication(
+    Pattern& pattern, const SongPlan& plan) {
+    ElectronicProductionReport report;
+    report.active = electronicCoreActive(plan.productionLanguage);
+    if (!report.active) return report;
+    report.maximumKicklessBarsBefore = maximumKicklessBars(pattern, plan);
+    report.maximumLowEndGapBarsBefore = maximumLowEndGapBars(pattern, plan);
+    report.publicationKickBarsRepaired = createMacroKickAnchors(pattern, plan);
+    report.lowEndContinuityBarsRepaired = repairLowEndContinuity(pattern, plan);
+    report.proceduralScalarNotesRemoved = restrainProceduralScalarRuns(pattern, plan.beatsPerBar);
+    report.maximumKicklessBarsAfter = maximumKicklessBars(pattern, plan);
+    report.maximumLowEndGapBarsAfter = maximumLowEndGapBars(pattern, plan);
+    return report;
+}
+
 ElectronicProductionReport ElectronicProductionDirector::audit(const Pattern& pattern,
                                                                  const SongPlan& plan) {
     ElectronicProductionReport report;
     report.active = electronicCoreActive(plan.productionLanguage);
     if (!report.active) return report;
     report.lowEndCollisionsAfter = lowEndCollisions(pattern);
+    report.maximumKicklessBarsAfter = maximumKicklessBars(pattern, plan);
+    report.maximumLowEndGapBarsAfter = maximumLowEndGapBars(pattern, plan);
     const auto runs = rhythmRuns(pattern, plan.beatsPerBar);
     report.literalRhythmBars = runs.literal;
     report.maximumRhythmRun = runs.maximum;
@@ -1029,6 +1207,8 @@ ElectronicProductionReport ElectronicProductionDirector::audit(const Pattern& pa
             static_cast<double>(report.expectedEssentialInstruments - report.materializedEssentialInstruments) /
             report.expectedEssentialInstruments * 0.18) -
         std::max(0.0, static_cast<double>(report.peakActiveVoices) - 12.0) * 0.025 -
+        std::max(0.0, static_cast<double>(report.maximumKicklessBarsAfter) - 12.0) * 0.018 -
+        std::max(0.0, static_cast<double>(report.maximumLowEndGapBarsAfter) - 12.0) * 0.012 -
         std::max(0.0, 0.82 - report.intentionMatch) * 0.55, 0.0, 1.0);
     return report;
 }
@@ -1066,6 +1246,10 @@ void ElectronicProductionDirector::stamp(Pattern& pattern,
         pattern.productionIssues.push_back("warning:sparse_structure_received_continuity_repair");
     if (report.maximumKicklessBarsAfter > 16)
         pattern.productionIssues.push_back("warning:electronic_macro_pulse_is_missing");
+    if (report.maximumLowEndGapBarsAfter > 16)
+        pattern.productionIssues.push_back("warning:electronic_low_end_narrative_is_missing");
+    if (report.proceduralScalarNotesRemoved > 0)
+        pattern.productionIssues.push_back("warning:procedural_scalar_filler_restrained");
 }
 
 } // namespace pulso

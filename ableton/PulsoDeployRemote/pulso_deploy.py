@@ -20,6 +20,7 @@ from .sound_matcher import catalog_capabilities, intent_fidelity, spec_intent_co
 from .audible_contract import (aggregate_meter_snapshots, apply_release_contract,
                                meter_snapshot)
 from .deployment_planner import resolve_deployment
+from .production_quality import evaluate_creative_quality
 
 
 class PulsoDeployRemote(ControlSurface):
@@ -64,6 +65,7 @@ class PulsoDeployRemote(ControlSurface):
         self._probe_bpm = 120.0
         self._deployment_total = 0
         self._deployment_busy = False
+        self._creative_quality = {"audited": False, "passed": True, "codes": []}
         self._running = True
         self.schedule_message(2, self._start_inventory)
         self.schedule_message(10, self._poll)
@@ -159,18 +161,20 @@ class PulsoDeployRemote(ControlSurface):
             self._write_status("busy", "LIVE DEPLOYMENT ALREADY IN PROGRESS")
             return
         tracks = expand_percussion_specs(request.get("tracks", []))
-        if request.get("schema_version") not in (2, 3, 4, 5, 6, 7, 8, 9) or not tracks:
+        if request.get("schema_version") not in (2, 3, 4, 5, 6, 7, 8, 9, 10) or not tracks:
             raise RuntimeError("invalid or empty deployment request")
         if request.get("sound_engine", "ableton_live_native") != "ableton_live_native":
             raise RuntimeError("unsupported sound engine")
         # Resolve the complete playback contract before touching the Set. This catches
         # unavailable identities and empty-container fallbacks without creating tracks.
         history = self._read_sound_history()
+        self._creative_quality = evaluate_creative_quality(request)
         recent_by_catalog = history.get("recent_by_catalog", {})
         last_by_track = history.get("last_by_track", {})
         enriched_tracks = []
         for source in tracks:
             spec = dict(source)
+            spec["production_domain"] = str(request.get("production_domain", "adaptive"))
             catalog = str(spec.get("catalog_id", ""))
             track_key = str(spec.get("track_key", spec.get("name", "")))
             spec["recent_sound_paths"] = list(recent_by_catalog.get(catalog, ()))
@@ -309,6 +313,10 @@ class PulsoDeployRemote(ControlSurface):
                 1 for report in self._sound_report
                 if ((report.get("adaptation") or {}).get("release_contract") or {}).get(
                     "status") == "partially_unresolved")
+            details["creative_quality_gate"] = self._creative_quality
+            if self._creative_quality.get("audited") and not self._creative_quality.get("passed"):
+                state = "degraded"
+                message += " - CREATIVE SOUL GATE NEEDS REVISION"
             self._remove_tracks(self.song(), self._previous_deployed_tracks)
             self._previous_deployed_tracks = []
             self._remember_verified_sounds()

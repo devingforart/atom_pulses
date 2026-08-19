@@ -79,6 +79,11 @@ struct ElectronicProductionReport {
     double grooveRecallRatio{1.0};
     double responseLineageRatio{1.0};
     std::size_t transitionNotesRemoved{};
+    std::size_t proceduralScalarNotesRemoved{};
+    std::size_t publicationKickBarsRepaired{};
+    std::size_t lowEndContinuityBarsRepaired{};
+    std::size_t maximumLowEndGapBarsBefore{};
+    std::size_t maximumLowEndGapBarsAfter{};
     double score{1.0};
 };
 
@@ -87,6 +92,9 @@ public:
     [[nodiscard]] static ProductionLanguage infer(std::string_view direction);
     static void normalizePlan(SongPlan&);
     [[nodiscard]] static ElectronicProductionReport shapePerformance(Pattern&, const SongPlan&);
+    // Final audible repair runs after part realization. It preserves authored phrases and
+    // only restores club pulse/low-end safety or removes procedural scalar filler.
+    [[nodiscard]] static ElectronicProductionReport finalizePublication(Pattern&, const SongPlan&);
     [[nodiscard]] static ElectronicProductionReport audit(const Pattern&, const SongPlan&);
     static void stamp(Pattern&, const ElectronicProductionReport&);
 };

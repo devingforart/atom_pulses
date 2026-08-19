@@ -1107,6 +1107,10 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     if (plan.voices.empty()) plan.voices = defaultVoicePlan();
     if (plan.instruments.empty()) plan.instruments = defaultOrchestrationAssignments();
     materializeNamedSoundWorld(plan);
+    // Named palette material is expanded after the first production pass. Run the
+    // director once more so newly materialized instruments obey the same club-world
+    // timbral contract (in particular, no accidental toy/mallet foreground).
+    ElectronicProductionDirector::normalizePlan(plan);
     if (plan.instruments.size() > 48) plan.instruments.resize(48);
     if (plan.orchestrationLanguage.description.empty())
         plan.orchestrationLanguage.description = "Evolving chamber-to-tutti orchestration";
@@ -1812,6 +1816,11 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     // removed by active-section orchestration, which would recreate long empty windows in
     // the MIDI actually delivered to Live.
     const auto continuityReport = repairUnintendedGlobalSilence(song, plan, harmonicWindows);
+    // The realized score is the first point where every repair can target a concrete Live
+    // part. Restore only physical club continuity and remove local scalar filler here;
+    // authored hooks, bass phrases and intentional declared silence remain untouched.
+    const auto electronicPublication =
+        ElectronicProductionDirector::finalizePublication(song, plan);
     // Continuity operates on realized parts. Re-assert the two physical contracts it can
     // otherwise bypass: upper parts remain upper, and every late percussion note carries a
     // concrete GM articulation rather than generic pitch 36.
@@ -1880,8 +1889,23 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     electronicReport.thematicRecallNotesCreated = electronicShaping.thematicRecallNotesCreated;
     electronicReport.kickPhraseDevelopmentsCreated = electronicShaping.kickPhraseDevelopmentsCreated;
     electronicReport.macroKickAnchorBarsCreated = electronicShaping.macroKickAnchorBarsCreated;
-    electronicReport.maximumKicklessBarsBefore = electronicShaping.maximumKicklessBarsBefore;
-    electronicReport.maximumKicklessBarsAfter = electronicShaping.maximumKicklessBarsAfter;
+    electronicReport.maximumKicklessBarsBefore = std::max(
+        electronicShaping.maximumKicklessBarsBefore,
+        electronicPublication.maximumKicklessBarsBefore);
+    electronicReport.maximumKicklessBarsAfter = std::max(
+        electronicReport.maximumKicklessBarsAfter,
+        electronicPublication.maximumKicklessBarsAfter);
+    electronicReport.maximumLowEndGapBarsBefore =
+        electronicPublication.maximumLowEndGapBarsBefore;
+    electronicReport.maximumLowEndGapBarsAfter = std::max(
+        electronicReport.maximumLowEndGapBarsAfter,
+        electronicPublication.maximumLowEndGapBarsAfter);
+    electronicReport.publicationKickBarsRepaired =
+        electronicPublication.publicationKickBarsRepaired;
+    electronicReport.lowEndContinuityBarsRepaired =
+        electronicPublication.lowEndContinuityBarsRepaired;
+    electronicReport.proceduralScalarNotesRemoved =
+        electronicPublication.proceduralScalarNotesRemoved;
     electronicReport.latePercussionArticulationRepairs = static_cast<std::size_t>(
         latePercussion.semanticPitchRepairs + latePercussion.articulationDiversifications);
     electronicReport.sparseStructuralWindowsRepaired = structuralContinuity.windowsRepaired;

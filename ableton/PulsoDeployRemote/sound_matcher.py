@@ -462,7 +462,7 @@ def _is_used(name, path, used):
     return str(path).casefold() in used or "name:" + str(name).casefold() in used
 
 
-def _rank_item(name, path, intent, requested_device, catalog_id=""):
+def _rank_item(name, path, intent, requested_device, catalog_id="", production_domain=""):
     name_tokens = set(tokens(name))
     path_tokens = set(tokens(path))
     item_tokens = name_tokens.union(path_tokens)
@@ -471,6 +471,19 @@ def _rank_item(name, path, intent, requested_device, catalog_id=""):
     score += len(intent_tokens.intersection(path_tokens).difference(name_tokens)) * 2
     lowered_name = str(name).casefold()
     lowered_path = str(path).casefold().replace("\\", "/")
+    if str(production_domain).casefold() == "club_electronic":
+        novelty = {"chiptune", "chip", "8bit", "8-bit", "game", "toy", "nintendo"}
+        pitched_percussion = {"marimba", "vibraphone", "vibes", "celesta", "mallet", "bell"}
+        if name_tokens.intersection(novelty):
+            score -= 140
+        if str(catalog_id).casefold() in {
+                "analog_pad", "poly_synth", "lead_synth", "ambient_texture"} and \
+                name_tokens.intersection(pitched_percussion):
+            score -= 110
+        if str(catalog_id).casefold() == "ambient_texture" and \
+                name_tokens.intersection({"asmr", "voice", "vocal", "foley"}) and \
+                not set(tokens(intent)).intersection({"asmr", "voice", "vocal", "foley"}):
+            score -= 55
     if lowered_name.endswith((".adg", ".adv")):
         score += 4
     if "/drum hits/" in lowered_path:
@@ -579,7 +592,8 @@ def select_track_sound(items, spec, used_paths=None):
         if tier is not None:
             fidelity = intent_fidelity(name, path, spec)
             tiered.append((tier, _is_used(name, path, used),
-                           -(_rank_item(name, path, intent, requested_device, catalog_id) +
+                           -(_rank_item(name, path, intent, requested_device, catalog_id,
+                                       spec.get("production_domain", "")) +
                              _articulation_qualifier_score(name, articulation_aliases) +
                              fidelity * 48.0),
                            str(path).casefold(), name, path, item))
@@ -609,17 +623,26 @@ def select_track_sound(items, spec, used_paths=None):
             best_tier, best_used, best_rank = tiered[0][:3]
             floor = float(spec.get("minimum_intent_fidelity", 0.0))
             recent = {str(value).casefold() for value in spec.get("recent_sound_paths", ())}
-            eligible = [candidate for candidate in tiered
-                        if candidate[0] == best_tier and candidate[1] == best_used and
-                        candidate[2] <= best_rank + 20.0 and
-                        intent_fidelity(candidate[4], candidate[5], spec) >= floor]
-            fresh = [candidate for candidate in eligible
-                     if str(candidate[5]).casefold() not in recent]
-            if fresh:
-                eligible = fresh
-            uniqueness = max(0.0, min(1.0, float(signature.get("uniqueness", 0.5))))
-            top_k = max(1, min(len(eligible), 1 + int(round(uniqueness * 7.0))))
-            if top_k:
+            fidelity_eligible = [candidate for candidate in tiered
+                                 if candidate[0] == best_tier and candidate[1] == best_used and
+                                 intent_fidelity(candidate[4], candidate[5], spec) >= floor]
+            # Prefer the tight top-rank window, but widen it inside the same identity
+            # tier when that is the only way to satisfy a binding timbre floor.
+            eligible = [candidate for candidate in fidelity_eligible
+                        if candidate[2] <= best_rank + 20.0]
+            if not eligible:
+                eligible = fidelity_eligible
+            # The fidelity floor can legitimately remove every identity-compatible
+            # candidate. Keep the deterministic best match in that case so the
+            # deployment preflight can report a character fallback instead of
+            # indexing an empty top-K collection.
+            if eligible:
+                fresh = [candidate for candidate in eligible
+                         if str(candidate[5]).casefold() not in recent]
+                if fresh:
+                    eligible = fresh
+                uniqueness = max(0.0, min(1.0, float(signature.get("uniqueness", 0.5))))
+                top_k = min(len(eligible), 1 + int(round(uniqueness * 7.0)))
                 seed = "{}:{}:{}:{}".format(spec.get("sound_selection_seed", "0"),
                                              spec.get("sound_variation", 0), catalog_id,
                                              spec.get("track_key", spec.get("name", "")))
@@ -659,7 +682,8 @@ def select_track_sound(items, spec, used_paths=None):
             if not str(name).casefold().endswith(RAW_AUDIO_EXTENSIONS) or \
                     "/drum hits/" not in lowered_path:
                 continue
-            emergency.append((-_rank_item(name, path, intent, requested_device, catalog_id),
+            emergency.append((-_rank_item(name, path, intent, requested_device, catalog_id,
+                                          spec.get("production_domain", "")),
                               _is_used(name, path, used), str(path).casefold(), name, path, item))
         if emergency:
             emergency.sort(key=lambda value: value[:3])

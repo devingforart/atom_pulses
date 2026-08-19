@@ -1,5 +1,18 @@
 # PULSO
 
+### 0.48 — autoría audible y criterio creativo
+
+- GPT deja de ser sólo un planificador: el gate exige autoría audible suficiente en foreground,
+  bajo de movimiento y estructura de groove antes de considerar resuelta la composición.
+- El análisis detecta melodías escalares sin fraseo, exceso de relleno procedural, bajo
+  fragmentado y ausencias demasiado largas de pulso o low-end en música de club.
+- La publicación final repara únicamente continuidad estructural conservadora; no sustituye las
+  decisiones creativas de GPT. Todas las reparaciones quedan marcadas como `local_repair`.
+- El gate creativo es independiente de la integridad MIDI. Una canción técnicamente válida nunca
+  desaparece: Live la recibe y muestra las causas concretas que requieren revisión.
+- En mundos electrónicos se excluyen del foreground los mallets y presets con carácter de juguete,
+  chiptune o videojuego, salvo que el músico los solicite explícitamente.
+
 ### 0.47 — identidad tímbrica y variación real
 
 - GPT compone una firma tímbrica por pista: fuente, envolvente, espectro, movimiento,

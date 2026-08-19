@@ -1399,7 +1399,7 @@ int main(int argc, char** argv) {
         bridgeTestDirectory.getChildFile("request.json").loadFileAsString());
     auto* deploymentObject = deploymentJson.getDynamicObject();
     require(deploymentObject != nullptr &&
-                static_cast<int>(deploymentObject->getProperty("schema_version")) == 9 &&
+                static_cast<int>(deploymentObject->getProperty("schema_version")) == 10 &&
                 deploymentObject->getProperty("sound_engine").toString() == "ableton_live_native" &&
                 deploymentObject->getProperty("expression_delivery").toString() ==
                     "native_editable_with_lossless_midi_source" &&
@@ -1410,6 +1410,8 @@ int main(int argc, char** argv) {
                 deploymentObject->getProperty("sound_world").toString().isNotEmpty() &&
                 deploymentObject->getProperty("deployment_mode").toString() == "full_orchestration" &&
                 deploymentObject->hasProperty("narrative_audited") &&
+                deploymentObject->hasProperty("creative_ready") &&
+                deploymentObject->hasProperty("foreground_ai_authorship_ratio") &&
                 deploymentObject->getProperty("tracks").getArray() != nullptr &&
                 deploymentObject->getProperty("tracks").getArray()->size() == 3,
             "Full orchestration must create one versioned editable Live track per populated instrument");

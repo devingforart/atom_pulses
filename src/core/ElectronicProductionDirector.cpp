@@ -73,16 +73,38 @@ std::vector<InstrumentAssignment> electronicParts() {
         "Syncopated bass response around the kick", .72, .82, "body", "Wavetable", "warm mono electronic bass with controlled transient"));
     result.push_back(electronicPart("club_chord_body", "poly_synth", "Chord Body", VoiceId::HarmonicFoundation,
         "Sparse chord body and harmonic identity", .46, .65, "body", "Wavetable", "warm restrained poly synth chord body"));
+    result.push_back(electronicPart("club_dub_chord", "dub_chord", "Dub Chord Echo", VoiceId::HarmonicFoundation,
+        "Delayed harmonic punctuation that implies harmony without dense constant chords", .34, .44, "color", "Drift", "warm delayed dub chord stab"));
     result.push_back(electronicPart("club_stab", "poly_synth", "Chord Stab", VoiceId::HarmonicPulse,
         "Rhythmic harmonic punctuation", .48, .60, "color", "Drift", "short percussive chord stab with filter movement"));
+    result.push_back(electronicPart("club_filtered_stab", "filtered_stab", "Filtered Stab", VoiceId::HarmonicPulse,
+        "Short evolving chord attacks for call-response with the body", .36, .42, "counterpoint", "Meld", "short filtered analog chord stab"));
+    result.push_back(electronicPart("club_hypnotic_arp", "hypnotic_arp", "Hypnotic Arp", VoiceId::HarmonicPulse,
+        "Sparse hypnotic repeated tones with rests and filter motion", .34, .40, "counterpoint", "Wavetable", "muted hypnotic arpeggiated synth pulse"));
     result.push_back(electronicPart("club_upper", "analog_pad", "Upper Air", VoiceId::HarmonicUpper,
         "Selective extension and air", .30, .38, "extension", "Wavetable", "thin high spectral pad leaving hook space"));
+    result.push_back(electronicPart("club_shimmer_tail", "shimmer_tail", "Shimmer Tail", VoiceId::HarmonicUpper,
+        "High sparse release halo for arrivals and withdrawals", .22, .28, "extension", "Wavetable", "high shimmer tail pad"));
     result.push_back(electronicPart("club_hook", "lead_synth", "Primary Hook", VoiceId::Lead,
         "One memorable foreground identity", .52, .88, "body", "Meld", "expressive mono club hook with evolving timbre"));
+    result.push_back(electronicPart("club_acid_line", "acid_line", "Acid Detail", VoiceId::Lead,
+        "Occasional restrained resonant phrase when the foreground needs bite", .18, .30, "color", "Operator", "restrained resonant acid phrase"));
     result.push_back(electronicPart("club_response", "lead_synth", "Hook Response", VoiceId::Countermelody,
         "Short answer in the hook's negative space", .28, .52, "counterpoint", "Drift", "compact filtered response pluck"));
+    result.push_back(electronicPart("club_deep_pluck", "deep_pluck", "Deep Pluck Reply", VoiceId::Countermelody,
+        "Low-mid melodic replies with space and phrase consequence", .26, .38, "counterpoint", "Drift", "round deep pluck response"));
+    result.push_back(electronicPart("club_fm_sequence", "fm_sequence", "FM Sequence", VoiceId::Countermelody,
+        "Sparse sequenced counterline for electronic movement", .22, .34, "color", "Operator", "soft FM sequence counterline"));
+    result.push_back(electronicPart("club_vocal_chop", "vocal_chop_texture", "Vocal Chop Texture", VoiceId::Countermelody,
+        "Rare human-like chopped texture used as a phrase answer", .16, .24, "transition", "Sampler", "short airy vocal chop texture"));
     result.push_back(electronicPart("club_atmosphere", "ambient_texture", "Atmosphere", VoiceId::Atmosphere,
         "Depth, continuity and breakdown space", .34, .34, "transition", "Granulator III", "cohesive low-density electronic atmosphere"));
+    result.push_back(electronicPart("club_granular_pad", "granular_pad", "Granular Pad", VoiceId::Atmosphere,
+        "Slow bed that carries breakdown continuity without lead busyness", .30, .36, "foundation", "Granulator III", "slow granular harmonic pad"));
+    result.push_back(electronicPart("club_spectral_drone", "spectral_drone", "Spectral Drone", VoiceId::Atmosphere,
+        "Low-density tonal air and room tone for long transitions", .24, .28, "transition", "Wavetable", "low spectral drone bed"));
+    result.push_back(electronicPart("club_noise_riser", "noise_riser", "Noise Riser", VoiceId::Transitions,
+        "Noise rises, reverses and section breath, not a cymbal replacement loop", .18, .24, "transition", "Wavetable", "filtered noise rise and reverse texture"));
     result.push_back(electronicPart("club_transitions", "cymbals", "Transitions and FX", VoiceId::Transitions,
         "Signal structural arrivals without constant activity", .25, .44, "transition", "Drum Rack", "short impacts cymbals noise rises and reverses"));
     return result;
@@ -125,6 +147,18 @@ bool gameLikePitchedPercussion(std::string_view id) noexcept {
            id == "celesta" || id == "tubular_bells";
 }
 
+bool electronicProductionInstrument(std::string_view id) noexcept {
+    return id == "kick_drum" || id == "snare_clap" || id == "hi_hats" ||
+           id == "shakers" || id == "latin_percussion" || id == "orchestral_percussion" ||
+           id == "cymbals" || id == "sub_synth" || id == "electric_bass" ||
+           id == "rolling_mid_bass" || id == "reese_layer" || id == "analog_pad" ||
+           id == "poly_synth" || id == "dub_chord" || id == "filtered_stab" ||
+           id == "hypnotic_arp" || id == "lead_synth" || id == "deep_pluck" ||
+           id == "acid_line" || id == "fm_sequence" || id == "vocal_chop_texture" ||
+           id == "ambient_texture" || id == "granular_pad" || id == "spectral_drone" ||
+           id == "noise_riser" || id == "shimmer_tail";
+}
+
 void sanitizeClubTimbres(SongPlan& plan) {
     if (plan.productionLanguage.domain != ProductionDomain::ClubElectronic ||
         plan.productionLanguage.orchestralAllowance > 0.24) return;
@@ -140,18 +174,18 @@ void sanitizeClubTimbres(SongPlan& plan) {
                 "restrained rounded analog lead with expressive filter motion no bell or mallet attack";
             instrument.timbre = {"oscillator", "rounded", "dark", "evolving", "close", "analog", 0.72};
         } else if (instrument.sourceVoice == VoiceId::Atmosphere) {
-            instrument.instrumentId = "ambient_texture";
-            instrument.name = "Evolving Air Bed";
+            instrument.instrumentId = "granular_pad";
+            instrument.name = "Granular Air Bed";
             instrument.liveDevice = "Granulator III";
             instrument.livePresetIntent =
                 "deep granular air and noise bed without pitched bell or mallet transients";
             instrument.timbre = {"granular", "slow", "dark", "evolving", "wide", "diffuse", 0.76};
         } else {
             instrument.instrumentId = instrument.sourceVoice == VoiceId::HarmonicUpper
-                ? "analog_pad" : "poly_synth";
+                ? "shimmer_tail" : "filtered_stab";
             instrument.name = instrument.sourceVoice == VoiceId::HarmonicUpper
                 ? "Spectral Upper Air" : "Filtered Harmonic Pulse";
-            instrument.liveDevice = instrument.sourceVoice == VoiceId::HarmonicUpper ? "Wavetable" : "Drift";
+            instrument.liveDevice = instrument.sourceVoice == VoiceId::HarmonicUpper ? "Wavetable" : "Meld";
             instrument.livePresetIntent = instrument.sourceVoice == VoiceId::HarmonicUpper
                 ? "thin evolving analog spectral layer without bell or mallet character"
                 : "muted warm analog chord pulse with soft transient and filter movement";
@@ -1133,6 +1167,7 @@ ElectronicProductionReport ElectronicProductionDirector::finalizePublication(
 ElectronicProductionReport ElectronicProductionDirector::audit(const Pattern& pattern,
                                                                  const SongPlan& plan) {
     ElectronicProductionReport report;
+    report.percussionFree = plan.percussionFreeIntent;
     report.active = electronicCoreActive(plan.productionLanguage);
     if (!report.active) return report;
     report.lowEndCollisionsAfter = lowEndCollisions(pattern);
@@ -1189,11 +1224,7 @@ ElectronicProductionReport ElectronicProductionDirector::audit(const Pattern& pa
                                 std::max<std::size_t>(1, bassNotes);
     const auto instrumentMatch = pattern.parts.empty() ? 0.0 : static_cast<double>(std::count_if(
         pattern.parts.begin(), pattern.parts.end(), [](const auto& part) {
-            return part.catalogId == "kick_drum" || part.catalogId == "snare_clap" ||
-                   part.catalogId == "hi_hats" || part.catalogId == "shakers" ||
-                   part.catalogId == "sub_synth" || part.catalogId == "electric_bass" ||
-                   part.catalogId == "analog_pad" || part.catalogId == "poly_synth" ||
-                   part.catalogId == "lead_synth" || part.catalogId == "ambient_texture";
+            return electronicProductionInstrument(part.catalogId);
         })) / pattern.parts.size();
     report.intentionMatch = std::clamp(instrumentMatch * 1.25, 0.0, 1.0);
     report.score = std::clamp(1.0 - collisionRatio * 0.32 -
@@ -1207,8 +1238,10 @@ ElectronicProductionReport ElectronicProductionDirector::audit(const Pattern& pa
             static_cast<double>(report.expectedEssentialInstruments - report.materializedEssentialInstruments) /
             report.expectedEssentialInstruments * 0.18) -
         std::max(0.0, static_cast<double>(report.peakActiveVoices) - 12.0) * 0.025 -
-        std::max(0.0, static_cast<double>(report.maximumKicklessBarsAfter) - 12.0) * 0.018 -
-        std::max(0.0, static_cast<double>(report.maximumLowEndGapBarsAfter) - 12.0) * 0.012 -
+        (report.percussionFree ? 0.0 :
+            std::max(0.0, static_cast<double>(report.maximumKicklessBarsAfter) - 12.0) * 0.018) -
+        (report.percussionFree ? 0.0 :
+            std::max(0.0, static_cast<double>(report.maximumLowEndGapBarsAfter) - 12.0) * 0.012) -
         std::max(0.0, 0.82 - report.intentionMatch) * 0.55, 0.0, 1.0);
     return report;
 }
@@ -1236,7 +1269,7 @@ void ElectronicProductionDirector::stamp(Pattern& pattern,
     if (report.materializedEssentialInstruments < report.expectedEssentialInstruments) {
         pattern.productionIssues.push_back("warning:sound_world_instrument_not_materialized");
     }
-    if (report.grooveRecallRatio < 0.50)
+    if (!report.percussionFree && report.grooveRecallRatio < 0.50)
         pattern.productionIssues.push_back("warning:groove_identity_needs_stronger_recall");
     if (report.responseLineageRatio < 0.65)
         pattern.productionIssues.push_back("warning:response_is_not_derived_from_hook");
@@ -1244,9 +1277,9 @@ void ElectronicProductionDirector::stamp(Pattern& pattern,
         pattern.productionIssues.push_back("warning:musical_identity_gate_repaired_score");
     if (report.sparseStructuralWindowsRepaired > 0)
         pattern.productionIssues.push_back("warning:sparse_structure_received_continuity_repair");
-    if (report.maximumKicklessBarsAfter > 16)
+    if (!report.percussionFree && report.maximumKicklessBarsAfter > 16)
         pattern.productionIssues.push_back("warning:electronic_macro_pulse_is_missing");
-    if (report.maximumLowEndGapBarsAfter > 16)
+    if (!report.percussionFree && report.maximumLowEndGapBarsAfter > 16)
         pattern.productionIssues.push_back("warning:electronic_low_end_narrative_is_missing");
     if (report.proceduralScalarNotesRemoved > 0)
         pattern.productionIssues.push_back("warning:procedural_scalar_filler_restrained");

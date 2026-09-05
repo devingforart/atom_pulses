@@ -66,6 +66,8 @@ std::uint64_t PerformanceScoreEngine::fingerprint(const PerformanceCell& cell) n
         hash = mix(hash, static_cast<std::uint64_t>(std::llround(note.durationBeats * 96.0)));
         hash = mix(hash, static_cast<std::uint64_t>(note.pitch));
         hash = mix(hash, static_cast<std::uint64_t>(note.velocity / 4));
+        for (const auto character : note.instrumentId)
+            hash = mix(hash, static_cast<std::uint8_t>(character));
     }
     return hash;
 }
@@ -115,6 +117,7 @@ PerformanceScoreReport PerformanceScoreEngine::normalize(
             else if (note.metricIntent == MetricIntent::Tuplet)
                 note.beat = std::round(note.beat * 12.0) / 12.0;
             note.durationBeats = std::clamp(note.durationBeats, 0.01, cell.lengthBeats - note.beat);
+            if (note.instrumentId.size() > 80) note.instrumentId.resize(80);
             ++report.notesAccepted;
             return false;
         }), cell.notes.end());
@@ -130,6 +133,7 @@ PerformanceScoreReport PerformanceScoreEngine::normalize(
                 control.beat < 0.0 || control.beat >= cell.lengthBeats) return true;
             control.controller = std::clamp(control.controller, 0, 127);
             control.value = std::clamp(control.value, 0, 127);
+            if (control.instrumentId.size() > 80) control.instrumentId.resize(80);
             return false;
         }), cell.controls.end());
         const auto cellFingerprint = fingerprint(cell);
@@ -203,9 +207,25 @@ PerformanceScoreEngine::ownedVoicesForSection(const PerformanceScore& score, int
     return result;
 }
 
+std::set<std::string> PerformanceScoreEngine::ownedInstrumentIdsForSection(
+    const PerformanceScore& score, int sectionIndex) {
+    std::set<std::string> result;
+    for (const auto& placement : score.placements) {
+        if (placement.sectionIndex != sectionIndex) continue;
+        if (const auto* cell = findCell(score, placement.cellId)) {
+            for (const auto& note : cell->notes)
+                if (!note.instrumentId.empty()) result.insert(note.instrumentId);
+            for (const auto& control : cell->controls)
+                if (!control.instrumentId.empty()) result.insert(control.instrumentId);
+        }
+    }
+    return result;
+}
+
 void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore& score,
                                           int sectionIndex, double chunkStartInSection,
-                                          double chunkLength) {
+                                          double chunkLength,
+                                          std::span<const InstrumentAssignment> instruments) {
     struct OwnershipSpan {
         double start{};
         double end{};
@@ -276,10 +296,18 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
                     ? placement.inversionAxis * 2 - authored.pitch : authored.pitch;
                 const auto pitch = rhythmic ? authored.pitch : std::clamp(transformedPitch + placement.transpose,
                     definition.minimumPitch, definition.maximumPitch);
+                auto partId = std::uint16_t{};
+                if (!authored.instrumentId.empty()) {
+                    const auto owner = std::find_if(instruments.begin(), instruments.end(), [&](const auto& item) {
+                        return item.id == authored.instrumentId && item.sourceVoice == voice;
+                    });
+                    if (owner != instruments.end())
+                        partId = static_cast<std::uint16_t>(std::distance(instruments.begin(), owner) + 1);
+                }
                 chunk.notes.push_back({sectionBeat - chunkStartInSection,
                     std::max(0.01, authored.durationBeats * placement.timeScale), pitch,
                     std::clamp(static_cast<int>(std::lround(authored.velocity * placement.velocityScale)), 1, 127),
-                    definition.midiChannel, voice, 0,
+                    definition.midiChannel, voice, partId,
                     authored.metricIntent != MetricIntent::StrictGrid ||
                     placement.metricIntent != MetricIntent::StrictGrid,
                     placement.retrograde || placement.invertContour || placement.transpose != 0 ||
@@ -298,8 +326,16 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
                 if (sectionBeat < chunkStartInSection || sectionBeat >= chunkEnd) continue;
                 const auto voice = remappedVoice(placement, authored.voice);
                 if (!validVoice(voice)) continue;
+                auto partId = std::uint16_t{};
+                if (!authored.instrumentId.empty()) {
+                    const auto owner = std::find_if(instruments.begin(), instruments.end(), [&](const auto& item) {
+                        return item.id == authored.instrumentId && item.sourceVoice == voice;
+                    });
+                    if (owner != instruments.end())
+                        partId = static_cast<std::uint16_t>(std::distance(instruments.begin(), owner) + 1);
+                }
                 chunk.controls.push_back({sectionBeat - chunkStartInSection, authored.controller,
-                    authored.value, voiceDefinition(voice).midiChannel, voice, 0, true});
+                    authored.value, voiceDefinition(voice).midiChannel, voice, partId, true});
             }
         }
     }

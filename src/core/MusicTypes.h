@@ -50,6 +50,11 @@ struct InstrumentPart {
     std::string liveDevice{"auto"};
     std::string livePresetIntent{"balanced natural"};
     TimbreSignature timbre;
+    // A DAW track is not automatically a new musical thought. This stable id names
+    // the independent line performed by the part; it may be shared only by explicit
+    // doublings or timbral hand-offs.
+    std::string contentLaneId;
+    std::string lineRelationship{"independent"};
     bool liveSoundLocked{};
     std::uint32_t liveSoundVariation{};
 
@@ -63,13 +68,18 @@ enum class NoteOrigin : std::uint8_t {
     AiAuthored,
     AiTransformed,
     LocalContinuity,
-    LocalRepair
+    LocalRepair,
+    // Deterministic realization of harmony, motif and orchestration decisions already
+    // authored in the AI plan. Unlike emergency procedural fallback, this material is
+    // protected structural composition.
+    PlanDerived
 };
 
 [[nodiscard]] constexpr std::string_view noteOriginKey(NoteOrigin origin) noexcept {
     switch (origin) {
         case NoteOrigin::AiAuthored: return "ai_authored";
         case NoteOrigin::AiTransformed: return "ai_transformed";
+        case NoteOrigin::PlanDerived: return "plan_derived";
         case NoteOrigin::LocalContinuity: return "local_continuity";
         case NoteOrigin::LocalRepair: return "local_repair";
         case NoteOrigin::Procedural: return "procedural";
@@ -201,6 +211,34 @@ struct Pattern {
     std::size_t maximumClubLowEndGapBars{};
     double densityControl{1.0};
     std::size_t peakActiveVoices{};
+    // Exact post-render arrangement density. These values describe the MIDI that
+    // will be exported, not merely the instruments proposed in the plan.
+    std::size_t arrangementTargetParts{};
+    std::size_t populatedInstrumentParts{};
+    std::size_t populatedHarmonyParts{};
+    std::size_t populatedMelodyParts{};
+    std::size_t populatedRhythmParts{};
+    std::size_t populatedTextureParts{};
+    std::size_t peakSimultaneousParts{};
+    double partIndependenceScore{1.0};
+    double maximumPartNoteShare{};
+    bool soundscapeAuditPerformed{};
+    bool percussionFreeArrangement{};
+    std::string soundscapeScene;
+    std::string soundscapeSpatialNarrative;
+    bool soundscapeReady{true};
+    double soundscapeScore{1.0};
+    std::size_t declaredSoundscapeLayers{};
+    std::size_t meaningfulSoundscapeLayers{};
+    std::size_t underdevelopedSoundscapeLayers{};
+    double medianActiveSoundscapeLayers{};
+    std::size_t independentMusicalLines{};
+    std::size_t meaningfulMusicalLines{};
+    std::size_t protagonistPhraseWindows{};
+    std::size_t arpeggioNoteCount{};
+    std::size_t dialogueMusicalLines{};
+    double harmonicFloorCoverage{};
+    double medianHarmonicFloorLayers{};
     std::vector<std::string> narrativeIssues;
 };
 

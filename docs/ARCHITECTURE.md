@@ -1,5 +1,51 @@
 # Arquitectura
 
+### Tejido compositivo aditivo (0.51)
+
+`ElectronicCompositionFabric` introduce una identidad intermedia que antes faltaba:
+
+```text
+source_voice -> content_lane_id -> InstrumentPart
+```
+
+`source_voice` describe cómo se ejecuta una familia; `content_lane_id` identifica una idea
+musical independiente; `InstrumentPart` es su destino en Live. Las pistas independientes
+reciben ids únicos. Sólo `doubling`, `relay`, `timbral_handoff` y refuerzos explícitos pueden
+compartir línea sin contarse como contenido nuevo.
+
+Después de retirar el fallback procedural, el director materializa decisiones ya contenidas
+en el plan GPT con origen `plan_derived`. Mantiene dos o más responsabilidades armónicas
+intercaladas, desarrolla un hablante principal desde el motivo, construye un arpegio por
+células y deriva respuestas que ocupan líneas diferentes. La simultaneidad sigue limitada:
+la densidad se obtiene a lo largo del tiempo y no mediante tutti permanente.
+
+El auditor calcula el contenido MIDI publicado: líneas independientes/significativas,
+cobertura y mediana del piso armónico, frases del protagonista, arpegio y diálogo. Estas
+métricas participan del soundscape gate y también se publican en LiveBridge.
+
+### Electronic Soundscape Plan (0.50)
+
+`ElectronicSoundscapeDirector` separa un escenario de producción de una lista de presets.
+GPT escribe un contrato por cada instrumento electrónico concreto: tipo de capa, escala
+temporal, función narrativa, relación, evolución, compases y frases mínimos, repetición
+estática máxima y profundidad espacial.
+
+- `voice`: arpegios, secuencias, pulsos, pads y voces melódicas necesitan frases desarrolladas.
+- `environment`: drones, granular beds y aire deben evolucionar durante tiempo estructural.
+- `transition`: rises, reversas y retiradas deben existir en fronteras significativas.
+- `one_shot`: un impacto realmente singular es válido con un evento, pero no puede esconder
+  una voz musical incompleta.
+
+Los planes locales antiguos reciben contratos inferidos, sin agregar notas. Un cast escrito
+por GPT permanece cerrado: el planificador determinista de densidad no puede anexar pistas
+después de la decisión de instrumentación. La auditoría posterior a la orquestación estudia
+los `partId` y spans reales, calcula cobertura significativa y tejido simultáneo mediano, y
+devuelve déficits concretos al crítico.
+
+`SongPlan::percussionFreeIntent` es un invariante independiente del dominio de producción.
+Elimina la arquitectura rítmica y desactiva las exigencias de kick, low-end y groove. La obra
+sigue siendo electrónica, pero su movimiento se evalúa mediante armonía, timbre y espacio.
+
 ### Autoridad creativa GPT 0.48.1
 
 `CreativeAuthority` es la última frontera de autoría del render. En planes GPT elimina cualquier
@@ -745,6 +791,38 @@ rechazar atómicamente el despliegue.
 kick ornaments, creates deterministic phrase-level onset variation, inserts harmonic breathing and
 rotates optional support voices in long dense sections. `OrchestrationScore` then enforces final
 role-duration limits, so later expression and Live deployment cannot turn punctuation into a pad.
+
+### Harmonic texture architecture
+
+When a direction asks for no drums/no percussion plus pads, drones, atmospheric layers or many
+harmonic beds, `SongComposer` activates a harmonic texture director. That path removes rhythm
+instruments and rhythm-family voices, disables late club kick repairs, and expands the cast with
+distinct electronic owners such as `dub_chord`, `filtered_stab`, `hypnotic_arp`, `granular_pad`,
+`spectral_drone`, `shimmer_tail`, `deep_pluck`, `fm_sequence`, `acid_line` and
+`vocal_chop_texture`. The goal is a produced texture architecture: several sparse harmonic and
+melodic-synth responsibilities, not one chord track with cosmetic doubles.
+
+The final publication stage strips rhythm-family events again for that mode, so downstream repairs
+cannot reinsert drums after the user explicitly requested a non-percussive arrangement.
+
+### Arrangement density and concrete AI ownership (0.49)
+
+`ArrangementDensityPlanner` converts duration, electronic intent, ensemble scale and harmonic depth
+into one explicit production cast target. For deep electronic work it normally plans 14-24 available
+parts, requires most of them to receive material across the complete form, and keeps the expected peak
+simultaneous cast around five-to-eight. Extra scale comes from rotating harmonic, texture and melodic
+responsibilities; low-end tracks are never added merely to satisfy a density quota.
+
+`performance_score.notes[].instrument_id` and `controls[].instrument_id` may reference the stable
+`instruments[].id`. A compatible reference resolves immediately to the final `partId`, survives
+orchestration, expression and MIDI export, and prevents another instrument sharing the same `VoiceId`
+from stealing the phrase. An empty id deliberately delegates ownership rotation to orchestration, which
+keeps older saved plans compatible.
+
+The rendered `Pattern` records proposed versus populated parts, populated harmony/melody/rhythm/texture
+counts, peak simultaneous parts, maximum note share and an independence score. These exact-publication
+metrics are written to the `.pulso.json` sidecar and summarized in the VST idea description. A declared
+instrument with no MIDI is therefore visible as missing realization rather than being counted as a track.
 
 The Ableton bridge expands multi-articulation percussion specs before preflight. Sound matching ranks
 the exact articulation ahead of its broad catalog family, and Live note insertion uses Python Remote

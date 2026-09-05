@@ -347,7 +347,10 @@ void runGeneratorTests() {
             "Club intent must activate an electronic production grammar rather than orchestral defaults");
     const std::set<std::string> electronicCatalog{"kick_drum", "snare_clap", "hi_hats",
         "shakers", "latin_percussion", "orchestral_percussion", "sub_synth", "electric_bass",
-        "poly_synth", "analog_pad", "lead_synth", "ambient_texture", "cymbals"};
+        "rolling_mid_bass", "reese_layer", "poly_synth", "analog_pad", "dub_chord",
+        "filtered_stab", "hypnotic_arp", "lead_synth", "deep_pluck", "acid_line",
+        "fm_sequence", "vocal_chop_texture", "ambient_texture", "granular_pad",
+        "spectral_drone", "noise_riser", "shimmer_tail", "cymbals"};
     std::string clubCast;
     for (const auto& part : clubPlan.instruments) clubCast += part.instrumentId + ",";
     require(clubPlan.instruments.size() >= 12 &&
@@ -367,7 +370,14 @@ void runGeneratorTests() {
                     clubReport.electronicProduction.lowEndCollisionsBefore &&
                 clubReport.electronicProduction.automationEventsAdded > 0 &&
                 renderedClub.acousticElectronicBalance >= 0.85,
-            "The electronic director must publish safe low end, structural automation and an audible club contract");
+            "The electronic director must publish safe low end, structural automation and an audible club contract: ready=" +
+                std::to_string(renderedClub.productionReady) + ", active=" +
+                std::to_string(clubReport.electronicProduction.active) + ", low_after=" +
+                std::to_string(clubReport.electronicProduction.lowEndCollisionsAfter) + ", low_before=" +
+                std::to_string(clubReport.electronicProduction.lowEndCollisionsBefore) + ", automation=" +
+                std::to_string(clubReport.electronicProduction.automationEventsAdded) + ", balance=" +
+                std::to_string(renderedClub.acousticElectronicBalance) + ", prod_score=" +
+                std::to_string(renderedClub.productionScore));
     require(std::none_of(renderedClub.notes.begin(), renderedClub.notes.end(), [](const auto& note) {
                 return note.voice == VoiceId::HarmonicPulse && note.durationBeats > 1.001;
             }),
@@ -400,6 +410,174 @@ void runGeneratorTests() {
                 return note.voice == VoiceId::HighPercussion && (note.pitch == 35 || note.pitch == 36);
             }),
             "Final high percussion must never collapse into another kick lane");
+
+    const auto texturePlan = SongComposer::createLocalPlan(
+        "Electronic harmonic sound symphony with no percussion, no drums, many harmonic pads, colchones armonicos, atmospheric drones, sparse plucks and evolving synth textures",
+        192, 122.0, 4.0, 99127, 2, ScaleKind::Minor);
+    const auto textureHarmonyParts = std::count_if(texturePlan.instruments.begin(), texturePlan.instruments.end(),
+        [](const auto& part) {
+            const auto* definition = instrumentDefinition(part.instrumentId);
+            return definition != nullptr && definition->department == ScoreDepartment::Harmony;
+        });
+    const auto textureTargets = ArrangementDensityPlanner::targetsFor(texturePlan);
+    require(texturePlan.instruments.size() >= 16 &&
+                texturePlan.instruments.size() >= textureTargets.proposedParts && textureHarmonyParts >= 9,
+            "A requested harmonic texture architecture must create a production-scale instrument cast: cast=" +
+                std::to_string(texturePlan.instruments.size()) + ", target=" +
+                std::to_string(textureTargets.proposedParts) + ", harmony=" +
+                std::to_string(textureHarmonyParts));
+    std::string textureCast;
+    for (const auto& part : texturePlan.instruments) textureCast += part.instrumentId + ":" + std::to_string(static_cast<int>(part.sourceVoice)) + ",";
+    require(std::none_of(texturePlan.instruments.begin(), texturePlan.instruments.end(), [](const auto& part) {
+                const auto* definition = instrumentDefinition(part.instrumentId);
+                return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
+            }) && std::all_of(texturePlan.sections.begin(), texturePlan.sections.end(), [](const auto& section) {
+                return std::none_of(section.activeVoices.begin(), section.activeVoices.end(), [](VoiceId voice) {
+                    return isVoiceInFamily(voice, VoiceFamily::Rhythm);
+                }) && section.rhythm.kickState == KickState::Muted &&
+                   section.rhythm.percussionDensity == 0.0;
+            }),
+            "A no-percussion harmonic request must not silently reinsert drum voices or rhythm tracks: " +
+                texturePlan.title + " :: " + texturePlan.summary + " :: " + textureCast);
+    CompositionRenderReport textureReport;
+    const auto renderedTexture = SongComposer{}.render(texturePlan, phraseContext(), {}, &textureReport);
+    require(std::none_of(renderedTexture.notes.begin(), renderedTexture.notes.end(), [](const auto& note) {
+                return isVoiceInFamily(note.voice, VoiceFamily::Rhythm);
+            }),
+            "The rendered no-percussion texture must contain no rhythm-family MIDI notes");
+    std::set<std::uint16_t> populatedTextureParts;
+    for (const auto& note : renderedTexture.notes) {
+        const auto part = std::find_if(renderedTexture.parts.begin(), renderedTexture.parts.end(),
+            [&](const auto& candidate) { return candidate.id == note.partId; });
+        if (part != renderedTexture.parts.end() &&
+            (part->department == ScoreDepartment::Harmony || part->department == ScoreDepartment::Melody))
+            populatedTextureParts.insert(note.partId);
+    }
+    require(populatedTextureParts.size() >= textureTargets.minimumPopulatedParts &&
+                renderedTexture.populatedInstrumentParts == populatedTextureParts.size() &&
+                renderedTexture.populatedHarmonyParts >= textureTargets.minimumHarmonyParts &&
+                renderedTexture.populatedMelodyParts >= textureTargets.minimumMelodyParts &&
+                renderedTexture.populatedTextureParts >= textureTargets.minimumTextureParts &&
+                renderedTexture.partIndependenceScore >= 0.80 &&
+                renderedTexture.peakSimultaneousParts <= textureTargets.maximumSimultaneousParts + 2 &&
+                renderedTexture.maximumPartNoteShare < 0.45,
+            "A harmonic texture render must publish many independent named owners: populated=" +
+                std::to_string(renderedTexture.populatedInstrumentParts) + "/" +
+                std::to_string(renderedTexture.arrangementTargetParts) + ", harmony=" +
+                std::to_string(renderedTexture.populatedHarmonyParts) + ", melody=" +
+                std::to_string(renderedTexture.populatedMelodyParts) + ", texture=" +
+                std::to_string(renderedTexture.populatedTextureParts) + ", independence=" +
+                std::to_string(renderedTexture.partIndependenceScore) + ", peak=" +
+                std::to_string(renderedTexture.peakSimultaneousParts) + "/" +
+                std::to_string(textureTargets.maximumSimultaneousParts));
+    const auto planDerivedNotes = std::count_if(renderedTexture.notes.begin(), renderedTexture.notes.end(),
+        [](const auto& note) { return note.origin == NoteOrigin::PlanDerived; });
+    require(textureReport.electronicFabric.active && planDerivedNotes > 0 &&
+                renderedTexture.independentMusicalLines >= textureTargets.minimumPopulatedParts &&
+                renderedTexture.meaningfulMusicalLines * 4 >=
+                    renderedTexture.independentMusicalLines * 3 &&
+                renderedTexture.harmonicFloorCoverage >= 0.80 &&
+                renderedTexture.medianHarmonicFloorLayers >= 2.0 &&
+                renderedTexture.protagonistPhraseWindows >=
+                    std::max<std::size_t>(3, texturePlan.totalBars / 24) &&
+                renderedTexture.arpeggioNoteCount >= 32 &&
+                renderedTexture.dialogueMusicalLines >= 1,
+            "Electronic fabric must retain a harmonic floor and add a speaker, arp and independent dialogue: " +
+                std::to_string(renderedTexture.independentMusicalLines) + " lines, " +
+                std::to_string(renderedTexture.meaningfulMusicalLines) + " meaningful, floor=" +
+                std::to_string(renderedTexture.harmonicFloorCoverage) + "/" +
+                std::to_string(renderedTexture.medianHarmonicFloorLayers) + ", speaker=" +
+                std::to_string(renderedTexture.protagonistPhraseWindows) + ", arp=" +
+                std::to_string(renderedTexture.arpeggioNoteCount) + ", dialogue=" +
+                std::to_string(renderedTexture.dialogueMusicalLines));
+    std::set<std::string> independentLaneIds;
+    for (const auto& part : renderedTexture.parts)
+        if (part.lineRelationship == "independent")
+            require(!part.contentLaneId.empty() && independentLaneIds.insert(part.contentLaneId).second,
+                    "Every independent DAW part must own a unique non-empty content lane");
+
+    const auto explicitOwner = std::find_if(texturePlan.instruments.begin(), texturePlan.instruments.end(),
+        [](const auto& part) {
+            return part.id == "texture_foundation_pad" &&
+                   part.sourceVoice == VoiceId::HarmonicFoundation;
+        });
+    require(explicitOwner != texturePlan.instruments.end(),
+            "The harmonic architecture must expose a stable instrument id for direct GPT ownership");
+    PerformanceScore instrumentOwnedScore;
+    instrumentOwnedScore.cells.push_back({"owned_pad_phrase", 4.0,
+        {VoiceId::HarmonicFoundation},
+        {{0.0, 2.0, 62, 82, VoiceId::HarmonicFoundation, MetricIntent::StrictGrid,
+          explicitOwner->id}}, {}});
+    instrumentOwnedScore.placements.push_back({"owned_pad_phrase", 0, 0.0, 1, 0, 1.0, 1.0});
+    PerformanceScoreEngine::normalize(instrumentOwnedScore, texturePlan.sections.size(),
+        std::vector<double>(texturePlan.sections.size(), 32.0));
+    Pattern instrumentOwnedChunk;
+    instrumentOwnedChunk.lengthBeats = 4.0;
+    PerformanceScoreEngine::replaceChunk(instrumentOwnedChunk, instrumentOwnedScore, 0, 0.0, 4.0,
+                                         texturePlan.instruments);
+    const auto expectedPartId = static_cast<std::uint16_t>(
+        std::distance(texturePlan.instruments.begin(), explicitOwner) + 1);
+    require(instrumentOwnedChunk.notes.size() == 1 &&
+                instrumentOwnedChunk.notes.front().partId == expectedPartId,
+            "GPT instrument_id authorship must resolve to the exact planned DAW part");
+    [[maybe_unused]] const auto instrumentOwnershipReport =
+        OrchestrationScore::realize(instrumentOwnedChunk, texturePlan);
+    require(std::any_of(instrumentOwnedChunk.notes.begin(), instrumentOwnedChunk.notes.end(),
+                [&](const auto& note) {
+                    return note.partId == expectedPartId && note.origin == NoteOrigin::AiAuthored;
+                }),
+            "Concrete GPT part ownership must survive orchestration and MIDI publication: expected=" +
+                std::to_string(expectedPartId) + ", first=" +
+                (instrumentOwnedChunk.notes.empty() ? std::string("empty") :
+                    std::to_string(instrumentOwnedChunk.notes.front().partId) + "/" +
+                    std::to_string(static_cast<int>(instrumentOwnedChunk.notes.front().origin))));
+
+    const auto voiceLayer = std::find_if(texturePlan.soundscape.layers.begin(),
+        texturePlan.soundscape.layers.end(), [](const auto& layer) {
+            return layer.kind == SoundscapeLayerKind::Voice;
+        });
+    require(texturePlan.soundscape.active && texturePlan.soundscape.percussionFree &&
+                voiceLayer != texturePlan.soundscape.layers.end(),
+            "A percussion-free electronic plan must expose concrete soundscape contracts");
+    const auto assignment = std::find_if(texturePlan.instruments.begin(), texturePlan.instruments.end(),
+        [&](const auto& part) { return part.id == voiceLayer->instrumentId; });
+    require(assignment != texturePlan.instruments.end(),
+            "Every soundscape layer must reference one stable instrument assignment");
+    auto tokenTrack = renderedTexture;
+    const auto tokenPartId = static_cast<std::uint16_t>(
+        std::distance(texturePlan.instruments.begin(), assignment) + 1);
+    auto retained = 0;
+    tokenTrack.notes.erase(std::remove_if(tokenTrack.notes.begin(), tokenTrack.notes.end(),
+        [&](const auto& note) {
+            if (note.partId != tokenPartId) return false;
+            return ++retained > 4;
+        }), tokenTrack.notes.end());
+    const auto tokenAudit = ElectronicSoundscapeDirector::audit(tokenTrack, texturePlan);
+    require(tokenAudit.underdevelopedVoices > 0 && !tokenAudit.ready &&
+                std::find(tokenAudit.issues.begin(), tokenAudit.issues.end(),
+                          "soundscape_voices_are_only_token_tracks") != tokenAudit.issues.end(),
+            "Four notes with an impressive electronic label must not count as a developed voice");
+
+    auto oneShotPlan = texturePlan;
+    oneShotPlan.soundscape.authored = true;
+    oneShotPlan.soundscape.layers = {{voiceLayer->instrumentId, SoundscapeLayerKind::OneShot,
+        SoundscapeTimeScale::Event, "Singular memory impact", "Closes the transition",
+        "Appears once by design", 1, 1, 1, .25}};
+    Pattern oneShot;
+    oneShot.lengthBeats = texturePlan.totalBars * texturePlan.beatsPerBar;
+    oneShot.parts = renderedTexture.parts;
+    oneShot.notes.push_back({8.0, .25, 60, 72, 9, assignment->sourceVoice, tokenPartId});
+    const auto oneShotAudit = ElectronicSoundscapeDirector::audit(oneShot, oneShotPlan);
+    require(oneShotAudit.meaningfulLayers == 1 && oneShotAudit.underdevelopedVoices == 0,
+            "A declared singular FX event needs a different contract from a musical voice");
+
+    const auto percussionFreeNarrative = NarrativeScoreGate::audit(renderedTexture, texturePlan);
+    require(std::find(percussionFreeNarrative.issues.begin(), percussionFreeNarrative.issues.end(),
+                      "club_pulse_absent_too_long") == percussionFreeNarrative.issues.end() &&
+                std::find(percussionFreeNarrative.issues.begin(), percussionFreeNarrative.issues.end(),
+                          "undeveloped_rhythm_narrative") == percussionFreeNarrative.issues.end(),
+            "A percussion-free electronic work must be judged by harmonic and timbral motion, not missing drums");
+
     auto consecutiveForegroundSilence = 0;
     auto maximumForegroundSilence = 0;
     for (auto start = 0.0; start < renderedClub.lengthBeats; start += clubPlan.beatsPerBar * 8.0) {
@@ -884,7 +1062,10 @@ void runGeneratorTests() {
     require(deepReport.orchestration.independentNotes > 0 &&
                 deepReport.orchestration.registerClarity >= 0.70 &&
                 deepReport.orchestration.familyBalance >= 0.45,
-            "Deep orchestration must write independent material and pass register/balance review");
+            "Deep orchestration must write independent material and pass register/balance review: independent=" +
+            std::to_string(deepReport.orchestration.independentNotes) + ", clarity=" +
+            std::to_string(deepReport.orchestration.registerClarity) + ", balance=" +
+            std::to_string(deepReport.orchestration.familyBalance));
     require(deepReport.production.ready && longSong.productionAuditPerformed &&
                 longSong.productionReady && deepReport.production.metricViolations == 0 &&
                 deepReport.production.expressionEventsPerNote <= 12.0 &&
@@ -1732,7 +1913,7 @@ void runGeneratorTests() {
                     return instrument.instrumentId == "marimba" ||
                            instrument.instrumentId == "vibraphone" ||
                            instrument.instrumentId == "celesta";
-                }) && timbrePlan.instruments.front().instrumentId == "poly_synth",
+                }) && timbrePlan.instruments.front().instrumentId == "filtered_stab",
             "A non-orchestral club score must replace game-like pitched mallets with electronic timbre");
 
     auto octavePlan = SongComposer::createLocalPlan(

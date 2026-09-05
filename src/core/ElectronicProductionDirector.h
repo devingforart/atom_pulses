@@ -37,6 +37,7 @@ struct ProductionLanguage {
 
 struct ElectronicProductionReport {
     bool active{};
+    bool percussionFree{};
     std::size_t lowEndCollisionsBefore{};
     std::size_t lowEndCollisionsAfter{};
     std::size_t bassAttacksMoved{};

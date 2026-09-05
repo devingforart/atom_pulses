@@ -1,10 +1,13 @@
 #pragma once
 
 #include "MusicTypes.h"
+#include "OrchestrationScore.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <set>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -21,6 +24,9 @@ struct AuthoredNote {
     int velocity{96};
     VoiceId voice{VoiceId::Unspecified};
     MetricIntent metricIntent{MetricIntent::StrictGrid};
+    // Optional stable id from SongPlan::instruments. When present, GPT owns the
+    // actual DAW part instead of leaving orchestration to distribute a voice-level line.
+    std::string instrumentId;
 };
 
 struct AuthoredControl {
@@ -28,6 +34,7 @@ struct AuthoredControl {
     int controller{11};
     int value{100};
     VoiceId voice{VoiceId::Unspecified};
+    std::string instrumentId;
 };
 
 struct PerformanceCell {
@@ -90,8 +97,11 @@ public:
                                             const std::vector<double>& sectionLengths);
     [[nodiscard]] static std::array<bool, static_cast<std::size_t>(VoiceId::Count)>
         ownedVoicesForSection(const PerformanceScore&, int sectionIndex) noexcept;
+    [[nodiscard]] static std::set<std::string>
+        ownedInstrumentIdsForSection(const PerformanceScore&, int sectionIndex);
     static void replaceChunk(Pattern&, const PerformanceScore&, int sectionIndex,
-                             double chunkStartInSection, double chunkLength);
+                             double chunkStartInSection, double chunkLength,
+                             std::span<const InstrumentAssignment> instruments = {});
     [[nodiscard]] static std::uint64_t fingerprint(const PerformanceCell&) noexcept;
 };
 

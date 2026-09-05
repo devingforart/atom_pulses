@@ -241,6 +241,8 @@ juce::String songPlanToJson(const SongPlan& plan) {
         item->setProperty("name", juce::String::fromUTF8(instrument.name.c_str()));
         item->setProperty("source_voice", juce::String(voiceDefinition(instrument.sourceVoice).key.data()));
         item->setProperty("role", juce::String::fromUTF8(instrument.role.c_str()));
+        item->setProperty("content_lane_id", juce::String::fromUTF8(instrument.contentLaneId.c_str()));
+        item->setProperty("line_relationship", juce::String::fromUTF8(instrument.lineRelationship.c_str()));
         item->setProperty("minimum_pitch", instrument.minimumPitch);
         item->setProperty("maximum_pitch", instrument.maximumPitch);
         item->setProperty("octave_shift", instrument.octaveShift);
@@ -326,6 +328,7 @@ juce::String songPlanToJson(const SongPlan& plan) {
             event->setProperty("pitch", note.pitch);
             event->setProperty("velocity", note.velocity);
             event->setProperty("voice", juce::String(voiceDefinition(note.voice).key.data()));
+            event->setProperty("instrument_id", juce::String::fromUTF8(note.instrumentId.c_str()));
             event->setProperty("metric_intent", juce::String(metricIntentKey(note.metricIntent).data()));
             notes.add(juce::var(event));
         }
@@ -337,6 +340,7 @@ juce::String songPlanToJson(const SongPlan& plan) {
             event->setProperty("controller", control.controller);
             event->setProperty("value", control.value);
             event->setProperty("voice", juce::String(voiceDefinition(control.voice).key.data()));
+            event->setProperty("instrument_id", juce::String::fromUTF8(control.instrumentId.c_str()));
             controls.add(juce::var(event));
         }
         item->setProperty("controls", controls);
@@ -1511,6 +1515,29 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 }
                 if (aiError.isNotEmpty())
                     metadata->description += " Local rendering remained available because: " + aiError;
+                metadata->description += " Arrangement " +
+                    juce::String(static_cast<int>(generated.populatedInstrumentParts)) + "/" +
+                    juce::String(static_cast<int>(generated.arrangementTargetParts)) +
+                    " populated parts; H" + juce::String(static_cast<int>(generated.populatedHarmonyParts)) +
+                    " M" + juce::String(static_cast<int>(generated.populatedMelodyParts)) +
+                    " T" + juce::String(static_cast<int>(generated.populatedTextureParts)) +
+                    "; peak " + juce::String(static_cast<int>(generated.peakSimultaneousParts)) +
+                    "; independence " + juce::String(generated.partIndependenceScore * 100.0, 0) + "%.";
+                if (generated.soundscapeAuditPerformed)
+                    metadata->description += " Electronic soundscape " +
+                        juce::String(static_cast<int>(generated.meaningfulSoundscapeLayers)) + "/" +
+                        juce::String(static_cast<int>(generated.declaredSoundscapeLayers)) +
+                        " developed layers; median fabric " +
+                        juce::String(generated.medianActiveSoundscapeLayers, 1) +
+                        "; score " + juce::String(generated.soundscapeScore * 100.0, 0) +
+                        "%. Musical fabric " +
+                        juce::String(static_cast<int>(generated.meaningfulMusicalLines)) + "/" +
+                        juce::String(static_cast<int>(generated.independentMusicalLines)) +
+                        " independent lines; floor " +
+                        juce::String(generated.harmonicFloorCoverage * 100.0, 0) +
+                        "%; speaker phrases " +
+                        juce::String(static_cast<int>(generated.protagonistPhraseWindows)) +
+                        "; arp notes " + juce::String(static_cast<int>(generated.arpeggioNoteCount)) + ".";
             } else {
             auto usedAI = false;
             juce::String aiError;
@@ -1531,7 +1558,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     metadata->title = ai.title;
                     metadata->key = ai.key;
                     metadata->description = ai.summary;
-                    metadata->status = "GPT-5.6 TERRA · VALIDATED";
+                    metadata->status = "GPT-5.6 SOL · VALIDATED";
                     usedAI = true;
                 }
             }
@@ -1642,6 +1669,32 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->maximumClubLowEndGapBars = generated.maximumClubLowEndGapBars;
         playbackPattern->densityControl = generated.densityControl;
         playbackPattern->peakActiveVoices = generated.peakActiveVoices;
+        playbackPattern->arrangementTargetParts = generated.arrangementTargetParts;
+        playbackPattern->populatedInstrumentParts = generated.populatedInstrumentParts;
+        playbackPattern->populatedHarmonyParts = generated.populatedHarmonyParts;
+        playbackPattern->populatedMelodyParts = generated.populatedMelodyParts;
+        playbackPattern->populatedRhythmParts = generated.populatedRhythmParts;
+        playbackPattern->populatedTextureParts = generated.populatedTextureParts;
+        playbackPattern->peakSimultaneousParts = generated.peakSimultaneousParts;
+        playbackPattern->partIndependenceScore = generated.partIndependenceScore;
+        playbackPattern->maximumPartNoteShare = generated.maximumPartNoteShare;
+        playbackPattern->soundscapeAuditPerformed = generated.soundscapeAuditPerformed;
+        playbackPattern->percussionFreeArrangement = generated.percussionFreeArrangement;
+        playbackPattern->soundscapeScene = generated.soundscapeScene;
+        playbackPattern->soundscapeSpatialNarrative = generated.soundscapeSpatialNarrative;
+        playbackPattern->soundscapeReady = generated.soundscapeReady;
+        playbackPattern->soundscapeScore = generated.soundscapeScore;
+        playbackPattern->declaredSoundscapeLayers = generated.declaredSoundscapeLayers;
+        playbackPattern->meaningfulSoundscapeLayers = generated.meaningfulSoundscapeLayers;
+        playbackPattern->independentMusicalLines = generated.independentMusicalLines;
+        playbackPattern->meaningfulMusicalLines = generated.meaningfulMusicalLines;
+        playbackPattern->protagonistPhraseWindows = generated.protagonistPhraseWindows;
+        playbackPattern->arpeggioNoteCount = generated.arpeggioNoteCount;
+        playbackPattern->dialogueMusicalLines = generated.dialogueMusicalLines;
+        playbackPattern->harmonicFloorCoverage = generated.harmonicFloorCoverage;
+        playbackPattern->medianHarmonicFloorLayers = generated.medianHarmonicFloorLayers;
+        playbackPattern->underdevelopedSoundscapeLayers = generated.underdevelopedSoundscapeLayers;
+        playbackPattern->medianActiveSoundscapeLayers = generated.medianActiveSoundscapeLayers;
         playbackPattern->narrativeIssues = generated.narrativeIssues;
         realtime.pattern = std::move(playbackPattern);
         realtime.lengthBeats = generated.lengthBeats;
@@ -2043,7 +2096,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(16); // Binary composition state version.
+        composition.writeInt(19); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -2110,6 +2163,8 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
             composition.writeDouble(part.timbre.uniqueness);
             composition.writeBool(part.liveSoundLocked);
             composition.writeInt(static_cast<int>(part.liveSoundVariation));
+            composition.writeString(juce::String::fromUTF8(part.contentLaneId.c_str()));
+            composition.writeString(juce::String::fromUTF8(part.lineRelationship.c_str()));
         }
         composition.writeString(juce::String::fromUTF8(pattern->soundWorld.c_str()));
         composition.writeDouble(pattern->soundWarmth);
@@ -2148,6 +2203,32 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
         composition.writeInt(static_cast<int>(pattern->maximumMelodicStepRun));
         composition.writeInt(static_cast<int>(pattern->maximumClubDrumGapBars));
         composition.writeInt(static_cast<int>(pattern->maximumClubLowEndGapBars));
+        composition.writeInt(static_cast<int>(pattern->arrangementTargetParts));
+        composition.writeInt(static_cast<int>(pattern->populatedInstrumentParts));
+        composition.writeInt(static_cast<int>(pattern->populatedHarmonyParts));
+        composition.writeInt(static_cast<int>(pattern->populatedMelodyParts));
+        composition.writeInt(static_cast<int>(pattern->populatedRhythmParts));
+        composition.writeInt(static_cast<int>(pattern->populatedTextureParts));
+        composition.writeInt(static_cast<int>(pattern->peakSimultaneousParts));
+        composition.writeDouble(pattern->partIndependenceScore);
+        composition.writeDouble(pattern->maximumPartNoteShare);
+        composition.writeBool(pattern->soundscapeAuditPerformed);
+        composition.writeBool(pattern->soundscapeReady);
+        composition.writeDouble(pattern->soundscapeScore);
+        composition.writeInt(static_cast<int>(pattern->declaredSoundscapeLayers));
+        composition.writeInt(static_cast<int>(pattern->meaningfulSoundscapeLayers));
+        composition.writeInt(static_cast<int>(pattern->underdevelopedSoundscapeLayers));
+        composition.writeDouble(pattern->medianActiveSoundscapeLayers);
+        composition.writeBool(pattern->percussionFreeArrangement);
+        composition.writeString(juce::String::fromUTF8(pattern->soundscapeScene.c_str()));
+        composition.writeString(juce::String::fromUTF8(pattern->soundscapeSpatialNarrative.c_str()));
+        composition.writeInt(static_cast<int>(pattern->independentMusicalLines));
+        composition.writeInt(static_cast<int>(pattern->meaningfulMusicalLines));
+        composition.writeInt(static_cast<int>(pattern->protagonistPhraseWindows));
+        composition.writeInt(static_cast<int>(pattern->arpeggioNoteCount));
+        composition.writeInt(static_cast<int>(pattern->dialogueMusicalLines));
+        composition.writeDouble(pattern->harmonicFloorCoverage);
+        composition.writeDouble(pattern->medianHarmonicFloorLayers);
         state.setProperty("compositionData", composition.getMemoryBlock().toBase64Encoding(), nullptr);
         if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) {
             state.setProperty("ideaTitle", metadata->title, nullptr);
@@ -2207,7 +2288,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 16) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 19) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2229,7 +2310,8 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                     if (version >= 8) note.authoredTiming = composition.readBool();
                     if (version >= 12) {
                         const auto origin = composition.readInt();
-                        note.origin = origin >= 0 && origin <= static_cast<int>(NoteOrigin::LocalRepair)
+                        const auto maximumOrigin = version >= 19 ? NoteOrigin::PlanDerived : NoteOrigin::LocalRepair;
+                        note.origin = origin >= 0 && origin <= static_cast<int>(maximumOrigin)
                             ? static_cast<NoteOrigin>(origin) : NoteOrigin::Procedural;
                         note.narrativeId = static_cast<std::uint32_t>(composition.readInt());
                     }
@@ -2348,6 +2430,10 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                     part.liveSoundLocked = composition.readBool();
                                     part.liveSoundVariation = static_cast<std::uint32_t>(
                                         std::max(0, composition.readInt()));
+                                    if (version >= 19) {
+                                        part.contentLaneId = composition.readString().substring(0, 96).toStdString();
+                                        part.lineRelationship = composition.readString().substring(0, 32).toStdString();
+                                    }
                                 }
                                 if (part.id > 0 && !part.name.empty()) restoredPattern->parts.push_back(std::move(part));
                             }
@@ -2435,6 +2521,61 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                             std::max(0, composition.readInt()));
                                         restoredPattern->maximumClubLowEndGapBars = static_cast<std::size_t>(
                                             std::max(0, composition.readInt()));
+                                        if (version >= 17) {
+                                            restoredPattern->arrangementTargetParts = static_cast<std::size_t>(
+                                                std::max(0, composition.readInt()));
+                                            restoredPattern->populatedInstrumentParts = static_cast<std::size_t>(
+                                                std::max(0, composition.readInt()));
+                                            restoredPattern->populatedHarmonyParts = static_cast<std::size_t>(
+                                                std::max(0, composition.readInt()));
+                                            restoredPattern->populatedMelodyParts = static_cast<std::size_t>(
+                                                std::max(0, composition.readInt()));
+                                            restoredPattern->populatedRhythmParts = static_cast<std::size_t>(
+                                                std::max(0, composition.readInt()));
+                                            restoredPattern->populatedTextureParts = static_cast<std::size_t>(
+                                                std::max(0, composition.readInt()));
+                                            restoredPattern->peakSimultaneousParts = static_cast<std::size_t>(
+                                                std::max(0, composition.readInt()));
+                                            restoredPattern->partIndependenceScore =
+                                                std::clamp(composition.readDouble(), 0.0, 1.0);
+                                            restoredPattern->maximumPartNoteShare =
+                                                std::clamp(composition.readDouble(), 0.0, 1.0);
+                                            if (version >= 18) {
+                                                restoredPattern->soundscapeAuditPerformed = composition.readBool();
+                                                restoredPattern->soundscapeReady = composition.readBool();
+                                                restoredPattern->soundscapeScore =
+                                                    std::clamp(composition.readDouble(), 0.0, 1.0);
+                                                restoredPattern->declaredSoundscapeLayers = static_cast<std::size_t>(
+                                                    std::max(0, composition.readInt()));
+                                                restoredPattern->meaningfulSoundscapeLayers = static_cast<std::size_t>(
+                                                    std::max(0, composition.readInt()));
+                                                restoredPattern->underdevelopedSoundscapeLayers = static_cast<std::size_t>(
+                                                    std::max(0, composition.readInt()));
+                                                restoredPattern->medianActiveSoundscapeLayers =
+                                                    std::max(0.0, composition.readDouble());
+                                                restoredPattern->percussionFreeArrangement = composition.readBool();
+                                                restoredPattern->soundscapeScene =
+                                                    composition.readString().substring(0, 512).toStdString();
+                                                restoredPattern->soundscapeSpatialNarrative =
+                                                    composition.readString().substring(0, 1024).toStdString();
+                                                if (version >= 19) {
+                                                    restoredPattern->independentMusicalLines = static_cast<std::size_t>(
+                                                        std::max(0, composition.readInt()));
+                                                    restoredPattern->meaningfulMusicalLines = static_cast<std::size_t>(
+                                                        std::max(0, composition.readInt()));
+                                                    restoredPattern->protagonistPhraseWindows = static_cast<std::size_t>(
+                                                        std::max(0, composition.readInt()));
+                                                    restoredPattern->arpeggioNoteCount = static_cast<std::size_t>(
+                                                        std::max(0, composition.readInt()));
+                                                    restoredPattern->dialogueMusicalLines = static_cast<std::size_t>(
+                                                        std::max(0, composition.readInt()));
+                                                    restoredPattern->harmonicFloorCoverage = std::clamp(
+                                                        composition.readDouble(), 0.0, 1.0);
+                                                    restoredPattern->medianHarmonicFloorLayers = std::max(
+                                                        0.0, composition.readDouble());
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

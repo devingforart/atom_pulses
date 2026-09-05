@@ -1,6 +1,7 @@
 #include "SongComposer.h"
 
 #include "CreativeAuthority.h"
+#include "ElectronicCompositionFabric.h"
 #include "Random.h"
 #include "HarmonyEngine.h"
 #include "ElectronicProductionDirector.h"
@@ -45,6 +46,8 @@ std::string lowerText(std::string text) {
     return text;
 }
 
+std::vector<PlannedVoice> defaultVoicePlan();
+
 void materializeNamedSoundWorld(SongPlan& plan) {
     const auto text = lowerText(plan.timbrePalette.description + " " + plan.timbrePalette.material);
     constexpr std::array references{
@@ -61,7 +64,11 @@ void materializeNamedSoundWorld(SongPlan& plan) {
         std::pair{"choir", "choir"}, std::pair{"harp", "harp"},
         std::pair{"marimba", "marimba"}, std::pair{"vibraphone", "vibraphone"},
         std::pair{"guitar", "guitar"}, std::pair{"analog pad", "analog_pad"},
-        std::pair{"synth lead", "lead_synth"}, std::pair{"sub bass", "sub_synth"}
+        std::pair{"synth lead", "lead_synth"}, std::pair{"sub bass", "sub_synth"},
+        std::pair{"dub chord", "dub_chord"}, std::pair{"filtered stab", "filtered_stab"},
+        std::pair{"hypnotic arp", "hypnotic_arp"}, std::pair{"granular pad", "granular_pad"},
+        std::pair{"spectral drone", "spectral_drone"}, std::pair{"deep pluck", "deep_pluck"},
+        std::pair{"fm sequence", "fm_sequence"}, std::pair{"vocal chop", "vocal_chop_texture"}
     };
     plan.timbrePalette.essentialInstrumentIds.clear();
     std::vector<std::string> claimedTerms;
@@ -105,6 +112,293 @@ void materializeNamedSoundWorld(SongPlan& plan) {
             ? "Drum Rack" : "Instrument Rack";
         addition.livePresetIntent = std::string(term) + " matching the shared sound world";
         plan.instruments.push_back(std::move(addition));
+    }
+}
+
+bool textContainsAny(const std::string& text, std::initializer_list<std::string_view> terms) {
+    return std::any_of(terms.begin(), terms.end(), [&](std::string_view term) {
+        return text.find(std::string(term)) != std::string::npos;
+    });
+}
+
+std::string planIntentText(const SongPlan& plan) {
+    return lowerText(plan.title + " " + plan.summary + " " +
+                     plan.productionLanguage.description + " " +
+                     plan.rhythmLanguage.description + " " +
+                     plan.harmonicLanguage.description + " " +
+                     plan.orchestrationLanguage.description + " " +
+                     plan.timbrePalette.description + " " +
+                     plan.timbrePalette.material + " " + plan.timbrePalette.space);
+}
+
+bool harmonicTextureRequested(const SongPlan& plan) {
+    const auto text = planIntentText(plan);
+    const auto has = [&](std::string_view term) {
+        return text.find(std::string(term)) != std::string::npos;
+    };
+    const auto textureLanguage =
+        has("colchon") || has("colchón") || has("colchones") || has("pad") ||
+        has("atmosphere") || has("atmospheric") || has("atmosfera") ||
+        has("atmósfera") || has("atmosfer") || has("textur") || has("texture") ||
+        has("drone") || has("harmonic bed") || has("layered harmony") ||
+        has("many harmonic") || has("capas armon") || has("harmonic texture") ||
+        has("sinfonia de sonidos") || has("symphony of sounds") || has("sound symphony");
+    const auto noDrumsLanguage =
+        has("no percussion") || has("without percussion") || has("sin percusion") ||
+        has("sin percusión") || has("sin percusiones") || has("no drums") ||
+        has("without drums") || has("sin drums") || has("sin bateria") ||
+        has("sin batería") || has("sin ritmica") || has("sin rítmica") ||
+        has("sin ritmo") || has("no rhythm");
+    const auto rhythmParts = std::count_if(plan.instruments.begin(), plan.instruments.end(), [](const auto& instrument) {
+        const auto* definition = instrumentDefinition(instrument.instrumentId);
+        return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
+    });
+    const auto electronicNoDrums = noDrumsLanguage &&
+        (has("electronic") || has("electronica") || has("electrónica") ||
+         has("synth") || has("sintetizador") || has("sintetizadores") ||
+         has("pad") || has("colchon") || has("colchón") || has("drone") || has("atmos"));
+    return textureLanguage || electronicNoDrums || (noDrumsLanguage && rhythmParts == 0);
+}
+
+bool noPercussionRequested(const SongPlan& plan) {
+    if (plan.percussionFreeIntent) return true;
+    const auto text = planIntentText(plan);
+    if (textContainsAny(text, {"con percusion", "con percusión", "with percussion", "with drums",
+                               "four on the floor", "four-on-the-floor", "bombo en negras",
+                               "bombo constante", "constant kick"}))
+        return false;
+    if (textContainsAny(text, {"no percussion", "without percussion", "sin percusion", "sin percusión",
+                               "sin percusiones", "no drums", "without drums", "sin drums", "sin bateria",
+                               "sin batería", "sin ritmica", "sin rítmica", "sin ritmo", "no rhythm"}))
+        return true;
+    const auto rhythmParts = std::count_if(plan.instruments.begin(), plan.instruments.end(), [](const auto& instrument) {
+        const auto* definition = instrumentDefinition(instrument.instrumentId);
+        return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
+    });
+    return harmonicTextureRequested(plan) && plan.instrumentCastAuthored && rhythmParts == 0;
+}
+
+void upsertVoice(SongPlan& plan, VoiceId id, double activity, double syncopation, std::string function) {
+    const auto found = std::find_if(plan.voices.begin(), plan.voices.end(),
+        [id](const auto& voice) { return voice.id == id; });
+    if (found != plan.voices.end()) {
+        found->activity = std::max(found->activity, activity);
+        found->syncopation = std::max(found->syncopation, syncopation);
+        if (found->function.empty()) found->function = std::move(function);
+        return;
+    }
+    const auto defaults = defaultVoicePlan();
+    auto source = std::find_if(defaults.begin(), defaults.end(), [id](const auto& voice) {
+        return voice.id == id;
+    });
+    if (source == defaults.end()) return;
+    auto addition = *source;
+    addition.activity = std::max(addition.activity, activity);
+    addition.syncopation = std::max(addition.syncopation, syncopation);
+    addition.function = std::move(function);
+    plan.voices.push_back(std::move(addition));
+}
+
+InstrumentAssignment electronicTexturePart(std::string id, std::string instrumentId, std::string name,
+                                           VoiceId voice, std::string role, double activity,
+                                           double prominence, std::string function,
+                                           std::string articulation, int divisiVoices,
+                                           std::string device, std::string preset,
+                                           TimbreSignature timbre) {
+    const auto* definition = instrumentDefinition(instrumentId);
+    InstrumentAssignment result;
+    result.id = std::move(id);
+    result.instrumentId = std::move(instrumentId);
+    result.name = std::move(name);
+    result.sourceVoice = voice;
+    result.role = std::move(role);
+    result.minimumPitch = definition == nullptr ? voiceDefinition(voice).minimumPitch : definition->minimumPitch;
+    result.maximumPitch = definition == nullptr ? voiceDefinition(voice).maximumPitch : definition->maximumPitch;
+    result.activity = activity;
+    result.prominence = prominence;
+    result.doubling = 0.02;
+    result.orchestralFunction = std::move(function);
+    result.articulation = std::move(articulation);
+    result.divisiVoices = divisiVoices;
+    result.liveDevice = std::move(device);
+    result.livePresetIntent = std::move(preset);
+    result.timbre = std::move(timbre);
+    return result;
+}
+
+void removePercussionArchitecture(SongPlan& plan) {
+    plan.instruments.erase(std::remove_if(plan.instruments.begin(), plan.instruments.end(), [](const auto& instrument) {
+        const auto* definition = instrumentDefinition(instrument.instrumentId);
+        return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
+    }), plan.instruments.end());
+    plan.voices.erase(std::remove_if(plan.voices.begin(), plan.voices.end(), [](const auto& voice) {
+        return isVoiceInFamily(voice.id, VoiceFamily::Rhythm);
+    }), plan.voices.end());
+    plan.rhythmMotifs.clear();
+    for (auto& section : plan.sections) {
+        section.activeVoices.erase(std::remove_if(section.activeVoices.begin(), section.activeVoices.end(),
+            [](VoiceId voice) { return isVoiceInFamily(voice, VoiceFamily::Rhythm); }),
+            section.activeVoices.end());
+        section.rhythm.authored = true;
+        section.rhythm.kickState = KickState::Muted;
+        section.rhythm.continuity = KickContinuity::Sectional;
+        section.rhythm.percussionDensity = 0.0;
+        section.rhythm.syncopation = 0.0;
+        section.rhythm.swing = 0.0;
+        section.rhythm.gestures.clear();
+        section.rhythm.mutations.clear();
+    }
+    for (auto& cell : plan.performanceScore.cells) {
+        cell.notes.erase(std::remove_if(cell.notes.begin(), cell.notes.end(),
+            [](const auto& note) { return isVoiceInFamily(note.voice, VoiceFamily::Rhythm); }),
+            cell.notes.end());
+        cell.controls.erase(std::remove_if(cell.controls.begin(), cell.controls.end(),
+            [](const auto& control) { return isVoiceInFamily(control.voice, VoiceFamily::Rhythm); }),
+            cell.controls.end());
+        cell.ownedVoices.erase(std::remove_if(cell.ownedVoices.begin(), cell.ownedVoices.end(),
+            [](VoiceId voice) { return isVoiceInFamily(voice, VoiceFamily::Rhythm); }),
+            cell.ownedVoices.end());
+    }
+    plan.performanceScore.cells.erase(std::remove_if(plan.performanceScore.cells.begin(),
+        plan.performanceScore.cells.end(), [](const auto& cell) {
+            return cell.ownedVoices.empty() && cell.notes.empty();
+        }), plan.performanceScore.cells.end());
+    for (auto& placement : plan.performanceScore.placements)
+        placement.voiceMap.erase(std::remove_if(placement.voiceMap.begin(), placement.voiceMap.end(),
+            [](const auto& mapping) {
+                return isVoiceInFamily(mapping.from, VoiceFamily::Rhythm) ||
+                       isVoiceInFamily(mapping.to, VoiceFamily::Rhythm);
+            }), placement.voiceMap.end());
+}
+
+void applyHarmonicTextureDirector(SongPlan& plan, bool force = false) {
+    if (!force && !harmonicTextureRequested(plan)) return;
+    plan.productionLanguage.domain = ProductionDomain::ClubElectronic;
+    plan.productionLanguage.electronicIntent = std::max(plan.productionLanguage.electronicIntent, 0.82);
+    plan.productionLanguage.orchestralAllowance = std::min(plan.productionLanguage.orchestralAllowance, 0.18);
+    plan.orchestrationLanguage.harmonicDepth = std::max(plan.orchestrationLanguage.harmonicDepth, 0.86);
+    plan.orchestrationLanguage.timbralMotion = std::max(plan.orchestrationLanguage.timbralMotion, 0.76);
+    plan.orchestrationLanguage.counterpointActivity = std::max(plan.orchestrationLanguage.counterpointActivity, 0.62);
+    plan.orchestrationLanguage.divisiDepth = std::max(plan.orchestrationLanguage.divisiDepth, 0.58);
+    plan.orchestrationLanguage.description +=
+        " Harmonic texture director: many independent electronic pads, pulses, drones and sparse responses.";
+    plan.timbrePalette.acousticElectronicBalance = std::max(plan.timbrePalette.acousticElectronicBalance, 0.82);
+    plan.timbrePalette.material +=
+        " Electronic harmonic architecture with distinct pads, stabs, arps, drones, plucks and air layers.";
+
+    if (noPercussionRequested(plan)) removePercussionArchitecture(plan);
+
+    upsertVoice(plan, VoiceId::HarmonicFoundation, 0.78, 0.16,
+                "Slow harmonic ground and chord memory");
+    upsertVoice(plan, VoiceId::HarmonicPulse, 0.62, 0.42,
+                "Sparse harmonic punctuation and filtered motion");
+    upsertVoice(plan, VoiceId::HarmonicUpper, 0.50, 0.18,
+                "High extensions and restrained shimmer");
+    upsertVoice(plan, VoiceId::Atmosphere, 0.58, 0.10,
+                "Long evolving background continuity");
+    upsertVoice(plan, VoiceId::Countermelody, 0.36, 0.28,
+                "Short phrase answers in negative space");
+    upsertVoice(plan, VoiceId::Transitions, 0.26, 0.18,
+                "Non-drum rises, reverses and section breath");
+
+    // GPT chooses the concrete soundscape. For an authored cast this director only
+    // normalizes intent and constraints; adding our favourite ten devices here would
+    // erase model autonomy and create empty/token tracks with no authored trajectory.
+    if (plan.instrumentCastAuthored) return;
+
+    std::vector<InstrumentAssignment> required;
+    required.push_back(electronicTexturePart("texture_foundation_pad", "analog_pad", "Foundation Pad",
+        VoiceId::HarmonicFoundation, "Main slow chord bed with revoicing and rests", .74, .58,
+        "foundation", "sustained", 2, "Wavetable", "warm wide foundation pad",
+        {"saw", "sustained", "warm", "evolving", "wide", "clean", .62}));
+    required.push_back(electronicTexturePart("texture_dub_chord", "dub_chord", "Dub Chord Echo",
+        VoiceId::HarmonicFoundation, "Sparse delayed harmonic identity", .50, .44,
+        "color", "staccato", 1, "Drift", "warm delayed dub chord stab",
+        {"saw", "gated", "warm", "rhythmic", "wet", "organic", .70}));
+    required.push_back(electronicTexturePart("texture_filtered_stab", "filtered_stab", "Filtered Stab",
+        VoiceId::HarmonicPulse, "Short chord punctuation that leaves air", .46, .42,
+        "counterpoint", "detached", 1, "Meld", "short filtered analog chord stab",
+        {"hybrid", "short", "dark", "rhythmic", "close", "gritty", .72}));
+    required.push_back(electronicTexturePart("texture_hypnotic_arp", "hypnotic_arp", "Hypnotic Arp",
+        VoiceId::HarmonicPulse, "Muted repeated tones with phrase-level gaps", .42, .38,
+        "counterpoint", "ostinato", 1, "Wavetable", "muted hypnotic arpeggiated synth pulse",
+        {"square", "pluck", "neutral", "rhythmic", "close", "clean", .58}));
+    required.push_back(electronicTexturePart("texture_upper_shimmer", "shimmer_tail", "Shimmer Tail",
+        VoiceId::HarmonicUpper, "High release halo only on arrivals and withdrawals", .34, .30,
+        "extension", "swelling", 1, "Wavetable", "high shimmer tail pad",
+        {"noise", "swelling", "bright", "evolving", "wide", "airy", .74}));
+    required.push_back(electronicTexturePart("texture_granular_pad", "granular_pad", "Granular Pad",
+        VoiceId::Atmosphere, "Slow textural bed carrying breakdown continuity", .56, .36,
+        "foundation", "swelling", 2, "Granulator III", "slow granular harmonic pad",
+        {"sample", "swelling", "dark", "evolving", "deep", "airy", .82}));
+    required.push_back(electronicTexturePart("texture_spectral_drone", "spectral_drone", "Spectral Drone",
+        VoiceId::Atmosphere, "Low-density drone with tonal centre and long gaps", .38, .28,
+        "transition", "sustained", 1, "Wavetable", "low spectral drone bed",
+        {"sine", "sustained", "dark", "subtle", "deep", "clean", .64}));
+    required.push_back(electronicTexturePart("texture_noise_riser", "noise_riser", "Noise Riser",
+        VoiceId::Transitions, "Non-percussive noise rises and reverses for form", .24, .22,
+        "transition", "swelling", 1, "Wavetable", "filtered noise rise and reverse texture",
+        {"noise", "swelling", "bright", "evolving", "wet", "airy", .78}));
+    required.push_back(electronicTexturePart("texture_deep_pluck", "deep_pluck", "Deep Pluck Reply",
+        VoiceId::Countermelody, "Sparse melodic replies with silence after each idea", .34, .34,
+        "counterpoint", "staccato", 1, "Drift", "round deep pluck response",
+        {"triangle", "pluck", "warm", "subtle", "close", "organic", .66}));
+    required.push_back(electronicTexturePart("texture_fm_sequence", "fm_sequence", "FM Sequence",
+        VoiceId::Countermelody, "Short electronic phrase answer, never constant melody", .26, .28,
+        "color", "detached", 1, "Operator", "soft FM sequence counterline",
+        {"fm", "short", "neutral", "rhythmic", "close", "clean", .68}));
+
+    // A large cast is a palette across time, not a tutti. Give every layer a
+    // complementary sectional residency so depth increases without overcrowding.
+    for (std::size_t partIndex = 0; partIndex < required.size(); ++partIndex) {
+        auto& part = required[partIndex];
+        for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+            const auto& section = plan.sections[sectionIndex];
+            const auto structuralBed = partIndex == 0 || partIndex == 5;
+            const auto transition = part.sourceVoice == VoiceId::Transitions;
+            const auto selected = structuralBed
+                ? (sectionIndex + partIndex) % 3 != 1
+                : transition ? sectionIndex > 0 && (sectionIndex + partIndex) % 2 == 0
+                : (sectionIndex + partIndex) % 2 == 0;
+            if (selected) part.activeSections.push_back(section.name);
+        }
+        if (part.activeSections.empty() && !plan.sections.empty())
+            part.activeSections.push_back(plan.sections[partIndex % plan.sections.size()].name);
+    }
+
+    for (auto& addition : required) {
+        const auto existing = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+            [&](const auto& instrument) {
+                return instrument.id == addition.id || instrument.instrumentId == addition.instrumentId;
+            });
+        if (existing == plan.instruments.end()) {
+            if (plan.instruments.size() < 48) plan.instruments.push_back(std::move(addition));
+            continue;
+        }
+        existing->activity = std::max(existing->activity, addition.activity);
+        existing->prominence = std::max(existing->prominence, addition.prominence);
+        if (existing->role.empty()) existing->role = addition.role;
+        if (existing->liveDevice.empty() || existing->liveDevice == "auto") existing->liveDevice = addition.liveDevice;
+        if (existing->livePresetIntent.empty() || existing->livePresetIntent == "balanced natural")
+            existing->livePresetIntent = addition.livePresetIntent;
+        if (existing->orchestralFunction.empty() || existing->orchestralFunction == "body")
+            existing->orchestralFunction = addition.orchestralFunction;
+        if (existing->activeSections.empty()) existing->activeSections = addition.activeSections;
+    }
+
+    std::array<VoiceId, 6> textureVoices{VoiceId::HarmonicFoundation, VoiceId::HarmonicPulse,
+        VoiceId::HarmonicUpper, VoiceId::Atmosphere, VoiceId::Countermelody, VoiceId::Transitions};
+    for (auto& section : plan.sections) {
+        for (const auto voice : textureVoices)
+            if (std::find(section.activeVoices.begin(), section.activeVoices.end(), voice) ==
+                section.activeVoices.end())
+                section.activeVoices.push_back(voice);
+        if (noPercussionRequested(plan)) {
+            section.activeVoices.erase(std::remove_if(section.activeVoices.begin(),
+                section.activeVoices.end(), [](VoiceId voice) {
+                    return isVoiceInFamily(voice, VoiceFamily::Rhythm);
+                }), section.activeVoices.end());
+        }
     }
 }
 
@@ -517,6 +811,40 @@ AudibleDurationRepair enforceAudibleDurations(
     return report;
 }
 
+void enforceElectronicReleaseCeilings(Pattern& song, const SongPlan& plan) {
+    const auto electronicCore = plan.productionLanguage.electronicIntent >= 0.58 &&
+        (plan.productionLanguage.domain == ProductionDomain::ClubElectronic ||
+         plan.productionLanguage.domain == ProductionDomain::Hybrid);
+    if (!electronicCore) return;
+    for (auto& note : song.notes) {
+        const auto maximum = note.voice == VoiceId::HarmonicPulse ? plan.beatsPerBar * 0.25
+            : note.voice == VoiceId::HarmonicFoundation ? std::max(0.25, plan.beatsPerBar - 1.0 / 16.0)
+            : note.voice == VoiceId::CoreDrums || note.voice == VoiceId::SnareClap ||
+              note.voice == VoiceId::ClosedHats || note.voice == VoiceId::OpenHatsShaker ? 0.25
+            : note.voice == VoiceId::LowPercussion || note.voice == VoiceId::HighPercussion ? 0.50
+            : note.voice == VoiceId::Transitions ? 1.0
+            : note.voice == VoiceId::Atmosphere ? plan.beatsPerBar * 2.0
+            : note.durationBeats;
+        note.durationBeats = std::max(1.0 / 960.0, std::min(note.durationBeats, maximum));
+    }
+}
+
+void stripPublishedPercussion(Pattern& song) {
+    song.notes.erase(std::remove_if(song.notes.begin(), song.notes.end(), [](const auto& note) {
+        return isVoiceInFamily(note.voice, VoiceFamily::Rhythm);
+    }), song.notes.end());
+    song.controls.erase(std::remove_if(song.controls.begin(), song.controls.end(), [](const auto& control) {
+        return isVoiceInFamily(control.voice, VoiceFamily::Rhythm);
+    }), song.controls.end());
+    song.expressions.erase(std::remove_if(song.expressions.begin(), song.expressions.end(), [](const auto& expression) {
+        return isVoiceInFamily(expression.voice, VoiceFamily::Rhythm);
+    }), song.expressions.end());
+    song.parts.erase(std::remove_if(song.parts.begin(), song.parts.end(), [](const auto& part) {
+        return part.department == ScoreDepartment::Rhythm ||
+               isVoiceInFamily(part.sourceVoice, VoiceFamily::Rhythm);
+    }), song.parts.end());
+}
+
 std::size_t repairSamePitchOverlaps(Pattern& song) {
     std::sort(song.notes.begin(), song.notes.end(), [](const auto& left, const auto& right) {
         if (left.partId != right.partId) return left.partId < right.partId;
@@ -792,6 +1120,11 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
     plan.summary = "A complete thematic arc with recurring material, contrast, climax and resolution.";
     plan.productionLanguage = ElectronicProductionDirector::infer(direction);
     plan.productionModeSource = "local_inference";
+    const auto explicitIntentText = lowerText(direction);
+    plan.percussionFreeIntent = textContainsAny(explicitIntentText,
+        {"no percussion", "without percussion", "sin percusion", "sin percusiones",
+         "no drums", "without drums", "sin bateria", "sin ritmica", "no rhythm"});
+    plan.soundscape.percussionFree = plan.percussionFreeIntent;
 
     Random random(seed ^ 0x534F4E47504C414EULL);
     const auto third = plan.scale == ScaleKind::Major ? 4 : 3;
@@ -977,6 +1310,24 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
             rhythm.gestures.push_back({bars - 1, RhythmGestureKind::PickupFill, 3.5, 0.76});
         allocated += bars;
     }
+    const auto directionLower = lowerText(direction);
+    const auto forceHarmonicTexture =
+        direction.find("pad") != std::string::npos ||
+        direction.find("Pad") != std::string::npos ||
+        direction.find("no percussion") != std::string::npos ||
+        directionLower.find("pad") != std::string::npos ||
+        directionLower.find("colchon") != std::string::npos ||
+        directionLower.find("colchón") != std::string::npos ||
+        directionLower.find("drone") != std::string::npos ||
+        directionLower.find("atmos") != std::string::npos ||
+        directionLower.find("textur") != std::string::npos ||
+        directionLower.find("no percussion") != std::string::npos ||
+        directionLower.find("sin percusion") != std::string::npos ||
+        directionLower.find("sin percusión") != std::string::npos ||
+        directionLower.find("no drums") != std::string::npos ||
+        directionLower.find("sin bateria") != std::string::npos ||
+        directionLower.find("sin batería") != std::string::npos;
+    applyHarmonicTextureDirector(plan, forceHarmonicTexture);
     const auto strictFourOnFloor = containsCaseInsensitive(direction, "constant kick") ||
         containsCaseInsensitive(direction, "four on the floor") ||
         containsCaseInsensitive(direction, "four-on-the-floor") ||
@@ -1112,7 +1463,9 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     // director once more so newly materialized instruments obey the same club-world
     // timbral contract (in particular, no accidental toy/mallet foreground).
     ElectronicProductionDirector::normalizePlan(plan);
+    applyHarmonicTextureDirector(plan);
     if (plan.instruments.size() > 48) plan.instruments.resize(48);
+    const auto noPercussionIntent = noPercussionRequested(plan);
     if (plan.orchestrationLanguage.description.empty())
         plan.orchestrationLanguage.description = "Evolving chamber-to-tutti orchestration";
     if (plan.orchestrationLanguage.description.size() > 320)
@@ -1131,6 +1484,13 @@ void SongComposer::normalizePlan(SongPlan& plan) {
                         &plan.orchestrationLanguage.familyDialogue,
                         &plan.orchestrationLanguage.hybridProduction})
         *value = std::clamp(std::isfinite(*value) ? *value : 0.5, 0.0, 1.0);
+    // Translate production depth into an explicit, rotating instrument cast before
+    // per-instrument validation. This is the single authority for requested track scale.
+    ArrangementDensityPlanner::apply(plan);
+    // Establish independent content lanes and only the missing structural roles before
+    // normalizing the concrete instrument assignments.
+    ElectronicCompositionFabric::normalizePlan(plan);
+    if (plan.instruments.size() > 48) plan.instruments.resize(48);
     if (plan.timbrePalette.description.empty())
         plan.timbrePalette.description = "coherent, dimensional and natural";
     if (plan.timbrePalette.material.empty())
@@ -1340,6 +1700,7 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     }
     const auto defaults = defaultVoicePlan();
     for (const auto rhythmVoice : {VoiceId::SnareClap, VoiceId::ClosedHats, VoiceId::OpenHatsShaker})
+        if (!noPercussionIntent)
         if (std::none_of(plan.voices.begin(), plan.voices.end(), [rhythmVoice](const auto& voice) {
                 return voice.id == rhythmVoice;
             })) {
@@ -1404,7 +1765,16 @@ void SongComposer::normalizePlan(SongPlan& plan) {
         section.energy = std::clamp(section.energy, 0.0, 1.0);
         section.tension = std::clamp(section.tension, 0.0, 1.0);
         section.density = std::clamp(section.density, 0.0, 1.0);
-        if (!section.rhythm.authored) {
+        if (noPercussionIntent) {
+            section.rhythm.authored = true;
+            section.rhythm.kickState = KickState::Muted;
+            section.rhythm.continuity = KickContinuity::Sectional;
+            section.rhythm.percussionDensity = 0.0;
+            section.rhythm.syncopation = 0.0;
+            section.rhythm.swing = 0.0;
+            section.rhythm.gestures.clear();
+            section.rhythm.mutations.clear();
+        } else if (!section.rhythm.authored) {
             section.rhythm.kickState = containsCaseInsensitive(section.name, "breakdown")
                 ? KickState::Muted : section.energy < 0.30 ? KickState::Reduced
                 : section.energy < 0.44 ? KickState::Sparse : KickState::FourOnFloor;
@@ -1426,6 +1796,10 @@ void SongComposer::normalizePlan(SongPlan& plan) {
             gesture.intensity = std::clamp(gesture.intensity, 0.0, 1.0);
         }
         if (section.activeVoices.empty()) section.activeVoices = defaultActiveVoices(section);
+        if (noPercussionIntent)
+            section.activeVoices.erase(std::remove_if(section.activeVoices.begin(), section.activeVoices.end(),
+                [](VoiceId voice) { return isVoiceInFamily(voice, VoiceFamily::Rhythm); }),
+                section.activeVoices.end());
         const auto hasRhythm = std::any_of(section.activeVoices.begin(), section.activeVoices.end(), [](VoiceId voice) {
             return isVoiceInFamily(voice, VoiceFamily::Rhythm);
         });
@@ -1434,10 +1808,10 @@ void SongComposer::normalizePlan(SongPlan& plan) {
                 return gesture.kind == RhythmGestureKind::DoubleKick ||
                        gesture.kind == RhythmGestureKind::PickupFill;
             });
-        if ((section.rhythm.kickState != KickState::Muted || hasKickGesture) &&
+        if (!noPercussionIntent && (section.rhythm.kickState != KickState::Muted || hasKickGesture) &&
             std::find(section.activeVoices.begin(), section.activeVoices.end(), VoiceId::CoreDrums) == section.activeVoices.end())
             section.activeVoices.push_back(VoiceId::CoreDrums);
-        if (hasRhythm || section.rhythm.kickState != KickState::Muted)
+        if (!noPercussionIntent && (hasRhythm || section.rhythm.kickState != KickState::Muted))
             for (const auto voice : {VoiceId::SnareClap, VoiceId::ClosedHats, VoiceId::OpenHatsShaker})
                 if (std::find(section.activeVoices.begin(), section.activeVoices.end(), voice) == section.activeVoices.end())
                     section.activeVoices.push_back(voice);
@@ -1609,6 +1983,7 @@ void SongComposer::normalizePlan(SongPlan& plan) {
                 active.push_back(target);
         }
     }
+    ElectronicSoundscapeDirector::normalize(plan);
 }
 
 Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext& foundation,
@@ -1616,6 +1991,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
                              CompositionRenderReport* renderReport) const {
     auto plan = sourcePlan;
     normalizePlan(plan);
+    const auto noPercussionIntent = noPercussionRequested(plan);
     Pattern song;
     song.lengthBeats = plan.totalBars * plan.beatsPerBar;
     song.seed = plan.seed;
@@ -1629,6 +2005,9 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         ? "hybrid" : plan.productionLanguage.domain == ProductionDomain::Orchestral
         ? "orchestral" : "adaptive";
     song.productionModeSource = plan.productionModeSource;
+    song.percussionFreeArrangement = plan.percussionFreeIntent;
+    song.soundscapeScene = plan.soundscape.scene;
+    song.soundscapeSpatialNarrative = plan.soundscape.spatialNarrative;
     Generator generator;
     std::size_t workUnits = 0;
     for (const auto& section : plan.sections)
@@ -1722,7 +2101,8 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
                     sectionHarmony[static_cast<std::size_t>(localBar)], bar, chunkBars - bar);
             }
 
-            RhythmEngine::renderChunk(chunk, plan, section, directions, sectionBar, chunkBars);
+            if (!noPercussionIntent)
+                RhythmEngine::renderChunk(chunk, plan, section, directions, sectionBar, chunkBars);
 
             const auto finalChunkOfSection = sectionBar + chunkBars == section.bars;
             if (voiceIsActive(section, VoiceId::Transitions) && finalChunkOfSection) {
@@ -1763,7 +2143,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
             // fallback has completed. Their rests, phrasing and dynamics remain intentional.
             PerformanceScoreEngine::replaceChunk(chunk, plan.performanceScore,
                 static_cast<int>(sectionIndex), sectionBar * plan.beatsPerBar,
-                chunkBars * plan.beatsPerBar);
+                chunkBars * plan.beatsPerBar, plan.instruments);
 
             appendShifted(song, std::move(chunk), offset, song.lengthBeats);
             sectionBar += chunkBars;
@@ -1826,9 +2206,11 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         return std::abs(left.startBeat - right.startBeat) < 0.0001 && left.channel == right.channel &&
                left.pitch == right.pitch && left.voice == right.voice;
     }), song.notes.end());
-    const auto electronicShaping = ElectronicProductionDirector::shapePerformance(song, plan);
+    const auto electronicShaping = noPercussionIntent
+        ? ElectronicProductionReport{}
+        : ElectronicProductionDirector::shapePerformance(song, plan);
     auto orchestrationReport = OrchestrationScore::realize(song, plan);
-    const auto earlyRhythm = repairEarlyClubRhythm(song, plan);
+    const auto earlyRhythm = noPercussionIntent ? EarlyRhythmRepair{} : repairEarlyClubRhythm(song, plan);
     const auto musicalIdentity = MusicalIdentityGate::enforce(song, plan);
     const auto foregroundContinuity = repairExtendedForegroundAbsence(
         song, plan, harmonicWindows);
@@ -1841,12 +2223,24 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     // The realized score is the first point where every repair can target a concrete Live
     // part. Restore only physical club continuity and remove local scalar filler here;
     // authored hooks, bass phrases and intentional declared silence remain untouched.
-    const auto electronicPublication =
-        ElectronicProductionDirector::finalizePublication(song, plan);
+    const auto electronicPublication = noPercussionIntent
+        ? ElectronicProductionReport{}
+        : ElectronicProductionDirector::finalizePublication(song, plan);
     // GPT-owned narrative voices remain authoritative after orchestration and all
     // continuity passes. Any missing phrase is critic feedback, not permission for
     // the local engine to write a replacement behind the model's back.
     const auto creativeAuthority = CreativeAuthority::enforce(song, plan);
+    // Restore the complete score from GPT-authored harmonic, thematic and orchestration
+    // decisions after generic fallback has been removed. This is additive composition,
+    // not a second procedural composer.
+    const auto electronicFabric = ElectronicCompositionFabric::materialize(song, plan);
+    song.independentMusicalLines = electronicFabric.independentLines;
+    song.meaningfulMusicalLines = electronicFabric.meaningfulLines;
+    song.protagonistPhraseWindows = electronicFabric.protagonistPhraseWindows;
+    song.arpeggioNoteCount = electronicFabric.arpeggioNoteCount;
+    song.dialogueMusicalLines = electronicFabric.dialogueLines;
+    song.harmonicFloorCoverage = electronicFabric.harmonicFloorCoverage;
+    song.medianHarmonicFloorLayers = electronicFabric.medianHarmonicFloorLayers;
     // Continuity operates on realized parts. Re-assert the two physical contracts it can
     // otherwise bypass: upper parts remain upper, and every late percussion note carries a
     // concrete GM articulation rather than generic pitch 36.
@@ -1879,6 +2273,9 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     const auto publishedTonalReport = repairTonalContract(
         song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
         plan.harmonicLanguage.tonalPolicy);
+    // Tonal repair preserves pitch class but may select the nearest legal pitch just
+    // outside a voice boundary. Octave-fold it back before publishing the part.
+    orchestrationReport.registerRepairs += OrchestrationScore::enforcePublishedRegisters(song);
     const auto audibleDurationReport = enforceAudibleDurations(song, harmonicWindows);
     [[maybe_unused]] const auto publishedOverlapRepairs = repairSamePitchOverlaps(song);
     // Release repair can legitimately lengthen a note after the first vertical pass.
@@ -1894,6 +2291,9 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         1.0 - static_cast<double>(verticalHarmony.collisionsAfter) /
               static_cast<double>(verticalHarmony.collisionsBefore);
     [[maybe_unused]] const auto finalVerticalOverlapRepairs = repairSamePitchOverlaps(song);
+    enforceElectronicReleaseCeilings(song, plan);
+    if (noPercussionIntent) stripPublishedPercussion(song);
+    const auto arrangementDensity = ArrangementDensityPlanner::auditAndStamp(song, plan);
     const auto expressionReport = ProductionPolish::compactExpression(song);
     // Candidate selection grades the exact published music after fallback suppression,
     // tonal repair, vertical phrasing and duration repair have converged.
@@ -1953,6 +2353,8 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     song.electronicProductionScore = electronicReport.active ? electronicReport.score : 0.0;
     const auto narrativeReport = NarrativeScoreGate::audit(song, plan);
     NarrativeScoreGate::stamp(song, narrativeReport);
+    const auto soundscapeReport = ElectronicSoundscapeDirector::audit(song, plan);
+    ElectronicSoundscapeDirector::stamp(song, soundscapeReport);
     if (renderReport != nullptr) {
         renderReport->orchestration = orchestrationReport;
         renderReport->musical = qualityReport;
@@ -1975,6 +2377,9 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         renderReport->narrative = narrativeReport;
         renderReport->verticalHarmony = verticalHarmony;
         renderReport->creativeAuthority = creativeAuthority;
+        renderReport->electronicFabric = electronicFabric;
+        renderReport->arrangementDensity = arrangementDensity;
+        renderReport->soundscape = soundscapeReport;
     }
     std::sort(song.controls.begin(), song.controls.end(), [](const auto& left, const auto& right) {
         if (left.beat != right.beat) return left.beat < right.beat;

@@ -84,6 +84,33 @@ bool writeCompanionManifest(const Pattern& pattern, const juce::File& midi,
     root->setProperty("maximum_club_low_end_gap_bars", static_cast<int>(pattern.maximumClubLowEndGapBars));
     root->setProperty("density_control", pattern.densityControl);
     root->setProperty("peak_active_voices", static_cast<int>(pattern.peakActiveVoices));
+    root->setProperty("arrangement_target_parts", static_cast<int>(pattern.arrangementTargetParts));
+    root->setProperty("populated_instrument_parts", static_cast<int>(pattern.populatedInstrumentParts));
+    root->setProperty("populated_harmony_parts", static_cast<int>(pattern.populatedHarmonyParts));
+    root->setProperty("populated_melody_parts", static_cast<int>(pattern.populatedMelodyParts));
+    root->setProperty("populated_rhythm_parts", static_cast<int>(pattern.populatedRhythmParts));
+    root->setProperty("populated_texture_parts", static_cast<int>(pattern.populatedTextureParts));
+    root->setProperty("peak_simultaneous_parts", static_cast<int>(pattern.peakSimultaneousParts));
+    root->setProperty("part_independence_score", pattern.partIndependenceScore);
+    root->setProperty("maximum_part_note_share", pattern.maximumPartNoteShare);
+    root->setProperty("soundscape_audited", pattern.soundscapeAuditPerformed);
+    root->setProperty("percussion_free", pattern.percussionFreeArrangement);
+    root->setProperty("soundscape_scene", juce::String::fromUTF8(pattern.soundscapeScene.c_str()));
+    root->setProperty("soundscape_spatial_narrative",
+                      juce::String::fromUTF8(pattern.soundscapeSpatialNarrative.c_str()));
+    root->setProperty("soundscape_ready", pattern.soundscapeReady);
+    root->setProperty("soundscape_score", pattern.soundscapeScore);
+    root->setProperty("declared_soundscape_layers", static_cast<int>(pattern.declaredSoundscapeLayers));
+    root->setProperty("meaningful_soundscape_layers", static_cast<int>(pattern.meaningfulSoundscapeLayers));
+    root->setProperty("underdeveloped_soundscape_layers", static_cast<int>(pattern.underdevelopedSoundscapeLayers));
+    root->setProperty("median_active_soundscape_layers", pattern.medianActiveSoundscapeLayers);
+    root->setProperty("independent_musical_lines", static_cast<int>(pattern.independentMusicalLines));
+    root->setProperty("meaningful_musical_lines", static_cast<int>(pattern.meaningfulMusicalLines));
+    root->setProperty("protagonist_phrase_windows", static_cast<int>(pattern.protagonistPhraseWindows));
+    root->setProperty("arpeggio_note_count", static_cast<int>(pattern.arpeggioNoteCount));
+    root->setProperty("dialogue_musical_lines", static_cast<int>(pattern.dialogueMusicalLines));
+    root->setProperty("harmonic_floor_coverage", pattern.harmonicFloorCoverage);
+    root->setProperty("median_harmonic_floor_layers", pattern.medianHarmonicFloorLayers);
     juce::Array<juce::var> parts;
     for (const auto& part : pattern.parts) {
         const auto noteCount = std::count_if(pattern.notes.begin(), pattern.notes.end(),
@@ -96,6 +123,8 @@ bool writeCompanionManifest(const Pattern& pattern, const juce::File& midi,
         item->setProperty("department", departmentName(part.department));
         item->setProperty("source_voice", juce::String(voiceDefinition(part.sourceVoice).key.data()));
         item->setProperty("role", juce::String::fromUTF8(part.role.c_str()));
+        item->setProperty("content_lane_id", juce::String::fromUTF8(part.contentLaneId.c_str()));
+        item->setProperty("line_relationship", juce::String::fromUTF8(part.lineRelationship.c_str()));
         item->setProperty("orchestral_function", juce::String::fromUTF8(part.orchestralFunction.c_str()));
         item->setProperty("articulation", juce::String::fromUTF8(part.articulation.c_str()));
         item->setProperty("divisi_voices", part.divisiVoices);

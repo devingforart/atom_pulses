@@ -1,5 +1,53 @@
 # PULSO
 
+### 0.51.0 — tejido compositivo aditivo
+
+PULSO separa ahora `source_voice`, pista instrumental y línea musical. Cada instrumento
+declara un `content_lane_id`; dos pistas sólo pueden compartirlo cuando existe una relación
+explícita de doubling, relay, call-response, refuerzo de octava o relevo tímbrico. Aumentar
+el cast ya no puede fingir profundidad repartiendo una misma frase entre muchas pistas.
+
+`ElectronicCompositionFabric` conserva el plan armónico de GPT como sustrato protegido y le
+suma material derivado del propio plan: piso armónico intercalado, protagonista por frases,
+arpegio electrónico con variaciones y respiraciones, respuestas temáticas independientes y
+gestos de soporte. El origen MIDI `plan_derived` distingue este trabajo de un fallback local.
+
+El gate final mide líneas independientes y significativas, cobertura y mediana del piso
+armónico, ventanas del protagonista, notas reales de arpegio y líneas de diálogo. El contrato
+admite hasta 48 instrumentos, pero una pista sólo cuenta si contiene una responsabilidad
+musical desarrollada.
+
+### 0.50.0 — paisaje electrónico compuesto y auditable
+
+PULSO pide ahora a GPT un `electronic_soundscape` causal para cada obra electrónica:
+escenario perceptual, narrativa espacial y una trayectoria concreta por instrumento. Las
+capas se clasifican como `voice`, `environment`, `transition` u `one_shot`; cada clase se
+valida con mínimos musicales diferentes. Un arpegio o pad con cuatro notas ya no cuenta
+como una voz desarrollada, mientras que un impacto singular legítimo no se penaliza.
+
+El plan referencia los identificadores reales de `instruments[]`, declara relaciones entre
+capas, escala temporal, evolución, frases, compases activos y máximo de repetición estática.
+La auditoría mide el MIDI final que llega a Live: capas declaradas/materializadas,
+cobertura significativa, repeticiones estáticas y densidad mediana del tejido. Los resultados
+se publican tanto en LiveBridge como en el manifiesto `.pulso.json`.
+
+Los casts escritos por GPT son ahora cerrados: el motor local no agrega sintetizadores para
+alcanzar una cuota numérica. Si faltan arpegios, ambientes o transiciones desarrolladas, el
+crítico devuelve el plan a GPT para que escriba música real o elimine la capa. Los pedidos
+explícitos sin batería conservan `percussion_free` de extremo a extremo y se evalúan por
+movimiento armónico, tímbrico y espacial, nunca por ausencia de kick o groove.
+
+### 0.49.0 — densidad instrumental y autoría por pista
+
+- `ArrangementDensityPlanner` convierte duración, profundidad armónica y escala del ensemble en
+  un objetivo explícito de 14–24 partes para producción electrónica profunda.
+- Cada nota y control de `performance_score` puede nombrar un `instrument_id` concreto. Esa
+  propiedad sobrevive hasta el `partId` exportado, aunque varios instrumentos compartan voz.
+- El arreglo publicado informa pistas propuestas y pobladas, balance por departamento, máximo
+  simultáneo, concentración de notas e independencia entre partes.
+- La escala instrumental se obtiene rotando pads, pulsos, texturas y hablantes melódicos; nunca
+  agregando bajos duplicados ni haciendo sonar todas las pistas al mismo tiempo.
+
 ### 0.48.1 — autoridad creativa GPT
 
 - En modo GPT, `Lead`, `Countermelody` y `MovementBass` son voces de identidad exclusivamente

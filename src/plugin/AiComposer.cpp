@@ -26,7 +26,7 @@
 namespace pulso::plugin {
 namespace {
 
-constexpr auto model = "gpt-5.6-terra";
+constexpr auto model = "gpt-5.6-sol";
 constexpr std::array layerNames{"harmony", "melody", "bass", "drums"};
 constexpr std::array layerChannels{3, 2, 1, 10};
 constexpr std::array layerVoices{VoiceId::HarmonicFoundation, VoiceId::Lead,
@@ -50,6 +50,14 @@ void applyExplicitRhythmRequest(SongPlan& plan, const juce::String& direction) {
     };
     const auto explicitlyBroken = containsAny({"breakbeat", "broken beat", "ritmo quebrado",
                                                 "base break", "drum and bass", "dnb"});
+    const auto explicitlyPercussionFree = containsAny({"no percussion", "without percussion",
+        "sin percusion", "sin percusi", "sin percusiones", "no drums", "without drums",
+        "sin bateria", "sin bater", "sin ritmica", "sin rítmica", "no rhythm"});
+    if (explicitlyPercussionFree) {
+        plan.percussionFreeIntent = true;
+        plan.soundscape.percussionFree = true;
+        return;
+    }
     const auto houseFoundation = !explicitlyBroken && containsAny({"progressive house", "deep house",
         "organic house", "four on the floor", "four-on-the-floor", "4x4", "guy j", "bombo en negras"});
     const auto constantKick = !explicitlyBroken && containsAny({"constant kick", "kick constante",
@@ -165,14 +173,31 @@ const juce::String songPlanSchema = juce::String(R"json({
       "transient_definition":{"type":"number"},"acoustic_electronic_balance":{"type":"number"},
       "cohesion":{"type":"number"},"contrast":{"type":"number"}
     },"required":["description","material","space","warmth","brightness","transient_definition","acoustic_electronic_balance","cohesion","contrast"],"additionalProperties":false},
-)json") + R"json(    "motif_intervals":{"type":"array","items":{"type":"integer"},"minItems":3,"maxItems":8},
-    "instruments":{"type":"array","minItems":8,"maxItems":36,"items":{
+)json") + R"json(    "electronic_soundscape":{"type":"object","properties":{
+      "active":{"type":"boolean"},"percussion_free":{"type":"boolean"},
+      "scene":{"type":"string"},"spatial_narrative":{"type":"string"},
+      "target_median_active_layers":{"type":"number"},
+      "layers":{"type":"array","maxItems":48,"items":{"type":"object","properties":{
+        "instrument_id":{"type":"string"},
+        "kind":{"type":"string","enum":["voice","environment","transition","one_shot"]},
+        "time_scale":{"type":"string","enum":["fast","medium","slow","event"]},
+        "narrative_role":{"type":"string"},"relationship":{"type":"string"},
+        "evolution":{"type":"string"},"minimum_active_bars":{"type":"integer"},
+        "minimum_phrases":{"type":"integer"},"maximum_static_bars":{"type":"integer"},
+        "foreground_depth":{"type":"number"}
+      },"required":["instrument_id","kind","time_scale","narrative_role","relationship","evolution","minimum_active_bars","minimum_phrases","maximum_static_bars","foreground_depth"],"additionalProperties":false}}
+    },"required":["active","percussion_free","scene","spatial_narrative","target_median_active_layers","layers"],"additionalProperties":false},
+)json" + R"json(    "motif_intervals":{"type":"array","items":{"type":"integer"},"minItems":3,"maxItems":8},
+    "instruments":{"type":"array","minItems":8,"maxItems":48,"items":{
       "type":"object","properties":{
         "id":{"type":"string"},
-        "instrument":{"type":"string","enum":["kick_drum","snare_clap","hi_hats","timpani","taiko_ensemble","latin_percussion","shakers","cymbals","orchestral_percussion","piano","harp","violin_1","violin_2","viola","cello","contrabass","string_ensemble","chamber_strings","flute","piccolo","alto_flute","oboe","english_horn","clarinet","bass_clarinet","bassoon","contrabassoon","french_horns","trumpets","trombones","bass_trombone","tuba","brass_ensemble","woodwind_ensemble","choir","mallets","celesta","vibraphone","marimba","tubular_bells","electric_bass","sub_synth","analog_pad","poly_synth","lead_synth","guitar","ambient_texture"]},
+        "instrument":{"type":"string","enum":["kick_drum","snare_clap","hi_hats","timpani","taiko_ensemble","latin_percussion","shakers","cymbals","orchestral_percussion","piano","harp","violin_1","violin_2","viola","cello","contrabass","string_ensemble","chamber_strings","flute","piccolo","alto_flute","oboe","english_horn","clarinet","bass_clarinet","bassoon","contrabassoon","french_horns","trumpets","trombones","bass_trombone","tuba","brass_ensemble","woodwind_ensemble","choir","mallets","celesta","vibraphone","marimba","tubular_bells","electric_bass","sub_synth","rolling_mid_bass","reese_layer","analog_pad","poly_synth","dub_chord","filtered_stab","hypnotic_arp","lead_synth","deep_pluck","acid_line","fm_sequence","vocal_chop_texture","guitar","ambient_texture","granular_pad","spectral_drone","noise_riser","shimmer_tail"]},
         "name":{"type":"string"},
         "source_voice":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]},
-        "role":{"type":"string"},"minimum_pitch":{"type":"integer"},"maximum_pitch":{"type":"integer"},
+        "role":{"type":"string"},
+        "content_lane_id":{"type":"string"},
+        "line_relationship":{"type":"string","enum":["independent","doubling","relay","call_response","octave_reinforcement","timbral_handoff"]},
+        "minimum_pitch":{"type":"integer"},"maximum_pitch":{"type":"integer"},
         "octave_shift":{"type":"integer","enum":[-24,-12,0,12,24]},"activity":{"type":"number"},
         "prominence":{"type":"number"},"doubling":{"type":"number"},
         "orchestral_function":{"type":"string","enum":["foundation","body","extension","counterpoint","color","transition"]},
@@ -190,9 +215,9 @@ const juce::String songPlanSchema = juce::String(R"json({
           "uniqueness":{"type":"number"}
         },"required":["source","envelope","spectrum","motion","space","texture","uniqueness"],"additionalProperties":false},
         "active_sections":{"type":"array","maxItems":20,"items":{"type":"string"}}
-      },"required":["id","instrument","name","source_voice","role","minimum_pitch","maximum_pitch","octave_shift","activity","prominence","doubling","orchestral_function","articulation_intent","divisi_voices","live_device","live_preset_intent","timbre_signature","active_sections"],"additionalProperties":false
+      },"required":["id","instrument","name","source_voice","role","content_lane_id","line_relationship","minimum_pitch","maximum_pitch","octave_shift","activity","prominence","doubling","orchestral_function","articulation_intent","divisi_voices","live_device","live_preset_intent","timbre_signature","active_sections"],"additionalProperties":false
     }},
-    "rhythm_motifs":{"type":"array","minItems":2,"maxItems":6,"items":{
+    "rhythm_motifs":{"type":"array","maxItems":6,"items":{
       "type":"object","properties":{
         "id":{"type":"string"},"bars":{"type":"integer"},
         "steps_per_bar":{"type":"integer","enum":[8,16]},
@@ -241,12 +266,14 @@ const juce::String songPlanSchema = juce::String(R"json({
           "notes":{"type":"array","maxItems":768,"items":{"type":"object","properties":{
             "beat":{"type":"number"},"duration":{"type":"number"},"pitch":{"type":"integer"},
             "velocity":{"type":"integer"},"voice":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]},
+            "instrument_id":{"type":"string"},
             "metric_intent":{"type":"string","enum":["strict_grid"]}
-          },"required":["beat","duration","pitch","velocity","voice","metric_intent"],"additionalProperties":false}},
+          },"required":["beat","duration","pitch","velocity","voice","instrument_id","metric_intent"],"additionalProperties":false}},
           "controls":{"type":"array","maxItems":384,"items":{"type":"object","properties":{
             "beat":{"type":"number"},"controller":{"type":"integer"},"value":{"type":"integer"},
-            "voice":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]}
-          },"required":["beat","controller","value","voice"],"additionalProperties":false}}
+            "voice":{"type":"string","enum":["core_drums","low_percussion","high_percussion","sub_bass","movement_bass","harmonic_foundation","harmonic_pulse","harmonic_upper","lead","countermelody","atmosphere","transitions","snare_clap","closed_hats","open_hats_shaker"]},
+            "instrument_id":{"type":"string"}
+          },"required":["beat","controller","value","voice","instrument_id"],"additionalProperties":false}}
         },"required":["id","theme_id","narrative_function","length_beats","owned_voices","notes","controls"],"additionalProperties":false
       }},
       "placements":{"type":"array","maxItems":512,"items":{"type":"object","properties":{
@@ -313,7 +340,7 @@ const juce::String songPlanSchema = juce::String(R"json({
       "additionalProperties":false
     }}
   },
-  "required":["title","key","summary","root_pitch_class","mode","production_language","rhythm_language","harmonic_language","orchestration_language","timbre_palette","chord_palette","motif_intervals","instruments","rhythm_motifs","voices","performance_score","sections"],
+  "required":["title","key","summary","root_pitch_class","mode","production_language","rhythm_language","harmonic_language","orchestration_language","timbre_palette","electronic_soundscape","chord_palette","motif_intervals","instruments","rhythm_motifs","voices","performance_score","sections"],
   "additionalProperties":false
 })json";
 
@@ -878,13 +905,40 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "In club_electronic with low orchestral_allowance, do not cast marimba, vibraphone, celesta, tubular bells or "
         "generic pitched mallets unless the user explicitly requested that physical identity. Use a filtered synth pulse, "
         "restrained analog hook or evolving spectral bed instead; avoid toy, chiptune, game and novelty preset character. "
-        "Above those execution voices, design a production cast of 8-36 instrument instances from the supplied catalog. "
+        "Above those execution voices, design a production cast of 8-48 instrument instances from the supplied catalog. "
         "Use the smallest cast that can realize the requested depth. It has three coordinated departments: rhythm and "
         "percussion, harmonic fabric, and hooks or melodic speakers. source_voice is the playable archetype feeding an instrument, not its identity, and MUST reference "
         "an id present in the voices array. Every execution voice used by performance_score MUST have at least one "
         "explicit instrument owner with a compatible source_voice; never rely on an unnamed or automatically invented "
         "orchestral owner. A guitar or synth may own countermelody when its orchestral_function is counterpoint. Assign each instance "
         "a distinct role, playable register, prominence, restrained doubling probability and optional named sections. "
+        "When the user asks for no percussion, no drums, no rhythm, many pads, colchones armonicos, atmospheres or a "
+        "harmonic sound symphony, switch to harmonic texture architecture: do not create rhythm instruments or rhythm "
+        "performance cells, use at least twelve instrument instances, at least eight harmonic/texture/melodic-synth "
+        "owners, and distribute responsibility across harmonic_foundation, harmonic_pulse, harmonic_upper, atmosphere, "
+        "countermelody and non-drum transitions. Use electronic catalog colours such as dub_chord, filtered_stab, "
+        "hypnotic_arp, granular_pad, spectral_drone, shimmer_tail, deep_pluck, fm_sequence, acid_line and "
+        "vocal_chop_texture when they serve the brief. Preserve a complete harmonic foundation and ADD long pads, "
+        "stabs, drones, swells, sparse phrase replies and transition breath around it. Never split one complete line "
+        "among many tracks merely to increase track count. Every instrument has content_lane_id: use a unique id for "
+        "every genuinely independent musical line. Share a content_lane_id only when line_relationship explicitly "
+        "declares doubling, relay, timbral_handoff or octave_reinforcement. call_response is a distinct line derived "
+        "from, but never identical to, the speaker. "
+        "For every electronic or hybrid work, author electronic_soundscape as the causal production plan. scene defines "
+        "one perceptual world and spatial_narrative explains how foreground, middle distance and background change over "
+        "the form. Declare one soundscape layer for every non-rhythm instrument using its exact instruments[].id. kind "
+        "is voice for developed arps, sequences, stabs, pads and melodic speakers; environment for drones, granular air "
+        "and persistent spatial beds; transition for multi-section rises, reverses and withdrawals; one_shot only for a "
+        "genuinely isolated impact or singular event. Never call an underwritten musical part a one_shot to evade the "
+        "development contract. Give each layer a narrative_role, a relationship to another layer, a concrete evolution, "
+        "its fast/medium/slow/event time scale, minimum active bars and phrases, and the longest number of literal static "
+        "bars it may sustain. target_median_active_layers describes the complete rendered fabric, normally 3-4 for a "
+        "percussion-free electronic journey and 3-5 with rhythm, while peaks may be richer. These are rotating layers, "
+        "not a command for constant tutti. A voice must receive at least two separated phrases and enough authored notes "
+        "to develop; an environment must evolve across sections; transitions must occur at multiple meaningful boundaries. "
+        "Set percussion_free true exactly when the user prohibits drums/percussion, and in that case create no rhythm "
+        "instruments, rhythm cells or rhythm notes. Electronic motion must then be evaluated through harmonic rhythm, "
+        "arpeggiation, timbral evolution, spatial change and tension/release rather than a kick requirement. "
         "A role named upper, high, air or extension must actually begin at MIDI 60 or above unless it is an explicitly "
         "named alto instrument. Never describe a high spectral layer while assigning it to the bass register. "
         "For every instrument, author orchestral_function, articulation_intent and divisi_voices. The functions "
@@ -987,6 +1041,18 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "one of every two to four later foreground appearances preserve its recognisable onset rhythm and contour; "
         "transform register, harmony, instrumentation, dynamics or fragments around that memory instead of replacing "
         "it with unrelated material. Author the actual performance in performance_score. "
+        "Compose by independent musical line and then by instrument, not by track quota. Every performance note and control has an "
+        "instrument_id: set it to the exact instruments[].id that should own the event, or to an empty string "
+        "only when orchestration is intentionally free to rotate that event. The named instrument must use the "
+        "same source_voice as the event voice. In deep electronic production, explicitly assign at least 70 percent "
+        "of non-rhythm performance notes to concrete instruments. Give each populated pad, stab, drone, pulse, "
+        "texture and melodic speaker its own attacks, durations, register, rests and sectional responsibility; "
+        "do not manufacture track count through unison, rotation or octave clones. A new track must contain a new "
+        "musical responsibility or explicitly declare its relationship to a shared line. Preserve a continuously "
+        "interlocking harmonic floor of at least two pad/body responsibilities across 80 percent of bars, one primary "
+        "speaker with statement-question-answer-development-return phrases, at least one real evolving electronic "
+        "arpeggio and at least one independent melodic reply. Target 14-28 populated instrument parts "
+        "across the complete arrangement while normally limiting simultaneous parts to five-to-eight. "
         "This is the authoritative compositional layer, not an optional sketch. Give every cell a stable theme_id "
         "shared by its recognisable transformations and a narrative_function describing what it does. Across active "
         "lead, countermelody, bass and harmonic voices, placements must author at least 65 percent of their available "
@@ -1084,6 +1150,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     if (!parseSongPlanJson(outputText, targetSeconds, totalBars, bpm, beatsPerBar,
                            seed, result, error,
                            tonalPolicyForDirection(direction.toStdString()))) return {};
+    applyExplicitRhythmRequest(result, direction);
+    SongComposer::normalizePlan(result);
     if (token.stop_requested()) {
         error = "Generation cancelled";
         return {};
@@ -1198,6 +1266,26 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                  << ", duplicate_authored_cells=" << static_cast<int>(duplicateCells)
                  << ", verbatim_repeat_iterations=" << static_cast<int>(verbatimRepeatIterations)
                  << ", longest_verbatim_run=" << longestVerbatimRun << ".\n";
+    auditSummary << "arrangement_target_parts=" << static_cast<int>(draftReport.arrangementDensity.targets.proposedParts)
+                 << ", arrangement_populated_parts=" << static_cast<int>(draftReport.arrangementDensity.populatedParts)
+                 << ", arrangement_harmony_parts=" << static_cast<int>(draftReport.arrangementDensity.harmonyParts)
+                 << ", arrangement_melody_parts=" << static_cast<int>(draftReport.arrangementDensity.melodyParts)
+                 << ", arrangement_texture_parts=" << static_cast<int>(draftReport.arrangementDensity.textureParts)
+                 << ", arrangement_peak_parts=" << static_cast<int>(draftReport.arrangementDensity.peakSimultaneousParts)
+                 << ", arrangement_independence=" << juce::String(draftReport.arrangementDensity.independenceScore, 3)
+                 << ", arrangement_ready=" << (draftReport.arrangementDensity.ready ? "true" : "false") << ".\n";
+    auditSummary << "soundscape_active=" << (draftReport.soundscape.active ? "true" : "false")
+                 << ", soundscape_percussion_free=" << (draftReport.soundscape.percussionFree ? "true" : "false")
+                 << ", soundscape_declared_layers=" << static_cast<int>(draftReport.soundscape.declaredLayers)
+                 << ", soundscape_materialized_layers=" << static_cast<int>(draftReport.soundscape.materializedLayers)
+                 << ", soundscape_meaningful_layers=" << static_cast<int>(draftReport.soundscape.meaningfulLayers)
+                 << ", soundscape_underdeveloped_voices=" << static_cast<int>(draftReport.soundscape.underdevelopedVoices)
+                 << ", soundscape_underdeveloped_environments=" << static_cast<int>(draftReport.soundscape.underdevelopedEnvironments)
+                 << ", soundscape_missing_transitions=" << static_cast<int>(draftReport.soundscape.missingTransitionEvents)
+                 << ", soundscape_static_runs=" << static_cast<int>(draftReport.soundscape.staticLayerRuns)
+                 << ", soundscape_median_active_layers=" << juce::String(draftReport.soundscape.medianActiveLayers, 2)
+                 << ", soundscape_score=" << juce::String(draftReport.soundscape.score, 3)
+                 << ", soundscape_ready=" << (draftReport.soundscape.ready ? "true" : "false") << ".\n";
     auditSummary << "thematic_voice_mappings=" << static_cast<int>(mappedDialoguePlacements)
                  << ", transformed_placements=" << static_cast<int>(transformedPlacements)
                  << ", dialogue_voices=" << static_cast<int>(dialogueVoices.size())
@@ -1331,6 +1419,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "climax. Audit the orchestration as a real score: foreground rotation, playable ranges, family contrast, "
         "chamber-to-tutti development, independent inner voices, restrained doubling and meaningful instrumental rests. "
         "Repair soloist monopoly, fake symphonic density, four-chord cycling, decorative complexity, generic repetition or arbitrary novelty. "
+        "Audit electronic_soundscape against rendered MIDI, not track names. Every declared voice must contain developed "
+        "phrases; every environment needs sectional evolution; transition layers need their declared boundary events; "
+        "one_shot is reserved for genuinely singular FX. Remove token tracks or write their actual trajectory. Match the "
+        "declared median fabric through rotating foreground, midground and background responsibilities, without constant tutti. "
         "Audit performance_score at note level: cells must differ materially in rhythm, contour, register, duration, "
         "dynamics and ownership; placements must cover the form while preserving real rests. Treat repaired accidental "
         "silence windows, long verbatim runs and repeated rendered bars as concrete defects: replace them with related "
@@ -1363,6 +1455,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "production_low_vertical_clashes at zero; prefer correct voicing and intentional support rests over relying on "
         "the deterministic safety duck. Track names and live_preset_intent descriptors must be mutually consistent. "
         "For club_electronic leave maximum_kickless_bars_after and maximum_low_end_gap_bars_after at twelve or less "
+        "only when percussion_free is false. A percussion-free plan must instead pass the soundscape contract and must "
+        "never reintroduce drums, percussion or a kick merely to satisfy club metrics. "
         "unless the form explicitly declares "
         "full silence, and leave late_percussion_articulation_repairs at zero by writing concrete GM identities directly. "
         "A movement-bass phrase may repeat exactly to establish identity, but the third occurrence must develop its last "
@@ -1381,6 +1475,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         if (parseSongPlanJson(revisedText, targetSeconds, totalBars, bpm, beatsPerBar,
                               seed, revised, criticError,
                               tonalPolicyForDirection(direction.toStdString()))) {
+            applyExplicitRhythmRequest(revised, direction);
+            SongComposer::normalizePlan(revised);
             GenerationContext revisedFoundation = auditFoundation;
             revisedFoundation.rootPitchClass = revised.rootPitchClass;
             revisedFoundation.scale = revised.scale;
@@ -1399,8 +1495,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 const auto electronicReady = !report.electronicProduction.active ||
                     (report.electronicProduction.score >= 0.68 &&
                      report.electronicProduction.maximumRhythmRun <= 6 &&
-                     report.electronicProduction.maximumKicklessBarsAfter <= 12 &&
-                     report.electronicProduction.maximumLowEndGapBarsAfter <= 12);
+                     (report.electronicProduction.percussionFree ||
+                      (report.electronicProduction.maximumKicklessBarsAfter <= 12 &&
+                       report.electronicProduction.maximumLowEndGapBarsAfter <= 12)));
                 const auto audibleAuthorship =
                     (!report.narrative.foregroundExpected ||
                      (report.narrative.foregroundNotes >= 8 &&
@@ -1411,6 +1508,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     (!report.electronicProduction.active ||
                      report.narrative.grooveAuthorshipCoverage >= 0.45);
                 return report.production.ready && report.narrative.creativeReady &&
+                    (!report.soundscape.active || report.soundscape.ready) &&
                     report.narrative.primaryVoiceCoverage >= 0.65 && audibleAuthorship &&
                     memoryReady && bassReady && developmentReady && electronicReady &&
                     report.narrative.densityControl >= 0.82 &&
@@ -1446,11 +1544,16 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     deficit += std::max(0.0, 0.68 - report.electronicProduction.score);
                     deficit += std::max(0.0,
                         static_cast<double>(report.electronicProduction.maximumRhythmRun) - 6.0) * 0.03;
-                    deficit += std::max(0.0,
-                        static_cast<double>(report.electronicProduction.maximumKicklessBarsAfter) - 12.0) * 0.04;
-                    deficit += std::max(0.0,
-                        static_cast<double>(report.electronicProduction.maximumLowEndGapBarsAfter) - 12.0) * 0.035;
+                    if (!report.electronicProduction.percussionFree) {
+                        deficit += std::max(0.0,
+                            static_cast<double>(report.electronicProduction.maximumKicklessBarsAfter) - 12.0) * 0.04;
+                        deficit += std::max(0.0,
+                            static_cast<double>(report.electronicProduction.maximumLowEndGapBarsAfter) - 12.0) * 0.035;
+                    }
                 }
+                if (report.soundscape.active)
+                    deficit += std::max(0.0, 0.78 - report.soundscape.meaningfulCoverage) * 1.6 +
+                        std::max(0.0, 0.75 - report.soundscape.score);
                 return deficit;
             };
             const auto candidateQuality = [](const CompositionRenderReport& report) {
@@ -1482,7 +1585,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     "of lead, response, movement bass and harmonic identity with explicit performance cells and "
                     "placements; do not merely add labels or duplicate notes. The rendered foreground AI ratio must "
                     "reach 0.85, movement-bass AI ratio 0.75, groove coverage 0.45, and scalar runs must stop after "
-                    "five steps. Club drum and low-end gaps must remain at twelve bars or less. Repair pass ") +
+                    "five steps. Club drum and low-end gaps must remain at twelve bars or less only when percussion_free "
+                    "is false. Repair every underdeveloped soundscape voice/environment with real phrases and evolution, "
+                    "or remove it from both cast and soundscape; never satisfy depth with token tracks. Repair pass ") +
                     juce::String(repairPass + 1) + ". Exact failed metrics: " +
                     "coverage=" + juce::String(bestReport.narrative.primaryVoiceCoverage, 3) +
                     ", recall=" + juce::String(bestReport.narrative.thematicRecallRatio, 3) +
@@ -1503,6 +1608,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         static_cast<int>(bestReport.narrative.maximumClubLowEndGapBars)) +
                     ", density_control=" + juce::String(bestReport.narrative.densityControl, 3) +
                     ", peak_voices=" + juce::String(static_cast<int>(bestReport.narrative.peakActiveVoices)) +
+                    ", soundscape_coverage=" + juce::String(bestReport.soundscape.meaningfulCoverage, 3) +
+                    ", soundscape_median_layers=" + juce::String(bestReport.soundscape.medianActiveLayers, 2) +
                     ". Original direction: " + direction + "\nCandidate to repair:\n" + bestRevisionText;
                 if (const auto focusedText = requestRevisedSongPlan(focusedPrompt, apiKey, token,
                         std::min(remainingForRepair,
@@ -1513,6 +1620,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     if (parseSongPlanJson(focusedText, targetSeconds, totalBars, bpm, beatsPerBar,
                                           seed, focused, focusedError,
                                           tonalPolicyForDirection(direction.toStdString()))) {
+                        applyExplicitRhythmRequest(focused, direction);
+                        SongComposer::normalizePlan(focused);
                         auto focusedFoundation = auditFoundation;
                         focusedFoundation.rootPitchClass = focused.rootPitchClass;
                         focusedFoundation.scale = focused.scale;
@@ -1648,6 +1757,36 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
         result.timbrePalette.cohesion = static_cast<double>(palette->getProperty("cohesion"));
         result.timbrePalette.contrast = static_cast<double>(palette->getProperty("contrast"));
     }
+    if (const auto* soundscape = object->getProperty("electronic_soundscape").getDynamicObject()) {
+        result.soundscape.authored = true;
+        result.soundscape.active = static_cast<bool>(soundscape->getProperty("active"));
+        result.soundscape.percussionFree = static_cast<bool>(soundscape->getProperty("percussion_free"));
+        result.percussionFreeIntent = result.soundscape.percussionFree;
+        result.soundscape.scene = soundscape->getProperty("scene").toString().trim().toStdString();
+        result.soundscape.spatialNarrative = soundscape->getProperty("spatial_narrative").toString().trim().toStdString();
+        result.soundscape.targetMedianActiveLayers = static_cast<double>(
+            soundscape->getProperty("target_median_active_layers"));
+        if (const auto* layers = soundscape->getProperty("layers").getArray()) {
+            for (const auto& item : *layers) {
+                const auto* layer = item.getDynamicObject();
+                if (layer == nullptr) continue;
+                SoundscapeLayerPlan parsedLayer;
+                parsedLayer.instrumentId = layer->getProperty("instrument_id").toString().trim().toStdString();
+                parsedLayer.kind = soundscapeLayerKindFromKey(
+                    layer->getProperty("kind").toString().toStdString());
+                parsedLayer.timeScale = soundscapeTimeScaleFromKey(
+                    layer->getProperty("time_scale").toString().toStdString());
+                parsedLayer.narrativeRole = layer->getProperty("narrative_role").toString().trim().toStdString();
+                parsedLayer.relationship = layer->getProperty("relationship").toString().trim().toStdString();
+                parsedLayer.evolution = layer->getProperty("evolution").toString().trim().toStdString();
+                parsedLayer.minimumActiveBars = static_cast<int>(layer->getProperty("minimum_active_bars"));
+                parsedLayer.minimumPhrases = static_cast<int>(layer->getProperty("minimum_phrases"));
+                parsedLayer.maximumStaticBars = static_cast<int>(layer->getProperty("maximum_static_bars"));
+                parsedLayer.foregroundDepth = static_cast<double>(layer->getProperty("foreground_depth"));
+                result.soundscape.layers.push_back(std::move(parsedLayer));
+            }
+        }
+    }
     if (const auto* palette = object->getProperty("chord_palette").getArray()) {
         for (const auto& item : *palette) {
             const auto* chord = item.getDynamicObject();
@@ -1685,6 +1824,8 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
             assignment.name = instrument->getProperty("name").toString().trim().toStdString();
             assignment.sourceVoice = *sourceVoice;
             assignment.role = instrument->getProperty("role").toString().trim().toStdString();
+            assignment.contentLaneId = instrument->getProperty("content_lane_id").toString().trim().toStdString();
+            assignment.lineRelationship = instrument->getProperty("line_relationship").toString().trim().toStdString();
             assignment.minimumPitch = static_cast<int>(instrument->getProperty("minimum_pitch"));
             assignment.maximumPitch = static_cast<int>(instrument->getProperty("maximum_pitch"));
             assignment.octaveShift = static_cast<int>(instrument->getProperty("octave_shift"));
@@ -1883,23 +2024,39 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
                     for (const auto& noteItem : *notes) {
                         const auto* note = noteItem.getDynamicObject();
                         if (note == nullptr) continue;
-                        if (const auto voice = voiceIdFromKey(note->getProperty("voice").toString().toStdString()))
+                        if (const auto voice = voiceIdFromKey(note->getProperty("voice").toString().toStdString())) {
+                            auto instrumentId = note->getProperty("instrument_id").toString().trim().toStdString();
+                            const auto validOwner = std::find_if(result.instruments.begin(), result.instruments.end(),
+                                [&](const auto& assignment) {
+                                    return assignment.id == instrumentId && assignment.sourceVoice == *voice;
+                                });
+                            if (!instrumentId.empty() && validOwner == result.instruments.end()) instrumentId.clear();
                             parsedCell.notes.push_back({
                                 static_cast<double>(note->getProperty("beat")),
                                 static_cast<double>(note->getProperty("duration")),
                                 static_cast<int>(note->getProperty("pitch")),
                                 static_cast<int>(note->getProperty("velocity")), *voice,
-                                metricIntentFromKey(note->getProperty("metric_intent").toString().toStdString())});
+                                metricIntentFromKey(note->getProperty("metric_intent").toString().toStdString()),
+                                std::move(instrumentId)});
+                        }
                     }
                 if (const auto* controls = cell->getProperty("controls").getArray())
                     for (const auto& controlItem : *controls) {
                         const auto* control = controlItem.getDynamicObject();
                         if (control == nullptr) continue;
-                        if (const auto voice = voiceIdFromKey(control->getProperty("voice").toString().toStdString()))
+                        if (const auto voice = voiceIdFromKey(control->getProperty("voice").toString().toStdString())) {
+                            auto instrumentId = control->getProperty("instrument_id").toString().trim().toStdString();
+                            const auto validOwner = std::find_if(result.instruments.begin(), result.instruments.end(),
+                                [&](const auto& assignment) {
+                                    return assignment.id == instrumentId && assignment.sourceVoice == *voice;
+                                });
+                            if (!instrumentId.empty() && validOwner == result.instruments.end()) instrumentId.clear();
                             parsedCell.controls.push_back({
                                 static_cast<double>(control->getProperty("beat")),
                                 static_cast<int>(control->getProperty("controller")),
-                                static_cast<int>(control->getProperty("value")), *voice});
+                                static_cast<int>(control->getProperty("value")), *voice,
+                                std::move(instrumentId)});
+                        }
                     }
                 result.performanceScore.cells.push_back(std::move(parsedCell));
             }

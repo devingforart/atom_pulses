@@ -39,11 +39,24 @@ constexpr std::array catalog{
     InstrumentDefinition{"mallets", "Mallets", ScoreDepartment::Harmony, VoiceId::HarmonicPulse, 48, 96, true, 0.54},
     InstrumentDefinition{"electric_bass", "Electric Bass", ScoreDepartment::Harmony, VoiceId::MovementBass, 28, 64, false, 0.82},
     InstrumentDefinition{"sub_synth", "Sub Synth", ScoreDepartment::Harmony, VoiceId::SubBass, 24, 52, false, 0.75},
+    InstrumentDefinition{"rolling_mid_bass", "Rolling Mid Bass", ScoreDepartment::Harmony, VoiceId::MovementBass, 34, 67, false, 0.78},
+    InstrumentDefinition{"reese_layer", "Reese Layer", ScoreDepartment::Harmony, VoiceId::MovementBass, 30, 64, false, 0.62},
     InstrumentDefinition{"analog_pad", "Analog Pad", ScoreDepartment::Harmony, VoiceId::Atmosphere, 36, 88, true, 0.62},
     InstrumentDefinition{"poly_synth", "Poly Synth", ScoreDepartment::Harmony, VoiceId::HarmonicPulse, 45, 96, true, 0.65},
+    InstrumentDefinition{"dub_chord", "Dub Chord", ScoreDepartment::Harmony, VoiceId::HarmonicFoundation, 43, 84, true, 0.68},
+    InstrumentDefinition{"filtered_stab", "Filtered Stab", ScoreDepartment::Harmony, VoiceId::HarmonicPulse, 45, 91, true, 0.60},
+    InstrumentDefinition{"hypnotic_arp", "Hypnotic Arp", ScoreDepartment::Harmony, VoiceId::HarmonicPulse, 48, 96, false, 0.62},
     InstrumentDefinition{"lead_synth", "Lead Synth", ScoreDepartment::Melody, VoiceId::Lead, 48, 96, false, 0.7},
+    InstrumentDefinition{"deep_pluck", "Deep Pluck", ScoreDepartment::Melody, VoiceId::Countermelody, 48, 88, false, 0.66},
+    InstrumentDefinition{"acid_line", "Acid Line", ScoreDepartment::Melody, VoiceId::Lead, 40, 84, false, 0.56},
+    InstrumentDefinition{"fm_sequence", "FM Sequence", ScoreDepartment::Melody, VoiceId::Countermelody, 52, 96, false, 0.54},
+    InstrumentDefinition{"vocal_chop_texture", "Vocal Chop Texture", ScoreDepartment::Melody, VoiceId::Countermelody, 55, 96, false, 0.50},
     InstrumentDefinition{"guitar", "Guitar", ScoreDepartment::Harmony, VoiceId::HarmonicPulse, 40, 88, true, 0.62},
     InstrumentDefinition{"ambient_texture", "Ambient Texture", ScoreDepartment::Harmony, VoiceId::Atmosphere, 36, 100, true, 0.45},
+    InstrumentDefinition{"granular_pad", "Granular Pad", ScoreDepartment::Harmony, VoiceId::Atmosphere, 36, 96, true, 0.58},
+    InstrumentDefinition{"spectral_drone", "Spectral Drone", ScoreDepartment::Harmony, VoiceId::Atmosphere, 28, 88, true, 0.52},
+    InstrumentDefinition{"noise_riser", "Noise Riser", ScoreDepartment::Harmony, VoiceId::Transitions, 48, 108, false, 0.42},
+    InstrumentDefinition{"shimmer_tail", "Shimmer Tail", ScoreDepartment::Harmony, VoiceId::HarmonicUpper, 60, 108, true, 0.48},
     InstrumentDefinition{"piccolo", "Piccolo", ScoreDepartment::Melody, VoiceId::Lead, 74, 108, false, 0.45},
     InstrumentDefinition{"alto_flute", "Alto Flute", ScoreDepartment::Melody, VoiceId::Countermelody, 55, 88, false, 0.54},
     InstrumentDefinition{"english_horn", "English Horn", ScoreDepartment::Melody, VoiceId::Countermelody, 52, 84, false, 0.60},
@@ -76,10 +89,14 @@ const SongSection& sectionAt(const SongPlan& plan, double beat) {
 }
 
 int fitPitch(int pitch, const InstrumentAssignment& assignment) {
+    const auto& voice = voiceDefinition(assignment.sourceVoice);
+    const auto minimum = std::max(assignment.minimumPitch, voice.minimumPitch);
+    const auto maximum = std::min(assignment.maximumPitch, voice.maximumPitch);
+    if (minimum > maximum) return std::clamp(pitch, voice.minimumPitch, voice.maximumPitch);
     auto result = pitch + assignment.octaveShift;
-    while (result < assignment.minimumPitch && result + 12 <= assignment.maximumPitch) result += 12;
-    while (result > assignment.maximumPitch && result - 12 >= assignment.minimumPitch) result -= 12;
-    return std::clamp(result, assignment.minimumPitch, assignment.maximumPitch);
+    while (result < minimum && result + 12 <= maximum) result += 12;
+    while (result > maximum && result - 12 >= minimum) result -= 12;
+    return std::clamp(result, minimum, maximum);
 }
 
 std::uint64_t mixed(std::uint64_t seed, std::uint64_t salt) noexcept {
@@ -116,9 +133,22 @@ std::pair<std::string, std::string> defaultLiveSound(std::string_view id) {
     if (id == "piano" || id == "electric_bass") return {"Electric", std::string(id) + " warm"};
     if (id == "harp" || id == "guitar") return {"Tension", std::string(id) + " expressive"};
     if (id == "sub_synth") return {"Operator", "deep clean sub"};
+    if (id == "rolling_mid_bass") return {"Wavetable", "rolling warm mono progressive mid bass"};
+    if (id == "reese_layer") return {"Meld", "dark controlled reese bass support"};
+    if (id == "dub_chord") return {"Drift", "warm delayed dub chord stab"};
+    if (id == "filtered_stab") return {"Meld", "short filtered analog chord stab"};
+    if (id == "hypnotic_arp") return {"Wavetable", "muted hypnotic arpeggiated synth pulse"};
+    if (id == "deep_pluck") return {"Drift", "round deep pluck response"};
+    if (id == "acid_line") return {"Operator", "restrained resonant acid phrase"};
+    if (id == "fm_sequence") return {"Operator", "soft FM sequence counterline"};
+    if (id == "vocal_chop_texture") return {"Sampler", "short airy vocal chop texture"};
     if (id == "analog_pad" || id == "poly_synth" || id == "lead_synth")
         return {"Wavetable", std::string(id) + " evolving"};
     if (id == "ambient_texture") return {"Granulator III", "evolving atmospheric texture"};
+    if (id == "granular_pad") return {"Granulator III", "slow granular harmonic pad"};
+    if (id == "spectral_drone") return {"Wavetable", "low spectral drone bed"};
+    if (id == "noise_riser") return {"Wavetable", "filtered noise rise and reverse texture"};
+    if (id == "shimmer_tail") return {"Wavetable", "high shimmer tail pad"};
     if (id.find("string") != std::string_view::npos || id == "violin_1" || id == "violin_2" ||
         id == "viola" || id == "cello" || id == "contrabass" || id == "choir" ||
         id == "french_horns" || id == "trumpets" || id == "trombones" || id == "bass_trombone" ||
@@ -146,9 +176,13 @@ const HarmonicChord& chordAt(const SongPlan& plan, const SongSection& section, d
 }
 
 int nearestChordPitch(int pitchClass, int around, const InstrumentAssignment& assignment) {
-    auto best = std::clamp(around, assignment.minimumPitch, assignment.maximumPitch);
+    const auto& voice = voiceDefinition(assignment.sourceVoice);
+    const auto minimum = std::max(assignment.minimumPitch, voice.minimumPitch);
+    const auto maximum = std::min(assignment.maximumPitch, voice.maximumPitch);
+    if (minimum > maximum) return std::clamp(around, voice.minimumPitch, voice.maximumPitch);
+    auto best = std::clamp(around, minimum, maximum);
     auto distance = 1000;
-    for (auto pitch = assignment.minimumPitch; pitch <= assignment.maximumPitch; ++pitch) {
+    for (auto pitch = minimum; pitch <= maximum; ++pitch) {
         if (positiveModulo(pitch, 12) != positiveModulo(pitchClass, 12)) continue;
         const auto candidateDistance = std::abs(pitch - around);
         if (candidateDistance < distance) { distance = candidateDistance; best = pitch; }
@@ -194,11 +228,15 @@ InstrumentSoundModel instrumentSoundModel(std::string_view id) noexcept {
     if (id == "orchestral_percussion") return InstrumentSoundModel::Timpani;
     if (id == "electric_bass") return InstrumentSoundModel::ElectricBass;
     if (id == "sub_synth") return InstrumentSoundModel::SubSynth;
-    if (id == "analog_pad") return InstrumentSoundModel::AnalogPad;
-    if (id == "poly_synth") return InstrumentSoundModel::PolySynth;
-    if (id == "lead_synth") return InstrumentSoundModel::LeadSynth;
+    if (id == "rolling_mid_bass" || id == "reese_layer") return InstrumentSoundModel::ElectricBass;
+    if (id == "analog_pad" || id == "granular_pad" || id == "spectral_drone" ||
+        id == "shimmer_tail") return InstrumentSoundModel::AnalogPad;
+    if (id == "poly_synth" || id == "dub_chord" || id == "filtered_stab" ||
+        id == "hypnotic_arp" || id == "fm_sequence") return InstrumentSoundModel::PolySynth;
+    if (id == "lead_synth" || id == "deep_pluck" || id == "acid_line" ||
+        id == "vocal_chop_texture") return InstrumentSoundModel::LeadSynth;
     if (id == "guitar") return InstrumentSoundModel::Guitar;
-    if (id == "ambient_texture") return InstrumentSoundModel::Texture;
+    if (id == "ambient_texture" || id == "noise_riser") return InstrumentSoundModel::Texture;
     return InstrumentSoundModel::Generic;
 }
 
@@ -265,6 +303,9 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
             instrumentSoundModel(assignment.instrumentId), assignment.orchestralFunction,
             assignment.articulation, assignment.divisiVoices, assignment.liveDevice,
             assignment.livePresetIntent, assignment.timbre});
+        pattern.parts.back().contentLaneId = assignment.contentLaneId.empty()
+            ? assignment.id : assignment.contentLaneId;
+        pattern.parts.back().lineRelationship = assignment.lineRelationship;
         ++report.parts;
         if (department == ScoreDepartment::Rhythm) ++report.rhythmParts;
         else if (department == ScoreDepartment::Melody) ++report.melodyParts;
@@ -286,6 +327,22 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
     realized.reserve(std::min<std::size_t>(32768, pattern.notes.size() * 2));
     for (const auto& source : pattern.notes) {
         const auto& section = sectionAt(plan, source.startBeat);
+        // A performance-score note may name its concrete instrument. Preserve that
+        // authorship all the way to the exported part instead of redistributing it
+        // among every instrument that happens to share the same execution voice.
+        if (source.partId > 0 && source.partId <= assignments.size()) {
+            const auto assignmentIndex = static_cast<std::size_t>(source.partId - 1);
+            const auto& assignment = assignments[assignmentIndex];
+            if (assignment.sourceVoice == source.voice && activeInSection(assignment, section)) {
+                auto note = source;
+                note.pitch = isVoiceInFamily(source.voice, VoiceFamily::Rhythm) ||
+                             source.voice == VoiceId::Transitions
+                    ? source.pitch : fitPitch(source.pitch, assignment);
+                realized.push_back(note);
+                ++report.notesAssigned;
+                continue;
+            }
+        }
         const auto chamberAmount = std::clamp((0.62 - section.density) / 0.62, 0.0, 1.0) *
                                    plan.orchestrationLanguage.chamberContrast;
         const auto ensembleGain = 0.68 + plan.orchestrationLanguage.ensembleScale * 0.52;
@@ -431,7 +488,7 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
         }
         for (const auto& section : plan.sections) {
             const auto sectionIndex = static_cast<int>(&section - plan.sections.data());
-            const auto explicitlyOwned = PerformanceScoreEngine::ownedVoicesForSection(
+            const auto explicitlyOwnedInstruments = PerformanceScoreEngine::ownedInstrumentIdsForSection(
                 plan.performanceScore, sectionIndex);
             const auto sectionStart = section.startBar * plan.beatsPerBar;
             const auto sectionEnd = std::min(pattern.lengthBeats,
@@ -455,18 +512,30 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
             for (std::size_t castOrdinal = 0; castOrdinal < cast.size(); ++castOrdinal) {
                 const auto assignmentIndex = cast[castOrdinal];
                 const auto& assignment = assignments[assignmentIndex];
-                const auto sourceVoiceIndex = static_cast<std::size_t>(assignment.sourceVoice);
-                if (sourceVoiceIndex < explicitlyOwned.size() && explicitlyOwned[sourceVoiceIndex])
+                const auto protectedLowEnd = assignment.sourceVoice == VoiceId::SubBass ||
+                                             assignment.sourceVoice == VoiceId::MovementBass;
+                if (protectedLowEnd) continue;
+                if (explicitlyOwnedInstruments.contains(assignment.id))
                     continue;
+                const auto directlyAuthored = std::any_of(realized.begin(), realized.end(), [&](const auto& note) {
+                    return note.partId == static_cast<std::uint16_t>(assignmentIndex + 1) &&
+                           note.startBeat >= sectionStart && note.startBeat < sectionEnd &&
+                           (note.origin == NoteOrigin::AiAuthored || note.origin == NoteOrigin::AiTransformed);
+                });
+                if (directlyAuthored) continue;
                 const auto function = resolvedFunction(assignment);
                 auto existing = std::count_if(realized.begin(), realized.end(), [&](const auto& note) {
                     return note.partId == static_cast<std::uint16_t>(assignmentIndex + 1) &&
                            note.startBeat >= sectionStart && note.startBeat < sectionEnd;
                 });
-                const auto ownsIndependentLine = function == "counterpoint" || function == "color" ||
-                                                 function == "transition";
+                const auto ownsIndependentLine = function == "foundation" || function == "body" ||
+                                                 function == "extension" || function == "counterpoint" ||
+                                                 function == "color" || function == "transition";
                 if (!ownsIndependentLine) continue;
-                if (ownsIndependentLine && existing > 0) {
+                const auto replacesDistributedLine = function == "counterpoint" || function == "color" ||
+                                                     function == "transition";
+                if (existing > 0 && !replacesDistributedLine) continue;
+                if (existing > 0) {
                     realized.erase(std::remove_if(realized.begin(), realized.end(), [&](const auto& note) {
                         return note.partId == static_cast<std::uint16_t>(assignmentIndex + 1) &&
                                note.startBeat >= sectionStart && note.startBeat < sectionEnd;
@@ -474,19 +543,28 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
                     existing = 0;
                 }
                 const auto minimumMaterial = function == "counterpoint" ? section.bars * 2 :
-                                             function == "color" ? std::max(1, section.bars / 2) :
-                                             1;
+                                             function == "body" ? std::max(1, section.bars) :
+                                             function == "foundation" ? std::max(1, section.bars / 2) :
+                                             function == "extension" || function == "color"
+                                                 ? std::max(1, section.bars / 2) : 1;
                 if (existing >= minimumMaterial) continue;
 
                 const auto step = function == "counterpoint"
                     ? std::max(0.5, plan.beatsPerBar * (0.5 - plan.orchestrationLanguage.counterpointActivity * 0.25))
                     : function == "color" || function == "transition" ? plan.beatsPerBar * 2.0
-                    : plan.beatsPerBar;
+                    : function == "extension" ? plan.beatsPerBar * 4.0
+                    : function == "foundation" || function == "body" ? plan.beatsPerBar * 4.0
+                    : plan.beatsPerBar * 2.0;
                 auto previousPitch = std::clamp((assignment.minimumPitch + assignment.maximumPitch) / 2,
                                                 assignment.minimumPitch, assignment.maximumPitch);
                 auto ordinal = 0;
-                for (auto beat = sectionStart; beat < sectionEnd && realized.size() < 32768; beat += step, ++ordinal) {
-                    const auto restProbability = function == "color" ? 0.52 : function == "counterpoint" ? 0.24 : 0.14;
+                const auto stagger = function == "foundation" || function == "body" || function == "extension"
+                    ? static_cast<double>(castOrdinal % 4) * plan.beatsPerBar * 0.25 : 0.0;
+                for (auto beat = sectionStart + stagger;
+                     beat < sectionEnd && realized.size() < 32768; beat += step, ++ordinal) {
+                    const auto restProbability = function == "color" ? 0.52 :
+                        function == "extension" ? 0.46 : function == "counterpoint" ? 0.24 :
+                        function == "foundation" ? 0.18 : 0.28;
                     if (mixedUnit(plan.seed, static_cast<std::uint64_t>(assignmentIndex * 8191 +
                             section.startBar * 131 + ordinal)) < restProbability * (1.0 - section.density * 0.55))
                         continue;
@@ -579,7 +657,9 @@ OrchestrationReport OrchestrationScore::realize(Pattern& pattern, const SongPlan
     std::map<long long, std::vector<std::size_t>> lowByOnset;
     for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
         auto& upper = pattern.notes[index];
-        if (upper.pitch >= 52 || upper.partId == 0) continue;
+        if (upper.pitch >= 52 || upper.partId == 0 ||
+            isVoiceInFamily(upper.voice, VoiceFamily::Rhythm) || upper.voice == VoiceId::Transitions)
+            continue;
         auto& onset = lowByOnset[std::llround(upper.startBeat * 960.0)];
         for (const auto previous : onset) {
             const auto& lower = pattern.notes[previous];

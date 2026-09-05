@@ -29,6 +29,7 @@ def evaluate_creative_quality(request):
     drum_gap = int(_number(request, "maximum_club_drum_gap_bars", 0.0))
     low_end_gap = int(_number(request, "maximum_club_low_end_gap_bars", 0.0))
     score = _number(request, "creative_score", request.get("narrative_score", 0.0))
+    fabric_audited = bool(request.get("electronic_fabric_audited", False))
 
     codes = []
     if foreground_notes >= 8 and foreground < 0.85:
@@ -46,6 +47,21 @@ def evaluate_creative_quality(request):
             codes.append("club_pulse_absent_too_long")
         if low_end_gap > 16:
             codes.append("low_end_absent_too_long")
+    if fabric_audited:
+        independent_lines = int(_number(request, "independent_musical_lines", 0.0))
+        meaningful_lines = int(_number(request, "meaningful_musical_lines", 0.0))
+        line_ratio = meaningful_lines / max(1, independent_lines)
+        if independent_lines < 8 or line_ratio < 0.75:
+            codes.append("tracks_without_independent_musical_content")
+        if (_number(request, "harmonic_floor_coverage", 0.0) < 0.80 or
+                _number(request, "median_harmonic_floor_layers", 0.0) < 2.0):
+            codes.append("harmonic_floor_incomplete")
+        if int(_number(request, "protagonist_phrase_windows", 0.0)) < 3:
+            codes.append("primary_speaker_incomplete")
+        if int(_number(request, "arpeggio_note_count", 0.0)) < 32:
+            codes.append("electronic_arpeggio_incomplete")
+        if int(_number(request, "dialogue_musical_lines", 0.0)) < 1:
+            codes.append("melodic_dialogue_incomplete")
     if score < 0.76:
         codes.append("creative_score_below_gate")
     if request.get("creative_ready") is False and "creative_score_below_gate" not in codes:
@@ -65,4 +81,5 @@ def evaluate_creative_quality(request):
         "maximum_melodic_step_run": scalar_run,
         "maximum_club_drum_gap_bars": drum_gap,
         "maximum_club_low_end_gap_bars": low_end_gap,
+        "electronic_fabric_audited": fabric_audited,
     }

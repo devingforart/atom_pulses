@@ -46,6 +46,28 @@ class ProductionQualityTests(unittest.TestCase):
     def test_legacy_request_is_not_falsely_rejected(self):
         self.assertTrue(evaluate_creative_quality({"schema_version": 9})["passed"])
 
+    def test_electronic_fabric_rejects_track_count_without_music(self):
+        report = evaluate_creative_quality({
+            "narrative_audited": True,
+            "electronic_fabric_audited": True,
+            "creative_ready": False,
+            "creative_score": 0.82,
+            "production_domain": "adaptive",
+            "independent_musical_lines": 36,
+            "meaningful_musical_lines": 12,
+            "harmonic_floor_coverage": 0.20,
+            "median_harmonic_floor_layers": 1.0,
+            "protagonist_phrase_windows": 1,
+            "arpeggio_note_count": 4,
+            "dialogue_musical_lines": 0,
+        })
+        self.assertFalse(report["passed"])
+        self.assertIn("tracks_without_independent_musical_content", report["codes"])
+        self.assertIn("harmonic_floor_incomplete", report["codes"])
+        self.assertIn("primary_speaker_incomplete", report["codes"])
+        self.assertIn("electronic_arpeggio_incomplete", report["codes"])
+        self.assertIn("melodic_dialogue_incomplete", report["codes"])
+
     def test_deliberately_instrumental_score_does_not_require_lead_or_bass(self):
         report = evaluate_creative_quality({
             "narrative_audited": True,

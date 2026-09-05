@@ -16,7 +16,8 @@ namespace pulso {
 namespace {
 
 bool aiAuthored(const NoteEvent& note) noexcept {
-    return note.origin == NoteOrigin::AiAuthored || note.origin == NoteOrigin::AiTransformed;
+    return note.origin == NoteOrigin::AiAuthored || note.origin == NoteOrigin::AiTransformed ||
+           note.origin == NoteOrigin::PlanDerived;
 }
 
 using Signature = std::vector<std::tuple<int, int, int>>;

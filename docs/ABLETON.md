@@ -1,5 +1,34 @@
 # Probar PULSO en Ableton Live
 
+## Contrato 0.51.0
+
+Cada pista de Full Orchestration publica `content_lane_id` y `line_relationship`. La raíz de
+`request.json` informa `independent_musical_lines`, `meaningful_musical_lines`,
+`harmonic_floor_coverage`, `median_harmonic_floor_layers`, `protagonist_phrase_windows`,
+`arpeggio_note_count` y `dialogue_musical_lines`.
+
+El bridge marca como degradado un arreglo que sólo multiplica pistas, pierde el piso armónico
+o no materializa protagonista, arpegio y diálogo. Las notas `plan_derived` son editables como
+MIDI normal y señalan que el renderer ejecutó decisiones musicales del plan GPT, no que agregó
+un fallback genérico.
+
+## Contrato 0.50.0
+
+LiveBridge recibe `soundscape_ready`, `soundscape_score`, capas declaradas, capas realmente
+desarrolladas, capas subdesarrolladas y mediana de capas activas. Estas cifras proceden del
+MIDI final y distinguen un FX puntual válido de una pista nominal sin desarrollo. El modo
+`percussion_free` nunca solicita Drum Racks ni falla por ausencia de pulso.
+
+## Contrato 0.49.0
+
+Full Orchestration crea una pista únicamente por cada `partId` que contiene MIDI. El sidecar
+`.pulso.json` publica `arrangement_target_parts`, `populated_instrument_parts`, los conteos por
+departamento, `peak_simultaneous_parts`, `part_independence_score` y
+`maximum_part_note_share`. El resumen visible de la idea muestra las mismas métricas.
+
+Las notas GPT con `instrument_id` se dirigen a la pista exacta elegida por el modelo. Un id vacío
+mantiene la rotación orquestal tradicional y conserva compatibilidad con canciones anteriores.
+
 ## Contrato 0.48.1
 
 En una composición GPT, el MIDI entregado a Live ya no contiene relleno local oculto en lead,

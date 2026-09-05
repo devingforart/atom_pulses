@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.48.1 LANGUAGES C CXX)
+project(Pulso VERSION 0.51.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -13,12 +13,18 @@ option(PULSO_BUILD_CLI "Build the pattern demo CLI" ON)
 include(FetchContent)
 
 add_library(pulso_core STATIC
+    src/core/ArrangementDensityPlanner.cpp
+    src/core/ArrangementDensityPlanner.h
     src/core/CompositionModel.cpp
     src/core/CompositionModel.h
     src/core/CreativeAuthority.cpp
     src/core/CreativeAuthority.h
+    src/core/ElectronicCompositionFabric.cpp
+    src/core/ElectronicCompositionFabric.h
     src/core/ElectronicProductionDirector.cpp
     src/core/ElectronicProductionDirector.h
+    src/core/ElectronicSoundscape.cpp
+    src/core/ElectronicSoundscape.h
     src/core/Generator.cpp
     src/core/Generator.h
     src/core/HarmonyEngine.cpp

@@ -42,6 +42,8 @@ struct InstrumentAssignment {
     std::string liveDevice{"auto"};
     std::string livePresetIntent{"balanced natural"};
     TimbreSignature timbre;
+    std::string contentLaneId;
+    std::string lineRelationship{"independent"};
 };
 
 struct OrchestrationLanguage {

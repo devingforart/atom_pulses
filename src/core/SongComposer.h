@@ -1,8 +1,11 @@
 #pragma once
 
 #include "Generator.h"
+#include "ArrangementDensityPlanner.h"
 #include "CreativeAuthority.h"
+#include "ElectronicCompositionFabric.h"
 #include "ElectronicProductionDirector.h"
+#include "ElectronicSoundscape.h"
 #include "HarmonyPlan.h"
 #include "MusicalCritic.h"
 #include "MusicalIdentityGate.h"
@@ -72,6 +75,10 @@ struct SongPlan {
     std::vector<RhythmMotif> rhythmMotifs;
     std::vector<PlannedVoice> voices;
     std::vector<InstrumentAssignment> instruments;
+    ElectronicSoundscapePlan soundscape;
+    // Explicit user constraint propagated independently of genre classification. A
+    // percussion-free electronic piece must not be graded as a failed club track.
+    bool percussionFreeIntent{};
     // True when the instrument list came from the structured AI score. In that case the
     // cast is authoritative per voice: missing ownership is critic feedback, not permission
     // to inject generic instruments behind the composer's back.
@@ -105,6 +112,9 @@ struct CompositionRenderReport {
     NarrativeScoreReport narrative;
     VerticalHarmonyReport verticalHarmony;
     CreativeAuthorityReport creativeAuthority;
+    ElectronicFabricReport electronicFabric;
+    ArrangementDensityReport arrangementDensity;
+    ElectronicSoundscapeReport soundscape;
 
     [[nodiscard]] bool productionReady() const noexcept {
         return production.ready;

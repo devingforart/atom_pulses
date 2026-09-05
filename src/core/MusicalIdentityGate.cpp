@@ -36,7 +36,8 @@ bool transitionNote(const Pattern& pattern, const NoteEvent& note) noexcept {
 }
 
 bool stableGrooveNote(const Pattern& pattern, const NoteEvent& note) noexcept {
-    if (note.origin == NoteOrigin::AiAuthored || note.origin == NoteOrigin::AiTransformed)
+    if (note.origin == NoteOrigin::AiAuthored || note.origin == NoteOrigin::AiTransformed ||
+        note.origin == NoteOrigin::PlanDerived)
         return false;
     const auto* part = partFor(pattern, note);
     if (part == nullptr || part->department != ScoreDepartment::Rhythm ||
@@ -243,6 +244,7 @@ void bindResponses(Pattern& pattern, const SongPlan& plan, MusicalIdentityReport
             const auto& note = pattern.notes[index];
             if (note.voice == VoiceId::Countermelody &&
                 note.origin != NoteOrigin::AiAuthored && note.origin != NoteOrigin::AiTransformed &&
+                note.origin != NoteOrigin::PlanDerived &&
                 note.startBeat >= start &&
                 note.startBeat < start + windowBeats)
                 responsesByPart[note.partId].push_back(index);

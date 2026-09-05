@@ -33,6 +33,10 @@ class ElectronicCompositionFabric final {
 public:
     static void normalizePlan(SongPlan&);
     [[nodiscard]] static ElectronicFabricReport materialize(Pattern&, const SongPlan&);
+    // Recompute the contract from the exact notes that will be published. Rendering,
+    // register repair and release shaping are allowed to alter the material after
+    // materialize(), so publication must never trust the construction counters.
+    [[nodiscard]] static ElectronicFabricReport audit(const Pattern&, const SongPlan&);
 };
 
 } // namespace pulso

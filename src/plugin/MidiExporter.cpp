@@ -69,6 +69,9 @@ bool writeCompanionManifest(const Pattern& pattern, const juce::File& midi,
     root->setProperty("narrative_audited", pattern.narrativeAuditPerformed);
     root->setProperty("narrative_score", pattern.narrativeScore);
     root->setProperty("creative_ready", pattern.creativeReady);
+    root->setProperty("causal_narrative_score", pattern.causalNarrativeScore);
+    root->setProperty("narrative_resolution_score", pattern.narrativeResolutionScore);
+    root->setProperty("narrative_spine_ready", pattern.narrativeSpineReady);
     root->setProperty("creative_score", pattern.creativeScore);
     root->setProperty("ai_authored_note_ratio", pattern.aiAuthoredNoteRatio);
     root->setProperty("primary_voice_authorship_coverage", pattern.primaryVoiceAuthorshipCoverage);

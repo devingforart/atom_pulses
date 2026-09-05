@@ -66,6 +66,11 @@ se oye, y su procedencia puede auditarse correctamente.
 
 ### Soul Gate 0.48
 
+`NarrativeSpine` separa la forma de la dramaturgia musical. GPT declara premisa, pregunta,
+deuda armónica, protagonista, transformación, clímax y resolución como actos enlazados por
+causas y consecuencias. El materializador sólo completa huecos objetivos de esa partitura y
+preserva un único linaje audible para sus transformaciones.
+
 `NarrativeScore` audita la partitura ya renderizada, no la intención declarada. Mide autoría AI
 real en lead/countermelody, autoría del bajo de movimiento, cobertura estructural del groove,
 continuidad del bajo, longitud de recorridos escalares y máximos silencios de pulso y low-end.

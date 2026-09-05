@@ -1,5 +1,22 @@
 # Probar PULSO en Ableton Live
 
+## Contrato 0.52.0
+
+El manifiesto de Create in Live publica `causal_narrative_score`,
+`narrative_resolution_score` y `narrative_spine_ready`. Son mediciones del MIDI final:
+permiten distinguir una historia realmente ejecutada de una descripción convincente que
+no llegó a las notas.
+
+## Contrato 0.51.1
+
+Los arpegios publicados pertenecen exclusivamente a instrumentos con función explícita de
+arpegio; `ostinato` por sí solo no clasifica una pista. El gate de densidad rechaza tuttis
+electrónicos que superen el presupuesto seccional y las métricas de piso, protagonista,
+diálogo y arpegio se calculan después de todas las reparaciones y filtros de publicación.
+
+Las instrucciones explícitas de sólo armonía y melodía activan un contrato sin percusión:
+no se crean instrumentos, celdas, notas ni automatizaciones de la familia rítmica.
+
 ## Contrato 0.51.0
 
 Cada pista de Full Orchestration publica `content_lane_id` y `line_relationship`. La raíz de

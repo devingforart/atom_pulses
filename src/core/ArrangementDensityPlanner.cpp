@@ -282,7 +282,10 @@ ArrangementDensityReport ArrangementDensityPlanner::auditAndStamp(Pattern& patte
         report.harmonyParts >= report.targets.minimumHarmonyParts &&
         report.melodyParts >= report.targets.minimumMelodyParts &&
         report.textureParts >= report.targets.minimumTextureParts &&
-        report.independenceScore >= .80;
+        report.independenceScore >= .80 &&
+        // Permit a brief two-part arrival above the normal sectional budget, but reject
+        // arrangements whose apparent depth is actually a persistent overcrowded tutti.
+        report.peakSimultaneousParts <= report.targets.maximumSimultaneousParts + 2;
 
     pattern.arrangementTargetParts = report.targets.proposedParts;
     pattern.populatedInstrumentParts = report.populatedParts;

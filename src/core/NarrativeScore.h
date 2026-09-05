@@ -35,6 +35,10 @@ struct NarrativeScoreReport {
     std::size_t maximumMelodicStepRun{};
     std::size_t maximumClubDrumGapBars{};
     std::size_t maximumClubLowEndGapBars{};
+    std::size_t declaredNarrativeActs{};
+    std::size_t audibleNarrativeActs{};
+    std::size_t causalTransitions{};
+    std::size_t realizedCausalTransitions{};
     double aiAuthoredNoteRatio{};
     double primaryVoiceCoverage{};
     double grooveAuthorshipCoverage{};
@@ -50,10 +54,17 @@ struct NarrativeScoreReport {
     double densityControl{1.0};
     double harmonicDirection{};
     double rhythmicDevelopment{};
+    double causalNarrative{};
+    double motifClosure{};
+    double tonalClosure{};
+    double registerRelease{};
+    double densityRelease{};
+    double resolutionScore{};
     double score{};
     bool foregroundExpected{};
     bool movementBassExpected{};
     bool creativeReady{true};
+    bool narrativeSpineReady{true};
     std::vector<std::string> issues;
 };
 

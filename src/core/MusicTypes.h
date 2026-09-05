@@ -211,6 +211,9 @@ struct Pattern {
     std::size_t maximumClubLowEndGapBars{};
     double densityControl{1.0};
     std::size_t peakActiveVoices{};
+    double causalNarrativeScore{};
+    double narrativeResolutionScore{};
+    bool narrativeSpineReady{true};
     // Exact post-render arrangement density. These values describe the MIDI that
     // will be exported, not merely the instruments proposed in the plan.
     std::size_t arrangementTargetParts{};

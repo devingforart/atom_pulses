@@ -245,6 +245,9 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     root->setProperty("narrative_audited", pattern.narrativeAuditPerformed);
     root->setProperty("narrative_score", pattern.narrativeScore);
     root->setProperty("creative_ready", pattern.creativeReady);
+    root->setProperty("causal_narrative_score", pattern.causalNarrativeScore);
+    root->setProperty("narrative_resolution_score", pattern.narrativeResolutionScore);
+    root->setProperty("narrative_spine_ready", pattern.narrativeSpineReady);
     root->setProperty("creative_score", pattern.creativeScore);
     root->setProperty("soundscape_audited", pattern.soundscapeAuditPerformed);
     root->setProperty("electronic_fabric_audited", pattern.soundscapeAuditPerformed);

@@ -1,5 +1,33 @@
 # PULSO
 
+### 0.52.0 — narrativa causal y resolución audible
+
+PULSO incorpora `NarrativeSpine`: GPT debe declarar una premisa, una pregunta concreta,
+la deuda armónica, el instrumento protagonista y una cadena de actos con causa y
+consecuencia. El contrato se ejecuta sobre el MIDI: plantea el motivo, lo deja abierto,
+lo transforma, lo lleva al clímax y reserva una llegada final a tónica con relajación de
+registro y densidad. `NarrativeScoreGate` mide esa evidencia después de todos los pases;
+los nombres de sección o la mera similitud temática ya no bastan para aprobar una obra.
+
+También se corrigió la clasificación del protagonista: una voz `Lead` con función
+contrapuntística sigue siendo el narrador principal salvo que esté declarada explícitamente
+como `call_response`, respuesta o réplica.
+
+### 0.51.1 — autoridad narrativa y funciones exclusivas
+
+El tejido electrónico ya no confunde una articulación repetitiva con una función de
+arpegio: bajos, cuerdas y acordes `ostinato` conservan su identidad, mientras que el MIDI
+de arpegio sólo puede llegar a propietarios explícitos. Los arpegios rotan entre pistas
+válidas según la forma y respetan el material que GPT ya desarrolló.
+
+El protagonista emplea varias sentencias rítmicas y transformaciones del motivo del plan
+para construir planteamiento, desarrollo y retorno. El piso armónico ahora completa huecos
+objetivos sin superponer una composición procedural a un tejido de GPT ya suficiente.
+
+Los presupuestos de densidad forman parte del gate, los pedidos de sólo armonía/melodía
+eliminan percusión antes y después del render, y todas las métricas del tejido se recalculan
+sobre el MIDI definitivo que se publica en Live.
+
 ### 0.51.0 — tejido compositivo aditivo
 
 PULSO separa ahora `source_voice`, pista instrumental y línea musical. Cada instrumento

@@ -27,9 +27,12 @@ bool contains(std::string_view text, std::string_view token) noexcept {
 }
 
 bool arpPart(const InstrumentAssignment& part) noexcept {
-    return part.instrumentId == "hypnotic_arp" || part.instrumentId == "fm_sequence" ||
-           part.articulation == "ostinato" || contains(part.role, "arpeggio") ||
-           contains(part.role, "arpeggiated");
+    // Ostinato describes an articulation, not a musical department. A rolling bass,
+    // string ostinato or repeated chord must never become the destination of the
+    // arpeggiator merely because it repeats.
+    return part.instrumentId == "hypnotic_arp" ||
+           (part.instrumentId == "fm_sequence" && part.sourceVoice == VoiceId::HarmonicPulse) ||
+           contains(part.role, "arpeggio") || contains(part.role, "arpeggiated");
 }
 
 bool floorPart(const InstrumentAssignment& part) noexcept {
@@ -43,8 +46,13 @@ bool floorPart(const InstrumentAssignment& part) noexcept {
 }
 
 bool dialoguePart(const InstrumentAssignment& part) noexcept {
+    // "counterpoint" is a texture/function, not proof that the line is a reply.
+    // GPT commonly gives the protagonist that function; treating it as dialogue made
+    // the lead-owner set empty and silently disabled the complete narrative pass.
     return part.sourceVoice == VoiceId::Countermelody ||
-        (part.sourceVoice == VoiceId::Lead && part.orchestralFunction == "counterpoint");
+           part.lineRelationship == "call_response" ||
+           contains(part.role, "reply") || contains(part.role, "response") ||
+           contains(part.role, "answer");
 }
 
 bool activeIn(const InstrumentAssignment& part, const SongSection& section) {
@@ -134,10 +142,11 @@ bool overlapsPart(const Pattern& pattern, std::uint16_t partId, double start, do
     });
 }
 
-void addNote(Pattern& pattern, const InstrumentAssignment& assignment, std::uint16_t partId,
+bool addNote(Pattern& pattern, const InstrumentAssignment& assignment, std::uint16_t partId,
              double start, double duration, int pitch, int velocity, std::uint32_t narrativeId,
-             ElectronicFabricReport& report, std::size_t& counter) {
-    if (start < 0.0 || start >= pattern.lengthBeats || duration <= .001) return;
+             ElectronicFabricReport& report, std::size_t& counter,
+             std::size_t maximumSoundingParts = 7) {
+    if (start < 0.0 || start >= pattern.lengthBeats || duration <= .001) return false;
     std::vector<double> checkpoints{start + .001};
     const auto proposedEnd = start + duration;
     for (const auto& note : pattern.notes)
@@ -150,13 +159,43 @@ void addNote(Pattern& pattern, const InstrumentAssignment& assignment, std::uint
                 soundingParts.insert(note.partId);
         // Keep the score mixable. Structural depth comes from interlocking lines over
         // time, not an ever-growing instantaneous tutti.
-        if (!soundingParts.contains(partId) && soundingParts.size() >= 7) return;
+        if (!soundingParts.contains(partId) && soundingParts.size() >= maximumSoundingParts) return false;
     }
     pattern.notes.push_back({start, std::min(duration, pattern.lengthBeats - start), pitch,
         std::clamp(velocity, 1, 127), voiceDefinition(assignment.sourceVoice).midiChannel,
         assignment.sourceVoice, partId, true, NoteOrigin::PlanDerived, narrativeId});
     ++report.notesCreated;
     ++counter;
+    return true;
+}
+
+const SongSection* sectionAt(const SongPlan& plan, double beat) noexcept {
+    const SongSection* result = plan.sections.empty() ? nullptr : &plan.sections.front();
+    for (const auto& section : plan.sections) {
+        if (beat + .001 < section.startBar * plan.beatsPerBar) break;
+        result = &section;
+    }
+    return result;
+}
+
+std::size_t densityBudget(const SongPlan& plan, double beat) noexcept {
+    const auto* section = sectionAt(plan, beat);
+    const auto density = section == nullptr ? .5 : section->density;
+    return static_cast<std::size_t>(std::clamp(
+        static_cast<int>(std::lround(5.0 + density * 3.0)), 5, 8));
+}
+
+std::uint64_t mixed(std::uint64_t value) noexcept {
+    value += 0x9e3779b97f4a7c15ULL;
+    value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
+    value = (value ^ (value >> 27U)) * 0x94d049bb133111ebULL;
+    return value ^ (value >> 31U);
+}
+
+int fitScalePitch(int target, const InstrumentAssignment& assignment,
+                  int rootPitchClass, ScaleKind scale) noexcept {
+    const auto legal = nearestPitchInScale(target, rootPitchClass, scale);
+    return nearestPitch(positiveModulo(legal, 12), legal, assignment);
 }
 
 std::vector<std::size_t> indicesFor(const SongPlan& plan,
@@ -263,11 +302,14 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
         if (plan.instruments[i].sourceVoice == VoiceId::Lead && !dialoguePart(plan.instruments[i]))
             leads.push_back(i);
     std::sort(leads.begin(), leads.end(), [&](auto a, auto b) {
+        const auto aChosen = plan.instruments[a].id == plan.narrativeSpine.protagonistInstrumentId;
+        const auto bChosen = plan.instruments[b].id == plan.narrativeSpine.protagonistInstrumentId;
+        if (aChosen != bChosen) return aChosen;
         return plan.instruments[a].prominence > plan.instruments[b].prominence;
     });
 
     // The harmonic floor is a group contract, not a permanently held single pad.
-    // Three independent registers rotate, while at least two remain present per bar.
+    // Independent registers rotate and breathe with the AI-authored sectional arc.
     if (floors.size() > 4) floors.resize(4);
     std::vector<int> previousPitch(floors.size(), 60);
     for (std::size_t i = 0; i < floors.size(); ++i)
@@ -277,102 +319,227 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
         const auto beat = bar * plan.beatsPerBar;
         const auto& chord = chordAt(plan, beat);
         if (chord.pitchClasses.empty()) continue;
-        const auto rotation = static_cast<std::size_t>((bar / 8) % std::max<std::size_t>(1, floors.size()));
-        const auto desired = std::min<std::size_t>(floors.size(), bar % 16 >= 12 ? 3 : 2);
-        for (std::size_t slot = 0; slot < desired; ++slot) {
-            const auto floorOrdinal = (rotation + slot) % floors.size();
+        const auto* section = sectionAt(plan, beat);
+        const auto sectionIndex = section == nullptr ? std::size_t{} :
+            static_cast<std::size_t>(std::distance(plan.sections.data(), section));
+        const auto rotation = static_cast<std::size_t>((bar / 4 + sectionIndex) %
+            std::max<std::size_t>(1, floors.size()));
+        const auto phraseBar = bar % 16;
+        const auto breath = phraseBar == 15 ||
+            (section != nullptr && section->energy < .30 && phraseBar == 7);
+        const auto arrival = section != nullptr && section->energy >= .68 &&
+            (phraseBar == 0 || phraseBar == 12);
+        const auto desired = std::min<std::size_t>(floors.size(), breath ? 1U : arrival ? 3U : 2U);
+        std::set<std::size_t> alreadyActive;
+        for (const auto index : floors)
+            if (overlapsPart(pattern, partId(index), beat, beat + plan.beatsPerBar * .75))
+                alreadyActive.insert(index);
+        // GPT owns complete floor writing. Local material only closes an objective gap;
+        // it does not add another chord layer merely because a preferred pad is resting.
+        auto activeCount = alreadyActive.size();
+        for (std::size_t attempt = 0; attempt < floors.size() && activeCount < desired; ++attempt) {
+            const auto floorOrdinal = (rotation + attempt) % floors.size();
             const auto index = floors[floorOrdinal];
+            const auto slot = activeCount;
             const auto& assignment = plan.instruments[index];
-            if (overlapsPart(pattern, partId(index), beat, beat + plan.beatsPerBar * .75)) continue;
+            if (alreadyActive.contains(index)) continue;
             const auto tone = chord.pitchClasses[(floorOrdinal + static_cast<std::size_t>(bar / 4)) %
                                                   chord.pitchClasses.size()];
             const auto pitch = nearestPitch(tone, previousPitch[floorOrdinal], assignment);
-            addNote(pattern, assignment, partId(index), beat, plan.beatsPerBar - 1.0 / 32.0,
-                pitch, 48 + static_cast<int>(slot) * 5 + (bar % 8 == 0 ? 5 : 0),
+            const auto held = slot == 0 || phraseBar % 4 != 2;
+            const auto duration = held ? plan.beatsPerBar - 1.0 / 32.0 :
+                plan.beatsPerBar * .5 - 1.0 / 32.0;
+            addNote(pattern, assignment, partId(index), beat, duration,
+                pitch, 44 + static_cast<int>(slot) * 6 + (arrival ? 8 : 0),
                 0x464c4f52u + static_cast<std::uint32_t>(floorOrdinal), report,
-                report.foundationNotesCreated);
+                report.foundationNotesCreated, densityBudget(plan, beat));
             previousPitch[floorOrdinal] = pitch;
+            alreadyActive.insert(index);
+            ++activeCount;
         }
     }
 
     // A recognisable electronic motion line: repeated cells, sectional omissions,
     // directional changes and a full-bar breath at the end of every phrase.
     if (!arps.empty()) {
-        const auto index = arps.front();
-        const auto& assignment = plan.instruments[index];
         for (auto block = 0; block * 8 < plan.totalBars; ++block) {
             const auto blockBar = block * 8;
             const auto blockStart = blockBar * plan.beatsPerBar;
-            if (block == 0 || block % 4 == 3 ||
-                overlapsPart(pattern, partId(index), blockStart, blockStart + 8 * plan.beatsPerBar)) continue;
-            const auto activeBars = block % 3 == 1 ? 5 : 7;
+            const auto* section = sectionAt(plan, blockStart);
+            std::vector<std::size_t> eligible;
+            for (const auto index : arps)
+                if (section == nullptr || activeIn(plan.instruments[index], *section)) eligible.push_back(index);
+            if (eligible.empty() || block == 0 || block % 4 == 3) continue;
+            const auto groupNotes = std::count_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+                return note.startBeat >= blockStart && note.startBeat < blockStart + 8 * plan.beatsPerBar &&
+                    std::any_of(eligible.begin(), eligible.end(), [&](const auto candidate) {
+                        return note.partId == partId(candidate);
+                    });
+            });
+            // A developed AI sequence is authoritative. Only materially empty blocks
+            // receive a derived motion line.
+            if (groupNotes >= 6) continue;
+            const auto startOffset = static_cast<std::size_t>(mixed(plan.seed ^
+                static_cast<std::uint64_t>(block)) % eligible.size());
+            auto index = eligible[startOffset];
+            for (std::size_t offset = 0; offset < eligible.size(); ++offset) {
+                const auto candidate = eligible[(startOffset + offset) % eligible.size()];
+                if (!overlapsPart(pattern, partId(candidate), blockStart,
+                                  blockStart + 8 * plan.beatsPerBar)) {
+                    index = candidate;
+                    break;
+                }
+            }
+            const auto& assignment = plan.instruments[index];
+            if (overlapsPart(pattern, partId(index), blockStart,
+                             blockStart + 8 * plan.beatsPerBar)) continue;
+            const auto variant = mixed(plan.seed ^ (static_cast<std::uint64_t>(block) << 17U));
+            const auto activeBars = 4 + static_cast<int>(variant % 4U);
+            const auto stepsPerBar = std::max(1, static_cast<int>(std::lround(plan.beatsPerBar * 2.0)));
             auto ordinal = 0;
             for (auto bar = 0; bar < activeBars && blockBar + bar < plan.totalBars; ++bar) {
-                for (auto step = 0; step < 8; ++step, ++ordinal) {
-                    if ((ordinal + block) % 11 == 7 || (step == 7 && bar % 2 == 1)) continue;
+                for (auto step = 0; step < stepsPerBar; ++step, ++ordinal) {
+                    const auto restCycle = 7 + static_cast<int>((variant >> 8U) % 6U);
+                    if ((ordinal + block) % restCycle == static_cast<int>((variant >> 16U) % restCycle) ||
+                        (step + 1 == stepsPerBar && (bar + block) % 2 == 1)) continue;
                     const auto beat = (blockBar + bar) * plan.beatsPerBar + step * .5;
                     const auto& chord = chordAt(plan, beat);
                     if (chord.pitchClasses.empty()) continue;
-                    const auto ascending = block % 2 == 0;
-                    const auto position = ascending ? step % static_cast<int>(chord.pitchClasses.size()) :
+                    const auto ascending = ((variant >> 24U) + static_cast<std::uint64_t>(bar)) % 2U == 0;
+                    const auto motifShift = plan.motifIntervals.empty() ? 0 :
+                        std::abs(plan.motifIntervals[static_cast<std::size_t>(ordinal) % plan.motifIntervals.size()]);
+                    const auto arpStep = step + motifShift;
+                    const auto position = ascending ? arpStep % static_cast<int>(chord.pitchClasses.size()) :
                         static_cast<int>(chord.pitchClasses.size()) - 1 -
-                            step % static_cast<int>(chord.pitchClasses.size());
-                    auto target = 60 + (block % 3 == 2 && step == 6 ? 12 : 0);
+                            arpStep % static_cast<int>(chord.pitchClasses.size());
+                    const auto target = 60 + (((variant >> 32U) + static_cast<std::uint64_t>(bar / 2)) % 3U == 2U ? 12 : 0);
                     const auto pitch = nearestPitch(chord.pitchClasses[static_cast<std::size_t>(position)],
                         target, assignment);
                     addNote(pattern, assignment, partId(index), beat, .32, pitch,
-                        48 + (step % 4 == 0 ? 18 : step % 2 == 0 ? 8 : 0),
+                        46 + (step % 4 == 0 ? 18 : step % 2 == 0 ? 7 : 0),
                         0x41525000u + static_cast<std::uint32_t>(block), report,
-                        report.arpeggioNotesCreated);
+                        report.arpeggioNotesCreated, densityBudget(plan, beat));
                 }
             }
         }
     }
 
-    // One protagonist owns the story. Phrases use the AI motif and harmony, while
-    // deliberate four/eight-bar gaps keep it from becoming a perpetual solo.
+    // One protagonist owns the story at a time. Its statement, transformation and
+    // return are derived from the AI motif, but rhythm and contour change per phrase.
     std::vector<std::pair<double, std::vector<int>>> createdPhrases;
     if (!leads.empty()) {
-        const auto index = leads.front();
-        const auto& assignment = plan.instruments[index];
-        constexpr std::array rhythm{0.0, .75, 1.5, 2.75, 4.0, 5.5, 7.0, 9.5};
-        for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
-            const auto& section = plan.sections[sectionIndex];
-            if (section.bars < 4 || sectionIndex == 0 || !activeIn(assignment, section)) continue;
-            const auto stride = section.bars >= 16 ? 12 : 8;
-            for (auto localBar = sectionIndex % 2 == 0 ? 1 : 2;
-                 localBar + 3 < section.bars; localBar += stride) {
-                const auto start = (section.startBar + localBar) * plan.beatsPerBar;
-                const auto end = start + 4 * plan.beatsPerBar;
-                const auto existing = std::count_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
-                    return note.voice == VoiceId::Lead && note.startBeat >= start && note.startBeat < end;
+        struct PhraseWindow { double start{}; NarrativeStage stage{NarrativeStage::Transformation}; };
+        std::vector<PhraseWindow> phraseWindows;
+        std::set<NarrativeStage> scheduledStages;
+        if (plan.narrativeSpine.authored) {
+            for (const auto& act : plan.narrativeSpine.acts) {
+                if (act.stage == NarrativeStage::Departure || act.stage == NarrativeStage::Aftermath) continue;
+                // One structural phrase per dramatic job. Repeated section labels may
+                // describe many supporting scenes, but must not turn the protagonist into
+                // a continuous monologue.
+                if (!scheduledStages.insert(act.stage).second) continue;
+                const auto section = std::find_if(plan.sections.begin(), plan.sections.end(), [&](const auto& candidate) {
+                    return candidate.name == act.sectionName;
                 });
-                if (existing >= 3) continue;
-                std::vector<int> pitches;
-                pitches.reserve(rhythm.size());
-                auto centre = std::clamp(64 + static_cast<int>(sectionIndex % 3) * 2,
-                                         assignment.minimumPitch, assignment.maximumPitch);
-                for (std::size_t noteIndex = 0; noteIndex < rhythm.size(); ++noteIndex) {
-                    const auto beat = start + rhythm[noteIndex];
-                    const auto& chord = chordAt(plan, beat);
-                    const auto motif = plan.motifIntervals.empty() ? static_cast<int>(noteIndex % 4) :
-                        plan.motifIntervals[noteIndex % plan.motifIntervals.size()];
-                    auto target = nearestPitchInScale(centre + motif +
-                        (sectionIndex % 4 == 2 && noteIndex >= 4 ? 2 : 0),
-                        plan.rootPitchClass, plan.scale);
-                    if (noteIndex == 0 && !chord.pitchClasses.empty())
-                        target = nearestPitch(chord.pitchClasses.front(), target, assignment);
-                    target = std::clamp(target, assignment.minimumPitch, assignment.maximumPitch);
-                    const auto duration = noteIndex == 3 || noteIndex == 7 ? 1.15 :
-                                          noteIndex % 3 == 1 ? .42 : .62;
-                    addNote(pattern, assignment, partId(index), beat, duration, target,
-                        66 + static_cast<int>(section.energy * 20) +
-                            (noteIndex == 0 || noteIndex == 4 ? 8 : 0),
-                        0x4c454144u, report, report.protagonistNotesCreated);
-                    pitches.push_back(target);
-                }
-                createdPhrases.emplace_back(start, std::move(pitches));
+                if (section == plan.sections.end()) continue;
+                const auto localBar = std::clamp(section->bars / 3, 0, std::max(0, section->bars - 4));
+                phraseWindows.push_back({(section->startBar + localBar) * plan.beatsPerBar, act.stage});
             }
+        } else {
+            const auto count = std::max<std::size_t>(3, static_cast<std::size_t>(plan.totalBars / 24));
+            for (std::size_t index = 0; index < count; ++index)
+                phraseWindows.push_back({std::floor((static_cast<double>(index) + .55) *
+                    plan.totalBars / static_cast<double>(count)) * plan.beatsPerBar,
+                    index + 1 == count ? NarrativeStage::Resolution : NarrativeStage::Transformation});
+        }
+        if (phraseWindows.size() < 3) {
+            const auto count = std::max<std::size_t>(3, static_cast<std::size_t>(plan.totalBars / 24));
+            for (std::size_t index = phraseWindows.size(); index < count; ++index)
+                phraseWindows.push_back({std::floor((static_cast<double>(index) + .55) *
+                    plan.totalBars / static_cast<double>(count) / 4.0) * 4.0 * plan.beatsPerBar,
+                    index + 1 == count ? NarrativeStage::Resolution : NarrativeStage::Transformation});
+        }
+        std::sort(phraseWindows.begin(), phraseWindows.end(), [](const auto& a, const auto& b) {
+            return a.start < b.start;
+        });
+        const auto targetWindows = phraseWindows.size();
+        std::set<int> scheduledWindows;
+        for (std::size_t phraseIndex = 0; phraseIndex < targetWindows; ++phraseIndex) {
+            const auto stage = phraseWindows[phraseIndex].stage;
+            auto bar = static_cast<int>(std::floor(phraseWindows[phraseIndex].start / plan.beatsPerBar));
+            bar = std::clamp((bar / 4) * 4, 4, std::max(4, plan.totalBars - 4));
+            while (scheduledWindows.contains(bar) && bar + 4 < plan.totalBars) bar += 4;
+            if (!scheduledWindows.insert(bar).second) continue;
+            const auto start = bar * plan.beatsPerBar;
+            const auto end = std::min(pattern.lengthBeats, start + 4 * plan.beatsPerBar);
+            const auto existing = std::count_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+                return note.voice == VoiceId::Lead && note.startBeat >= start && note.startBeat < end;
+            });
+            if (existing >= 3) continue;
+            const auto* section = sectionAt(plan, start);
+            std::vector<std::size_t> eligible;
+            for (const auto index : leads)
+                if (section == nullptr || activeIn(plan.instruments[index], *section)) eligible.push_back(index);
+            if (eligible.empty()) eligible = leads;
+            const auto index = eligible[phraseIndex % eligible.size()];
+            const auto& assignment = plan.instruments[index];
+            const auto variant = mixed(plan.seed ^ (static_cast<std::uint64_t>(phraseIndex) << 21U));
+            const auto noteCount = static_cast<std::size_t>(5U + variant % 4U);
+            std::vector<int> pitches;
+            pitches.reserve(noteCount);
+            auto onset = 0.0;
+            auto previous = fitScalePitch(64, assignment, plan.rootPitchClass, plan.scale);
+            const auto returnPhrase = stage == NarrativeStage::Resolution;
+            const auto climaxPhrase = stage == NarrativeStage::Climax;
+            const auto questionPhrase = stage == NarrativeStage::Question;
+            for (std::size_t noteIndex = 0; noteIndex < noteCount; ++noteIndex) {
+                if (noteIndex > 0) {
+                    constexpr std::array<double, 7> gaps{.5, .75, 1.0, 1.25, 1.5, 2.0, 2.5};
+                    onset += gaps[static_cast<std::size_t>((variant >> ((noteIndex % 7) * 7U)) % gaps.size())];
+                }
+                if (start + onset >= end - .5) break;
+                const auto beat = start + onset;
+                const auto motifIndex = returnPhrase ? noteIndex :
+                    (phraseIndex % 3 == 1 ? noteCount - 1 - noteIndex : noteIndex);
+                const auto motif = plan.motifIntervals.empty() ? static_cast<int>(motifIndex % 4) * 2 :
+                    plan.motifIntervals[motifIndex % plan.motifIntervals.size()];
+                const auto transformation = returnPhrase ? 0 : phraseIndex % 3 == 1 ? -motif * 2 :
+                    phraseIndex % 3 == 2 ? motif + (noteIndex >= noteCount / 2 ? 2 : 0) : motif;
+                auto pitch = fitScalePitch(64 + transformation, assignment,
+                                           plan.rootPitchClass, plan.scale);
+                if (climaxPhrase) pitch = fitScalePitch(pitch + 12, assignment,
+                    plan.rootPitchClass, plan.scale);
+                while (pitch - previous > 7 && pitch - 12 >= assignment.minimumPitch) pitch -= 12;
+                while (previous - pitch > 7 && pitch + 12 <= assignment.maximumPitch) pitch += 12;
+                const auto& chord = chordAt(plan, beat);
+                if (noteIndex == 0 && !chord.pitchClasses.empty())
+                    pitch = nearestPitch(chord.pitchClasses.front(), pitch, assignment);
+                if (noteIndex + 1 == noteCount) {
+                    if (returnPhrase)
+                        pitch = nearestPitch(plan.rootPitchClass, 60, assignment);
+                    else if (questionPhrase)
+                        pitch = nearestPitch(positiveModulo(plan.rootPitchClass + 2, 12), pitch, assignment);
+                }
+                const auto remaining = end - beat;
+                const auto duration = std::min(remaining - .05,
+                    noteIndex + 1 == noteCount ? (returnPhrase ? 2.5 : questionPhrase ? .55 : 1.35) :
+                    std::clamp(.28 + static_cast<double>((variant >> (noteIndex * 3U)) & 3U) * .18,
+                               .28, .82));
+                const auto written = addNote(pattern, assignment, partId(index), beat, duration, pitch,
+                    62 + static_cast<int>((section == nullptr ? .5 : section->energy) * 20) +
+                        (noteIndex == 0 ? 8 : 0) + (climaxPhrase ? 10 : 0) - (returnPhrase ? 6 : 0),
+                    // An AI-authored spine declares one audible lineage. Legacy/local
+                    // plans keep independent ids because their generated gestures were
+                    // never declared as literal thematic returns.
+                    plan.narrativeSpine.authored ? 0x4c454144u :
+                        0x4c450000u + static_cast<std::uint32_t>(phraseIndex), report,
+                    report.protagonistNotesCreated, densityBudget(plan, beat) + 1);
+                if (written) {
+                    pitches.push_back(pitch);
+                    previous = pitch;
+                }
+            }
+            if (pitches.size() >= 3) createdPhrases.emplace_back(start, std::move(pitches));
         }
     }
 
@@ -391,7 +558,7 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
             pitch = std::clamp(pitch, assignment.minimumPitch, assignment.maximumPitch);
             addNote(pattern, assignment, partId(dialogueIndex), responseStart + n * .75,
                 n == 3 ? .9 : .34, pitch, 54 + n * 5, 0x4449414cu, report,
-                report.dialogueNotesCreated);
+                report.dialogueNotesCreated, densityBudget(plan, responseStart + n * .75));
         }
     }
 
@@ -416,6 +583,8 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
                                    assignment.minimumPitch, assignment.maximumPitch);
         for (auto bar = static_cast<int>(index % 7) + 4; bar < plan.totalBars; bar += spacingBars) {
             const auto beat = bar * plan.beatsPerBar;
+            const auto* section = sectionAt(plan, beat);
+            if (section != nullptr && !activeIn(assignment, *section)) continue;
             if (overlapsPart(pattern, partId(index), beat, beat + plan.beatsPerBar)) continue;
             const auto& chord = chordAt(plan, beat);
             if (chord.pitchClasses.empty()) continue;
@@ -428,7 +597,7 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
             addNote(pattern, assignment, partId(index), beat, duration, pitch,
                 38 + static_cast<int>(assignment.prominence * 32),
                 0x53555050u + static_cast<std::uint32_t>(index), report,
-                report.supportNotesCreated);
+                report.supportNotesCreated, densityBudget(plan, beat));
         }
     }
 
@@ -438,6 +607,28 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
         return a.pitch < b.pitch;
     });
 
+    const auto audited = audit(pattern, plan);
+    report.independentLines = audited.independentLines;
+    report.meaningfulLines = audited.meaningfulLines;
+    report.protagonistPhraseWindows = audited.protagonistPhraseWindows;
+    report.arpeggioNoteCount = audited.arpeggioNoteCount;
+    report.dialogueLines = audited.dialogueLines;
+    report.harmonicFloorCoverage = audited.harmonicFloorCoverage;
+    report.medianHarmonicFloorLayers = audited.medianHarmonicFloorLayers;
+    report.ready = audited.ready;
+    return report;
+}
+
+ElectronicFabricReport ElectronicCompositionFabric::audit(const Pattern& pattern,
+                                                           const SongPlan& plan) {
+    ElectronicFabricReport report;
+    report.active = electronic(plan) && !pattern.parts.empty() && !plan.chordPalette.empty();
+    if (!report.active) return report;
+    const auto partId = [](std::size_t index) { return static_cast<std::uint16_t>(index + 1); };
+    auto floors = indicesFor(plan, floorPart);
+    if (floors.size() > 4) floors.resize(4);
+    const auto arps = indicesFor(plan, arpPart);
+    const auto dialogues = indicesFor(plan, dialoguePart);
     std::map<std::string, std::vector<const NoteEvent*>> notesByLane;
     for (const auto& note : pattern.notes) {
         if (note.partId == 0 || note.partId > plan.instruments.size()) continue;

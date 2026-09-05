@@ -20,6 +20,7 @@
 
 #include <functional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace pulso {
@@ -53,6 +54,55 @@ struct SongSection {
     SectionRhythmPlan rhythm;
 };
 
+// The form is not the story. Sections describe where events happen; this contract
+// describes why one event must lead to the next and what the listener should hear
+// as unresolved or fulfilled in the rendered MIDI.
+enum class NarrativeStage {
+    Premise,
+    Question,
+    Departure,
+    Transformation,
+    Climax,
+    Resolution,
+    Aftermath
+};
+
+[[nodiscard]] constexpr std::string_view narrativeStageKey(NarrativeStage stage) noexcept {
+    switch (stage) {
+        case NarrativeStage::Premise: return "premise";
+        case NarrativeStage::Question: return "question";
+        case NarrativeStage::Departure: return "departure";
+        case NarrativeStage::Transformation: return "transformation";
+        case NarrativeStage::Climax: return "climax";
+        case NarrativeStage::Resolution: return "resolution";
+        case NarrativeStage::Aftermath: return "aftermath";
+    }
+    return "transformation";
+}
+
+struct NarrativeAct {
+    std::string sectionName;
+    NarrativeStage stage{NarrativeStage::Premise};
+    std::string cause;
+    std::string consequence;
+    std::string unresolvedElement;
+    std::string resolutionTarget;
+    double tensionTarget{0.5};
+    double resolutionStrength{};
+};
+
+struct NarrativeSpine {
+    bool authored{};
+    std::string premise;
+    std::string question;
+    std::string harmonicDebt;
+    std::string protagonistInstrumentId;
+    std::string motifIdentity;
+    std::string climaxConsequence;
+    std::string resolution;
+    std::vector<NarrativeAct> acts;
+};
+
 struct SongPlan {
     std::string title{"Untitled Song"};
     std::string key{"C minor"};
@@ -76,6 +126,7 @@ struct SongPlan {
     std::vector<PlannedVoice> voices;
     std::vector<InstrumentAssignment> instruments;
     ElectronicSoundscapePlan soundscape;
+    NarrativeSpine narrativeSpine;
     // Explicit user constraint propagated independently of genre classification. A
     // percussion-free electronic piece must not be graded as a failed club track.
     bool percussionFreeIntent{};

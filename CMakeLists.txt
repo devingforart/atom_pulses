@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.51.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.52.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -120,6 +120,17 @@ if(PULSO_BUILD_PLUGIN)
         COPY_PLUGIN_AFTER_BUILD FALSE
         VST3_CATEGORIES Instrument Generator
     )
+
+    # JUCE keeps the first generated Windows VERSIONINFO file in an incremental build.
+    # Reconfigure it from the project version so Explorer, the editor and moduleinfo.json
+    # can never report three different releases.
+    if(WIN32)
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/PulsoWindowsVersion.rc.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/Pulso_artefacts/JuceLibraryCode/Pulso_resources.rc"
+            @ONLY
+        )
+    endif()
 
     target_sources(Pulso PRIVATE
         src/plugin/AiComposer.cpp

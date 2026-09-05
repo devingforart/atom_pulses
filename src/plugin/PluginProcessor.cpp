@@ -137,6 +137,30 @@ juce::String songPlanToJson(const SongPlan& plan) {
     jsonRoot->setProperty("key", juce::String::fromUTF8(plan.key.c_str()));
     jsonRoot->setProperty("summary", juce::String::fromUTF8(plan.summary.c_str()));
     jsonRoot->setProperty("instrument_cast_authored", plan.instrumentCastAuthored);
+    auto* narrativeSpine = new juce::DynamicObject();
+    narrativeSpine->setProperty("authored", plan.narrativeSpine.authored);
+    narrativeSpine->setProperty("premise", juce::String::fromUTF8(plan.narrativeSpine.premise.c_str()));
+    narrativeSpine->setProperty("question", juce::String::fromUTF8(plan.narrativeSpine.question.c_str()));
+    narrativeSpine->setProperty("harmonic_debt", juce::String::fromUTF8(plan.narrativeSpine.harmonicDebt.c_str()));
+    narrativeSpine->setProperty("protagonist_instrument_id", juce::String::fromUTF8(plan.narrativeSpine.protagonistInstrumentId.c_str()));
+    narrativeSpine->setProperty("motif_identity", juce::String::fromUTF8(plan.narrativeSpine.motifIdentity.c_str()));
+    narrativeSpine->setProperty("climax_consequence", juce::String::fromUTF8(plan.narrativeSpine.climaxConsequence.c_str()));
+    narrativeSpine->setProperty("resolution", juce::String::fromUTF8(plan.narrativeSpine.resolution.c_str()));
+    juce::Array<juce::var> narrativeActs;
+    for (const auto& act : plan.narrativeSpine.acts) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("section_name", juce::String::fromUTF8(act.sectionName.c_str()));
+        item->setProperty("stage", juce::String(narrativeStageKey(act.stage).data()));
+        item->setProperty("cause", juce::String::fromUTF8(act.cause.c_str()));
+        item->setProperty("consequence", juce::String::fromUTF8(act.consequence.c_str()));
+        item->setProperty("unresolved_element", juce::String::fromUTF8(act.unresolvedElement.c_str()));
+        item->setProperty("resolution_target", juce::String::fromUTF8(act.resolutionTarget.c_str()));
+        item->setProperty("tension_target", act.tensionTarget);
+        item->setProperty("resolution_strength", act.resolutionStrength);
+        narrativeActs.add(juce::var(item));
+    }
+    narrativeSpine->setProperty("acts", narrativeActs);
+    jsonRoot->setProperty("narrative_spine", juce::var(narrativeSpine));
     jsonRoot->setProperty("root_pitch_class", plan.rootPitchClass);
     jsonRoot->setProperty("mode", plan.scale == ScaleKind::Major ? "major" :
                               plan.scale == ScaleKind::Dorian ? "dorian" :
@@ -1669,6 +1693,9 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->maximumClubLowEndGapBars = generated.maximumClubLowEndGapBars;
         playbackPattern->densityControl = generated.densityControl;
         playbackPattern->peakActiveVoices = generated.peakActiveVoices;
+        playbackPattern->causalNarrativeScore = generated.causalNarrativeScore;
+        playbackPattern->narrativeResolutionScore = generated.narrativeResolutionScore;
+        playbackPattern->narrativeSpineReady = generated.narrativeSpineReady;
         playbackPattern->arrangementTargetParts = generated.arrangementTargetParts;
         playbackPattern->populatedInstrumentParts = generated.populatedInstrumentParts;
         playbackPattern->populatedHarmonyParts = generated.populatedHarmonyParts;
@@ -2096,7 +2123,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(19); // Binary composition state version.
+        composition.writeInt(20); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -2229,6 +2256,9 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
         composition.writeInt(static_cast<int>(pattern->dialogueMusicalLines));
         composition.writeDouble(pattern->harmonicFloorCoverage);
         composition.writeDouble(pattern->medianHarmonicFloorLayers);
+        composition.writeDouble(pattern->causalNarrativeScore);
+        composition.writeDouble(pattern->narrativeResolutionScore);
+        composition.writeBool(pattern->narrativeSpineReady);
         state.setProperty("compositionData", composition.getMemoryBlock().toBase64Encoding(), nullptr);
         if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) {
             state.setProperty("ideaTitle", metadata->title, nullptr);
@@ -2288,7 +2318,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 19) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 20) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2573,6 +2603,13 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                                         composition.readDouble(), 0.0, 1.0);
                                                     restoredPattern->medianHarmonicFloorLayers = std::max(
                                                         0.0, composition.readDouble());
+                                                    if (version >= 20) {
+                                                        restoredPattern->causalNarrativeScore = std::clamp(
+                                                            composition.readDouble(), 0.0, 1.0);
+                                                        restoredPattern->narrativeResolutionScore = std::clamp(
+                                                            composition.readDouble(), 0.0, 1.0);
+                                                        restoredPattern->narrativeSpineReady = composition.readBool();
+                                                    }
                                                 }
                                             }
                                         }

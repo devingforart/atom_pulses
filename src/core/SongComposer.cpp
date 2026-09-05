@@ -149,6 +149,10 @@ bool harmonicTextureRequested(const SongPlan& plan) {
         has("without drums") || has("sin drums") || has("sin bateria") ||
         has("sin batería") || has("sin ritmica") || has("sin rítmica") ||
         has("sin ritmo") || has("no rhythm");
+    if (textContainsAny(text, {"no quiero bateria", "no quiero baterias", "no quiero percusion",
+                               "nicamente armon", "solo armonias y melodias", "solo armonia",
+                               "only harmony", "harmony and melody only"}))
+        return true;
     const auto rhythmParts = std::count_if(plan.instruments.begin(), plan.instruments.end(), [](const auto& instrument) {
         const auto* definition = instrumentDefinition(instrument.instrumentId);
         return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
@@ -175,6 +179,10 @@ bool noPercussionRequested(const SongPlan& plan) {
         const auto* definition = instrumentDefinition(instrument.instrumentId);
         return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
     });
+    if (textContainsAny(text, {"no quiero bateria", "no quiero baterias", "no quiero percusion",
+                               "nicamente armon", "solo armonias y melodias", "solo armonia",
+                               "only harmony", "harmony and melody only"}))
+        return true;
     return harmonicTextureRequested(plan) && plan.instrumentCastAuthored && rhythmParts == 0;
 }
 
@@ -1123,7 +1131,9 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
     const auto explicitIntentText = lowerText(direction);
     plan.percussionFreeIntent = textContainsAny(explicitIntentText,
         {"no percussion", "without percussion", "sin percusion", "sin percusiones",
-         "no drums", "without drums", "sin bateria", "sin ritmica", "no rhythm"});
+         "no drums", "without drums", "sin bateria", "sin ritmica", "no rhythm",
+         "no quiero bateria", "no quiero baterias", "no quiero percusion",
+         "nicamente armon", "solo armonias y melodias", "solo armonia"});
     plan.soundscape.percussionFree = plan.percussionFreeIntent;
 
     Random random(seed ^ 0x534F4E47504C414EULL);
@@ -1466,6 +1476,13 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     applyHarmonicTextureDirector(plan);
     if (plan.instruments.size() > 48) plan.instruments.resize(48);
     const auto noPercussionIntent = noPercussionRequested(plan);
+    // This is an execution constraint, not a stylistic suggestion. Apply it to AI and
+    // local plans alike before density expansion can count or repopulate rhythm lanes.
+    if (noPercussionIntent) {
+        plan.percussionFreeIntent = true;
+        plan.soundscape.percussionFree = true;
+        removePercussionArchitecture(plan);
+    }
     if (plan.orchestrationLanguage.description.empty())
         plan.orchestrationLanguage.description = "Evolving chamber-to-tutti orchestration";
     if (plan.orchestrationLanguage.description.size() > 320)
@@ -1896,6 +1913,69 @@ void SongComposer::normalizePlan(SongPlan& plan) {
         plan.sections.back().bars = 1;
         plan.totalBars = std::max(plan.totalBars, cursor + 1);
     }
+    // Backwards-compatible narrative contract. New AI plans author this explicitly;
+    // old sessions and the local engine receive a musically useful causal spine instead
+    // of being judged only by section labels and motif similarity.
+    if (plan.narrativeSpine.premise.empty())
+        plan.narrativeSpine.premise = "Establish one recognisable motif and a stable tonal world";
+    if (plan.narrativeSpine.question.empty())
+        plan.narrativeSpine.question = "Withhold the motif's tonal and rhythmic completion";
+    if (plan.narrativeSpine.harmonicDebt.empty())
+        plan.narrativeSpine.harmonicDebt = "A departure from tonic that must be repaid by the final cadence";
+    if (plan.narrativeSpine.motifIdentity.empty())
+        plan.narrativeSpine.motifIdentity = "The interval contour in motif_intervals";
+    if (plan.narrativeSpine.climaxConsequence.empty())
+        plan.narrativeSpine.climaxConsequence = "The transformed motif reaches its widest register and greatest tension";
+    if (plan.narrativeSpine.resolution.empty())
+        plan.narrativeSpine.resolution = "Return the motif to tonic with less density, lower register and a longer final tone";
+    if (plan.narrativeSpine.protagonistInstrumentId.empty()) {
+        const auto protagonist = std::max_element(plan.instruments.begin(), plan.instruments.end(),
+            [](const auto& left, const auto& right) {
+                const auto leftLead = left.sourceVoice == VoiceId::Lead;
+                const auto rightLead = right.sourceVoice == VoiceId::Lead;
+                if (leftLead != rightLead) return !leftLead;
+                return left.prominence < right.prominence;
+            });
+        if (protagonist != plan.instruments.end() && protagonist->sourceVoice == VoiceId::Lead)
+            plan.narrativeSpine.protagonistInstrumentId = protagonist->id;
+    }
+    if (plan.narrativeSpine.acts.empty() && !plan.sections.empty()) {
+        auto climax = std::size_t{};
+        for (std::size_t index = 1; index + 1 < plan.sections.size(); ++index)
+            if (plan.sections[index].tension > plan.sections[climax].tension) climax = index;
+        if (climax == 0 && plan.sections.size() > 2) climax = plan.sections.size() - 2;
+        for (std::size_t index = 0; index < plan.sections.size(); ++index) {
+            NarrativeAct act;
+            act.sectionName = plan.sections[index].name;
+            act.stage = index == 0 ? NarrativeStage::Premise :
+                index + 1 == plan.sections.size() ? NarrativeStage::Resolution :
+                index == climax ? NarrativeStage::Climax :
+                index <= std::max<std::size_t>(1, climax / 2) ? NarrativeStage::Question :
+                index < climax ? NarrativeStage::Transformation : NarrativeStage::Aftermath;
+            act.cause = index == 0 ? "The tonal world becomes audible" :
+                "The previous act leaves musical information unresolved";
+            act.consequence = index + 1 == plan.sections.size() ?
+                "The listener can hear closure" : "The motif changes because of that unresolved information";
+            act.unresolvedElement = act.stage == NarrativeStage::Resolution ? "" :
+                plan.narrativeSpine.harmonicDebt;
+            act.resolutionTarget = act.stage == NarrativeStage::Resolution ?
+                plan.narrativeSpine.resolution : "Carry the debt into the following act";
+            act.tensionTarget = plan.sections[index].tension;
+            act.resolutionStrength = act.stage == NarrativeStage::Resolution ? 1.0 :
+                act.stage == NarrativeStage::Aftermath ? .65 : .0;
+            plan.narrativeSpine.acts.push_back(std::move(act));
+        }
+    }
+    for (auto& act : plan.narrativeSpine.acts) {
+        act.tensionTarget = std::clamp(std::isfinite(act.tensionTarget) ? act.tensionTarget : .5, 0.0, 1.0);
+        act.resolutionStrength = std::clamp(std::isfinite(act.resolutionStrength) ? act.resolutionStrength : 0.0, 0.0, 1.0);
+        const auto section = std::find_if(plan.sections.begin(), plan.sections.end(), [&](const auto& candidate) {
+            return candidate.name == act.sectionName;
+        });
+        if (section == plan.sections.end())
+            act.sectionName = plan.sections[std::min(plan.sections.size() - 1,
+                static_cast<std::size_t>(&act - plan.narrativeSpine.acts.data()))].name;
+    }
     // An AI-authored electronic cast is closed: an execution voice without a named
     // instrument is incomplete authorship, not permission to inject a generic cello or
     // a multi-articulation GM percussion section. Counterpoint guitars and synths remain
@@ -2233,7 +2313,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     // Restore the complete score from GPT-authored harmonic, thematic and orchestration
     // decisions after generic fallback has been removed. This is additive composition,
     // not a second procedural composer.
-    const auto electronicFabric = ElectronicCompositionFabric::materialize(song, plan);
+    auto electronicFabric = ElectronicCompositionFabric::materialize(song, plan);
     song.independentMusicalLines = electronicFabric.independentLines;
     song.meaningfulMusicalLines = electronicFabric.meaningfulLines;
     song.protagonistPhraseWindows = electronicFabric.protagonistPhraseWindows;
@@ -2294,6 +2374,23 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     enforceElectronicReleaseCeilings(song, plan);
     if (noPercussionIntent) stripPublishedPercussion(song);
     const auto arrangementDensity = ArrangementDensityPlanner::auditAndStamp(song, plan);
+    // All exported fabric metrics come from the post-orchestration, post-duration,
+    // post-percussion-strip publication boundary. Preserve only construction counters.
+    auto publishedFabric = ElectronicCompositionFabric::audit(song, plan);
+    publishedFabric.notesCreated = electronicFabric.notesCreated;
+    publishedFabric.foundationNotesCreated = electronicFabric.foundationNotesCreated;
+    publishedFabric.protagonistNotesCreated = electronicFabric.protagonistNotesCreated;
+    publishedFabric.arpeggioNotesCreated = electronicFabric.arpeggioNotesCreated;
+    publishedFabric.dialogueNotesCreated = electronicFabric.dialogueNotesCreated;
+    publishedFabric.supportNotesCreated = electronicFabric.supportNotesCreated;
+    electronicFabric = publishedFabric;
+    song.independentMusicalLines = electronicFabric.independentLines;
+    song.meaningfulMusicalLines = electronicFabric.meaningfulLines;
+    song.protagonistPhraseWindows = electronicFabric.protagonistPhraseWindows;
+    song.arpeggioNoteCount = electronicFabric.arpeggioNoteCount;
+    song.dialogueMusicalLines = electronicFabric.dialogueLines;
+    song.harmonicFloorCoverage = electronicFabric.harmonicFloorCoverage;
+    song.medianHarmonicFloorLayers = electronicFabric.medianHarmonicFloorLayers;
     const auto expressionReport = ProductionPolish::compactExpression(song);
     // Candidate selection grades the exact published music after fallback suppression,
     // tonal repair, vertical phrasing and duration repair have converged.

@@ -411,9 +411,13 @@ void runGeneratorTests() {
             }),
             "Final high percussion must never collapse into another kick lane");
 
-    const auto texturePlan = SongComposer::createLocalPlan(
+    auto texturePlan = SongComposer::createLocalPlan(
         "Electronic harmonic sound symphony with no percussion, no drums, many harmonic pads, colchones armonicos, atmospheric drones, sparse plucks and evolving synth textures",
         192, 122.0, 4.0, 99127, 2, ScaleKind::Minor);
+    // Regression fixture: repetition is an articulation shared by many musical roles.
+    // It must never redirect arpeggio material into the movement bass.
+    for (auto& part : texturePlan.instruments)
+        if (part.sourceVoice == VoiceId::MovementBass) part.articulation = "ostinato";
     const auto textureHarmonyParts = std::count_if(texturePlan.instruments.begin(), texturePlan.instruments.end(),
         [](const auto& part) {
             const auto* definition = instrumentDefinition(part.instrumentId);
@@ -439,12 +443,41 @@ void runGeneratorTests() {
             }),
             "A no-percussion harmonic request must not silently reinsert drum voices or rhythm tracks: " +
                 texturePlan.title + " :: " + texturePlan.summary + " :: " + textureCast);
+    const auto harmonicOnlyPlan = SongComposer::createLocalPlan(
+        "No quiero baterias ni percusiones. Unicamente armonias y melodias que cuenten una historia",
+        128, 120.0, 4.0, 99128, 2, ScaleKind::Minor);
+    require(harmonicOnlyPlan.percussionFreeIntent &&
+                std::none_of(harmonicOnlyPlan.instruments.begin(), harmonicOnlyPlan.instruments.end(),
+                    [](const auto& part) {
+                        const auto* definition = instrumentDefinition(part.instrumentId);
+                        return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
+                    }),
+            "Spanish harmonic-only language must be an executable no-percussion constraint");
     CompositionRenderReport textureReport;
     const auto renderedTexture = SongComposer{}.render(texturePlan, phraseContext(), {}, &textureReport);
     require(std::none_of(renderedTexture.notes.begin(), renderedTexture.notes.end(), [](const auto& note) {
                 return isVoiceInFamily(note.voice, VoiceFamily::Rhythm);
             }),
             "The rendered no-percussion texture must contain no rhythm-family MIDI notes");
+    auto counterpointLeadPlan = texturePlan;
+    counterpointLeadPlan.productionModeSource = "gpt_plan";
+    counterpointLeadPlan.narrativeSpine.authored = true;
+    auto leadCounterpoint = std::find_if(counterpointLeadPlan.instruments.begin(),
+        counterpointLeadPlan.instruments.end(), [](const auto& part) {
+            return part.sourceVoice == VoiceId::Lead;
+        });
+    require(leadCounterpoint != counterpointLeadPlan.instruments.end(),
+            "The regression fixture needs a concrete lead owner");
+    leadCounterpoint->orchestralFunction = "counterpoint";
+    leadCounterpoint->lineRelationship = "independent";
+    counterpointLeadPlan.narrativeSpine.protagonistInstrumentId = leadCounterpoint->id;
+    CompositionRenderReport counterpointLeadReport;
+    const auto counterpointLeadSong = SongComposer{}.render(
+        counterpointLeadPlan, phraseContext(), {}, &counterpointLeadReport);
+    require(counterpointLeadReport.electronicFabric.protagonistNotesCreated > 0 &&
+                std::any_of(counterpointLeadSong.notes.begin(), counterpointLeadSong.notes.end(),
+                    [](const auto& note) { return note.voice == VoiceId::Lead; }),
+            "A Lead with contrapuntal function must remain the protagonist unless explicitly declared as a reply");
     std::set<std::uint16_t> populatedTextureParts;
     for (const auto& note : renderedTexture.notes) {
         const auto part = std::find_if(renderedTexture.parts.begin(), renderedTexture.parts.end(),
@@ -490,6 +523,41 @@ void runGeneratorTests() {
                 std::to_string(renderedTexture.protagonistPhraseWindows) + ", arp=" +
                 std::to_string(renderedTexture.arpeggioNoteCount) + ", dialogue=" +
                 std::to_string(renderedTexture.dialogueMusicalLines));
+    const auto explicitArp = [](const InstrumentAssignment& part) {
+        return part.instrumentId == "hypnotic_arp" ||
+            (part.instrumentId == "fm_sequence" && part.sourceVoice == VoiceId::HarmonicPulse) ||
+            part.role.find("arpeggio") != std::string::npos ||
+            part.role.find("arpeggiated") != std::string::npos;
+    };
+    auto publishedArpNotes = std::size_t{};
+    auto misplacedArpNotes = std::size_t{};
+    std::map<std::uint32_t, std::vector<double>> protagonistOnsets;
+    for (const auto& note : renderedTexture.notes) {
+        if (note.partId > 0 && note.partId <= texturePlan.instruments.size() &&
+            explicitArp(texturePlan.instruments[note.partId - 1])) ++publishedArpNotes;
+        if ((note.narrativeId & 0xffffff00u) == 0x41525000u &&
+            (note.partId == 0 || note.partId > texturePlan.instruments.size() ||
+             !explicitArp(texturePlan.instruments[note.partId - 1]))) ++misplacedArpNotes;
+        if ((note.narrativeId & 0xffff0000u) == 0x4c450000u)
+            protagonistOnsets[note.narrativeId].push_back(note.startBeat);
+    }
+    require(misplacedArpNotes == 0 && publishedArpNotes == renderedTexture.arpeggioNoteCount,
+            "Published arpeggio metrics and MIDI must refer only to explicit arp owners: misplaced=" +
+                std::to_string(misplacedArpNotes) + ", published=" +
+                std::to_string(publishedArpNotes) + ", metric=" +
+                std::to_string(renderedTexture.arpeggioNoteCount));
+    std::set<std::string> protagonistRhythms;
+    for (auto& [id, onsets] : protagonistOnsets) {
+        (void) id;
+        if (onsets.size() < 3) continue;
+        std::sort(onsets.begin(), onsets.end());
+        std::string signature;
+        for (std::size_t i = 1; i < onsets.size(); ++i)
+            signature += std::to_string(static_cast<int>(std::lround((onsets[i] - onsets[i - 1]) * 4.0))) + ":";
+        protagonistRhythms.insert(std::move(signature));
+    }
+    require(protagonistRhythms.size() >= 2,
+            "The long-form protagonist must develop more than one rhythmic sentence");
     std::set<std::string> independentLaneIds;
     for (const auto& part : renderedTexture.parts)
         if (part.lineRelationship == "independent")
@@ -1747,6 +1815,55 @@ void runGeneratorTests() {
                 std::to_string(narrativeRender.narrative.primaryVoiceCoverage) +
                 " recall=" + std::to_string(narrativeRender.narrative.thematicRecallRatio) +
                 " authored=" + std::to_string(narrativeSong.aiAuthoredNoteRatio));
+
+    auto causalPlan = narrativePlan;
+    causalPlan.narrativeSpine.authored = true;
+    causalPlan.narrativeSpine.acts.clear();
+    const std::array<NarrativeStage, 5> causalStages{NarrativeStage::Premise,
+        NarrativeStage::Question, NarrativeStage::Transformation, NarrativeStage::Climax,
+        NarrativeStage::Resolution};
+    const std::array<std::size_t, 5> causalSections{0, 2, 4, 8, 9};
+    for (std::size_t index = 0; index < causalStages.size(); ++index)
+        causalPlan.narrativeSpine.acts.push_back({causalPlan.sections[causalSections[index]].name,
+            causalStages[index], "audible cause", "audible consequence",
+            index + 1 == causalStages.size() ? "" : "unfinished tonal question",
+            index + 1 == causalStages.size() ? "tonic closure" : "continue debt",
+            index == 3 ? .95 : index == 4 ? .10 : .35 + index * .12,
+            index == 4 ? 1.0 : 0.0});
+    Pattern causalMidi;
+    causalMidi.lengthBeats = causalPlan.totalBars * causalPlan.beatsPerBar;
+    const auto tonic = 60 + causalPlan.rootPitchClass;
+    for (std::size_t act = 0; act < causalSections.size(); ++act) {
+        const auto start = causalPlan.sections[causalSections[act]].startBar * causalPlan.beatsPerBar;
+        const auto lift = act == 3 ? 12 : act == 4 ? 0 : static_cast<int>(act) * 2;
+        const std::array<int, 3> contour{0, 3, 7};
+        for (std::size_t note = 0; note < contour.size(); ++note)
+            causalMidi.notes.push_back({start + note * (act % 2 == 0 ? 1.0 : .75),
+                act == 4 && note == 2 ? .75 : .5, tonic + lift + contour[note], 82, 2,
+                VoiceId::Lead, 1, false, NoteOrigin::AiAuthored, 9001});
+        if (act == 4)
+            causalMidi.notes.push_back({start + 3.5, 2.0, tonic, 68, 2, VoiceId::Lead, 1,
+                false, NoteOrigin::AiTransformed, 9001});
+        for (std::size_t layer = 0; layer < (act == 3 ? 5U : act == 4 ? 1U : act + 1); ++layer)
+            causalMidi.notes.push_back({start, 2.0, tonic - 12 + static_cast<int>(layer), 45, 3,
+                VoiceId::HarmonicFoundation, static_cast<std::uint16_t>(2 + layer), false,
+                NoteOrigin::AiAuthored, 0});
+    }
+    const auto causalAudit = NarrativeScoreGate::audit(causalMidi, causalPlan);
+    require(causalAudit.narrativeSpineReady && causalAudit.causalNarrative >= .62 &&
+                causalAudit.resolutionScore >= .58 && causalAudit.tonalClosure > .95,
+            "The final MIDI must prove causal acts and repay its tonal debt: causal=" +
+                std::to_string(causalAudit.causalNarrative) + " resolution=" +
+                std::to_string(causalAudit.resolutionScore));
+    auto unresolvedMidi = causalMidi;
+    unresolvedMidi.notes.erase(std::remove_if(unresolvedMidi.notes.begin(), unresolvedMidi.notes.end(),
+        [&](const auto& note) {
+            const auto start = causalPlan.sections[causalSections.back()].startBar * causalPlan.beatsPerBar;
+            return note.startBeat >= start;
+        }), unresolvedMidi.notes.end());
+    const auto unresolvedAudit = NarrativeScoreGate::audit(unresolvedMidi, causalPlan);
+    require(!unresolvedAudit.narrativeSpineReady && unresolvedAudit.resolutionScore < .58,
+            "Narrative labels must not pass when the exported MIDI contains no audible resolution");
 
     auto weakNarrativePlan = narrativePlan;
     weakNarrativePlan.performanceScore = {};

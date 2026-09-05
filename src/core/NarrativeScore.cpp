@@ -289,6 +289,123 @@ void auditClubContinuity(const Pattern& pattern, const SongPlan& plan,
     }
 }
 
+struct ActEvidence {
+    NarrativeStage stage{NarrativeStage::Transformation};
+    bool audible{};
+    double meanPitch{};
+    double noteRate{};
+    double activeParts{};
+    std::vector<const NoteEvent*> melody;
+};
+
+ActEvidence evidenceFor(const Pattern& pattern, const SongPlan& plan,
+                        const NarrativeAct& act) {
+    ActEvidence result;
+    result.stage = act.stage;
+    const auto section = std::find_if(plan.sections.begin(), plan.sections.end(), [&](const auto& item) {
+        return item.name == act.sectionName;
+    });
+    if (section == plan.sections.end()) return result;
+    const auto start = section->startBar * plan.beatsPerBar;
+    const auto end = (section->startBar + section->bars) * plan.beatsPerBar;
+    std::set<std::uint16_t> parts;
+    auto pitchTotal = 0.0;
+    for (const auto& note : pattern.notes) {
+        if (note.startBeat >= end || note.endBeat() <= start) continue;
+        if (note.partId != 0) parts.insert(note.partId);
+        if (note.voice == VoiceId::Lead || note.voice == VoiceId::Countermelody) {
+            result.melody.push_back(&note);
+            pitchTotal += note.pitch;
+        }
+    }
+    std::sort(result.melody.begin(), result.melody.end(), [](const auto* left, const auto* right) {
+        if (left->startBeat != right->startBeat) return left->startBeat < right->startBeat;
+        return left->pitch < right->pitch;
+    });
+    result.audible = result.melody.size() >= 3;
+    result.meanPitch = result.melody.empty() ? 0.0 : pitchTotal / result.melody.size();
+    result.noteRate = static_cast<double>(result.melody.size()) /
+        std::max(1.0, static_cast<double>(section->bars));
+    result.activeParts = static_cast<double>(parts.size());
+    return result;
+}
+
+double contourClosure(const std::vector<const NoteEvent*>& premise,
+                      const std::vector<const NoteEvent*>& resolution) {
+    if (premise.size() < 3 || resolution.size() < 3) return 0.0;
+    const auto count = std::min<std::size_t>(5, std::min(premise.size(), resolution.size())) - 1;
+    auto matched = 0.0;
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto left = premise[index + 1]->pitch - premise[index]->pitch;
+        const auto right = resolution[index + 1]->pitch - resolution[index]->pitch;
+        if ((left == 0 && right == 0) || (left > 0 && right > 0) || (left < 0 && right < 0))
+            matched += .65;
+        matched += .35 * closeness(std::abs(left), std::abs(right), 5.0);
+    }
+    return matched / std::max<std::size_t>(1, count);
+}
+
+void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
+                         NarrativeScoreReport& report) {
+    if (plan.narrativeSpine.acts.empty()) return;
+    std::vector<ActEvidence> evidence;
+    evidence.reserve(plan.narrativeSpine.acts.size());
+    for (const auto& act : plan.narrativeSpine.acts) {
+        evidence.push_back(evidenceFor(pattern, plan, act));
+        ++report.declaredNarrativeActs;
+        if (evidence.back().audible) ++report.audibleNarrativeActs;
+    }
+    for (std::size_t index = 1; index < evidence.size(); ++index) {
+        const auto& declaration = plan.narrativeSpine.acts[index];
+        if (declaration.cause.empty() || declaration.consequence.empty()) continue;
+        ++report.causalTransitions;
+        if (!evidence[index - 1].audible || !evidence[index].audible) continue;
+        const auto changed = std::abs(evidence[index].meanPitch - evidence[index - 1].meanPitch) >= 2.0 ||
+            std::abs(evidence[index].activeParts - evidence[index - 1].activeParts) >= 1.0 ||
+            std::abs(evidence[index].noteRate - evidence[index - 1].noteRate) >= .30;
+        if (changed) ++report.realizedCausalTransitions;
+    }
+    const auto audibility = static_cast<double>(report.audibleNarrativeActs) /
+        std::max<std::size_t>(1, report.declaredNarrativeActs);
+    const auto consequence = static_cast<double>(report.realizedCausalTransitions) /
+        std::max<std::size_t>(1, report.causalTransitions);
+    report.causalNarrative = audibility * .55 + consequence * .45;
+
+    const ActEvidence* premise = nullptr;
+    const ActEvidence* climax = nullptr;
+    const ActEvidence* resolution = nullptr;
+    for (const auto& item : evidence) {
+        if (item.stage == NarrativeStage::Premise && premise == nullptr) premise = &item;
+        if (item.stage == NarrativeStage::Climax) climax = &item;
+        if (item.stage == NarrativeStage::Resolution) resolution = &item;
+    }
+    if (premise != nullptr && resolution != nullptr)
+        report.motifClosure = contourClosure(premise->melody, resolution->melody);
+    if (resolution != nullptr && !resolution->melody.empty()) {
+        const auto* last = resolution->melody.back();
+        const auto pitchClass = positiveModulo(last->pitch, 12);
+        report.tonalClosure = pitchClass == plan.rootPitchClass ? 1.0 :
+            pitchClass == positiveModulo(plan.rootPitchClass + 7, 12) ? .55 : 0.0;
+        std::vector<double> durations;
+        for (const auto* note : resolution->melody) durations.push_back(note->durationBeats);
+        std::sort(durations.begin(), durations.end());
+        const auto median = durations[durations.size() / 2];
+        report.tonalClosure = std::clamp(report.tonalClosure * .8 +
+            (last->durationBeats >= median * 1.4 ? .2 : 0.0), 0.0, 1.0);
+    }
+    if (climax != nullptr && resolution != nullptr && climax->audible && resolution->audible) {
+        report.registerRelease = std::clamp((climax->meanPitch - resolution->meanPitch + 1.0) / 8.0,
+                                            0.0, 1.0);
+        report.densityRelease = std::clamp((climax->activeParts - resolution->activeParts + .5) / 4.0,
+                                           0.0, 1.0);
+    }
+    report.resolutionScore = report.motifClosure * .30 + report.tonalClosure * .35 +
+        report.registerRelease * .20 + report.densityRelease * .15;
+    report.narrativeSpineReady = report.causalNarrative >= .62 && report.resolutionScore >= .58 &&
+        premise != nullptr && climax != nullptr && resolution != nullptr &&
+        premise->audible && climax->audible && resolution->audible;
+}
+
 } // namespace
 
 NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const SongPlan& plan) {
@@ -435,6 +552,7 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     auditDensity(pattern, plan, report);
     auditMelodicSpeech(pattern, plan, report);
     auditClubContinuity(pattern, plan, report);
+    auditNarrativeSpine(pattern, plan, report);
 
     auto directedSections = std::size_t{};
     for (const auto& section : plan.sections) {
@@ -473,15 +591,16 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
             std::max(0.0, static_cast<double>(report.maximumClubDrumGapBars) - 12.0) / 20.0 -
             std::max(0.0, static_cast<double>(report.maximumClubLowEndGapBars) - 12.0) / 24.0,
             0.0, 1.0);
-    report.score = std::clamp(report.primaryVoiceCoverage * 0.13 +
+    report.score = std::clamp(report.primaryVoiceCoverage * 0.10 +
         report.foregroundAiAuthorshipRatio * 0.18 +
-        report.movementBassAiAuthorshipRatio * 0.14 +
+        report.movementBassAiAuthorshipRatio * 0.11 +
         report.grooveAuthorshipCoverage * 0.08 +
-        report.thematicRecallRatio * 0.09 + audibleLineage * 0.06 +
+        report.thematicRecallRatio * 0.07 + audibleLineage * 0.05 +
         report.thematicDevelopment * 0.05 +
-        report.bassPhraseContinuity * 0.08 + report.densityControl * 0.06 +
+        report.bassPhraseContinuity * 0.07 + report.densityControl * 0.05 +
         report.harmonicDirection * 0.04 + report.rhythmicDevelopment * 0.03 +
-        melodicSpeech * 0.04 + clubContinuity * 0.02, 0.0, 1.0);
+        melodicSpeech * 0.04 + clubContinuity * 0.02 +
+        report.causalNarrative * 0.07 + report.resolutionScore * 0.04, 0.0, 1.0);
     if (report.active && report.primaryVoiceCoverage < 0.65) report.issues.push_back("insufficient_ai_phrase_coverage");
     if (report.active && report.foregroundExpected && report.foregroundNotes < 8)
         report.issues.push_back("ai_foreground_missing");
@@ -517,6 +636,10 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     if (report.harmonicDirection < 0.70) report.issues.push_back("weak_harmonic_direction");
     if (!plan.percussionFreeIntent && report.rhythmicDevelopment < 0.45)
         report.issues.push_back("undeveloped_rhythm_narrative");
+    if (report.active && !report.narrativeSpineReady) {
+        if (report.causalNarrative < .62) report.issues.push_back("narrative_events_lack_audible_consequence");
+        if (report.resolutionScore < .58) report.issues.push_back("ending_does_not_repay_harmonic_debt");
+    }
     const auto memoryReady = report.audibleThematicWindows < 3 ||
         (report.thematicRecallRatio >= 0.40 && report.audibleThematicSimilarity >= 0.66);
     const auto developmentReady = report.comparableThematicReturns < 4 ||
@@ -532,7 +655,7 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
          report.maximumClubLowEndGapBars <= 16);
     report.creativeReady = !report.active || (report.primaryVoiceCoverage >= 0.65 &&
         foregroundReady && movementBassReady && memoryReady && developmentReady && bassReady &&
-        clubReady && report.densityControl >= 0.82 && report.maximumMelodicStepRun <= 5 &&
+        clubReady && report.narrativeSpineReady && report.densityControl >= 0.82 && report.maximumMelodicStepRun <= 5 &&
         report.score >= 0.76);
     return report;
 }
@@ -558,6 +681,9 @@ void NarrativeScoreGate::stamp(Pattern& pattern, const NarrativeScoreReport& rep
     pattern.maximumClubLowEndGapBars = report.maximumClubLowEndGapBars;
     pattern.densityControl = report.densityControl;
     pattern.peakActiveVoices = report.peakActiveVoices;
+    pattern.causalNarrativeScore = report.causalNarrative;
+    pattern.narrativeResolutionScore = report.resolutionScore;
+    pattern.narrativeSpineReady = report.narrativeSpineReady;
     pattern.narrativeIssues = report.issues;
     if (report.thematicRecallRatio >= 0.40 && report.audibleThematicSimilarity >= 0.66) {
         pattern.productionIssues.erase(std::remove(

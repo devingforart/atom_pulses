@@ -53,7 +53,10 @@ void applyExplicitRhythmRequest(SongPlan& plan, const juce::String& direction) {
     const auto explicitlyPercussionFree = containsAny({"no percussion", "without percussion",
         "sin percusion", "sin percusi", "sin percusiones", "no drums", "without drums",
         "sin bateria", "sin bater", "sin ritmica", "sin rítmica", "no rhythm"});
-    if (explicitlyPercussionFree) {
+    const auto explicitlyHarmonicOnly = containsAny({"no quiero bateria", "no quiero bater",
+        "no quiero percusion", "nicamente armon", "solo armon", "only harmony",
+        "harmonies and melodies only", "harmony and melody only"});
+    if (explicitlyPercussionFree || explicitlyHarmonicOnly) {
         plan.percussionFreeIntent = true;
         plan.soundscape.percussionFree = true;
         return;
@@ -120,6 +123,19 @@ const juce::String songPlanSchema = juce::String(R"json({
     "title":{"type":"string"},
     "key":{"type":"string"},
     "summary":{"type":"string"},
+    "narrative_spine":{"type":"object","properties":{
+      "premise":{"type":"string"},"question":{"type":"string"},
+      "harmonic_debt":{"type":"string"},"protagonist_instrument_id":{"type":"string"},
+      "motif_identity":{"type":"string"},"climax_consequence":{"type":"string"},
+      "resolution":{"type":"string"},
+      "acts":{"type":"array","minItems":3,"maxItems":20,"items":{"type":"object","properties":{
+        "section_name":{"type":"string"},
+        "stage":{"type":"string","enum":["premise","question","departure","transformation","climax","resolution","aftermath"]},
+        "cause":{"type":"string"},"consequence":{"type":"string"},
+        "unresolved_element":{"type":"string"},"resolution_target":{"type":"string"},
+        "tension_target":{"type":"number"},"resolution_strength":{"type":"number"}
+      },"required":["section_name","stage","cause","consequence","unresolved_element","resolution_target","tension_target","resolution_strength"],"additionalProperties":false}}
+    },"required":["premise","question","harmonic_debt","protagonist_instrument_id","motif_identity","climax_consequence","resolution","acts"],"additionalProperties":false},
     "root_pitch_class":{"type":"integer"},
     "mode":{"type":"string","enum":["major","minor","dorian","mixolydian"]},
     "production_language":{"type":"object","properties":{
@@ -340,7 +356,7 @@ const juce::String songPlanSchema = juce::String(R"json({
       "additionalProperties":false
     }}
   },
-  "required":["title","key","summary","root_pitch_class","mode","production_language","rhythm_language","harmonic_language","orchestration_language","timbre_palette","electronic_soundscape","chord_palette","motif_intervals","instruments","rhythm_motifs","voices","performance_score","sections"],
+  "required":["title","key","summary","narrative_spine","root_pitch_class","mode","production_language","rhythm_language","harmonic_language","orchestration_language","timbre_palette","electronic_soundscape","chord_palette","motif_intervals","instruments","rhythm_motifs","voices","performance_score","sections"],
   "additionalProperties":false
 })json";
 
@@ -888,6 +904,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "You are the long-form composition architect for PULSO. Design one complete song, not a loop. "
         "Create a narratively inevitable form with introduction, thematic statements, contrast, development, "
         "a true climax and a conclusive ending. ") + referenceBrief + juce::String(
+        "Author narrative_spine before writing notes. It is a causal contract, not a synopsis: premise introduces one "
+        "recognisable identity; question creates a specific unfinished melodic or harmonic obligation; every act names "
+        "what caused it and the audible consequence; transformation changes that identity because of the obligation; "
+        "climax makes the accumulated debt unavoidable; resolution audibly repays it through motif closure, tonal arrival, "
+        "register relaxation and reduced density. protagonist_instrument_id must exactly match one declared Lead instrument "
+        "id. Map every act to an exact section_name and include premise, question, transformation, climax and resolution. "
+        "Do not claim a consequence or closure that the performance_score MIDI notes do not enact. "
         "Recurring sections must share a recognisable motif while changing "
         "orchestration, register, harmony or rhythm. Design a variable ensemble rather than four fixed layers. "
         "Choose 7-15 execution voices from the supplied IDs; give every voice an independent function, interaction rule, "
@@ -1252,6 +1275,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                  << juce::String(draftReport.narrative.harmonicDirection, 3)
                  << ", rhythmic_development="
                  << juce::String(draftReport.narrative.rhythmicDevelopment, 3)
+                 << ", causal_narrative="
+                 << juce::String(draftReport.narrative.causalNarrative, 3)
+                 << ", resolution_score="
+                 << juce::String(draftReport.narrative.resolutionScore, 3)
+                 << ", narrative_spine_ready="
+                 << (draftReport.narrative.narrativeSpineReady ? "true" : "false")
                  << ", repeated_rendered_bars=" << static_cast<int>(draftReport.musical.repeatedBars)
                  << ", literal_rhythm_bars_varied="
                  << static_cast<int>(draftReport.musical.literalRhythmBarsVaried)
@@ -1436,7 +1465,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "narrative_thematic_recall to at least 0.40, "
         "audible_thematic_similarity into a recognisable but developed 0.66-0.96 band, "
         "literal_thematic_return_ratio below 0.70, thematic_development above 0.55, "
-        "density_control to at least 0.82, "
+        "density_control to at least 0.82, causal_narrative to at least 0.62 and resolution_score to at least 0.58. "
+        "When either narrative metric fails, rewrite narrative_spine and the exact performance_score cells that enact its "
+        "question, transformation, climax and resolution; changing prose or labels alone is never a repair. "
         "bass_phrase_continuity to at least 0.60, maximum_melodic_step_run to five or less, and harmonic_direction "
         "to at least 0.70. Repair those metrics by "
         "writing and placing musical cells, never by changing theme_id, descriptions or adding arbitrary notes. The "
@@ -1538,6 +1569,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     deficit += std::max(0.0, 0.55 - report.narrative.thematicDevelopment);
                 }
                 deficit += std::max(0.0, 0.82 - report.narrative.densityControl);
+                deficit += std::max(0.0, 0.62 - report.narrative.causalNarrative) * 1.4;
+                deficit += std::max(0.0, 0.58 - report.narrative.resolutionScore) * 1.4;
                 deficit += std::max(0.0,
                     static_cast<double>(report.narrative.maximumMelodicStepRun) - 5.0) * 0.08;
                 if (report.electronicProduction.active) {
@@ -1686,6 +1719,38 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
     const auto mode = object->getProperty("mode").toString();
     result.scale = mode == "major" ? ScaleKind::Major : mode == "dorian" ? ScaleKind::Dorian
                  : mode == "mixolydian" ? ScaleKind::Mixolydian : ScaleKind::Minor;
+    if (const auto* spine = object->getProperty("narrative_spine").getDynamicObject()) {
+        result.narrativeSpine.authored = true;
+        result.narrativeSpine.premise = spine->getProperty("premise").toString().trim().toStdString();
+        result.narrativeSpine.question = spine->getProperty("question").toString().trim().toStdString();
+        result.narrativeSpine.harmonicDebt = spine->getProperty("harmonic_debt").toString().trim().toStdString();
+        result.narrativeSpine.protagonistInstrumentId = spine->getProperty("protagonist_instrument_id").toString().trim().toStdString();
+        result.narrativeSpine.motifIdentity = spine->getProperty("motif_identity").toString().trim().toStdString();
+        result.narrativeSpine.climaxConsequence = spine->getProperty("climax_consequence").toString().trim().toStdString();
+        result.narrativeSpine.resolution = spine->getProperty("resolution").toString().trim().toStdString();
+        if (const auto* acts = spine->getProperty("acts").getArray()) {
+            for (const auto& item : *acts) {
+                const auto* act = item.getDynamicObject();
+                if (act == nullptr) continue;
+                NarrativeAct parsedAct;
+                parsedAct.sectionName = act->getProperty("section_name").toString().trim().toStdString();
+                const auto stage = act->getProperty("stage").toString();
+                parsedAct.stage = stage == "premise" ? NarrativeStage::Premise :
+                    stage == "question" ? NarrativeStage::Question :
+                    stage == "departure" ? NarrativeStage::Departure :
+                    stage == "climax" ? NarrativeStage::Climax :
+                    stage == "resolution" ? NarrativeStage::Resolution :
+                    stage == "aftermath" ? NarrativeStage::Aftermath : NarrativeStage::Transformation;
+                parsedAct.cause = act->getProperty("cause").toString().trim().toStdString();
+                parsedAct.consequence = act->getProperty("consequence").toString().trim().toStdString();
+                parsedAct.unresolvedElement = act->getProperty("unresolved_element").toString().trim().toStdString();
+                parsedAct.resolutionTarget = act->getProperty("resolution_target").toString().trim().toStdString();
+                parsedAct.tensionTarget = static_cast<double>(act->getProperty("tension_target"));
+                parsedAct.resolutionStrength = static_cast<double>(act->getProperty("resolution_strength"));
+                result.narrativeSpine.acts.push_back(std::move(parsedAct));
+            }
+        }
+    }
     if (const auto* language = object->getProperty("production_language").getDynamicObject()) {
         const auto source = language->getProperty("source").toString().trim();
         if (source.isNotEmpty()) result.productionModeSource = source.substring(0, 48).toStdString();

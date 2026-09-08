@@ -1,4 +1,5 @@
 #include "MidiExporter.h"
+#include "AiModelConfig.h"
 
 #include <algorithm>
 #include <array>
@@ -66,6 +67,12 @@ bool writeCompanionManifest(const Pattern& pattern, const juce::File& midi,
     root->setProperty("title", options.clipName);
     root->setProperty("bpm", options.bpm);
     root->setProperty("length_beats", pattern.lengthBeats);
+    root->setProperty("production_mode_source",
+                      juce::String::fromUTF8(pattern.productionModeSource.c_str()));
+    if (pattern.productionModeSource == "gpt_plan") {
+        root->setProperty("ai_model", ai_config::model);
+        root->setProperty("ai_reasoning_effort", ai_config::reasoningEffort);
+    }
     root->setProperty("narrative_audited", pattern.narrativeAuditPerformed);
     root->setProperty("narrative_score", pattern.narrativeScore);
     root->setProperty("creative_ready", pattern.creativeReady);
@@ -87,6 +94,16 @@ bool writeCompanionManifest(const Pattern& pattern, const juce::File& midi,
     root->setProperty("maximum_club_low_end_gap_bars", static_cast<int>(pattern.maximumClubLowEndGapBars));
     root->setProperty("density_control", pattern.densityControl);
     root->setProperty("peak_active_voices", static_cast<int>(pattern.peakActiveVoices));
+    root->setProperty("track_viability_audited", pattern.trackViabilityAudited);
+    root->setProperty("track_viability_ready", pattern.trackViabilityReady);
+    root->setProperty("track_viability_score", pattern.trackViabilityScore);
+    root->setProperty("declared_viability_tracks", static_cast<int>(pattern.declaredViabilityTracks));
+    root->setProperty("retained_viability_tracks", static_cast<int>(pattern.retainedViabilityTracks));
+    root->setProperty("viable_instrument_tracks", static_cast<int>(pattern.viableInstrumentTracks));
+    root->setProperty("token_instrument_tracks", static_cast<int>(pattern.tokenInstrumentTracks));
+    root->setProperty("developed_instrument_tracks", static_cast<int>(pattern.developedInstrumentTracks));
+    root->setProperty("merged_instrument_tracks", static_cast<int>(pattern.mergedInstrumentTracks));
+    root->setProperty("pruned_instrument_tracks", static_cast<int>(pattern.prunedInstrumentTracks));
     root->setProperty("arrangement_target_parts", static_cast<int>(pattern.arrangementTargetParts));
     root->setProperty("populated_instrument_parts", static_cast<int>(pattern.populatedInstrumentParts));
     root->setProperty("populated_harmony_parts", static_cast<int>(pattern.populatedHarmonyParts));

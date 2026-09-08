@@ -16,6 +16,7 @@
 #include "ProductionPolish.h"
 #include "RhythmPlan.h"
 #include "TonalContract.h"
+#include "TrackViability.h"
 #include "VerticalHarmonyGate.h"
 
 #include <functional>
@@ -166,6 +167,7 @@ struct CompositionRenderReport {
     ElectronicFabricReport electronicFabric;
     ArrangementDensityReport arrangementDensity;
     ElectronicSoundscapeReport soundscape;
+    TrackViabilityReport trackViability;
 
     [[nodiscard]] bool productionReady() const noexcept {
         return production.ready;

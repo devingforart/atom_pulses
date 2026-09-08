@@ -22,9 +22,11 @@ bool aiOrigin(NoteOrigin origin) noexcept {
 }
 
 bool primaryVoice(VoiceId voice) noexcept {
-    return voice == VoiceId::SubBass || voice == VoiceId::MovementBass ||
-           voice == VoiceId::HarmonicFoundation || voice == VoiceId::HarmonicPulse ||
-           voice == VoiceId::Lead || voice == VoiceId::Countermelody;
+    // Bass, harmonic floor and pulse each have their own continuity contracts. Counting
+    // all of them as "the protagonist" multiplied the denominator and encouraged every
+    // voice to sound almost continuously. Narrative presence belongs to the foreground
+    // speaker and its explicit answer only.
+    return voice == VoiceId::Lead || voice == VoiceId::Countermelody;
 }
 
 bool grooveVoice(VoiceId voice) noexcept {
@@ -513,11 +515,26 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
         const auto& section = plan.sections[sectionIndex];
         const auto length = section.bars * plan.beatsPerBar;
-        for (const auto voice : section.activeVoices) {
-            if (primaryVoice(voice)) {
-                primaryAvailable += length;
-                primaryAuthored += unionLength(authoredSpans[{static_cast<int>(sectionIndex), voice}]);
+        const auto expectsForeground = std::any_of(section.activeVoices.begin(),
+            section.activeVoices.end(), [](const auto voice) { return primaryVoice(voice); });
+        // Presence is a phrase-window contract. Three authored attacks inside an
+        // eight-bar window count as one narrative appearance; rests and breath inside
+        // that phrase are preserved instead of being penalised as missing duration.
+        if (expectsForeground) {
+            for (auto localBar = 0; localBar < section.bars; localBar += 8) {
+                ++primaryAvailable;
+                const auto start = (section.startBar + localBar) * plan.beatsPerBar;
+                const auto end = std::min((section.startBar + section.bars) * plan.beatsPerBar,
+                                          start + plan.beatsPerBar * 8.0);
+                const auto notes = std::count_if(pattern.notes.begin(), pattern.notes.end(),
+                    [&](const auto& note) {
+                        return primaryVoice(note.voice) && aiOrigin(note.origin) &&
+                            note.startBeat >= start && note.startBeat < end;
+                    });
+                if (notes >= 3) ++primaryAuthored;
             }
+        }
+        for (const auto voice : section.activeVoices) {
             if (grooveVoice(voice)) {
                 grooveAvailable += length;
                 grooveAuthored += unionLength(authoredSpans[{static_cast<int>(sectionIndex), voice}]);

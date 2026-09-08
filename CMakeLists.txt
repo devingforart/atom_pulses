@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.52.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.55.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -65,6 +65,8 @@ add_library(pulso_core STATIC
     src/core/SongComposer.h
     src/core/TonalContract.cpp
     src/core/TonalContract.h
+    src/core/TrackViability.cpp
+    src/core/TrackViability.h
     src/core/VerticalHarmonyGate.cpp
     src/core/VerticalHarmonyGate.h
 )
@@ -135,6 +137,7 @@ if(PULSO_BUILD_PLUGIN)
     target_sources(Pulso PRIVATE
         src/plugin/AiComposer.cpp
         src/plugin/AiComposer.h
+        src/plugin/AiModelConfig.h
         src/plugin/CompositionProgress.cpp
         src/plugin/CompositionProgress.h
         src/plugin/LiveDeployer.cpp

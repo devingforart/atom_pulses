@@ -19,6 +19,7 @@ def evaluate_creative_quality(request):
         return {"audited": False, "passed": True, "codes": [], "score": 1.0}
 
     domain = str(request.get("production_domain", "adaptive")).casefold()
+    percussion_free = bool(request.get("percussion_free", False))
     foreground = _number(request, "foreground_ai_authorship_ratio", 0.0)
     movement_bass = _number(request, "movement_bass_ai_authorship_ratio", 0.0)
     foreground_notes = int(_number(request, "foreground_note_count", 0.0))
@@ -30,6 +31,12 @@ def evaluate_creative_quality(request):
     low_end_gap = int(_number(request, "maximum_club_low_end_gap_bars", 0.0))
     score = _number(request, "creative_score", request.get("narrative_score", 0.0))
     fabric_audited = bool(request.get("electronic_fabric_audited", False))
+    viability_audited = bool(request.get("track_viability_audited", False))
+    viability_ready = bool(request.get("track_viability_ready", True))
+    viability_score = _number(request, "track_viability_score", 1.0)
+    retained_tracks = int(_number(request, "retained_viability_tracks", 0.0))
+    viable_tracks = int(_number(request, "viable_instrument_tracks", 0.0))
+    token_tracks = int(_number(request, "token_instrument_tracks", 0.0))
 
     codes = []
     if foreground_notes >= 8 and foreground < 0.85:
@@ -40,7 +47,7 @@ def evaluate_creative_quality(request):
         codes.append("fragmented_bass_narrative")
     if scalar_run > 5:
         codes.append("scalar_melody_without_speech")
-    if domain == "club_electronic":
+    if domain == "club_electronic" and not percussion_free:
         if groove < 0.45:
             codes.append("groove_not_ai_authored")
         if drum_gap > 16:
@@ -53,7 +60,7 @@ def evaluate_creative_quality(request):
         line_ratio = meaningful_lines / max(1, independent_lines)
         if independent_lines < 8 or line_ratio < 0.75:
             codes.append("tracks_without_independent_musical_content")
-        if (_number(request, "harmonic_floor_coverage", 0.0) < 0.80 or
+        if (_number(request, "harmonic_floor_coverage", 0.0) < 0.85 or
                 _number(request, "median_harmonic_floor_layers", 0.0) < 2.0):
             codes.append("harmonic_floor_incomplete")
         if int(_number(request, "protagonist_phrase_windows", 0.0)) < 3:
@@ -62,6 +69,11 @@ def evaluate_creative_quality(request):
             codes.append("electronic_arpeggio_incomplete")
         if int(_number(request, "dialogue_musical_lines", 0.0)) < 1:
             codes.append("melodic_dialogue_incomplete")
+    if viability_audited:
+        if token_tracks > 0:
+            codes.append("token_instrument_tracks_present")
+        if not viability_ready or viability_score < 0.90:
+            codes.append("instrument_cast_exceeds_authored_material")
     if score < 0.76:
         codes.append("creative_score_below_gate")
     if request.get("creative_ready") is False and "creative_score_below_gate" not in codes:
@@ -82,4 +94,10 @@ def evaluate_creative_quality(request):
         "maximum_club_drum_gap_bars": drum_gap,
         "maximum_club_low_end_gap_bars": low_end_gap,
         "electronic_fabric_audited": fabric_audited,
+        "track_viability_audited": viability_audited,
+        "track_viability_ready": viability_ready,
+        "track_viability_score": viability_score,
+        "retained_viability_tracks": retained_tracks,
+        "viable_instrument_tracks": viable_tracks,
+        "token_instrument_tracks": token_tracks,
     }

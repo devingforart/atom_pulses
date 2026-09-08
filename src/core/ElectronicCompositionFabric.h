@@ -16,6 +16,10 @@ struct ElectronicFabricReport {
     std::size_t arpeggioNotesCreated{};
     std::size_t dialogueNotesCreated{};
     std::size_t supportNotesCreated{};
+    std::size_t publicationClosureNotesCreated{};
+    std::size_t harmonicFloorBarsRepaired{};
+    std::size_t protagonistWindowsRepaired{};
+    std::size_t resolutionCodaNotesCreated{};
     std::size_t independentLines{};
     std::size_t meaningfulLines{};
     std::size_t protagonistPhraseWindows{};
@@ -33,6 +37,10 @@ class ElectronicCompositionFabric final {
 public:
     static void normalizePlan(SongPlan&);
     [[nodiscard]] static ElectronicFabricReport materialize(Pattern&, const SongPlan&);
+    // Re-establishes the aggregate musical promises after tonal, vertical and
+    // duration repair have altered the realized score. It only uses retained AI
+    // lanes and material from the authored harmony/motif.
+    [[nodiscard]] static ElectronicFabricReport convergePublication(Pattern&, const SongPlan&);
     // Recompute the contract from the exact notes that will be published. Rendering,
     // register repair and release shaping are allowed to alter the material after
     // materialize(), so publication must never trust the construction counters.

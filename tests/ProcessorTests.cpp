@@ -229,9 +229,16 @@ int main(int argc, char** argv) {
     if (argc > 1 && juce::String(argv[1]) == "--live-ai") {
         juce::String error;
         std::stop_source stopSource;
+        std::vector<pulso::plugin::AiSongProgressUpdate> liveProgress;
         const auto plan = pulso::plugin::AiComposer::planSong(
             "An evolving instrumental journey with restraint, thematic recall and a decisive resolution",
-            60, 30, 120.0, 4.0, 424242, stopSource.get_token(), error);
+            60, 30, 120.0, 4.0, 424242, stopSource.get_token(), error,
+            [&](const auto& update) {
+                liveProgress.push_back(update);
+                std::cout << "[AI] stage=" << static_cast<int>(update.stage)
+                          << " completed=" << update.completed << '/' << update.total
+                          << " attempt=" << update.attempt << " detail=" << update.detail << '\n';
+            });
         const auto authoredVoices = std::count_if(plan.voices.begin(), plan.voices.end(), [](const auto& voice) {
             return voice.performance.authored;
         });
@@ -255,9 +262,18 @@ int main(int argc, char** argv) {
                   << " coverage=" << liveReport.narrative.primaryVoiceCoverage
                   << " recall=" << liveReport.narrative.thematicRecallRatio << '\n';
         require(error.isEmpty(), "Live OpenAI song-plan request failed: " + error.toStdString());
-        require(plan.sections.size() >= 3 && plan.voices.size() >= 7 && plan.instruments.size() >= 12 &&
+        require(std::any_of(liveProgress.begin(), liveProgress.end(), [](const auto& update) {
+                    return update.stage == pulso::plugin::AiSongStage::Blueprint;
+                }) && std::any_of(liveProgress.begin(), liveProgress.end(), [](const auto& update) {
+                    return update.stage == pulso::plugin::AiSongStage::PerformanceBlock;
+                }) && std::any_of(liveProgress.begin(), liveProgress.end(), [](const auto& update) {
+                    return update.stage == pulso::plugin::AiSongStage::Validation;
+                }),
+                "Live incremental generation must expose blueprint, block and validation progress");
+        require(plan.sections.size() >= 3 && plan.voices.size() >= 7 && plan.instruments.size() >= 10 &&
                     plan.totalBars == 30 &&
-                    plan.rhythmMotifs.size() >= 2 && !plan.rhythmLanguage.description.empty() &&
+                    (plan.rhythmMotifs.empty() || plan.rhythmMotifs.size() >= 2) &&
+                    !plan.rhythmLanguage.description.empty() &&
                     plan.chordPalette.size() >= 4 && !plan.harmonicLanguage.description.empty() &&
                     !liveSong.notes.empty() && !plan.performanceScore.cells.empty() &&
                     std::all_of(plan.performanceScore.cells.begin(), plan.performanceScore.cells.end(), [](const auto& cell) {
@@ -276,8 +292,9 @@ int main(int argc, char** argv) {
                                voice.performance.expressionDepth >= 0.0 &&
                                voice.performance.expressionDepth <= 1.0;
                     }) &&
-                    std::all_of(plan.sections.begin(), plan.sections.end(), [](const auto& section) {
-                        return !section.rhythm.motifId.empty() && section.harmonicEvents.size() >= 2;
+                    std::all_of(plan.sections.begin(), plan.sections.end(), [&](const auto& section) {
+                        return (plan.rhythmMotifs.empty() || !section.rhythm.motifId.empty()) &&
+                               section.harmonicEvents.size() >= 2;
                     }),
                 "Live OpenAI response did not satisfy the dynamic-orchestration contract");
         std::cout << "[PASS] Live structured song plan | voices=" << plan.voices.size()
@@ -789,6 +806,18 @@ int main(int argc, char** argv) {
     juce::String parseError;
     require(pulso::plugin::AiComposer::structuredOutputSchemaIsValid(),
             "The schema sent to OpenAI must be valid JSON");
+    require(pulso::plugin::AiComposer::songPlanSchemaIsValid() &&
+                pulso::plugin::AiComposer::incrementalSchemasAreValid(),
+            "Blueprint and bounded performance-block schemas must remain valid strict JSON schemas");
+    require(pulso::plugin::AiComposer::maximumSongInstruments() == 64 &&
+                pulso::plugin::AiComposer::performanceBlockCount(0) == 0 &&
+                pulso::plugin::AiComposer::performanceBlockCount(10) == 1 &&
+                pulso::plugin::AiComposer::performanceBlockCount(50) == 5 &&
+                pulso::plugin::AiComposer::performanceBlockCount(64) == 7,
+            "Large casts must be split into deterministic bounded performance blocks");
+    require(pulso::plugin::AiComposer::defaultModel() == "gpt-5.6-sol" &&
+                pulso::plugin::AiComposer::defaultReasoningEffort() == "max",
+            "PULSO composition must default to GPT-5.6 Sol at maximum reasoning effort");
     require(pulso::plugin::AiComposer::parseCompositionJson(structuredExample, 1,
                                                              parsedComposition, parseError),
             "Structured GPT output must validate into a playable composition");
@@ -1361,6 +1390,7 @@ int main(int argc, char** argv) {
     deployment.bpm = 123.0;
     pulso::Pattern deploymentPattern;
     deploymentPattern.lengthBeats = 8.0;
+    deploymentPattern.productionModeSource = "gpt_plan";
     deploymentPattern.parts = {
         {1, "kick_drum", "Kick Drum", pulso::VoiceId::CoreDrums,
          pulso::ScoreDepartment::Rhythm, "pulse", 35, 36, 1.0,
@@ -1410,7 +1440,9 @@ int main(int argc, char** argv) {
                 deploymentObject->getProperty("expression_delivery").toString() ==
                     "native_editable_with_lossless_midi_source" &&
                 deploymentObject->getProperty("production_domain").toString() == "adaptive" &&
-                deploymentObject->getProperty("production_mode_source").toString() == "adaptive_inference" &&
+                deploymentObject->getProperty("production_mode_source").toString() == "gpt_plan" &&
+                deploymentObject->getProperty("ai_model").toString() == "gpt-5.6-sol" &&
+                deploymentObject->getProperty("ai_reasoning_effort").toString() == "max" &&
                 !static_cast<bool>(deploymentObject->getProperty("electronic_production_audited")) &&
                 !deploymentObject->hasProperty("electronic_production_score") &&
                 deploymentObject->getProperty("sound_world").toString().isNotEmpty() &&

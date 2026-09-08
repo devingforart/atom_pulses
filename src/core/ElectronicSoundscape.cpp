@@ -310,7 +310,7 @@ ElectronicSoundscapeReport ElectronicSoundscapeDirector::audit(const Pattern& pa
         report.meaningfulCoverage >= .78 && report.underdevelopedVoices == 0 &&
         report.underdevelopedEnvironments == 0 && report.missingTransitionEvents == 0 &&
         report.staticLayerRuns == 0 && report.undeclaredPopulatedParts == 0 && densityFit >= .75 &&
-        lineFit >= .75 && report.harmonicFloorCoverage >= .80 &&
+        lineFit >= .75 && report.harmonicFloorCoverage >= .85 &&
         report.medianHarmonicFloorLayers >= 2.0 &&
         report.protagonistPhraseWindows >= std::max<std::size_t>(3, plan.totalBars / 24) &&
         report.arpeggioNoteCount >= 32 && report.dialogueMusicalLines >= 1;
@@ -330,7 +330,7 @@ ElectronicSoundscapeReport ElectronicSoundscapeDirector::audit(const Pattern& pa
         report.issues.push_back("sectional_fabric_misses_declared_layer_density");
     if (lineFit < .75)
         report.issues.push_back("instrument_count_exceeds_independent_musical_content");
-    if (report.harmonicFloorCoverage < .80 || report.medianHarmonicFloorLayers < 2.0)
+    if (report.harmonicFloorCoverage < .85 || report.medianHarmonicFloorLayers < 2.0)
         report.issues.push_back("hypnotic_harmonic_floor_is_not_continuous");
     if (report.protagonistPhraseWindows < std::max<std::size_t>(3, plan.totalBars / 24))
         report.issues.push_back("primary_speaker_has_no_complete_narrative");

@@ -1410,16 +1410,34 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     generationProgress.store(0.06f, std::memory_order_relaxed);
                     plan = AiComposer::planSong(songDirection, newest.targetSongSeconds, totalBars,
                         currentTempo(), newest.beatsPerBar, newest.seed, operationToken, aiError,
-                        [this, metadata](AiSongStage stage) {
+                        [this, metadata](const AiSongProgressUpdate& update) {
                             auto progressMetadata = std::make_shared<IdeaMetadata>(*metadata);
-                            if (stage == AiSongStage::Architecture) {
-                                generationProgress.store(0.08f, std::memory_order_relaxed);
-                                progressMetadata->status = "GPT ARCHITECTURE - DRAFTING";
-                                progressMetadata->description = "Writing form, harmony, orchestration and rhythmic DNA.";
+                            if (update.stage == AiSongStage::Blueprint) {
+                                const auto total = std::max<std::size_t>(1, update.total);
+                                generationProgress.store(0.06f + 0.04f *
+                                    static_cast<float>(update.completed) / static_cast<float>(total),
+                                    std::memory_order_relaxed);
+                                progressMetadata->status = "SOL MAX · BLUEPRINT " +
+                                    juce::String(static_cast<int>(update.completed + 1)) + "/" +
+                                    juce::String(static_cast<int>(total));
+                                progressMetadata->description = update.detail;
+                            } else if (update.stage == AiSongStage::PerformanceBlock ||
+                                       update.stage == AiSongStage::Recovery) {
+                                const auto total = std::max<std::size_t>(1, update.total);
+                                const auto fraction = static_cast<float>(update.completed) /
+                                    static_cast<float>(total);
+                                generationProgress.store(0.12f + fraction * 0.34f,
+                                                         std::memory_order_relaxed);
+                                progressMetadata->status = update.stage == AiSongStage::Recovery
+                                    ? "SOL MAX · RECOVERING BLOCK · ATTEMPT " + juce::String(update.attempt)
+                                    : "SOL MAX · WRITING BLOCK " +
+                                        juce::String(static_cast<int>(update.completed + 1)) + "/" +
+                                        juce::String(static_cast<int>(total));
+                                progressMetadata->description = update.detail;
                             } else {
-                                generationProgress.store(0.46f, std::memory_order_relaxed);
-                                progressMetadata->status = "GPT CRITIC - OPTIONAL REVISION";
-                                progressMetadata->description = "Auditing motif lineage, breathing, contrast and kick-bass interlock.";
+                                generationProgress.store(0.47f, std::memory_order_relaxed);
+                                progressMetadata->status = "SOL MAX · ASSEMBLING SCORE";
+                                progressMetadata->description = update.detail;
                             }
                             ideaMetadata.store(std::move(progressMetadata), std::memory_order_release);
                         });
@@ -1512,7 +1530,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     juce::Logger::writeToLog("PULSO AI FALLBACK: " + aiError);
                 }
                 generated.seed = newest.seed;
-                metadata->status = usedAiPlan ? "GPT SONG PLAN - VALIDATED - FULL SONG"
+                metadata->status = usedAiPlan ? "GPT-5.6 SOL MAX - VALIDATED - FULL SONG"
                     : reusedPlan ? "SONG RECOMPOSED - STRUCTURE PRESERVED"
                     : aiError.isNotEmpty() ? "GPT FAILED - " + aiError.substring(0, 72).toUpperCase()
                                            : "LOCAL LONG-FORM ENGINE";
@@ -1582,7 +1600,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     metadata->title = ai.title;
                     metadata->key = ai.key;
                     metadata->description = ai.summary;
-                    metadata->status = "GPT-5.6 SOL · VALIDATED";
+                    metadata->status = "GPT-5.6 SOL MAX · VALIDATED";
                     usedAI = true;
                 }
             }
@@ -1720,6 +1738,16 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->dialogueMusicalLines = generated.dialogueMusicalLines;
         playbackPattern->harmonicFloorCoverage = generated.harmonicFloorCoverage;
         playbackPattern->medianHarmonicFloorLayers = generated.medianHarmonicFloorLayers;
+        playbackPattern->trackViabilityAudited = generated.trackViabilityAudited;
+        playbackPattern->trackViabilityReady = generated.trackViabilityReady;
+        playbackPattern->trackViabilityScore = generated.trackViabilityScore;
+        playbackPattern->declaredViabilityTracks = generated.declaredViabilityTracks;
+        playbackPattern->retainedViabilityTracks = generated.retainedViabilityTracks;
+        playbackPattern->viableInstrumentTracks = generated.viableInstrumentTracks;
+        playbackPattern->tokenInstrumentTracks = generated.tokenInstrumentTracks;
+        playbackPattern->developedInstrumentTracks = generated.developedInstrumentTracks;
+        playbackPattern->mergedInstrumentTracks = generated.mergedInstrumentTracks;
+        playbackPattern->prunedInstrumentTracks = generated.prunedInstrumentTracks;
         playbackPattern->underdevelopedSoundscapeLayers = generated.underdevelopedSoundscapeLayers;
         playbackPattern->medianActiveSoundscapeLayers = generated.medianActiveSoundscapeLayers;
         playbackPattern->narrativeIssues = generated.narrativeIssues;
@@ -2123,7 +2151,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(20); // Binary composition state version.
+        composition.writeInt(21); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -2259,6 +2287,16 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
         composition.writeDouble(pattern->causalNarrativeScore);
         composition.writeDouble(pattern->narrativeResolutionScore);
         composition.writeBool(pattern->narrativeSpineReady);
+        composition.writeBool(pattern->trackViabilityAudited);
+        composition.writeBool(pattern->trackViabilityReady);
+        composition.writeDouble(pattern->trackViabilityScore);
+        composition.writeInt(static_cast<int>(pattern->declaredViabilityTracks));
+        composition.writeInt(static_cast<int>(pattern->retainedViabilityTracks));
+        composition.writeInt(static_cast<int>(pattern->viableInstrumentTracks));
+        composition.writeInt(static_cast<int>(pattern->tokenInstrumentTracks));
+        composition.writeInt(static_cast<int>(pattern->developedInstrumentTracks));
+        composition.writeInt(static_cast<int>(pattern->mergedInstrumentTracks));
+        composition.writeInt(static_cast<int>(pattern->prunedInstrumentTracks));
         state.setProperty("compositionData", composition.getMemoryBlock().toBase64Encoding(), nullptr);
         if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) {
             state.setProperty("ideaTitle", metadata->title, nullptr);
@@ -2318,7 +2356,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 20) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 21) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2609,6 +2647,26 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                                         restoredPattern->narrativeResolutionScore = std::clamp(
                                                             composition.readDouble(), 0.0, 1.0);
                                                         restoredPattern->narrativeSpineReady = composition.readBool();
+                                                        if (version >= 21) {
+                                                            restoredPattern->trackViabilityAudited = composition.readBool();
+                                                            restoredPattern->trackViabilityReady = composition.readBool();
+                                                            restoredPattern->trackViabilityScore = std::clamp(
+                                                                composition.readDouble(), 0.0, 1.0);
+                                                            restoredPattern->declaredViabilityTracks = static_cast<std::size_t>(
+                                                                std::max(0, composition.readInt()));
+                                                            restoredPattern->retainedViabilityTracks = static_cast<std::size_t>(
+                                                                std::max(0, composition.readInt()));
+                                                            restoredPattern->viableInstrumentTracks = static_cast<std::size_t>(
+                                                                std::max(0, composition.readInt()));
+                                                            restoredPattern->tokenInstrumentTracks = static_cast<std::size_t>(
+                                                                std::max(0, composition.readInt()));
+                                                            restoredPattern->developedInstrumentTracks = static_cast<std::size_t>(
+                                                                std::max(0, composition.readInt()));
+                                                            restoredPattern->mergedInstrumentTracks = static_cast<std::size_t>(
+                                                                std::max(0, composition.readInt()));
+                                                            restoredPattern->prunedInstrumentTracks = static_cast<std::size_t>(
+                                                                std::max(0, composition.readInt()));
+                                                        }
                                                     }
                                                 }
                                             }

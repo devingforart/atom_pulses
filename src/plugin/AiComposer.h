@@ -17,14 +17,33 @@ struct AiComposition {
     juce::String summary;
 };
 
-enum class AiSongStage : std::uint8_t { Architecture = 0, Critique };
-using AiSongProgress = std::function<void(AiSongStage)>;
+enum class AiSongStage : std::uint8_t {
+    Blueprint = 0,
+    PerformanceBlock,
+    Recovery,
+    Validation
+};
+
+struct AiSongProgressUpdate {
+    AiSongStage stage{AiSongStage::Blueprint};
+    std::size_t completed{};
+    std::size_t total{};
+    int attempt{1};
+    juce::String detail;
+};
+
+using AiSongProgress = std::function<void(const AiSongProgressUpdate&)>;
 
 class AiComposer final {
 public:
     [[nodiscard]] static bool hasApiKey();
+    [[nodiscard]] static juce::String defaultModel();
+    [[nodiscard]] static juce::String defaultReasoningEffort();
     [[nodiscard]] static bool structuredOutputSchemaIsValid();
     [[nodiscard]] static bool songPlanSchemaIsValid();
+    [[nodiscard]] static bool incrementalSchemasAreValid();
+    [[nodiscard]] static std::size_t maximumSongInstruments() noexcept;
+    [[nodiscard]] static std::size_t performanceBlockCount(std::size_t instruments) noexcept;
     [[nodiscard]] static AiComposition compose(const juce::String& creativeDirection,
                                                int bars, double bpm,
                                                const Pattern* reference,

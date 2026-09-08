@@ -19,6 +19,7 @@
 #include <cmath>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <set>
 #include <tuple>
 
@@ -44,6 +45,41 @@ std::string lowerText(std::string text) {
         return static_cast<char>(std::tolower(value));
     });
     return text;
+}
+
+std::optional<std::pair<int, ScaleKind>> explicitTonalCenter(std::string_view direction) {
+    const auto text = lowerText(std::string(direction));
+    constexpr std::array<std::pair<std::string_view, int>, 17> roots{{
+        {"c#", 1}, {"db", 1}, {"d#", 3}, {"eb", 3}, {"f#", 6}, {"gb", 6},
+        {"g#", 8}, {"ab", 8}, {"a#", 10}, {"bb", 10}, {"c", 0}, {"d", 2},
+        {"e", 4}, {"f", 5}, {"g", 7}, {"a", 9}, {"b", 11}
+    }};
+    constexpr std::array<std::string_view, 4> minorModes{"min", "minor", "menor", "moll"};
+    constexpr std::array<std::string_view, 4> majorModes{"maj", "major", "mayor", "dur"};
+    const auto containsBounded = [&](const std::string& pattern) {
+        auto position = text.find(pattern);
+        while (position != std::string::npos) {
+            const auto before = position == 0 ||
+                !std::isalpha(static_cast<unsigned char>(text[position - 1]));
+            const auto end = position + pattern.size();
+            const auto after = end >= text.size() ||
+                !std::isalpha(static_cast<unsigned char>(text[end]));
+            if (before && after) return true;
+            position = text.find(pattern, position + 1);
+        }
+        return false;
+    };
+    for (const auto& [name, pitchClass] : roots) {
+        for (const auto mode : minorModes)
+            for (const auto separator : {std::string_view{}, std::string_view{" "}})
+                if (containsBounded(std::string(name) + std::string(separator) + std::string(mode)))
+                    return std::pair{pitchClass, ScaleKind::Minor};
+        for (const auto mode : majorModes)
+            for (const auto separator : {std::string_view{}, std::string_view{" "}})
+                if (containsBounded(std::string(name) + std::string(separator) + std::string(mode)))
+                    return std::pair{pitchClass, ScaleKind::Major};
+    }
+    return std::nullopt;
 }
 
 std::vector<PlannedVoice> defaultVoicePlan();
@@ -91,7 +127,7 @@ void materializeNamedSoundWorld(SongPlan& plan) {
             continue;
         }
         const auto* definition = instrumentDefinition(id);
-        if (definition == nullptr || plan.instruments.size() >= 48 || plan.instrumentCastAuthored)
+        if (definition == nullptr || plan.instruments.size() >= 64 || plan.instrumentCastAuthored)
             continue;
         InstrumentAssignment addition;
         addition.id = "world_" + std::string(id);
@@ -148,7 +184,9 @@ bool harmonicTextureRequested(const SongPlan& plan) {
         has("sin percusión") || has("sin percusiones") || has("no drums") ||
         has("without drums") || has("sin drums") || has("sin bateria") ||
         has("sin batería") || has("sin ritmica") || has("sin rítmica") ||
-        has("sin ritmo") || has("no rhythm");
+        has("sin ritmo") || has("no rhythm") || has("no hace falta percusi") ||
+        has("no hacen falta percusi") || has("no hace falta bater") ||
+        has("no hacen falta bater") || has("no necesito percusi") || has("no necesito bater");
     if (textContainsAny(text, {"no quiero bateria", "no quiero baterias", "no quiero percusion",
                                "nicamente armon", "solo armonias y melodias", "solo armonia",
                                "only harmony", "harmony and melody only"}))
@@ -173,7 +211,9 @@ bool noPercussionRequested(const SongPlan& plan) {
         return false;
     if (textContainsAny(text, {"no percussion", "without percussion", "sin percusion", "sin percusión",
                                "sin percusiones", "no drums", "without drums", "sin drums", "sin bateria",
-                               "sin batería", "sin ritmica", "sin rítmica", "sin ritmo", "no rhythm"}))
+                               "sin batería", "sin ritmica", "sin rítmica", "sin ritmo", "no rhythm",
+                               "no hace falta percusi", "no hacen falta percusi", "no hace falta bater",
+                               "no hacen falta bater", "no necesito percusi", "no necesito bater"}))
         return true;
     const auto rhythmParts = std::count_if(plan.instruments.begin(), plan.instruments.end(), [](const auto& instrument) {
         const auto* definition = instrumentDefinition(instrument.instrumentId);
@@ -380,7 +420,7 @@ void applyHarmonicTextureDirector(SongPlan& plan, bool force = false) {
                 return instrument.id == addition.id || instrument.instrumentId == addition.instrumentId;
             });
         if (existing == plan.instruments.end()) {
-            if (plan.instruments.size() < 48) plan.instruments.push_back(std::move(addition));
+            if (plan.instruments.size() < 64) plan.instruments.push_back(std::move(addition));
             continue;
         }
         existing->activity = std::max(existing->activity, addition.activity);
@@ -1120,6 +1160,10 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
     plan.seed = seed;
     plan.rootPitchClass = positiveModulo(rootPitchClass, 12);
     plan.scale = scale;
+    if (const auto explicitKey = explicitTonalCenter(direction)) {
+        plan.rootPitchClass = explicitKey->first;
+        plan.scale = explicitKey->second;
+    }
     plan.harmonicLanguage.tonalPolicy = tonalPolicyForDirection(direction);
     plan.title = direction.empty() ? "Longform Idea" : direction.substr(0, 48);
     plan.key = std::array{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
@@ -1133,6 +1177,8 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
         {"no percussion", "without percussion", "sin percusion", "sin percusiones",
          "no drums", "without drums", "sin bateria", "sin ritmica", "no rhythm",
          "no quiero bateria", "no quiero baterias", "no quiero percusion",
+         "no hace falta percusi", "no hacen falta percusi", "no hace falta bater",
+         "no hacen falta bater", "no necesito percusi", "no necesito bater",
          "nicamente armon", "solo armonias y melodias", "solo armonia"});
     plan.soundscape.percussionFree = plan.percussionFreeIntent;
 
@@ -1474,7 +1520,7 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     // timbral contract (in particular, no accidental toy/mallet foreground).
     ElectronicProductionDirector::normalizePlan(plan);
     applyHarmonicTextureDirector(plan);
-    if (plan.instruments.size() > 48) plan.instruments.resize(48);
+    if (plan.instruments.size() > 64) plan.instruments.resize(64);
     const auto noPercussionIntent = noPercussionRequested(plan);
     // This is an execution constraint, not a stylistic suggestion. Apply it to AI and
     // local plans alike before density expansion can count or repopulate rhythm lanes.
@@ -1507,7 +1553,7 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     // Establish independent content lanes and only the missing structural roles before
     // normalizing the concrete instrument assignments.
     ElectronicCompositionFabric::normalizePlan(plan);
-    if (plan.instruments.size() > 48) plan.instruments.resize(48);
+    if (plan.instruments.size() > 64) plan.instruments.resize(64);
     if (plan.timbrePalette.description.empty())
         plan.timbrePalette.description = "coherent, dimensional and natural";
     if (plan.timbrePalette.material.empty())
@@ -1591,7 +1637,7 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     const auto ensureDepartment = [&](ScoreDepartment department, int minimum) {
         auto count = departmentCount(department);
         for (const auto& candidate : orchestralDefaults) {
-            if (count >= minimum || plan.instruments.size() >= 48) break;
+            if (count >= minimum || plan.instruments.size() >= 64) break;
             const auto* definition = instrumentDefinition(candidate.instrumentId);
             if (definition == nullptr || definition->department != department ||
                 std::any_of(plan.instruments.begin(), plan.instruments.end(), [&](const auto& existing) {
@@ -1654,7 +1700,7 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     // invariant, inactive assignments leak back out as anonymous legacy MIDI tracks.
     for (const auto& voice : plan.voices) {
         if (closedAuthoredCast) continue;
-        if (plan.instruments.size() >= 48 ||
+        if (plan.instruments.size() >= 64 ||
             std::any_of(plan.instruments.begin(), plan.instruments.end(), [&](const auto& instrument) {
                 return instrument.sourceVoice == voice.id;
             })) continue;
@@ -2321,6 +2367,10 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     song.dialogueMusicalLines = electronicFabric.dialogueLines;
     song.harmonicFloorCoverage = electronicFabric.harmonicFloorCoverage;
     song.medianHarmonicFloorLayers = electronicFabric.medianHarmonicFloorLayers;
+    // A named instrument is not a musical line. Develop sparse GPT-authored seeds into
+    // role-complete phrases; compact technical placeholders that still cannot justify an
+    // independent Live track before pitch, overlap and expression are finalized.
+    auto trackViability = TrackViability::enforce(song, plan);
     // Continuity operates on realized parts. Re-assert the two physical contracts it can
     // otherwise bypass: upper parts remain upper, and every late percussion note carries a
     // concrete GM articulation rather than generic pitch 36.
@@ -2350,7 +2400,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     // Metric publication and articulation-aware release shaping are pitch-neutral, but can
     // move a note-off across a harmonic boundary. Audit and repair the exact MIDI that Live
     // receives, after those operations rather than trusting the earlier abstract score.
-    const auto publishedTonalReport = repairTonalContract(
+    auto publishedTonalReport = repairTonalContract(
         song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
         plan.harmonicLanguage.tonalPolicy);
     // Tonal repair preserves pitch class but may select the nearest legal pitch just
@@ -2373,6 +2423,70 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     [[maybe_unused]] const auto finalVerticalOverlapRepairs = repairSamePitchOverlaps(song);
     enforceElectronicReleaseCeilings(song, plan);
     if (noPercussionIntent) stripPublishedPercussion(song);
+
+    // Publication closure is deliberately after every broad renderer. Tonal and
+    // vertical repair are then re-run because a newly resolved floor/coda is real MIDI,
+    // not metadata. Repeat until the exact score is both role-complete and retains the
+    // electronic floor; a later repair is never allowed to silently undo the contract.
+    auto viabilityDeveloped = trackViability.developedTracks;
+    auto viabilityNotesCreated = trackViability.notesCreated;
+    auto viabilityMerged = trackViability.mergedTracks;
+    auto viabilityPruned = trackViability.prunedTracks;
+    for (auto closurePass = 0; closurePass < 3; ++closurePass) {
+        const auto closure = ElectronicCompositionFabric::convergePublication(song, plan);
+        electronicFabric.notesCreated += closure.notesCreated;
+        electronicFabric.publicationClosureNotesCreated += closure.publicationClosureNotesCreated;
+        electronicFabric.harmonicFloorBarsRepaired += closure.harmonicFloorBarsRepaired;
+        electronicFabric.protagonistWindowsRepaired += closure.protagonistWindowsRepaired;
+        electronicFabric.resolutionCodaNotesCreated += closure.resolutionCodaNotesCreated;
+
+        const auto viabilityPass = TrackViability::enforce(song, plan);
+        viabilityDeveloped += viabilityPass.developedTracks;
+        viabilityNotesCreated += viabilityPass.notesCreated;
+        viabilityMerged += viabilityPass.mergedTracks;
+        viabilityPruned += viabilityPass.prunedTracks;
+
+        publishedTonalReport = repairTonalContract(
+            song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
+            plan.harmonicLanguage.tonalPolicy);
+        orchestrationReport.registerRepairs += OrchestrationScore::enforcePublishedRegisters(song);
+        [[maybe_unused]] const auto closureMetric = ProductionPolish::enforceMetricContract(song);
+        [[maybe_unused]] const auto closureOverlap = repairSamePitchOverlaps(song);
+        const auto closureVertical = VerticalHarmonyGate::enforce(song);
+        verticalHarmony.collisionsBefore += closureVertical.collisionsBefore;
+        verticalHarmony.collisionsAfter = closureVertical.collisionsAfter;
+        verticalHarmony.supportNotesDucked += closureVertical.supportNotesDucked;
+        verticalHarmony.continuationFragmentsCreated += closureVertical.continuationFragmentsCreated;
+        [[maybe_unused]] const auto closureDuration = enforceAudibleDurations(song, harmonicWindows);
+        [[maybe_unused]] const auto closureFinalOverlap = repairSamePitchOverlaps(song);
+        enforceElectronicReleaseCeilings(song, plan);
+        if (noPercussionIntent) stripPublishedPercussion(song);
+        PerformanceExpression::apply(song, plan, false);
+        OrchestrationScore::applyPartExpression(song, plan, &orchestrationReport);
+
+        const auto exactViability = TrackViability::audit(song, plan);
+        const auto exactFabric = ElectronicCompositionFabric::audit(song, plan);
+        if (exactViability.tokenTracks == 0 && exactFabric.harmonicFloorCoverage >= .85 &&
+            exactFabric.medianHarmonicFloorLayers >= 2.0) break;
+    }
+    verticalHarmony.score = verticalHarmony.collisionsBefore == 0 ? 1.0 :
+        1.0 - static_cast<double>(verticalHarmony.collisionsAfter) /
+              static_cast<double>(verticalHarmony.collisionsBefore);
+    const auto terminalCompaction = TrackViability::compactIncomplete(song, plan);
+    viabilityMerged += terminalCompaction.mergedTracks;
+    viabilityPruned += terminalCompaction.prunedTracks;
+    auto publishedTrackViability = TrackViability::audit(song, plan);
+    publishedTrackViability.populatedBefore = trackViability.populatedBefore;
+    publishedTrackViability.meaningfulBefore = trackViability.meaningfulBefore;
+    publishedTrackViability.developedTracks = viabilityDeveloped;
+    publishedTrackViability.notesCreated = viabilityNotesCreated;
+    publishedTrackViability.mergedTracks = viabilityMerged;
+    publishedTrackViability.prunedTracks = viabilityPruned;
+    if (publishedTrackViability.developedTracks > 0)
+        publishedTrackViability.issues.push_back("ai_tracks_required_plan_derived_development");
+    if (publishedTrackViability.prunedTracks > 0 || publishedTrackViability.mergedTracks > 0)
+        publishedTrackViability.issues.push_back("token_tracks_compacted_before_publication");
+    trackViability = std::move(publishedTrackViability);
     const auto arrangementDensity = ArrangementDensityPlanner::auditAndStamp(song, plan);
     // All exported fabric metrics come from the post-orchestration, post-duration,
     // post-percussion-strip publication boundary. Preserve only construction counters.
@@ -2383,6 +2497,10 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     publishedFabric.arpeggioNotesCreated = electronicFabric.arpeggioNotesCreated;
     publishedFabric.dialogueNotesCreated = electronicFabric.dialogueNotesCreated;
     publishedFabric.supportNotesCreated = electronicFabric.supportNotesCreated;
+    publishedFabric.publicationClosureNotesCreated = electronicFabric.publicationClosureNotesCreated;
+    publishedFabric.harmonicFloorBarsRepaired = electronicFabric.harmonicFloorBarsRepaired;
+    publishedFabric.protagonistWindowsRepaired = electronicFabric.protagonistWindowsRepaired;
+    publishedFabric.resolutionCodaNotesCreated = electronicFabric.resolutionCodaNotesCreated;
     electronicFabric = publishedFabric;
     song.independentMusicalLines = electronicFabric.independentLines;
     song.meaningfulMusicalLines = electronicFabric.meaningfulLines;
@@ -2452,6 +2570,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     NarrativeScoreGate::stamp(song, narrativeReport);
     const auto soundscapeReport = ElectronicSoundscapeDirector::audit(song, plan);
     ElectronicSoundscapeDirector::stamp(song, soundscapeReport);
+    TrackViability::stamp(song, trackViability);
     if (renderReport != nullptr) {
         renderReport->orchestration = orchestrationReport;
         renderReport->musical = qualityReport;
@@ -2477,6 +2596,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         renderReport->electronicFabric = electronicFabric;
         renderReport->arrangementDensity = arrangementDensity;
         renderReport->soundscape = soundscapeReport;
+        renderReport->trackViability = trackViability;
     }
     std::sort(song.controls.begin(), song.controls.end(), [](const auto& left, const auto& right) {
         if (left.beat != right.beat) return left.beat < right.beat;

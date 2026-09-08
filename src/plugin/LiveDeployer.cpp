@@ -1,4 +1,5 @@
 #include "LiveDeployer.h"
+#include "AiModelConfig.h"
 
 #include <algorithm>
 #include <cmath>
@@ -234,6 +235,10 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     root->setProperty("production_score", pattern.productionScore);
     root->setProperty("production_domain", juce::String::fromUTF8(pattern.productionDomain.c_str()));
     root->setProperty("production_mode_source", juce::String::fromUTF8(pattern.productionModeSource.c_str()));
+    if (pattern.productionModeSource == "gpt_plan") {
+        root->setProperty("ai_model", ai_config::model);
+        root->setProperty("ai_reasoning_effort", ai_config::reasoningEffort);
+    }
     juce::Array<juce::var> productionIssues;
     for (const auto& issue : pattern.productionIssues)
         productionIssues.add(juce::String::fromUTF8(issue.c_str()));
@@ -268,6 +273,16 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     root->setProperty("dialogue_musical_lines", static_cast<int>(pattern.dialogueMusicalLines));
     root->setProperty("harmonic_floor_coverage", pattern.harmonicFloorCoverage);
     root->setProperty("median_harmonic_floor_layers", pattern.medianHarmonicFloorLayers);
+    root->setProperty("track_viability_audited", pattern.trackViabilityAudited);
+    root->setProperty("track_viability_ready", pattern.trackViabilityReady);
+    root->setProperty("track_viability_score", pattern.trackViabilityScore);
+    root->setProperty("declared_viability_tracks", static_cast<int>(pattern.declaredViabilityTracks));
+    root->setProperty("retained_viability_tracks", static_cast<int>(pattern.retainedViabilityTracks));
+    root->setProperty("viable_instrument_tracks", static_cast<int>(pattern.viableInstrumentTracks));
+    root->setProperty("token_instrument_tracks", static_cast<int>(pattern.tokenInstrumentTracks));
+    root->setProperty("developed_instrument_tracks", static_cast<int>(pattern.developedInstrumentTracks));
+    root->setProperty("merged_instrument_tracks", static_cast<int>(pattern.mergedInstrumentTracks));
+    root->setProperty("pruned_instrument_tracks", static_cast<int>(pattern.prunedInstrumentTracks));
     root->setProperty("ai_authored_note_ratio", pattern.aiAuthoredNoteRatio);
     root->setProperty("primary_voice_authorship_coverage", pattern.primaryVoiceAuthorshipCoverage);
     root->setProperty("foreground_ai_authorship_ratio", pattern.foregroundAiAuthorshipRatio);

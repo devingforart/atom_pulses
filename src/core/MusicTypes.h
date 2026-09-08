@@ -242,6 +242,16 @@ struct Pattern {
     std::size_t dialogueMusicalLines{};
     double harmonicFloorCoverage{};
     double medianHarmonicFloorLayers{};
+    bool trackViabilityAudited{};
+    bool trackViabilityReady{true};
+    double trackViabilityScore{1.0};
+    std::size_t declaredViabilityTracks{};
+    std::size_t retainedViabilityTracks{};
+    std::size_t viableInstrumentTracks{};
+    std::size_t tokenInstrumentTracks{};
+    std::size_t developedInstrumentTracks{};
+    std::size_t mergedInstrumentTracks{};
+    std::size_t prunedInstrumentTracks{};
     std::vector<std::string> narrativeIssues;
 };
 

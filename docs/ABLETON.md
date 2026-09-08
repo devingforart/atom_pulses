@@ -1,5 +1,35 @@
 # Probar PULSO en Ableton Live
 
+## Contrato 0.55.0
+
+Durante una canción larga, el estado de PULSO distingue `SOL MAX · BLUEPRINT`,
+`SOL MAX · WRITING BLOCK n/N`, recuperación e integración final. Un fallo de un bloque no
+reinicia los ya aceptados. El reparto admite hasta 64 instrumentos y cada pista regular debe
+estar escrita en varias secciones antes de llegar al renderer y a `Crear en Live`.
+
+## Contrato 0.54.0
+
+La pista enviada a Live ya es la salida de un cierre iterativo, no de una auditoría pasiva.
+`token_instrument_tracks` debe ser cero: el material autoral incompleto se releva a una pista
+compatible y el relleno nominal se poda. El piso armónico requiere cobertura mínima de 85%
+con dos capas, conservando respiraciones de final de frase.
+
+El protagonista se mide por apariciones en ventanas de ocho compases y puede guardar silencio
+dentro de cada frase. La sección de resolución termina sobre la tónica con liberación de
+registro y densidad. Los pedidos “no hace falta batería” y tonalidades compactas como `F#min`
+también sobreviven al fallback local.
+
+## Contrato 0.53.0
+
+Full Orchestration sólo crea pistas que contienen una función musical defendible. El manifiesto
+y LiveBridge publican `track_viability_ready`, `track_viability_score`, las cantidades declarada,
+retenida y viable, y los conteos de pistas desarrolladas, fusionadas, podadas o todavía nominales.
+
+El número exportado puede ser menor que el reparto propuesto por GPT: una pista sin trayectoria
+independiente se desarrolla únicamente cuando contiene una semilla autoral suficiente; en caso
+contrario se releva hacia una voz compatible o se elimina. `transition` y `one_shot` conservan
+excepciones explícitas para que un gesto breve legítimo no sea confundido con una voz vacía.
+
 ## Contrato 0.52.0
 
 El manifiesto de Create in Live publica `causal_narrative_score`,

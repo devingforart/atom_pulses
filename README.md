@@ -1,5 +1,63 @@
 # PULSO
 
+### 0.55.0 — composición Sol Max incremental
+
+La canción larga ya no depende de una respuesta monolítica. `gpt-5.6-sol` con razonamiento
+`max` dirige primero un blueprint estricto sin notas: forma, historia y armonía. Un plazo
+acotado recupera esa fase con Sol `low` si `max` no termina, sin cambiar de modelo ni caer al
+motor procedural. El reparto y el `performance_score` se materializan con Sol `low`, bajo ese
+blueprint inmutable, en bloques de hasta
+10 instrumentos agrupados por familia y línea musical. Un reparto de 50 instrumentos se
+resuelve en cinco bloques acotados; el límite total es 64 instrumentos.
+
+Cada bloque completado se conserva inmediatamente. Si una respuesta vence, no parsea o deja
+instrumentos nominales, PULSO reintenta sólo los ids faltantes y divide el bloque hasta dos
+niveles adicionales. El ensamblado rechaza notas asignadas a otro instrumento, ids inválidos,
+líneas regulares sin al menos dos apariciones seccionales y celdas sin placements. Transiciones
+y eventos únicos mantienen su excepción musical. El fallback local sólo se considera después
+de agotar esta recuperación AI acotada.
+
+Si después de tres intentos queda una instancia nominal sin una interpretación suficiente,
+PULSO retira sólo esa pista y sus eventos huérfanos. La canción válida ya escrita continúa al
+gate final; una pista decorativa incompleta nunca vuelve a descartar la obra entera.
+
+La interfaz informa `BLUEPRINT`, bloque actual, cantidad total, `RECOVERING BLOCK`, intento y
+validación final. Todas las fases usan Responses API en background, polling cancelable y un
+deadline global, por lo que cerrar una conexión no congela la interfaz ni descarta bloques ya
+aceptados.
+
+### 0.54.0 — cierre musical convergente y Sol Max
+
+El MIDI definitivo atraviesa hasta tres pasadas de cierre musical. PULSO reconstruye desde
+el plan GPT un piso armónico de dos capas en al menos 85% de la obra, completa la presencia
+del protagonista por ventanas de frase —sin penalizar sus silencios internos— y convierte la
+última llegada de resolución en una consecuencia tonal sobre la tónica con menor registro y
+densidad. Después vuelve a validar tonalidad, registro, métrica, duraciones, colisiones,
+expresión y viabilidad instrumental.
+
+Una pista que todavía quede incompleta en la frontera de publicación se releva hacia una voz
+compatible cuando contiene autoría estructural o se elimina cuando sólo contiene relleno. El
+resultado exportado nunca conserva `token tracks`; reducir un reparto inflado es una reparación
+válida y no un motivo para fabricar más notas.
+
+La composición GPT usa por defecto `gpt-5.6-sol` en Responses API con
+`reasoning.effort = max`. Arquitectura y revisiones se ejecutan en background, permanecen
+cancelables y comparten un límite total de 45 minutos. El fallback también comprende
+expresiones como “no hace falta batería” y conserva tonalidades explícitas como `F#min`.
+
+### 0.53.0 — pistas con función musical
+
+`TrackViabilityContract` audita cada pista instrumental que realmente llegará a Live. Los
+mínimos dependen de su responsabilidad: piso armónico, voz armónica, pulso, protagonista,
+diálogo, ambiente, transición o evento puntual. Una transición o un impacto pueden ser breves;
+una voz musical ya no puede existir como una pista nominal con una o dos notas.
+
+Cuando GPT dejó al menos dos semillas autorales coherentes, PULSO desarrolla esa intención a
+través de la forma usando el motivo y la armonía del propio plan. El relleno técnico sin una
+trayectoria independiente se fusiona con una pista compatible o se poda. El gate final mide
+pistas declaradas, retenidas, viables, desarrolladas, fusionadas y podadas, y nunca publica
+`token tracks` para inflar artificialmente el arreglo.
+
 ### 0.52.0 — narrativa causal y resolución audible
 
 PULSO incorpora `NarrativeSpine`: GPT debe declarar una premisa, una pregunta concreta,
@@ -42,7 +100,7 @@ gestos de soporte. El origen MIDI `plan_derived` distingue este trabajo de un fa
 
 El gate final mide líneas independientes y significativas, cobertura y mediana del piso
 armónico, ventanas del protagonista, notas reales de arpegio y líneas de diálogo. El contrato
-admite hasta 48 instrumentos, pero una pista sólo cuenta si contiene una responsabilidad
+admite hasta 64 instrumentos, pero una pista sólo cuenta si contiene una responsabilidad
 musical desarrollada.
 
 ### 0.50.0 — paisaje electrónico compuesto y auditable
@@ -141,7 +199,7 @@ movimiento armónico, tímbrico y espacial, nunca por ausencia de kick o groove.
   incompleta, PULSO muestra su estado y `incomplete_details` en lugar de sustituirla en silencio.
 - Un fallback local publica `production_mode_source=local_fallback`, registra el error exacto y
   lo incorpora a `production_issues` en el request de Live.
-- La autenticación y el acceso a `gpt-5.6-terra` se verificaron contra Responses API; el motor
+- La autenticación y el acceso a `gpt-5.6-sol` se verifican contra Responses API; el motor
   local deja de confundirse con una composición AI en las auditorías posteriores.
 
 ### 0.44 — desarrollo musical humano
@@ -384,7 +442,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install-ableton-bridge.ps1
 
 ### Activar composición con GPT
 
-PULSO usa `gpt-5.6-terra` mediante OpenAI Responses API y Structured Outputs. La clave
+PULSO usa `gpt-5.6-sol` con razonamiento `max` mediante OpenAI Responses API y Structured Outputs. La clave
 no está incluida en el plugin ni en el repositorio. Configúrala para tu usuario:
 
 ```powershell
@@ -392,7 +450,7 @@ powershell -ExecutionPolicy Bypass -File scripts/configure-openai.ps1
 ```
 
 Cierra Ableton por completo y vuelve a abrirlo. El indicador mostrará
-`GPT-5.6 TERRA · VALIDATED` tras una composición válida. Si falta la clave, la red
+`GPT-5.6 SOL MAX · VALIDATED` tras una composición válida. Si falta la clave, la red
 falla o la respuesta no supera la validación, mostrará `LOCAL ENGINE` o
 `LOCAL FALLBACK`; nunca presenta el fallback como IA.
 

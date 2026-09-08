@@ -79,6 +79,40 @@ class ProductionQualityTests(unittest.TestCase):
         })
         self.assertTrue(report["passed"])
 
+    def test_percussion_free_electronic_score_does_not_require_groove_lanes(self):
+        report = evaluate_creative_quality({
+            "narrative_audited": True,
+            "creative_ready": True,
+            "creative_score": 0.88,
+            "production_domain": "club_electronic",
+            "percussion_free": True,
+            "foreground_note_count": 24,
+            "foreground_ai_authorship_ratio": 0.95,
+            "movement_bass_note_count": 0,
+            "groove_authorship_coverage": 0.0,
+            "maximum_club_drum_gap_bars": 192,
+            "maximum_club_low_end_gap_bars": 192,
+        })
+        self.assertTrue(report["passed"])
+        self.assertNotIn("groove_not_ai_authored", report["codes"])
+
+    def test_track_viability_rejects_token_tracks_and_underwritten_cast(self):
+        report = evaluate_creative_quality({
+            "narrative_audited": True,
+            "creative_ready": False,
+            "creative_score": 0.84,
+            "production_domain": "adaptive",
+            "track_viability_audited": True,
+            "track_viability_ready": False,
+            "track_viability_score": 0.62,
+            "retained_viability_tracks": 19,
+            "viable_instrument_tracks": 12,
+            "token_instrument_tracks": 7,
+        })
+        self.assertFalse(report["passed"])
+        self.assertIn("token_instrument_tracks_present", report["codes"])
+        self.assertIn("instrument_cast_exceeds_authored_material", report["codes"])
+
 
 if __name__ == "__main__":
     unittest.main()

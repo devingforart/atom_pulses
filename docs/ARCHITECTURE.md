@@ -1,5 +1,58 @@
 # Arquitectura
 
+### Pipeline AI incremental (0.55)
+
+La generación larga separa decisión y ejecución:
+
+```text
+Sol Max macro blueprint (sin reparto ni MIDI)
+    -> recuperación Sol Low si Max supera su SLA
+    -> reparto/soundscape Sol Low
+    -> bloques de performance Sol Low de <= 10 instrumentos
+    -> validación de cobertura por id y sección
+    -> reintento selectivo / subdivisión
+    -> PerformanceScore ensamblado
+    -> renderer y cierre de publicación
+```
+
+El blueprint comparte tonalidad, paleta, eventos armónicos, narrativa, secciones, reparto y
+soundscape. Cada bloque recibe ese documento inmutable y sólo puede devolver celdas y
+placements para sus ids. Así las llamadas conservan contexto global sin volver a generar toda
+la canción como salida. Las celdas aceptadas se incorporan antes de iniciar el siguiente
+bloque; los fallos recuperan únicamente el subconjunto ausente.
+
+Tras tres intentos, una instancia todavía nominal se retira junto con sus notas, controles,
+capas y placements huérfanos. Esta poda es local y no invalida los bloques ya aceptados.
+
+La validación exige notas utilizables y presencia en dos secciones para instrumentos
+regulares. Capas `transition` y `one_shot` pueden cumplir con una aparición. El límite es 64
+instrumentos y el tamaño estable es 10 por bloque. Responses se ejecuta en background con
+polling, cancelación y un deadline compartido de 45 minutos.
+
+### Cierre de publicación (0.54)
+
+`ElectronicCompositionFabric::convergePublication` se ejecuta después de las transformaciones
+generales del renderer. Restaura únicamente compromisos derivados del plan: piso armónico,
+apariciones de frase del protagonista y coda tonal. Cada pasada queda seguida por contratos de
+tonalidad, registro, métrica, duración, armonía vertical y expresión.
+
+`TrackViability::enforce` converge desarrollo, relevo y poda; un pase terminal no autoral
+garantiza que ningún carril incompleto alcance Live. La autoría estructural se conserva mediante
+relevo a la voz viable más cercana del mismo departamento. La cobertura del protagonista se
+mide en ventanas de ocho compases, evitando confundir expresividad con sonido constante.
+
+### Viabilidad instrumental (0.53)
+
+`TrackViability` es el último contrato de reparto antes de los auditores de publicación. Clasifica
+cada `InstrumentPart` por función musical, mide notas, compases activos y frases reales, y aplica
+umbrales distintos a pisos, voces, pulsos, protagonistas, diálogos, ambientes y eventos.
+
+El módulo puede extender material sólo desde dos o más notas `ai_authored`/`ai_transformed`; las
+variaciones nuevas quedan marcadas `plan_derived` y emplean el motivo, los acordes y las secciones
+del plan. Si sólo existe relleno técnico, intenta una fusión compatible y finalmente poda la pista.
+El auditor vuelve a ejecutarse sobre el MIDI definitivo y `AiComposer` incorpora su déficit a la
+selección y a las revisiones GPT, de modo que el conteo de pistas no sustituye al contenido.
+
 ### Tejido compositivo aditivo (0.51)
 
 `ElectronicCompositionFabric` introduce una identidad intermedia que antes faltaba:
@@ -499,7 +552,8 @@ profundidad, calidez, brillo, definición transiente, balance acústico/electró
 y contraste. El resolver de Live mantiene identidad instrumental como contrato duro y usa
 la paleta sólo para desempatar candidatos de la familia correcta.
 
-Las pasadas GPT de arquitectura y crítica son trabajos largos de Responses API. Se inician
+Las pasadas GPT de arquitectura y crítica usan `gpt-5.6-sol` con razonamiento `max` y son
+trabajos largos de Responses API. Se inician
 con `background: true`, conservan el ID de respuesta y sólo consultan mientras el estado sea
 `queued` o `in_progress`. Cancelar propaga `POST /v1/responses/{id}/cancel`; los fallos
 transitorios de una consulta se reintentan sin bloquear el callback de audio.
@@ -572,13 +626,11 @@ lo que mantiene acotado el JSON de obras extensas. La normalización limita memo
 referencias y calcula fingerprints musicales sin incluir el nombre de la célula. El crítico
 recibe cantidad de células, notas explícitas y duplicados exactos y puede reescribir las
 partes débiles conservando el material válido.
-Una segunda llamada actúa como compositor-crítico. Antes de invocarla, el core renderiza
-el primer plan y produce un informe compacto con ventanas armónicas, notas cromáticas no
-justificadas, apoyos fuera del acorde, sustains inválidos, colisiones verticales, reparaciones
-y ubicaciones exactas. GPT revisa linaje, respiración, interlock kick–bass, causalidad formal
-y también las causas medidas en el MIDI. Si esa revisión falla, la primera respuesta validada
-permanece utilizable. Arquitectura y crítica comparten un deadline total de 210 segundos;
-la arquitectura tiene prioridad y la crítica recibe como máximo 50 segundos del remanente.
+La revisión ya no solicita otra copia monolítica de la canción. La cobertura se comprueba al
+aceptar cada bloque: ids, notas, placements y presencia seccional. Un bloque incompleto se
+vuelve a pedir sólo para los instrumentos ausentes y, ante timeout o JSON inválido, se divide
+en mitades. Blueprint, escritura y recuperación comparten un deadline total de 45 minutos;
+el blueprint tiene un límite propio de ocho minutos y cada bloque uno de cuatro.
 En Windows, `AiComposer` usa WinHTTP nativo con TLS, configuración automática de proxy y
 timeouts por etapa. Un watchdog cierra el request activo desde el botón `CANCEL` o al vencer
 el deadline; en las demás plataformas se usa `WebInputStream::cancel`. La operación es

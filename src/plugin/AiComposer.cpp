@@ -512,6 +512,29 @@ const juce::String performanceBlockSchema = R"json({
   },"required":["block_id","covered_instrument_ids","performance_score"],"additionalProperties":false
 })json";
 
+const juce::String conductorSchema = R"json({
+  "type":"object",
+  "properties":{
+    "maximum_simultaneous_parts":{"type":"integer","minimum":4,"maximum":12},
+    "maximum_arpeggio_note_share":{"type":"number","minimum":0.05,"maximum":0.35},
+    "maximum_arpeggio_active_bar_ratio":{"type":"number","minimum":0.10,"maximum":0.80},
+    "maximum_melodic_leap":{"type":"integer","minimum":3,"maximum":9},
+    "cadence_bars":{"type":"integer","minimum":4,"maximum":32},
+    "decisions":{"type":"array","minItems":1,"maxItems":64,"items":{
+      "type":"object","properties":{
+        "instrument_id":{"type":"string"},
+        "disposition":{"type":"string","enum":["keep","rewrite","retire"]},
+        "priority":{"type":"integer","minimum":0,"maximum":100},
+        "cadence_voice":{"type":"boolean"},
+        "active_section_indices":{"type":"array","items":{"type":"integer"}}
+      },"required":["instrument_id","disposition","priority","cadence_voice","active_section_indices"],
+      "additionalProperties":false
+    }}
+  },
+  "required":["maximum_simultaneous_parts","maximum_arpeggio_note_share","maximum_arpeggio_active_bar_ratio","maximum_melodic_leap","cadence_bars","decisions"],
+  "additionalProperties":false
+})json";
+
 juce::String describeReference(const Pattern* pattern, std::uint8_t lockedLayers) {
     if (pattern == nullptr || pattern->notes.empty() || lockedLayers == 0) return "None.";
     juce::String result;
@@ -570,7 +593,7 @@ HttpResponse performSingleRequest(const wchar_t* method, const juce::String& pat
     }
 
     const auto timeoutMs = std::clamp(static_cast<int>(budget.count()), 1000, 120000);
-    const auto session = WinHttpOpen(L"PULSO/0.55.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    const auto session = WinHttpOpen(L"PULSO/0.56.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) {
         result.nativeError = GetLastError();
@@ -1091,6 +1114,90 @@ std::vector<std::size_t> uncoveredInstruments(const SongPlan& plan,
     return missing;
 }
 
+juce::String conductorBrief(const SongPlan& plan, const PerformanceScore& score) {
+    std::map<std::string, std::size_t> notes;
+    std::map<std::string, std::set<int>> sections;
+    std::map<std::string, std::set<std::string>> ownersByCell;
+    for (const auto& cell : score.cells)
+        for (const auto& note : cell.notes) {
+            ++notes[note.instrumentId];
+            ownersByCell[cell.id].insert(note.instrumentId);
+        }
+    for (const auto& placement : score.placements)
+        if (const auto found = ownersByCell.find(placement.cellId); found != ownersByCell.end())
+            for (const auto& owner : found->second) sections[owner].insert(placement.sectionIndex);
+
+    juce::String brief("SECTIONS:\n");
+    for (std::size_t index = 0; index < plan.sections.size(); ++index) {
+        const auto& section = plan.sections[index];
+        brief << index << ": " << juce::String::fromUTF8(section.name.c_str())
+              << "; function=" << juce::String::fromUTF8(section.function.c_str())
+              << "; energy=" << juce::String(section.energy, 2)
+              << "; tension=" << juce::String(section.tension, 2) << "\n";
+    }
+    brief << "\nAUTHORED PARTS:\n";
+    for (const auto& instrument : plan.instruments) {
+        brief << "- id=" << juce::String::fromUTF8(instrument.id.c_str())
+              << "; voice=" << juce::String::fromUTF8(
+                    voiceDefinition(instrument.sourceVoice).key.data(),
+                    static_cast<int>(voiceDefinition(instrument.sourceVoice).key.size()))
+              << "; role=" << juce::String::fromUTF8(instrument.role.c_str())
+              << "; function=" << juce::String::fromUTF8(instrument.orchestralFunction.c_str())
+              << "; notes_in_source_cells=" << static_cast<int>(notes[instrument.id])
+              << "; placed_sections=";
+        for (const auto section : sections[instrument.id]) brief << section << ",";
+        brief << "\n";
+    }
+    return brief;
+}
+
+bool parseConductorPlan(const juce::String& text, const SongPlan& song,
+                        ConductorPlan& result) {
+    const auto value = juce::JSON::parse(text);
+    const auto* object = value.getDynamicObject();
+    if (object == nullptr) return false;
+    result = {};
+    result.enabled = true;
+    result.authored = true;
+    result.maximumSimultaneousParts = static_cast<std::size_t>(std::clamp(
+        static_cast<int>(object->getProperty("maximum_simultaneous_parts")), 4, 12));
+    result.maximumArpeggioNoteShare = std::clamp(
+        static_cast<double>(object->getProperty("maximum_arpeggio_note_share")), .05, .35);
+    result.maximumArpeggioActiveBarRatio = std::clamp(
+        static_cast<double>(object->getProperty("maximum_arpeggio_active_bar_ratio")), .10, .80);
+    result.maximumMelodicLeap = std::clamp(
+        static_cast<int>(object->getProperty("maximum_melodic_leap")), 3, 9);
+    result.cadenceBars = std::clamp(static_cast<int>(object->getProperty("cadence_bars")), 4, 32);
+    const auto* decisions = object->getProperty("decisions").getArray();
+    if (decisions == nullptr) return false;
+    std::set<std::string> accepted;
+    for (const auto& item : *decisions) {
+        const auto* decision = item.getDynamicObject();
+        if (decision == nullptr) continue;
+        ConductorDecision parsed;
+        parsed.instrumentId = decision->getProperty("instrument_id").toString().trim().toStdString();
+        if (!std::any_of(song.instruments.begin(), song.instruments.end(), [&](const auto& instrument) {
+                return instrument.id == parsed.instrumentId;
+            }) || !accepted.insert(parsed.instrumentId).second) continue;
+        const auto disposition = decision->getProperty("disposition").toString();
+        parsed.disposition = disposition == "retire" ? ConductorDisposition::Retire :
+            disposition == "rewrite" ? ConductorDisposition::Rewrite : ConductorDisposition::Keep;
+        parsed.priority = std::clamp(static_cast<int>(decision->getProperty("priority")), 0, 100);
+        parsed.cadenceVoice = static_cast<bool>(decision->getProperty("cadence_voice"));
+        if (const auto* sections = decision->getProperty("active_section_indices").getArray())
+            for (const auto& section : *sections) {
+                const auto index = static_cast<int>(section);
+                if (index >= 0 && index < static_cast<int>(song.sections.size()))
+                    parsed.activeSectionIndices.push_back(index);
+            }
+        std::sort(parsed.activeSectionIndices.begin(), parsed.activeSectionIndices.end());
+        parsed.activeSectionIndices.erase(std::unique(parsed.activeSectionIndices.begin(),
+            parsed.activeSectionIndices.end()), parsed.activeSectionIndices.end());
+        result.decisions.push_back(std::move(parsed));
+    }
+    return !result.decisions.empty();
+}
+
 juce::String AiComposer::defaultModel() { return model; }
 
 juce::String AiComposer::defaultReasoningEffort() { return reasoningEffort; }
@@ -1107,7 +1214,8 @@ bool AiComposer::incrementalSchemasAreValid() {
     const auto macro = juce::JSON::parse(macroBlueprintSchema());
     const auto cast = juce::JSON::parse(castBlueprintSchema());
     const auto performance = juce::JSON::parse(performanceBlockSchema);
-    return !macro.isVoid() && !cast.isVoid() && !performance.isVoid() &&
+    const auto conductor = juce::JSON::parse(conductorSchema);
+    return !macro.isVoid() && !cast.isVoid() && !performance.isVoid() && !conductor.isVoid() &&
         !macroBlueprintSchema().contains("performance_score") &&
         !macroBlueprintSchema().contains("instruments") &&
         performanceBlockSchema.contains("covered_instrument_ids");
@@ -1950,6 +2058,51 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         if (!stillMissing.empty() || result.performanceScore.empty() || result.instruments.empty()) {
             error = "Incremental GPT score remained incomplete after final local retirement";
             return {};
+        }
+    }
+
+    // A final Sol request does not compose more notes. It listens to the completed
+    // authored score as a conductor: selecting entrances, hierarchy, ostinato life
+    // cycle and the voices that must settle the cadence. Failure is non-destructive;
+    // the deterministic conductor defaults still perform a safe subtractive edit.
+    result.conductor.enabled = true;
+    result.conductor.maximumSimultaneousParts = std::clamp<std::size_t>(
+        ArrangementDensityPlanner::targetsFor(result).maximumSimultaneousParts, 4, 9);
+    if (progress) progress({AiSongStage::Conductor, completedBlocks, blocks.size(), 1,
+                            "Sol editorial pass: hierarchy, breath and final cadence"});
+    const auto conductorPrompt = juce::String(
+        "You are the final musical conductor for PULSO. Do not write notes and do not add instruments. "
+        "Edit the hierarchy of this already-authored score so it tells one human story rather than sounding "
+        "procedural or constantly busy. Return exactly one decision for every instrument id. Across each section "
+        "keep at most two foreground speakers, rotate support colors, create meaningful absences, and never use "
+        "track count as a reason for tutti. Arpeggiators must have a lifecycle (entrance, withdrawal, transformed "
+        "return) and must not dominate the note count. Preserve at least two complementary harmonic-floor voices "
+        "where harmony is intended. Mark the protagonist and lowest harmonic foundation as cadence voices, and "
+        "reserve the final 8-16 bars for a clear repayment of the declared harmonic debt. Set rewrite for lines "
+        "whose role needs melodic revoicing, retire only truly redundant color lanes, and give protagonists and "
+        "foundations the highest priorities. active_section_indices is the exact set in which a part may speak. "
+        "Original direction: ") + direction + "\n\n" + conductorBrief(result, result.performanceScore);
+    const auto conductorBody = juce::String("{\"model\":\"") + model +
+        "\",\"background\":true,\"reasoning\":{\"effort\":\"" + reasoningEffort +
+        "\"},\"max_output_tokens\":8000,\"prompt_cache_key\":\"pulso-conductor-v1\",\"input\":" +
+        juce::JSON::toString(juce::var(conductorPrompt)) +
+        ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_conductor\","
+        "\"strict\":true,\"schema\":" + conductorSchema + "}}}";
+    const auto conductorRemaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+        overallDeadline - std::chrono::steady_clock::now());
+    if (!token.stop_requested() && conductorRemaining >= std::chrono::seconds(30)) {
+        const auto conductorHttp = performRequest(conductorBody, apiKey, token,
+            std::min(conductorRemaining, std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             std::chrono::minutes(2))));
+        const auto conductorText = extractOutputText(juce::JSON::parse(conductorHttp.body));
+        ConductorPlan authoredConductor;
+        if (conductorHttp.connected && conductorHttp.status >= 200 && conductorHttp.status < 300 &&
+            !conductorHttp.cancelled && !conductorHttp.timedOut &&
+            parseConductorPlan(conductorText, result, authoredConductor)) {
+            result.conductor = std::move(authoredConductor);
+        } else if (progress) {
+            progress({AiSongStage::Recovery, completedBlocks, blocks.size(), 1,
+                      "conductor response unavailable; applying safe subtractive editorial defaults"});
         }
     }
     error.clear();

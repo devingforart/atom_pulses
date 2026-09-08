@@ -2475,6 +2475,30 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     const auto terminalCompaction = TrackViability::compactIncomplete(song, plan);
     viabilityMerged += terminalCompaction.mergedTracks;
     viabilityPruned += terminalCompaction.prunedTracks;
+
+    // Construction is complete. The final conductor is intentionally placed after
+    // every additive fabric/viability pass so its rests cannot be refilled by a later
+    // continuity heuristic. It is subtractive except for pitch-class-preserving
+    // revoicing and therefore edits the exact MIDI that Live will receive.
+    const auto conductorReport = NarrativeConductor::enforce(song, plan);
+    publishedTonalReport = repairTonalContract(
+        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
+        plan.harmonicLanguage.tonalPolicy);
+    orchestrationReport.registerRepairs += OrchestrationScore::enforcePublishedRegisters(song);
+    [[maybe_unused]] const auto conductorMetric = ProductionPolish::enforceMetricContract(song);
+    [[maybe_unused]] const auto conductorOverlap = repairSamePitchOverlaps(song);
+    const auto conductorVertical = VerticalHarmonyGate::enforce(song);
+    verticalHarmony.collisionsBefore += conductorVertical.collisionsBefore;
+    verticalHarmony.collisionsAfter = conductorVertical.collisionsAfter;
+    verticalHarmony.supportNotesDucked += conductorVertical.supportNotesDucked;
+    verticalHarmony.continuationFragmentsCreated += conductorVertical.continuationFragmentsCreated;
+    [[maybe_unused]] const auto conductorDuration = enforceAudibleDurations(song, harmonicWindows);
+    [[maybe_unused]] const auto conductorFinalOverlap = repairSamePitchOverlaps(song);
+    enforceElectronicReleaseCeilings(song, plan);
+    if (noPercussionIntent) stripPublishedPercussion(song);
+    PerformanceExpression::apply(song, plan, false);
+    OrchestrationScore::applyPartExpression(song, plan, &orchestrationReport);
+
     auto publishedTrackViability = TrackViability::audit(song, plan);
     publishedTrackViability.populatedBefore = trackViability.populatedBefore;
     publishedTrackViability.meaningfulBefore = trackViability.meaningfulBefore;
@@ -2591,6 +2615,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         renderReport->electronicProduction = electronicReport;
         renderReport->musicalIdentity = musicalIdentity;
         renderReport->narrative = narrativeReport;
+        renderReport->conductor = conductorReport;
         renderReport->verticalHarmony = verticalHarmony;
         renderReport->creativeAuthority = creativeAuthority;
         renderReport->electronicFabric = electronicFabric;

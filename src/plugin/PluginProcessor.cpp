@@ -1434,6 +1434,10 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                                         juce::String(static_cast<int>(update.completed + 1)) + "/" +
                                         juce::String(static_cast<int>(total));
                                 progressMetadata->description = update.detail;
+                            } else if (update.stage == AiSongStage::Conductor) {
+                                generationProgress.store(0.45f, std::memory_order_relaxed);
+                                progressMetadata->status = "SOL MAX · CONDUCTING THE FINAL SCORE";
+                                progressMetadata->description = update.detail;
                             } else {
                                 generationProgress.store(0.47f, std::memory_order_relaxed);
                                 progressMetadata->status = "SOL MAX · ASSEMBLING SCORE";

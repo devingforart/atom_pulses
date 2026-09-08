@@ -1,5 +1,16 @@
 # Probar PULSO en Ableton Live
 
+## Contrato 0.56.0
+
+La generación muestra `SOL MAX · CONDUCTING THE FINAL SCORE` después de los bloques. Esta
+fase no crea más pistas: decide qué instrumento habla en cada sección. El MIDI que recibe
+Live ya contiene los silencios editoriales, el ciclo de vida de los arpegios, las líneas
+melódicas revoceadas y la cadencia conjunta de fundamento y protagonista.
+
+Una composición con muchas pistas puede conservar un reparto amplio sin hacerlo sonar en
+tutti. El límite se aplica a partes simultáneas reales, no al número total de pistas del set.
+Así, timbres y diálogos pueden entrar y salir durante la historia sin llenar cada compás.
+
 ## Contrato 0.55.0
 
 Durante una canción larga, el estado de PULSO distingue `SOL MAX · BLUEPRINT`,

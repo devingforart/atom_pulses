@@ -10,6 +10,7 @@
 #include "MusicalCritic.h"
 #include "MusicalIdentityGate.h"
 #include "NarrativeScore.h"
+#include "NarrativeConductor.h"
 #include "OrchestrationScore.h"
 #include "PerformanceExpression.h"
 #include "PerformanceScore.h"
@@ -104,6 +105,30 @@ struct NarrativeSpine {
     std::vector<NarrativeAct> acts;
 };
 
+enum class ConductorDisposition { Keep, Rewrite, Retire };
+
+struct ConductorDecision {
+    std::string instrumentId;
+    ConductorDisposition disposition{ConductorDisposition::Keep};
+    int priority{50};
+    bool cadenceVoice{};
+    std::vector<int> activeSectionIndices;
+};
+
+// The composer writes material; the conductor decides how much of it may speak at
+// once. Defaults are deliberately conservative and remain useful when the final AI
+// editorial request is unavailable.
+struct ConductorPlan {
+    bool enabled{};
+    bool authored{};
+    std::size_t maximumSimultaneousParts{8};
+    double maximumArpeggioNoteShare{0.16};
+    double maximumArpeggioActiveBarRatio{0.45};
+    int maximumMelodicLeap{5};
+    int cadenceBars{16};
+    std::vector<ConductorDecision> decisions;
+};
+
 struct SongPlan {
     std::string title{"Untitled Song"};
     std::string key{"C minor"};
@@ -128,6 +153,7 @@ struct SongPlan {
     std::vector<InstrumentAssignment> instruments;
     ElectronicSoundscapePlan soundscape;
     NarrativeSpine narrativeSpine;
+    ConductorPlan conductor;
     // Explicit user constraint propagated independently of genre classification. A
     // percussion-free electronic piece must not be graded as a failed club track.
     bool percussionFreeIntent{};
@@ -162,6 +188,7 @@ struct CompositionRenderReport {
     ElectronicProductionReport electronicProduction;
     MusicalIdentityReport musicalIdentity;
     NarrativeScoreReport narrative;
+    NarrativeConductorReport conductor;
     VerticalHarmonyReport verticalHarmony;
     CreativeAuthorityReport creativeAuthority;
     ElectronicFabricReport electronicFabric;

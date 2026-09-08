@@ -5,6 +5,7 @@
 #include "core/MusicalCritic.h"
 #include "core/MusicalIdentityGate.h"
 #include "core/NarrativeScore.h"
+#include "core/NarrativeConductor.h"
 #include "core/CompositionModel.h"
 #include "core/PhraseDirector.h"
 #include "core/PerformanceExpression.h"
@@ -2127,4 +2128,63 @@ void runGeneratorTests() {
     require(compactPlan.totalBars == 8 && !compactPlan.sections.empty() &&
                 compactPlan.sections.back().startBar + compactPlan.sections.back().bars == 8,
             "Even the shortest slow song must form a valid contiguous dramatic arc");
+
+    SongPlan conductedPlan;
+    conductedPlan.totalBars = 32;
+    conductedPlan.beatsPerBar = 4.0;
+    conductedPlan.rootPitchClass = 0;
+    conductedPlan.scale = ScaleKind::Minor;
+    conductedPlan.narrativeSpine.protagonistInstrumentId = "lead";
+    conductedPlan.conductor.enabled = true;
+    conductedPlan.conductor.maximumSimultaneousParts = 6;
+    conductedPlan.conductor.maximumArpeggioNoteShare = .16;
+    conductedPlan.conductor.maximumArpeggioActiveBarRatio = .40;
+    conductedPlan.conductor.maximumMelodicLeap = 5;
+    conductedPlan.conductor.cadenceBars = 8;
+    for (auto index = 0; index < 12; ++index) {
+        InstrumentAssignment assignment;
+        assignment.id = index == 0 ? "bass" : index == 1 ? "floor" :
+            index == 2 ? "lead" : index == 3 ? "arp" : "colour_" + std::to_string(index);
+        assignment.instrumentId = index == 0 ? "sub_synth" : "analog_pad";
+        assignment.name = assignment.id;
+        assignment.sourceVoice = index == 0 ? VoiceId::SubBass :
+            index == 2 ? VoiceId::Lead : index == 3 ? VoiceId::HarmonicPulse :
+            VoiceId::HarmonicUpper;
+        assignment.role = index == 3 ? "hypnotic arpeggio" :
+            index < 2 ? "harmonic foundation" : "independent colour";
+        assignment.orchestralFunction = index < 2 ? "foundation" :
+            index == 3 ? "arpeggio" : "color";
+        assignment.minimumPitch = index == 0 ? 24 : 48;
+        assignment.maximumPitch = index == 0 ? 48 : 88;
+        conductedPlan.instruments.push_back(assignment);
+    }
+    Pattern overcrowded;
+    overcrowded.lengthBeats = conductedPlan.totalBars * conductedPlan.beatsPerBar;
+    for (std::size_t index = 0; index < conductedPlan.instruments.size(); ++index) {
+        const auto& assignment = conductedPlan.instruments[index];
+        overcrowded.parts.push_back({static_cast<std::uint16_t>(index + 1), assignment.instrumentId,
+            assignment.name, assignment.sourceVoice,
+            index == 2 ? ScoreDepartment::Melody : ScoreDepartment::Harmony,
+            assignment.role, assignment.minimumPitch, assignment.maximumPitch});
+    }
+    for (auto bar = 0; bar < conductedPlan.totalBars; ++bar) {
+        for (auto part = 1; part <= 12; ++part) {
+            const auto pitch = part == 1 ? 43 : part == 3 ? (bar % 2 == 0 ? 60 : 79) : 55 + part;
+            overcrowded.notes.push_back({bar * 4.0, 3.5, pitch, 76, 3,
+                conductedPlan.instruments[part - 1].sourceVoice,
+                static_cast<std::uint16_t>(part), true, NoteOrigin::AiAuthored});
+        }
+        for (auto step = 1; step < 8; ++step)
+            overcrowded.notes.push_back({bar * 4.0 + step * .5, .2, 60 + (step % 4) * 3,
+                68, 3, VoiceId::HarmonicPulse, 4, true, NoteOrigin::PlanDerived});
+    }
+    const auto conductorReport = NarrativeConductor::enforce(overcrowded, conductedPlan);
+    const auto arpNotes = std::count_if(overcrowded.notes.begin(), overcrowded.notes.end(),
+        [](const auto& note) { return note.partId == 4; });
+    const auto arpShare = static_cast<double>(arpNotes) /
+        std::max<std::size_t>(1, overcrowded.notes.size());
+    require(conductorReport.peakPartsBefore == 12 && conductorReport.peakPartsAfter <= 6 &&
+                conductorReport.melodicLeapsRevoiced > 0 &&
+                conductorReport.cadenceResolved && arpShare <= .17,
+            "The publication conductor must create hierarchy, arp breath, singable lines and tonic closure");
 }

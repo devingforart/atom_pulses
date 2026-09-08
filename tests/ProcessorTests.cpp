@@ -268,8 +268,10 @@ int main(int argc, char** argv) {
                     return update.stage == pulso::plugin::AiSongStage::PerformanceBlock;
                 }) && std::any_of(liveProgress.begin(), liveProgress.end(), [](const auto& update) {
                     return update.stage == pulso::plugin::AiSongStage::Validation;
+                }) && std::any_of(liveProgress.begin(), liveProgress.end(), [](const auto& update) {
+                    return update.stage == pulso::plugin::AiSongStage::Conductor;
                 }),
-                "Live incremental generation must expose blueprint, block and validation progress");
+                "Live incremental generation must expose blueprint, block, validation and conductor progress");
         require(plan.sections.size() >= 3 && plan.voices.size() >= 7 && plan.instruments.size() >= 10 &&
                     plan.totalBars == 30 &&
                     (plan.rhythmMotifs.empty() || plan.rhythmMotifs.size() >= 2) &&

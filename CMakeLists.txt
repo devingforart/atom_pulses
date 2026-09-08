@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.55.0 LANGUAGES C CXX)
+project(Pulso VERSION 0.56.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -38,6 +38,8 @@ add_library(pulso_core STATIC
     src/core/MusicalIdentityGate.h
     src/core/NarrativeScore.cpp
     src/core/NarrativeScore.h
+    src/core/NarrativeConductor.cpp
+    src/core/NarrativeConductor.h
     src/core/Orchestration.cpp
     src/core/Orchestration.h
     src/core/OrchestrationScore.cpp

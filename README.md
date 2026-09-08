@@ -1,5 +1,19 @@
 # PULSO
 
+### 0.56.0 — dirección musical AI y publicación con respiración
+
+Después de escribir todos los bloques instrumentales, `gpt-5.6-sol` ejecuta una fase de
+conducción final con razonamiento `max`. No agrega notas: decide jerarquía, secciones activas,
+voces de cadencia y qué líneas deben retirarse o reescribirse. Si esa llamada no está
+disponible, el mismo contrato conserva valores editoriales seguros y la canción no se pierde.
+
+El renderer aplica esas decisiones sobre el MIDI exacto después de todos los procesos
+aditivos. Limita la simultaneidad real de instrumentos, rota colores secundarios, da a los
+arpegios entrada, ausencia y regreso, corrige saltos melódicos que destruyen el fraseo y hace
+que el bajo y el protagonista terminen pagando la deuda tonal. Luego vuelve a validar
+tonalidad, registro, métrica, colisiones, duraciones, expresión, viabilidad, densidad y
+narrativa antes de publicar.
+
 ### 0.55.0 — composición Sol Max incremental
 
 La canción larga ya no depende de una respuesta monolítica. `gpt-5.6-sol` con razonamiento

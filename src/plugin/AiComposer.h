@@ -20,6 +20,7 @@ struct AiComposition {
 enum class AiSongStage : std::uint8_t {
     Blueprint = 0,
     PerformanceBlock,
+    Conductor,
     Recovery,
     Validation
 };

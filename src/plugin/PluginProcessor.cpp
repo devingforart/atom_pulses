@@ -549,6 +549,13 @@ void PulsoAudioProcessor::setTargetSongDurationSeconds(int seconds) noexcept {
 
 void PulsoAudioProcessor::requestGenerateIdea() noexcept {
     if (generationInProgress.exchange(true, std::memory_order_acq_rel)) return;
+    // COMPOSE SONG is the only exposed creative action in the streamlined UI.
+    // Never let legacy, now-invisible controls influence a new explicit request.
+    lockedLayers.store(0, std::memory_order_relaxed);
+    liveDeploymentModeValue.store(LiveDeploymentMode::FullOrchestration,
+                                  std::memory_order_release);
+    orchestrationIntentValue.store(OrchestrationIntent::Adaptive,
+                                   std::memory_order_release);
     generationPreviousSeed.store(compositionSeed.load(std::memory_order_relaxed), std::memory_order_relaxed);
     generationPreviousVariation.store(variationIndex.load(std::memory_order_relaxed), std::memory_order_relaxed);
     generationCancelRequested.store(false, std::memory_order_release);
@@ -1110,7 +1117,7 @@ PulsoAudioProcessor::GenerationRequest PulsoAudioProcessor::makeGenerationReques
     request.action = static_cast<std::uint8_t>(pendingIdeaAction.load(std::memory_order_acquire));
     request.lockedLayers = lockedLayers.load(std::memory_order_relaxed);
     request.targetSongSeconds = songDurationSeconds.load(std::memory_order_relaxed);
-    request.orchestrationIntent = static_cast<std::uint8_t>(orchestrationIntent());
+    request.orchestrationIntent = static_cast<std::uint8_t>(OrchestrationIntent::Adaptive);
     return request;
 }
 
@@ -2050,8 +2057,8 @@ void PulsoAudioProcessor::processBlock(juce::AudioBuffer<float>& audio, juce::Mi
     if (playbackActive)
         schedulePattern(activePattern, transport, audio.getNumSamples(), generatedMidi, retrigger);
 
-    const auto thruEnabled = parameters.getRawParameterValue(ids::thru)->load() > 0.5f;
     midi.clear();
+    const auto thruEnabled = parameters.getRawParameterValue(ids::thru)->load() > 0.5f;
     if (thruEnabled) midi.addEvents(thruMidi, 0, -1, 0);
     midi.addEvents(generatedMidi, 0, -1, 0);
 
@@ -2333,14 +2340,10 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
             songDurationSeconds.store(std::clamp(static_cast<int>(
                                           state.getProperty("songDurationSeconds", 0)), 0, 1800),
                                       std::memory_order_relaxed);
-            liveDeploymentModeValue.store(
-                static_cast<int>(state.getProperty("liveDeploymentMode", 0)) == 1
-                    ? LiveDeploymentMode::QuickThreeStem
-                    : LiveDeploymentMode::FullOrchestration,
-                std::memory_order_release);
-            orchestrationIntentValue.store(static_cast<OrchestrationIntent>(std::clamp(
-                static_cast<int>(state.getProperty("orchestrationIntent", 0)), 0, 3)),
-                std::memory_order_release);
+            liveDeploymentModeValue.store(LiveDeploymentMode::FullOrchestration,
+                                          std::memory_order_release);
+            orchestrationIntentValue.store(OrchestrationIntent::Adaptive,
+                                            std::memory_order_release);
             {
                 const std::scoped_lock lock(creativeDirectionMutex);
                 creativeDirection = state.getProperty("creativeDirection", {}).toString().substring(0, 600);

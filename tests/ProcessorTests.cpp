@@ -1301,7 +1301,14 @@ int main(int argc, char** argv) {
             ++tooltipCount;
         }
     }
-    require(tooltipCount >= 19, "The streamlined visible interface must remain fully covered by tooltips");
+    require(tooltipCount >= 10, "Every element in the simplified workflow must retain contextual help");
+    require(editor->findChildWithID("language-selector") != nullptr &&
+                editor->findChildWithID("prompt-input") != nullptr &&
+                editor->findChildWithID("duration-input") != nullptr &&
+                editor->findChildWithID("compose-song") != nullptr &&
+                editor->findChildWithID("midi-vision") != nullptr &&
+                editor->findChildWithID("create-in-live") != nullptr,
+            "The editor must expose the complete six-step composition workflow");
     editor.reset();
 
     processor.parameters.getParameter("previewWorld")->setValueNotifyingHost(1.0f);
@@ -1326,8 +1333,8 @@ int main(int argc, char** argv) {
                 restored.currentVariationIndex() == processor.currentVariationIndex(),
             "Composition DNA and lineage must survive a DAW project reload");
     require(restored.liveDeploymentMode() ==
-                pulso::plugin::PulsoAudioProcessor::LiveDeploymentMode::QuickThreeStem,
-            "The explicit Live deployment mode must survive a DAW project reload");
+                pulso::plugin::PulsoAudioProcessor::LiveDeploymentMode::FullOrchestration,
+            "Legacy project state must reopen in the simplified full-orchestration workflow");
     require(restored.isVoiceSolo(pulso::VoiceId::HarmonicPulse) &&
                 restored.isVoiceMuted(pulso::VoiceId::ClosedHats) &&
                 !restored.isVoiceAudible(pulso::VoiceId::ClosedHats),

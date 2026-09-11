@@ -1,5 +1,12 @@
 # PULSO
 
+### 0.55.1 — flujo creativo esencial
+
+La interfaz principal queda reducida a idioma, prompt, duración, composición,
+visualización MIDI y creación en Live. La exportación usa siempre orquestación
+completa; los bloqueos, la audición interna y los modos alternativos heredados ya
+no pueden modificar silenciosamente el resultado.
+
 ### 0.55.0 — composición Sol Max incremental
 
 La canción larga ya no depende de una respuesta monolítica. `gpt-5.6-sol` con razonamiento

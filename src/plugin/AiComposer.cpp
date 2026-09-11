@@ -570,7 +570,7 @@ HttpResponse performSingleRequest(const wchar_t* method, const juce::String& pat
     }
 
     const auto timeoutMs = std::clamp(static_cast<int>(budget.count()), 1000, 120000);
-    const auto session = WinHttpOpen(L"PULSO/0.55.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    const auto session = WinHttpOpen(L"PULSO/0.55.1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) {
         result.nativeError = GetLastError();

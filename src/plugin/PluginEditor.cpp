@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace pulso::plugin {
@@ -40,15 +41,8 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     title.setText("PULSO", juce::dontSendNotification);
     title.setFont(juce::FontOptions(30.0f, juce::Font::bold));
     title.setColour(juce::Label::textColourId, colours::accent);
-    subtitle.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-    subtitle.setColour(juce::Label::textColourId, colours::muted);
     status.setJustificationType(juce::Justification::centredRight);
     status.setColour(juce::Label::textColourId, colours::muted);
-    aiBadge.setJustificationType(juce::Justification::centred);
-    aiBadge.setFont(juce::FontOptions(10.5f, juce::Font::bold));
-    aiBadge.setColour(juce::Label::textColourId, colours::background);
-    aiBadge.setColour(juce::Label::backgroundColourId,
-                      processor.aiAvailable() ? colours::accent : colours::accentHot);
 
     promptLabel.setFont(juce::FontOptions(10.5f, juce::Font::bold));
     promptLabel.setColour(juce::Label::textColourId, colours::muted);
@@ -74,84 +68,42 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     };
     processor.setTargetSongDurationSeconds(initialDuration);
 
-    ideaTitle.setFont(juce::FontOptions(20.0f, juce::Font::bold));
-    ideaTitle.setColour(juce::Label::textColourId, colours::text);
-    ideaDescription.setFont(juce::FontOptions(12.0f));
-    ideaDescription.setColour(juce::Label::textColourId, colours::muted);
-
     generateButton.onClick = [this] { processor.requestGenerateIdea(); };
-    nextButton.onClick = [this] { processor.requestNextIdea(); };
-    regenerateButton.onClick = [this] { processor.requestRegenerateUnlocked(); };
-    undoButton.onClick = [this] { processor.requestUndo(); };
     compositionProgress.onCancel = [this] { processor.cancelGeneration(); };
 
-    soundWorld.addItemList(localizedSoundWorlds(UiLanguage::English,
-                                                processor.currentPreviewWorldName()), 1);
-    soundWorld.setJustificationType(juce::Justification::centred);
-    orchestrationIntent.addItem("AUTO DIRECTOR", 1);
-    orchestrationIntent.addItem("CLUB ELECTRONIC", 2);
-    orchestrationIntent.addItem("DEEP HYBRID", 3);
-    orchestrationIntent.addItem("SYMPHONIC", 4);
-    const auto storedIntent = processor.orchestrationIntent();
-    orchestrationIntent.setSelectedId(
-        storedIntent == PulsoAudioProcessor::OrchestrationIntent::ClubElectronic ? 2
-        : storedIntent == PulsoAudioProcessor::OrchestrationIntent::DeepProduction ? 3
-        : storedIntent == PulsoAudioProcessor::OrchestrationIntent::Symphonic ? 4 : 1,
-        juce::dontSendNotification);
-    orchestrationIntent.setJustificationType(juce::Justification::centred);
-    orchestrationIntent.onChange = [this] {
-        const auto selected = orchestrationIntent.getSelectedId();
-        processor.setOrchestrationIntent(selected == 2
-            ? PulsoAudioProcessor::OrchestrationIntent::ClubElectronic
-            : selected == 3 ? PulsoAudioProcessor::OrchestrationIntent::DeepProduction
-            : selected == 4 ? PulsoAudioProcessor::OrchestrationIntent::Symphonic
-                            : PulsoAudioProcessor::OrchestrationIntent::Adaptive);
-    };
     languageSelector.addItemList({"ENGLISH", juce::String::fromUTF8("ESPA\xC3\x91OL")}, 1);
     languageSelector.setJustificationType(juce::Justification::centred);
 
-    soundStageLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-    soundStageLabel.setColour(juce::Label::textColourId, colours::accent);
-    soundStageStatus.setJustificationType(juce::Justification::centredRight);
-    soundStageStatus.setColour(juce::Label::textColourId, colours::muted);
-    nativeInventory.setJustificationType(juce::Justification::centred);
-    nativeInventory.setColour(juce::Label::textColourId, colours::muted);
-    liveDeploymentMode.addItem("FULL ORCHESTRATION", 1);
-    liveDeploymentMode.addItem("QUICK 3-STEM", 2);
-    liveDeploymentMode.setSelectedId(
-        processor.liveDeploymentMode() == PulsoAudioProcessor::LiveDeploymentMode::QuickThreeStem ? 2 : 1,
-        juce::dontSendNotification);
-    liveDeploymentMode.setJustificationType(juce::Justification::centred);
-    liveDeploymentMode.onChange = [this] {
-        processor.setLiveDeploymentMode(liveDeploymentMode.getSelectedId() == 2
-            ? PulsoAudioProcessor::LiveDeploymentMode::QuickThreeStem
-            : PulsoAudioProcessor::LiveDeploymentMode::FullOrchestration);
-    };
+    // The reduced workflow has no hidden creative switches. Old projects may still
+    // carry these values, so opening the editor explicitly restores the single,
+    // predictable orchestration path exposed by this UI.
+    processor.setLiveDeploymentMode(PulsoAudioProcessor::LiveDeploymentMode::FullOrchestration);
+    processor.setOrchestrationIntent(PulsoAudioProcessor::OrchestrationIntent::Adaptive);
+    for (const auto layer : {PulsoAudioProcessor::Layer::Harmony,
+                             PulsoAudioProcessor::Layer::Melody,
+                             PulsoAudioProcessor::Layer::Bass,
+                             PulsoAudioProcessor::Layer::Drums})
+        processor.setLayerLocked(layer, false);
+
     deployLiveButton.onClick = [this] {
-        processor.deployCurrentSongToLive(
-            processor.liveDeploymentMode() == PulsoAudioProcessor::LiveDeploymentMode::QuickThreeStem);
+        processor.deployCurrentSongToLive(false);
     };
 
-    configureLock(lockButtons[0], PulsoAudioProcessor::Layer::Harmony);
-    configureLock(lockButtons[1], PulsoAudioProcessor::Layer::Melody);
-    configureLock(lockButtons[2], PulsoAudioProcessor::Layer::Bass);
-    configureLock(lockButtons[3], PulsoAudioProcessor::Layer::Drums);
+    languageSelector.setComponentID("language-selector");
+    prompt.setComponentID("prompt-input");
+    duration.setComponentID("duration-input");
+    generateButton.setComponentID("compose-song");
+    patternView.setComponentID("midi-vision");
+    deployLiveButton.setComponentID("create-in-live");
 
-    for (auto* component : std::array<juce::Component*, 30>{
-             &title, &subtitle, &status, &aiBadge, &promptLabel, &durationLabel, &prompt, &duration,
-             &ideaTitle, &ideaDescription, &generateButton, &nextButton, &regenerateButton, &undoButton,
-             &previewButton, &performanceButton, &soundWorld, &orchestrationIntent, &languageSelector, &thruButton,
-             &lockButtons[0], &lockButtons[1], &lockButtons[2], &lockButtons[3], &patternView,
-             &soundStageLabel, &soundStageStatus, &nativeInventory, &liveDeploymentMode, &deployLiveButton})
+    for (auto* component : std::array<juce::Component*, 10>{
+             &title, &status, &promptLabel, &durationLabel, &prompt, &duration,
+             &generateButton, &languageSelector, &patternView, &deployLiveButton})
         addAndMakeVisible(component);
 
     addChildComponent(compositionProgress);
 
-    previewAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "preview", previewButton);
-    performanceAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "performance", performanceButton);
-    soundWorldAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "previewWorld", soundWorld);
     languageAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "language", languageSelector);
-    thruAttachment = std::make_unique<ButtonAttachment>(processor.parameters, "thru", thruButton);
     languageSelector.onChange = [safe = juce::Component::SafePointer<PulsoAudioProcessorEditor>(this)] {
         juce::MessageManager::callAsync([safe] {
             if (safe != nullptr) safe->applyTranslations();
@@ -163,91 +115,30 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
 
 PulsoAudioProcessorEditor::~PulsoAudioProcessorEditor() { setLookAndFeel(nullptr); }
 
-void PulsoAudioProcessorEditor::configureLock(juce::ToggleButton& button,
-                                               PulsoAudioProcessor::Layer layer) {
-    button.setToggleState(processor.isLayerLocked(layer), juce::dontSendNotification);
-    button.onClick = [this, &button, layer] {
-        processor.setLayerLocked(layer, button.getToggleState());
-    };
-}
-
 void PulsoAudioProcessorEditor::applyTranslations() {
     const auto language = processor.uiLanguage();
     displayedLanguage = language;
-    subtitle.setText(tr(language, TextId::Subtitle) + " " + bullet() + " v" +
-                     JucePlugin_VersionString, juce::dontSendNotification);
     promptLabel.setText(tr(language, TextId::PromptLabel), juce::dontSendNotification);
     durationLabel.setText(tr(language, TextId::DurationLabel), juce::dontSendNotification);
     prompt.setTextToShowWhenEmpty(tr(language, TextId::PromptPlaceholder), colours::muted);
     generateButton.setButtonText(tr(language, processor.targetSongDurationSeconds() > 0
         ? TextId::ComposeSong : TextId::GenerateIdea));
-    nextButton.setButtonText(tr(language, TextId::NextIdea));
-    regenerateButton.setButtonText(tr(language, TextId::RegenerateUnlocked));
-    undoButton.setButtonText(tr(language, TextId::Undo));
-    previewButton.setButtonText(tr(language, TextId::PreviewAudio));
-    performanceButton.setButtonText(tr(language, TextId::HumanPerformance));
-    thruButton.setButtonText(tr(language, TextId::MidiThru));
-    soundStageLabel.setText(language == UiLanguage::Spanish ? "DIRECTOR DE SONIDO LIVE" :
-                            "LIVE SOUND DIRECTOR", juce::dontSendNotification);
     deployLiveButton.setButtonText(language == UiLanguage::Spanish ? "CREAR EN LIVE" : "CREATE IN LIVE");
 
-    constexpr std::array lockNames{TextId::LockHarmony, TextId::LockMelodic,
-                                   TextId::LockBass, TextId::LockRhythm};
-    constexpr std::array lockTips{TextId::LockHarmonyTip, TextId::LockMelodicTip,
-                                  TextId::LockBassTip, TextId::LockRhythmTip};
-    for (std::size_t index = 0; index < lockButtons.size(); ++index) {
-        lockButtons[index].setButtonText(tr(language, lockNames[index]));
-        lockButtons[index].setTooltip(tr(language, lockTips[index]));
-    }
-
     generateButton.setTooltip(tr(language, TextId::GenerateTip));
-    nextButton.setTooltip(tr(language, TextId::NextTip));
-    regenerateButton.setTooltip(tr(language, TextId::RegenerateTip));
-    undoButton.setTooltip(tr(language, TextId::UndoTip));
-    previewButton.setTooltip(tr(language, TextId::PreviewTip));
-    performanceButton.setTooltip(tr(language, TextId::PerformanceTip));
-    soundWorld.setTooltip(tr(language, TextId::SoundWorldTip));
-    orchestrationIntent.changeItemText(1, language == UiLanguage::Spanish ? "DIRECTOR AUTO" : "AUTO DIRECTOR");
-    orchestrationIntent.changeItemText(2, language == UiLanguage::Spanish
-        ? juce::String::fromUTF8("ELECTR\xC3\x93NICA DE CLUB") : "CLUB ELECTRONIC");
-    orchestrationIntent.changeItemText(3, language == UiLanguage::Spanish
-        ? juce::String::fromUTF8("H\xC3\x8D" "BRIDO PROFUNDO") : "DEEP HYBRID");
-    orchestrationIntent.changeItemText(4, language == UiLanguage::Spanish
-        ? juce::String::fromUTF8("SINF\xC3\x93NICO") : "SYMPHONIC");
-    orchestrationIntent.setTooltip(language == UiLanguage::Spanish
-        ? juce::String::fromUTF8("AUTO infiere el lenguaje de producci\xC3\xB3n. ELECTR\xC3\x93NICA DE CLUB prioriza groove, relaci\xC3\xB3n kick-bajo, hooks, automatizaci\xC3\xB3n y energ\xC3\xAD" "a para pista. H\xC3\x8D" "BRIDO PROFUNDO combina familias electr\xC3\xB3nicas y ac\xC3\xBAsticas. SINF\xC3\x93NICO activa el pensamiento orquestal.")
-        : "AUTO infers the production language. CLUB ELECTRONIC prioritizes groove, kick-bass interlock, hooks, automation and dance-floor energy. DEEP HYBRID combines electronic and acoustic families. SYMPHONIC enables orchestral thinking.");
-    thruButton.setTooltip(tr(language, TextId::ThruTip));
     prompt.setTooltip(tr(language, TextId::PromptTip));
     promptLabel.setTooltip(prompt.getTooltip());
     duration.setTooltip(tr(language, TextId::DurationTip));
     durationLabel.setTooltip(duration.getTooltip());
     title.setTooltip(tr(language, TextId::TitleTip));
-    subtitle.setTooltip(tr(language, TextId::SubtitleTip));
     status.setTooltip(tr(language, TextId::StatusTip));
-    aiBadge.setTooltip(tr(language, TextId::AiTip));
-    ideaTitle.setTooltip(tr(language, TextId::IdeaTitleTip));
-    ideaDescription.setTooltip(tr(language, TextId::IdeaDescriptionTip));
     languageSelector.setTooltip(tr(language, TextId::LanguageTip));
-    soundStageLabel.setTooltip(tr(language, TextId::SoundStageTip));
-    soundStageStatus.setTooltip(tr(language, TextId::SoundStageTip));
-    liveDeploymentMode.setTooltip(
-        language == UiLanguage::Spanish
-            ? "ORQUESTACION COMPLETA crea una pista editable por instrumento y carga sonidos nativos elegidos por la IA. 3 STEMS crea solo Ritmo, Armonia y Melodia."
-            : "FULL ORCHESTRATION creates one editable track per instrument and loads AI-selected native sounds. QUICK 3-STEM creates only Rhythm, Harmony and Melody.");
-    nativeInventory.setTooltip(language == UiLanguage::Spanish
-        ? "Cantidad de dispositivos, presets y Racks nativos que el puente encontro realmente en tu Browser de Live. Nunca incluye VSTs."
-        : "Number of native devices, presets and Racks actually found by the bridge in your Live Browser. VSTs are never included.");
     deployLiveButton.setTooltip(language == UiLanguage::Spanish
-        ? "Crea o actualiza las pistas en Arrangement, escribe los clips MIDI y carga secuencialmente dispositivos o Racks nativos compatibles."
+        ? juce::String::fromUTF8("Crea la orquestaci\xC3\xB3n completa en Arrangement, escribe los clips MIDI y carga instrumentos nativos compatibles.")
         : "Creates or updates Arrangement tracks, writes MIDI clips and sequentially loads compatible native devices or Racks.");
     patternView.languageChanged();
     compositionProgress.setLanguage(language);
 
-    const auto selectedWorld = std::max(1, soundWorld.getSelectedId());
-    soundWorld.clear(juce::dontSendNotification);
-    soundWorld.addItemList(localizedSoundWorlds(language, processor.currentPreviewWorldName()), 1);
-    soundWorld.setSelectedId(selectedWorld, juce::dontSendNotification);
     resized();
     repaint();
 }
@@ -262,10 +153,8 @@ void PulsoAudioProcessorEditor::resized() {
     auto area = getLocalBounds().reduced(24);
     auto header = area.removeFromTop(52);
     title.setBounds(header.removeFromLeft(130));
-    subtitle.setBounds(header.removeFromLeft(280).translated(0, 3));
-    aiBadge.setBounds(header.removeFromLeft(150).reduced(8, 11));
-    languageSelector.setBounds(header.removeFromLeft(105).reduced(5, 9));
-    status.setBounds(header);
+    languageSelector.setBounds(header.removeFromRight(120).reduced(5, 9));
+    status.setBounds(header.reduced(8, 0));
     area.removeFromTop(18);
 
     auto promptLabels = area.removeFromTop(18);
@@ -279,45 +168,11 @@ void PulsoAudioProcessorEditor::resized() {
     prompt.setBounds(promptRow);
     area.removeFromTop(12);
 
-    auto ideaHeader = area.removeFromTop(48);
-    ideaTitle.setBounds(ideaHeader.removeFromTop(26));
-    ideaDescription.setBounds(ideaHeader);
-    area.removeFromTop(8);
-
-    auto locks = area.removeFromTop(34);
-    for (auto& button : lockButtons) {
-        button.setBounds(locks.removeFromLeft(locks.getWidth() /
-                         static_cast<int>(&lockButtons.back() - &button + 1)).reduced(3, 0));
-    }
-    area.removeFromTop(8);
-    patternView.setBounds(area.removeFromTop(std::max(230, area.getHeight() - 126)));
+    auto liveRow = area.removeFromBottom(48);
+    deployLiveButton.setBounds(liveRow.removeFromRight(220).reduced(0, 4));
+    area.removeFromBottom(10);
+    patternView.setBounds(area);
     compositionProgress.setBounds(patternView.getBounds());
-    area.removeFromTop(10);
-
-    auto stageHeader = area.removeFromTop(18);
-    soundStageLabel.setBounds(stageHeader.removeFromLeft(180));
-    soundStageStatus.setBounds(stageHeader);
-    auto stage = area.removeFromTop(42);
-    liveDeploymentMode.setBounds(stage.removeFromLeft(210).reduced(3, 4));
-    deployLiveButton.setBounds(stage.removeFromRight(190).reduced(3, 4));
-    nativeInventory.setBounds(stage.reduced(8, 4));
-    area.removeFromTop(6);
-
-    auto actions = area;
-    previewButton.setBounds(actions.removeFromLeft(130));
-    actions.removeFromLeft(8);
-    performanceButton.setBounds(actions.removeFromLeft(160));
-    actions.removeFromLeft(8);
-    soundWorld.setBounds(actions.removeFromLeft(160));
-    actions.removeFromLeft(8);
-    orchestrationIntent.setBounds(actions.removeFromLeft(160));
-    actions.removeFromLeft(8);
-    thruButton.setBounds(actions.removeFromLeft(100));
-    undoButton.setBounds(actions.removeFromRight(90));
-    actions.removeFromRight(8);
-    nextButton.setBounds(actions.removeFromRight(130));
-    actions.removeFromRight(8);
-    regenerateButton.setBounds(actions.removeFromRight(190));
 }
 
 void PulsoAudioProcessorEditor::timerCallback() {
@@ -328,38 +183,17 @@ void PulsoAudioProcessorEditor::timerCallback() {
                                      localizeStatus(language, processor.currentAiStatus()),
                                      processor.currentGenerationProgress());
     generateButton.setEnabled(!composing);
-    nextButton.setEnabled(!composing);
-    regenerateButton.setEnabled(!composing);
-    undoButton.setEnabled(!composing);
     prompt.setEnabled(!composing);
     duration.setEnabled(!composing);
-    orchestrationIntent.setEnabled(!composing);
-    for (auto& button : lockButtons) button.setEnabled(!composing);
+    languageSelector.setEnabled(!composing);
 
-    aiBadge.setText(localizeStatus(language, processor.currentAiStatus()),
-                    juce::dontSendNotification);
-    soundWorld.changeItemText(1, localizedSoundWorlds(language,
-                              processor.currentPreviewWorldName())[0]);
-    ideaTitle.setText(processor.currentIdeaTitle(), juce::dontSendNotification);
-    ideaDescription.setText(processor.currentIdeaDescription(), juce::dontSendNotification);
-    status.setText(juce::String(processor.currentTempo(), 1) + " BPM  " + bullet() + "  " +
+    status.setText(localizeStatus(language, processor.currentAiStatus()) + "  " + bullet() + "  " +
+                       juce::String(processor.currentTempo(), 1) + " BPM  " + bullet() + "  " +
                        juce::String(processor.currentPhraseBars()) + " " + tr(language, TextId::Bars) +
                        "  " + bullet() + "  " + tr(language, TextId::Idea) + " " +
                        juce::String(processor.currentCompositionSeed()) + "." +
                        juce::String(processor.currentVariationIndex()),
                    juce::dontSendNotification);
-    constexpr std::array layers{PulsoAudioProcessor::Layer::Harmony,
-                                PulsoAudioProcessor::Layer::Melody,
-                                PulsoAudioProcessor::Layer::Bass,
-                                PulsoAudioProcessor::Layer::Drums};
-    for (std::size_t index = 0; index < layers.size(); ++index)
-        lockButtons[index].setToggleState(processor.isLayerLocked(layers[index]),
-                                          juce::dontSendNotification);
-    liveDeploymentMode.setEnabled(!composing);
-    soundStageStatus.setText(processor.currentLiveDeployStatus(), juce::dontSendNotification);
-    nativeInventory.setText(processor.liveBridgeAvailable() ? processor.currentLiveNativeInventorySummary() :
-                            (language == UiLanguage::Spanish ? "ACTIVA PulsoDeployRemote" : "ENABLE PulsoDeployRemote"),
-                            juce::dontSendNotification);
     deployLiveButton.setEnabled(processor.liveNativeInventoryReady() && !composing && processor.currentPattern() != nullptr &&
                                 !processor.currentPattern()->notes.empty());
     if (processor.currentLiveDeployStatus().isNotEmpty())

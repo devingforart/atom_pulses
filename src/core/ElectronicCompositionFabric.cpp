@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <set>
@@ -55,10 +56,39 @@ bool dialoguePart(const InstrumentAssignment& part) noexcept {
            contains(part.role, "answer");
 }
 
+bool thematicHandoff(const InstrumentAssignment& part) noexcept {
+    return part.lineRelationship == "relay" || part.lineRelationship == "timbral_handoff";
+}
+
 bool activeIn(const InstrumentAssignment& part, const SongSection& section) {
     return part.activeSections.empty() ||
         std::find(part.activeSections.begin(), part.activeSections.end(), section.name) !=
             part.activeSections.end();
+}
+
+std::size_t speakerFor(const SongPlan& plan, const std::vector<std::size_t>& leads,
+                       const SongSection* section) noexcept {
+    if (leads.empty()) return std::numeric_limits<std::size_t>::max();
+    const auto active = [&](std::size_t index) {
+        return section == nullptr || activeIn(plan.instruments[index], *section);
+    };
+    const auto primary = std::find_if(leads.begin(), leads.end(), [&](auto index) {
+        return plan.instruments[index].id == plan.narrativeSpine.protagonistInstrumentId;
+    });
+    if (primary != leads.end() && active(*primary)) return *primary;
+    if (primary != leads.end()) {
+        const auto& owner = plan.instruments[*primary];
+        const auto lane = owner.contentLaneId.empty() ? owner.id : owner.contentLaneId;
+        const auto handoff = std::find_if(leads.begin(), leads.end(), [&](auto index) {
+            const auto& candidate = plan.instruments[index];
+            const auto candidateLane = candidate.contentLaneId.empty()
+                ? candidate.id : candidate.contentLaneId;
+            return active(index) && thematicHandoff(candidate) && candidateLane == lane;
+        });
+        if (handoff != leads.end()) return *handoff;
+    }
+    const auto fallback = std::find_if(leads.begin(), leads.end(), active);
+    return fallback == leads.end() ? std::numeric_limits<std::size_t>::max() : *fallback;
 }
 
 void ensureVoice(SongPlan& plan, VoiceId id, std::string function, double activity) {
@@ -238,10 +268,34 @@ void ElectronicCompositionFabric::normalizePlan(SongPlan& plan) {
         }
     }
 
+    // A relay, handoff or doubling is one musical line changing colour, not a new
+    // independent idea.  GPT occasionally returned unique lane ids despite declaring
+    // one of those relationships, which made one leitmotif look like many unrelated
+    // DAW tracks. Canonicalise thematic handoffs onto the protagonist's lane.
+    const auto protagonist = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+        [&](const auto& part) { return part.id == plan.narrativeSpine.protagonistInstrumentId; });
+    if (protagonist != plan.instruments.end()) {
+        const auto protagonistLane = protagonist->contentLaneId.empty()
+            ? protagonist->id : protagonist->contentLaneId;
+        protagonist->contentLaneId = protagonistLane;
+        for (auto& part : plan.instruments) {
+            if (part.sourceVoice != VoiceId::Lead || &part == &*protagonist) continue;
+            const auto sharedLine = part.lineRelationship == "relay" ||
+                part.lineRelationship == "timbral_handoff" ||
+                part.lineRelationship == "doubling" ||
+                part.lineRelationship == "octave_reinforcement";
+            if (sharedLine) part.contentLaneId = protagonistLane;
+        }
+    }
+
+    // A closed GPT cast is compositional authority. The local fabric may complete
+    // notes inside roles GPT explicitly declared, but it must not invent a generic
+    // pad/arp/lead/reply roster behind the model's back.
+    if (plan.instrumentCastAuthored) return;
+
     ensureVoice(plan, VoiceId::HarmonicFoundation, "Continuous multi-layer harmonic floor", .78);
-    ensureVoice(plan, VoiceId::HarmonicPulse, "Evolving electronic arpeggio and pulse", .56);
     ensureVoice(plan, VoiceId::Lead, "Primary narrative speaker", .42);
-    ensureVoice(plan, VoiceId::Countermelody, "Derived melodic dialogue", .34);
+    ensureVoice(plan, VoiceId::Countermelody, "Sparse answer to the primary speaker", .28);
 
     auto floors = indicesFor(plan, floorPart);
     const std::array floorDefaults{
@@ -257,11 +311,9 @@ void ElectronicCompositionFabric::normalizePlan(SongPlan& plan) {
     for (std::size_t i = floors.size(); i < 3 && plan.instruments.size() < 64; ++i)
         plan.instruments.push_back(floorDefaults[i]);
 
-    if (std::none_of(plan.instruments.begin(), plan.instruments.end(), arpPart) &&
-        plan.instruments.size() < 64)
-        plan.instruments.push_back(makePart("fabric_hypnotic_arp", "hypnotic_arp", "Hypnotic Arp",
-            VoiceId::HarmonicPulse, "Independent evolving electronic arpeggio", "counterpoint",
-            "ostinato", "Wavetable", "muted warm hypnotic arpeggiated pulse", .58, .48));
+    // Local/emergency plans receive a minimum speaker and harmonic floor. Motion is
+    // deliberately optional: an arpeggio is never a universal property of electronic
+    // music and therefore is not synthesized unless the plan explicitly declares one.
     if (std::none_of(plan.instruments.begin(), plan.instruments.end(), [](const auto& part) {
             return part.sourceVoice == VoiceId::Lead && part.orchestralFunction != "color";
         }) && plan.instruments.size() < 64)
@@ -288,6 +340,117 @@ void ElectronicCompositionFabric::normalizePlan(SongPlan& plan) {
     // onto its concrete part without declaring lead and countermelody simultaneously.
 }
 
+ThematicOwnershipReport ElectronicCompositionFabric::concentrateThematicOwnership(
+    Pattern& pattern, const SongPlan& plan) {
+    ThematicOwnershipReport report;
+    report.active = electronic(plan) && !pattern.parts.empty();
+    if (!report.active) return report;
+    const auto populated = [&](std::uint16_t id) {
+        return std::any_of(pattern.notes.begin(), pattern.notes.end(),
+            [&](const auto& note) { return note.partId == id; });
+    };
+    const auto foregroundPart = [](const InstrumentPart& part) {
+        return part.sourceVoice == VoiceId::Lead || part.sourceVoice == VoiceId::Countermelody;
+    };
+    for (const auto& part : pattern.parts)
+        if (foregroundPart(part) && populated(part.id)) ++report.foregroundTracksBefore;
+
+    const InstrumentPart* primary = nullptr;
+    for (const auto& part : pattern.parts) {
+        if (part.id == 0 || part.id > plan.instruments.size()) continue;
+        if (plan.instruments[part.id - 1].id == plan.narrativeSpine.protagonistInstrumentId) {
+            primary = &part;
+            break;
+        }
+    }
+    if (primary == nullptr) {
+        const auto found = std::max_element(pattern.parts.begin(), pattern.parts.end(),
+            [&](const auto& left, const auto& right) {
+                const auto leftLead = left.sourceVoice == VoiceId::Lead;
+                const auto rightLead = right.sourceVoice == VoiceId::Lead;
+                if (leftLead != rightLead) return !leftLead;
+                return left.prominence < right.prominence;
+            });
+        if (found != pattern.parts.end() && found->sourceVoice == VoiceId::Lead) primary = &*found;
+    }
+    if (primary == nullptr) return report;
+
+    const InstrumentPart* answerer = nullptr;
+    for (const auto& part : pattern.parts) {
+        if (part.id == primary->id || !foregroundPart(part)) continue;
+        if (part.lineRelationship != "call_response") continue;
+        if (answerer == nullptr || part.prominence > answerer->prominence) answerer = &part;
+    }
+
+    const auto lineage = [&](std::uint16_t id) {
+        std::set<std::uint32_t> result;
+        for (const auto& note : pattern.notes)
+            if (note.partId == id && note.narrativeId != 0) result.insert(note.narrativeId);
+        return result;
+    };
+    const auto primaryLineage = lineage(primary->id);
+    const auto sharesLineage = [&](const InstrumentPart& part) {
+        const auto candidate = lineage(part.id);
+        return std::any_of(candidate.begin(), candidate.end(),
+            [&](auto id) { return primaryLineage.contains(id); });
+    };
+    const auto assignment = [&](const InstrumentPart& part) -> const InstrumentAssignment* {
+        return part.id > 0 && part.id <= plan.instruments.size()
+            ? &plan.instruments[part.id - 1] : nullptr;
+    };
+    const auto remap = [&](const InstrumentPart& source, const InstrumentPart& target) {
+        const auto* targetAssignment = assignment(target);
+        if (targetAssignment == nullptr) return;
+        auto moved = false;
+        for (auto& note : pattern.notes) {
+            if (note.partId != source.id) continue;
+            note.partId = target.id;
+            note.voice = target.sourceVoice;
+            note.channel = voiceDefinition(target.sourceVoice).midiChannel;
+            note.pitch = nearestPitch(positiveModulo(note.pitch, 12), note.pitch, *targetAssignment);
+            moved = true;
+            ++report.notesReassigned;
+        }
+        for (auto& control : pattern.controls) {
+            if (control.partId != source.id) continue;
+            control.partId = target.id;
+            control.voice = target.sourceVoice;
+            control.channel = voiceDefinition(target.sourceVoice).midiChannel;
+        }
+        for (auto& expression : pattern.expressions) {
+            if (expression.partId != source.id) continue;
+            expression.partId = target.id;
+            expression.voice = target.sourceVoice;
+            expression.channel = voiceDefinition(target.sourceVoice).midiChannel;
+        }
+        if (moved) ++report.consolidatedTracks;
+    };
+
+    for (const auto& part : pattern.parts) {
+        if (part.id == primary->id || !populated(part.id) || !foregroundPart(part)) continue;
+        // A declared answer is allowed to quote a small clue from the protagonist.
+        // Preserve the strongest answerer and fold additional answers into it before
+        // considering lineage: shared narrative IDs alone must not erase dialogue.
+        if (part.lineRelationship == "call_response") {
+            if (answerer != nullptr && part.id != answerer->id) remap(part, *answerer);
+            continue;
+        }
+        const auto sharedPrimary = part.lineRelationship == "relay" ||
+            part.lineRelationship == "timbral_handoff" ||
+            part.lineRelationship == "doubling" ||
+            part.lineRelationship == "octave_reinforcement" ||
+            (part.sourceVoice == VoiceId::Lead &&
+             part.lineRelationship == "independent" && sharesLineage(part));
+        if (sharedPrimary) {
+            remap(part, *primary);
+        }
+    }
+
+    for (const auto& part : pattern.parts)
+        if (foregroundPart(part) && populated(part.id)) ++report.foregroundTracksAfter;
+    return report;
+}
+
 ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern,
                                                                   const SongPlan& plan) {
     ElectronicFabricReport report;
@@ -296,7 +459,13 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
     const auto partId = [](std::size_t index) { return static_cast<std::uint16_t>(index + 1); };
     auto floors = indicesFor(plan, floorPart);
     const auto arps = indicesFor(plan, arpPart);
-    const auto dialogues = indicesFor(plan, dialoguePart);
+    auto dialogues = indicesFor(plan, dialoguePart);
+    std::stable_sort(dialogues.begin(), dialogues.end(), [&](auto left, auto right) {
+        const auto leftExplicit = plan.instruments[left].lineRelationship == "call_response";
+        const auto rightExplicit = plan.instruments[right].lineRelationship == "call_response";
+        if (leftExplicit != rightExplicit) return leftExplicit;
+        return plan.instruments[left].prominence > plan.instruments[right].prominence;
+    });
     std::vector<std::size_t> leads;
     for (std::size_t i = 0; i < plan.instruments.size(); ++i)
         if (plan.instruments[i].sourceVoice == VoiceId::Lead && !dialoguePart(plan.instruments[i]))
@@ -477,11 +646,8 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
             });
             if (existing >= 3) continue;
             const auto* section = sectionAt(plan, start);
-            std::vector<std::size_t> eligible;
-            for (const auto index : leads)
-                if (section == nullptr || activeIn(plan.instruments[index], *section)) eligible.push_back(index);
-            if (eligible.empty()) eligible = leads;
-            const auto index = eligible[phraseIndex % eligible.size()];
+            const auto index = speakerFor(plan, leads, section);
+            if (index == std::numeric_limits<std::size_t>::max()) continue;
             const auto& assignment = plan.instruments[index];
             const auto variant = mixed(plan.seed ^ (static_cast<std::uint64_t>(phraseIndex) << 21U));
             const auto noteCount = static_cast<std::size_t>(5U + variant % 4U);
@@ -545,7 +711,10 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
 
     // Replies are derived from the protagonist but occupy their own lanes and rests.
     for (std::size_t phraseIndex = 0; phraseIndex < createdPhrases.size() && !dialogues.empty(); ++phraseIndex) {
-        const auto dialogueIndex = dialogues[phraseIndex % std::min<std::size_t>(dialogues.size(), 3)];
+        // One answerer owns the motif-derived reply. Other melodic instruments retain
+        // only their independently authored material instead of receiving another copy
+        // of the same leitmotif from the local fabric.
+        const auto dialogueIndex = dialogues.front();
         const auto& assignment = plan.instruments[dialogueIndex];
         const auto responseStart = createdPhrases[phraseIndex].first + 11.0;
         if (responseStart + 3.0 >= pattern.lengthBeats ||
@@ -729,7 +898,9 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
         const auto target = static_cast<std::size_t>(std::ceil(eligible.size() * .65));
         for (const auto bar : missing) {
             if (present >= target) break;
-            const auto index = leads[(static_cast<std::size_t>(bar / 8) + plan.seed) % leads.size()];
+            const auto* section = sectionAt(plan, bar * plan.beatsPerBar);
+            const auto index = speakerFor(plan, leads, section);
+            if (index == std::numeric_limits<std::size_t>::max()) continue;
             const auto& assignment = plan.instruments[index];
             const auto start = bar * plan.beatsPerBar + plan.beatsPerBar * .5;
             const auto variant = static_cast<int>(mixed(plan.seed ^ static_cast<std::uint64_t>(bar)) % 4U);
@@ -947,9 +1118,15 @@ ElectronicFabricReport ElectronicCompositionFabric::audit(const Pattern& pattern
         std::nth_element(copy.begin(), middle, copy.end());
         report.medianHarmonicFloorLayers = static_cast<double>(*middle);
     }
+    // Arpeggiation is evaluated only when the authored cast asks for it. Requiring an
+    // arp in every electronic score was a hidden style preset and caused the local
+    // fabric to stamp the same motion archetype onto unrelated directions.
+    const auto requiredArpeggioNotes = arps.empty()
+        ? std::size_t{} : std::min<std::size_t>(32, std::max(8, plan.totalBars / 4));
+    const auto requiredDialogueLines = dialogues.empty() ? std::size_t{} : std::size_t{1};
     report.ready = report.harmonicFloorCoverage >= .85 && report.medianHarmonicFloorLayers >= 2.0 &&
         report.protagonistPhraseWindows >= std::max<std::size_t>(3, plan.totalBars / 24) &&
-        report.arpeggioNoteCount >= 32 && report.dialogueLines >= 1 &&
+        report.arpeggioNoteCount >= requiredArpeggioNotes && report.dialogueLines >= requiredDialogueLines &&
         report.meaningfulLines * 4 >= report.independentLines * 3;
     return report;
 }

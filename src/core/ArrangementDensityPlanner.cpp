@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <iterator>
 #include <map>
 #include <numeric>
 #include <set>
@@ -109,13 +110,33 @@ std::uint64_t fingerprint(const std::vector<const NoteEvent*>& notes) {
     auto hash = std::uint64_t{1469598103934665603ULL};
     if (notes.empty()) return hash;
     const auto origin = notes.front()->startBeat;
+    const auto pitchOrigin = notes.front()->pitch;
     for (const auto* note : notes) {
         const auto onset = static_cast<std::uint64_t>(std::llround((note->startBeat - origin) * 4.0));
         const auto duration = static_cast<std::uint64_t>(std::llround(note->durationBeats * 4.0));
-        hash ^= onset + static_cast<std::uint64_t>(positiveModulo(note->pitch, 12) * 131) + duration * 17;
+        const auto contour = static_cast<std::uint64_t>(std::clamp(note->pitch - pitchOrigin, -36, 36) + 36);
+        hash ^= onset + contour * 131 + duration * 17;
         hash *= 1099511628211ULL;
     }
     return hash;
+}
+
+std::set<std::uint64_t> phraseFingerprints(const std::vector<const NoteEvent*>& notes,
+                                           double beatsPerBar) {
+    std::map<int, std::vector<const NoteEvent*>> windows;
+    const auto width = std::max(1.0, beatsPerBar) * 4.0;
+    for (const auto* note : notes)
+        windows[static_cast<int>(std::floor(note->startBeat / width))].push_back(note);
+    std::set<std::uint64_t> result;
+    for (auto& [window, phrase] : windows) {
+        (void) window;
+        if (phrase.size() < 3) continue;
+        std::sort(phrase.begin(), phrase.end(), [](const auto* left, const auto* right) {
+            return std::tie(left->startBeat, left->pitch) < std::tie(right->startBeat, right->pitch);
+        });
+        result.insert(fingerprint(phrase));
+    }
+    return result;
 }
 
 } // namespace
@@ -148,6 +169,18 @@ ArrangementDensityTargets ArrangementDensityPlanner::targetsFor(const SongPlan& 
     result.minimumTextureParts = result.percussionFree ? 4 : 3;
     result.maximumSimultaneousParts = static_cast<std::size_t>(std::clamp(
         static_cast<int>(std::lround(4.0 + depth * 4.0)), 5, 8));
+    // Relay, handoff and doubling assignments can deliberately share one content lane.
+    // They are timbral destinations for one musical owner, not independent material;
+    // demanding that every destination remain populated would reward the exact
+    // leitmotif fragmentation that the ownership director removes.
+    std::set<std::string> contentOwners;
+    for (const auto& part : plan.instruments) {
+        const auto owner = part.contentLaneId.empty() ? part.id : part.contentLaneId;
+        if (!owner.empty()) contentOwners.insert(owner);
+    }
+    if (!contentOwners.empty())
+        result.minimumPopulatedParts = std::min(result.minimumPopulatedParts,
+                                                contentOwners.size());
     return result;
 }
 
@@ -263,10 +296,35 @@ ArrangementDensityReport ArrangementDensityPlanner::auditAndStamp(Pattern& patte
         else ++report.harmonyParts;
         if (texturePart(part)) ++report.textureParts;
     }
-    const auto duplicateParts = std::accumulate(fingerprints.begin(), fingerprints.end(), std::size_t{},
+    auto duplicateParts = std::accumulate(fingerprints.begin(), fingerprints.end(), std::size_t{},
         [](std::size_t total, const auto& item) { return total + (item.second > 1 ? item.second - 1 : 0); });
-    report.independenceScore = report.populatedParts == 0 ? 1.0 :
-        1.0 - static_cast<double>(duplicateParts) / static_cast<double>(report.populatedParts);
+    // Detect a renamed/transposed leitmotif distributed over multiple independent
+    // foreground tracks. Whole-track hashes miss that failure whenever the same cell
+    // enters in different sections or registers.
+    std::map<std::uint16_t, std::set<std::uint64_t>> phraseProfiles;
+    for (const auto& part : pattern.parts) {
+        const auto found = notesByPart.find(part.id);
+        if (found != notesByPart.end() && part.department == ScoreDepartment::Melody)
+            phraseProfiles[part.id] = phraseFingerprints(found->second, plan.beatsPerBar);
+    }
+    std::set<std::uint16_t> thematicClones;
+    for (auto left = pattern.parts.begin(); left != pattern.parts.end(); ++left) {
+        if (left->department != ScoreDepartment::Melody || left->lineRelationship != "independent") continue;
+        for (auto right = std::next(left); right != pattern.parts.end(); ++right) {
+            if (right->department != ScoreDepartment::Melody || right->lineRelationship != "independent") continue;
+            const auto& a = phraseProfiles[left->id];
+            const auto& b = phraseProfiles[right->id];
+            if (a.empty() || b.empty()) continue;
+            auto shared = std::size_t{};
+            for (const auto value : a) if (b.contains(value)) ++shared;
+            const auto denominator = std::min(a.size(), b.size());
+            if (shared >= 1 && shared * 2 >= denominator) thematicClones.insert(right->id);
+        }
+    }
+    duplicateParts += thematicClones.size();
+    report.independenceScore = report.populatedParts == 0 ? 1.0 : std::clamp(
+        1.0 - static_cast<double>(duplicateParts) / static_cast<double>(report.populatedParts),
+        0.0, 1.0);
     report.maximumPartNoteShare = pattern.notes.empty() ? 0.0 :
         static_cast<double>(largestPart) / static_cast<double>(pattern.notes.size());
 

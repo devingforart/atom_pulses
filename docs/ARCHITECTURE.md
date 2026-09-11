@@ -1,5 +1,47 @@
 # Arquitectura
 
+## Propiedad temática y diferenciación de funciones (0.56)
+
+`ElectronicCompositionFabric::concentrateThematicOwnership` se ejecuta después de materializar
+las decisiones GPT y antes de la viabilidad instrumental. Resuelve el protagonista declarado por
+la espina narrativa y consolida en su `partId` las pistas que sólo representan un relevo tímbrico,
+doblaje o refuerzo de la misma línea. Una respuesta `call_response` puede conservar un único
+propietario; otros instrumentos melódicos sólo permanecen separados cuando su relación es
+contrapuntística e independiente.
+
+La independencia no depende de la altura absoluta: `ArrangementDensityPlanner` compara perfiles
+de frase normalizados por contorno e inicio local, por lo que detecta una melodía duplicada aunque
+esté transportada. Los mínimos de densidad cuentan `contentLaneId` únicos para no premiar destinos
+tímbricos vacíos como si fueran composición adicional. `TrackViability` desarrolla protagonista,
+diálogo y voz armónica con gramáticas distintas: motivo, respuesta en movimiento contrario y
+voice-leading lento, respectivamente.
+
+En repartos cerrados por GPT, la normalización no agrega instrumentos ni arpegios implícitos. El
+gate de arpegio es condicional a una asignación declarada. Las métricas de propiedad temática se
+guardan junto con las de atención en el estado binario v23 y se publican en Live y el manifiesto
+MIDI, permitiendo verificar cuántas pistas aparentes fueron consolidadas en voces musicales reales.
+
+## Dirección de atención y continuidad armónica
+
+`AttentionDirector` se ejecuta después de la compactación terminal de `TrackViability` y antes
+de los auditores finales. Opera por `partId` y compás para que dos instrumentos que comparten una
+voz lógica sigan teniendo papeles independientes. En arreglos electrónicos congestionados asigna
+un presupuesto seccional de partes simultáneas, rota apoyos cada cuatro compases y protege el
+protagonista, el bombo contractual, los eventos formales y las mutaciones escritas por la IA.
+
+Las respiraciones se introducen en dos escalas: pequeños huecos al final de frases densas y
+reducciones estructurales antes de cambios importantes de sección. La continuidad no se resuelve
+rellenando todo: dos capas de fundamento se relevan para mantener un piso armónico legible y las
+barras de respiración aceptan una única capa. Toda nota nueva deriva del acorde validado del
+`SongPlan`, se marca `PlanDerived` y atraviesa nuevamente los contratos de tonalidad, registro,
+métrica, solapamiento, duración, release y expresión. Un último pase de viabilidad elimina pistas
+que hayan quedado nominales después de la sustracción.
+
+El resultado expone métricas antes/después (`averageActiveParts`, barras congestionadas), barras
+de respiración, respiraciones de frase, notas retiradas y notas de piso armónico. Esos datos se
+guardan en el estado binario v23, se incluyen en la solicitud de Live y se escriben en el registro
+operacional para poder auditar cada exportación.
+
 ### Pipeline AI incremental (0.55)
 
 La generación larga separa decisión y ejecución:

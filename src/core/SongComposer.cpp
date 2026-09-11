@@ -1,5 +1,6 @@
 #include "SongComposer.h"
 
+#include "AttentionDirector.h"
 #include "CreativeAuthority.h"
 #include "ElectronicCompositionFabric.h"
 #include "Random.h"
@@ -2360,6 +2361,13 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     // decisions after generic fallback has been removed. This is additive composition,
     // not a second procedural composer.
     auto electronicFabric = ElectronicCompositionFabric::materialize(song, plan);
+    const auto thematicOwnership = ElectronicCompositionFabric::concentrateThematicOwnership(
+        song, plan);
+    song.thematicOwnershipDirected = thematicOwnership.active;
+    song.foregroundTracksBefore = thematicOwnership.foregroundTracksBefore;
+    song.foregroundTracksAfter = thematicOwnership.foregroundTracksAfter;
+    song.thematicTracksConsolidated = thematicOwnership.consolidatedTracks;
+    song.thematicNotesReassigned = thematicOwnership.notesReassigned;
     song.independentMusicalLines = electronicFabric.independentLines;
     song.meaningfulMusicalLines = electronicFabric.meaningfulLines;
     song.protagonistPhraseWindows = electronicFabric.protagonistPhraseWindows;
@@ -2475,6 +2483,41 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     const auto terminalCompaction = TrackViability::compactIncomplete(song, plan);
     viabilityMerged += terminalCompaction.mergedTracks;
     viabilityPruned += terminalCompaction.prunedTracks;
+    // The full cast can only be orchestrated intelligently after every AI block,
+    // realization and viability pass exists on one timeline. Schedule complementary
+    // owners, explicit phrase/section breaths and a relayed two-layer harmonic floor
+    // before the final integrity audits. This stage removes or sustains authored intent;
+    // it never invents a new motif, melody or rhythm.
+    const auto attentionReport = AttentionDirector::shape(song, plan);
+    song.attentionDirected = attentionReport.active;
+    song.structuralBreathBars = attentionReport.structuralBreathBars;
+    song.phraseBreathsCreated = attentionReport.phraseBreathsCreated;
+    song.attentionNotesRemoved = attentionReport.notesRemoved;
+    song.harmonicFloorNotesCreated = attentionReport.floorNotesCreated;
+    song.overcrowdedBarsBefore = attentionReport.overcrowdedBarsBefore;
+    song.overcrowdedBarsAfter = attentionReport.overcrowdedBarsAfter;
+    song.averageActivePartsBefore = attentionReport.averageActivePartsBefore;
+    song.averageActivePartsAfter = attentionReport.averageActivePartsAfter;
+    publishedTonalReport = repairTonalContract(
+        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
+        plan.harmonicLanguage.tonalPolicy);
+    orchestrationReport.registerRepairs += OrchestrationScore::enforcePublishedRegisters(song);
+    [[maybe_unused]] const auto attentionMetric = ProductionPolish::enforceMetricContract(song);
+    [[maybe_unused]] const auto attentionOverlap = repairSamePitchOverlaps(song);
+    const auto attentionVertical = VerticalHarmonyGate::enforce(song);
+    verticalHarmony.collisionsBefore += attentionVertical.collisionsBefore;
+    verticalHarmony.collisionsAfter = attentionVertical.collisionsAfter;
+    verticalHarmony.supportNotesDucked += attentionVertical.supportNotesDucked;
+    verticalHarmony.continuationFragmentsCreated +=
+        attentionVertical.continuationFragmentsCreated;
+    [[maybe_unused]] const auto attentionDurations = enforceAudibleDurations(song, harmonicWindows);
+    [[maybe_unused]] const auto attentionFinalOverlap = repairSamePitchOverlaps(song);
+    enforceElectronicReleaseCeilings(song, plan);
+    PerformanceExpression::apply(song, plan, false);
+    OrchestrationScore::applyPartExpression(song, plan, &orchestrationReport);
+    const auto attentionCompaction = TrackViability::compactIncomplete(song, plan);
+    viabilityMerged += attentionCompaction.mergedTracks;
+    viabilityPruned += attentionCompaction.prunedTracks;
     auto publishedTrackViability = TrackViability::audit(song, plan);
     publishedTrackViability.populatedBefore = trackViability.populatedBefore;
     publishedTrackViability.meaningfulBefore = trackViability.meaningfulBefore;
@@ -2594,6 +2637,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         renderReport->verticalHarmony = verticalHarmony;
         renderReport->creativeAuthority = creativeAuthority;
         renderReport->electronicFabric = electronicFabric;
+        renderReport->attention = attentionReport;
         renderReport->arrangementDensity = arrangementDensity;
         renderReport->soundscape = soundscapeReport;
         renderReport->trackViability = trackViability;

@@ -307,6 +307,23 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     root->setProperty("maximum_club_low_end_gap_bars", static_cast<int>(pattern.maximumClubLowEndGapBars));
     root->setProperty("density_control", pattern.densityControl);
     root->setProperty("peak_active_voices", static_cast<int>(pattern.peakActiveVoices));
+    root->setProperty("attention_directed", pattern.attentionDirected);
+    root->setProperty("structural_breath_bars", static_cast<int>(pattern.structuralBreathBars));
+    root->setProperty("phrase_breaths_created", static_cast<int>(pattern.phraseBreathsCreated));
+    root->setProperty("attention_notes_removed", static_cast<int>(pattern.attentionNotesRemoved));
+    root->setProperty("harmonic_floor_notes_created",
+                      static_cast<int>(pattern.harmonicFloorNotesCreated));
+    root->setProperty("overcrowded_bars_before", static_cast<int>(pattern.overcrowdedBarsBefore));
+    root->setProperty("overcrowded_bars_after", static_cast<int>(pattern.overcrowdedBarsAfter));
+    root->setProperty("average_active_parts_before", pattern.averageActivePartsBefore);
+    root->setProperty("average_active_parts_after", pattern.averageActivePartsAfter);
+    root->setProperty("thematic_ownership_directed", pattern.thematicOwnershipDirected);
+    root->setProperty("foreground_tracks_before", static_cast<int>(pattern.foregroundTracksBefore));
+    root->setProperty("foreground_tracks_after", static_cast<int>(pattern.foregroundTracksAfter));
+    root->setProperty("thematic_tracks_consolidated",
+                      static_cast<int>(pattern.thematicTracksConsolidated));
+    root->setProperty("thematic_notes_reassigned",
+                      static_cast<int>(pattern.thematicNotesReassigned));
     juce::Array<juce::var> narrativeIssues;
     for (const auto& issue : pattern.narrativeIssues)
         narrativeIssues.add(juce::String::fromUTF8(issue.c_str()));

@@ -1773,6 +1773,20 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->peakSimultaneousParts = generated.peakSimultaneousParts;
         playbackPattern->partIndependenceScore = generated.partIndependenceScore;
         playbackPattern->maximumPartNoteShare = generated.maximumPartNoteShare;
+        playbackPattern->attentionDirected = generated.attentionDirected;
+        playbackPattern->structuralBreathBars = generated.structuralBreathBars;
+        playbackPattern->phraseBreathsCreated = generated.phraseBreathsCreated;
+        playbackPattern->attentionNotesRemoved = generated.attentionNotesRemoved;
+        playbackPattern->harmonicFloorNotesCreated = generated.harmonicFloorNotesCreated;
+        playbackPattern->overcrowdedBarsBefore = generated.overcrowdedBarsBefore;
+        playbackPattern->overcrowdedBarsAfter = generated.overcrowdedBarsAfter;
+        playbackPattern->averageActivePartsBefore = generated.averageActivePartsBefore;
+        playbackPattern->averageActivePartsAfter = generated.averageActivePartsAfter;
+        playbackPattern->thematicOwnershipDirected = generated.thematicOwnershipDirected;
+        playbackPattern->foregroundTracksBefore = generated.foregroundTracksBefore;
+        playbackPattern->foregroundTracksAfter = generated.foregroundTracksAfter;
+        playbackPattern->thematicTracksConsolidated = generated.thematicTracksConsolidated;
+        playbackPattern->thematicNotesReassigned = generated.thematicNotesReassigned;
         playbackPattern->soundscapeAuditPerformed = generated.soundscapeAuditPerformed;
         playbackPattern->percussionFreeArrangement = generated.percussionFreeArrangement;
         playbackPattern->soundscapeScene = generated.soundscapeScene;
@@ -1801,6 +1815,30 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->underdevelopedSoundscapeLayers = generated.underdevelopedSoundscapeLayers;
         playbackPattern->medianActiveSoundscapeLayers = generated.medianActiveSoundscapeLayers;
         playbackPattern->narrativeIssues = generated.narrativeIssues;
+        if (generated.attentionDirected) {
+            OperationalJournal::write("OK", "ATTENTION",
+                "active parts " + juce::String(generated.averageActivePartsBefore, 2) +
+                " -> " + juce::String(generated.averageActivePartsAfter, 2) +
+                " | overcrowded bars " +
+                juce::String(static_cast<int>(generated.overcrowdedBarsBefore)) + " -> " +
+                juce::String(static_cast<int>(generated.overcrowdedBarsAfter)) +
+                " | structural breaths " +
+                juce::String(static_cast<int>(generated.structuralBreathBars)) +
+                " | phrase breaths " +
+                juce::String(static_cast<int>(generated.phraseBreathsCreated)) +
+                " | floor notes " +
+                juce::String(static_cast<int>(generated.harmonicFloorNotesCreated)));
+        }
+        if (generated.thematicOwnershipDirected) {
+            OperationalJournal::write("OK", "ORCHESTRATION",
+                "foreground owners " +
+                juce::String(static_cast<int>(generated.foregroundTracksBefore)) + " -> " +
+                juce::String(static_cast<int>(generated.foregroundTracksAfter)) +
+                " | thematic tracks consolidated " +
+                juce::String(static_cast<int>(generated.thematicTracksConsolidated)) +
+                " | notes reassigned " +
+                juce::String(static_cast<int>(generated.thematicNotesReassigned)));
+        }
         realtime.pattern = std::move(playbackPattern);
         realtime.lengthBeats = generated.lengthBeats;
         realtime.maximumNoteDuration = std::accumulate(generated.notes.begin(), generated.notes.end(), 0.25,
@@ -2201,7 +2239,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(21); // Binary composition state version.
+        composition.writeInt(23); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -2347,6 +2385,20 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
         composition.writeInt(static_cast<int>(pattern->developedInstrumentTracks));
         composition.writeInt(static_cast<int>(pattern->mergedInstrumentTracks));
         composition.writeInt(static_cast<int>(pattern->prunedInstrumentTracks));
+        composition.writeBool(pattern->attentionDirected);
+        composition.writeInt(static_cast<int>(pattern->structuralBreathBars));
+        composition.writeInt(static_cast<int>(pattern->phraseBreathsCreated));
+        composition.writeInt(static_cast<int>(pattern->attentionNotesRemoved));
+        composition.writeInt(static_cast<int>(pattern->harmonicFloorNotesCreated));
+        composition.writeInt(static_cast<int>(pattern->overcrowdedBarsBefore));
+        composition.writeInt(static_cast<int>(pattern->overcrowdedBarsAfter));
+        composition.writeDouble(pattern->averageActivePartsBefore);
+        composition.writeDouble(pattern->averageActivePartsAfter);
+        composition.writeBool(pattern->thematicOwnershipDirected);
+        composition.writeInt(static_cast<int>(pattern->foregroundTracksBefore));
+        composition.writeInt(static_cast<int>(pattern->foregroundTracksAfter));
+        composition.writeInt(static_cast<int>(pattern->thematicTracksConsolidated));
+        composition.writeInt(static_cast<int>(pattern->thematicNotesReassigned));
         state.setProperty("compositionData", composition.getMemoryBlock().toBase64Encoding(), nullptr);
         if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) {
             state.setProperty("ideaTitle", metadata->title, nullptr);
@@ -2402,7 +2454,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 21) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 23) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2712,6 +2764,37 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                                                 std::max(0, composition.readInt()));
                                                             restoredPattern->prunedInstrumentTracks = static_cast<std::size_t>(
                                                                 std::max(0, composition.readInt()));
+                                                            if (version >= 22) {
+                                                                restoredPattern->attentionDirected = composition.readBool();
+                                                                restoredPattern->structuralBreathBars = static_cast<std::size_t>(
+                                                                    std::max(0, composition.readInt()));
+                                                                restoredPattern->phraseBreathsCreated = static_cast<std::size_t>(
+                                                                    std::max(0, composition.readInt()));
+                                                                restoredPattern->attentionNotesRemoved = static_cast<std::size_t>(
+                                                                    std::max(0, composition.readInt()));
+                                                                restoredPattern->harmonicFloorNotesCreated = static_cast<std::size_t>(
+                                                                    std::max(0, composition.readInt()));
+                                                                restoredPattern->overcrowdedBarsBefore = static_cast<std::size_t>(
+                                                                    std::max(0, composition.readInt()));
+                                                                restoredPattern->overcrowdedBarsAfter = static_cast<std::size_t>(
+                                                                    std::max(0, composition.readInt()));
+                                                                restoredPattern->averageActivePartsBefore = std::max(
+                                                                    0.0, composition.readDouble());
+                                                                restoredPattern->averageActivePartsAfter = std::max(
+                                                                    0.0, composition.readDouble());
+                                                                if (version >= 23) {
+                                                                    restoredPattern->thematicOwnershipDirected =
+                                                                        composition.readBool();
+                                                                    restoredPattern->foregroundTracksBefore = static_cast<std::size_t>(
+                                                                        std::max(0, composition.readInt()));
+                                                                    restoredPattern->foregroundTracksAfter = static_cast<std::size_t>(
+                                                                        std::max(0, composition.readInt()));
+                                                                    restoredPattern->thematicTracksConsolidated = static_cast<std::size_t>(
+                                                                        std::max(0, composition.readInt()));
+                                                                    restoredPattern->thematicNotesReassigned = static_cast<std::size_t>(
+                                                                        std::max(0, composition.readInt()));
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }

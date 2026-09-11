@@ -718,7 +718,7 @@ HttpResponse performSingleRequest(const wchar_t* method, const juce::String& pat
     }
 
     const auto timeoutMs = std::clamp(static_cast<int>(budget.count()), 1000, 120000);
-    const auto session = WinHttpOpen(L"PULSO/0.55.8", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    const auto session = WinHttpOpen(L"PULSO/0.56.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) {
         result.nativeError = GetLastError();
@@ -1047,6 +1047,11 @@ juce::String performanceBlockPrompt(const juce::String& direction,
         "coverage; leads need statement, answer, rests and transformed return; transitions may be rare. One cell may "
         "serve related instruments only when its notes retain each exact instrument_id. Use at most one principal cell "
         "per independent content lane and develop it through placements rather than inventing unrelated fragments. "
+        "The declared protagonist owns the complete leitmotif lineage. A call_response instrument may quote only a "
+        "short clue and must answer in negative space with a different rhythmic sentence; harmonic, color, pedal, body "
+        "and transition instruments must follow their own chordal or textural trajectories and must not receive copies "
+        "of the protagonist cell. Relay and timbral_handoff members share one content lane and never sound the complete "
+        "line simultaneously. "
         "Regular instruments must appear in at least two structurally different sections; one_shot/transition material "
         "may appear once. Keep each note inside the declared register and use only the declared source_voice for that "
         "instrument. Return no instrument outside this block. Cell ids must start with b") +
@@ -1731,7 +1736,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "owners, and distribute responsibility across harmonic_foundation, harmonic_pulse, harmonic_upper, atmosphere, "
         "countermelody and non-drum transitions. Use electronic catalog colours such as dub_chord, filtered_stab, "
         "hypnotic_arp, granular_pad, spectral_drone, shimmer_tail, deep_pluck, fm_sequence, acid_line and "
-        "vocal_chop_texture when they serve the brief. Preserve a complete harmonic foundation and ADD long pads, "
+        "vocal_chop_texture only when they serve the brief. Arpeggiation is optional and must never be inserted merely "
+        "because the work is electronic. Preserve a complete harmonic foundation and ADD long pads, "
         "stabs, drones, swells, sparse phrase replies and transition breath around it. Never split one complete line "
         "among many tracks merely to increase track count. Every instrument has content_lane_id: use a unique id for "
         "every genuinely independent musical line. Share a content_lane_id only when line_relationship explicitly "
@@ -1870,8 +1876,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "do not manufacture track count through unison, rotation or octave clones. A new track must contain a new "
         "musical responsibility or explicitly declare its relationship to a shared line. Preserve a continuously "
         "interlocking harmonic floor of at least two pad/body responsibilities across 80 percent of bars, one primary "
-        "speaker with statement-question-answer-development-return phrases, at least one real evolving electronic "
-        "arpeggio and at least one independent melodic reply. Target 14-28 populated instrument parts "
+        "speaker with statement-question-answer-development-return phrases and at most one motif-derived answerer. "
+        "Do not create separate Lead tracks named original, inverted, fragmented, recovered or returned versions of "
+        "the same leitmotif: those are cells and placements owned by the protagonist, not new instruments. Other melodic "
+        "parts must introduce genuinely independent counterpoint rather than another contour transformation. Add an "
+        "arpeggio only when the creative direction or this song's specific production argument calls for one. Target "
+        "14-28 populated instrument parts "
         "across the complete arrangement while normally limiting simultaneous parts to five-to-eight. "
         "This is the authoritative compositional layer, not an optional sketch. Give every cell a stable theme_id "
         "shared by its recognisable transformations and a narrative_function describing what it does. Across active "
@@ -2026,7 +2036,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "later phases. Satisfy any explicit requested instrument count up to 64 exactly; otherwise choose only the number "
         "that the story can support with independent material. Preserve exclusions literally, especially percussion-free "
         "requests. Avoid constant tutti and distribute foreground, harmonic floor, dialogue, movement and atmosphere over "
-        "the whole arc. Do not write registers, presets, timbre signatures, soundscape layers, notes or performances yet. "
+        "the whole arc. Declare exactly one protagonist and at most one motif-derived answerer. Transformations such as "
+        "original, inversion, fragmentation, recovery and return belong to that protagonist's later performance cells, "
+        "not to separate instrument members. Use additional tracks for true orchestration: independent inner voices, "
+        "pedals, chord bodies, contrary counterpoint, spectral color and transition functions. Permit an arpeggiator only "
+        "when it is an intentional part of this particular production argument. Do not write registers, presets, timbre "
+        "signatures, soundscape layers, notes or performances yet. "
         "Original direction: ") + direction + "\nIMMUTABLE MACRO BLUEPRINT:\n" + macroText;
     const auto manifestBody = juce::String("{\"model\":\"") + model +
         "\",\"background\":true,\"reasoning\":{\"effort\":\"" + realizationReasoningEffort +

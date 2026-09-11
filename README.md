@@ -1,5 +1,38 @@
 # PULSO
 
+### 0.56.0 — propiedad temática y orquestación con roles reales
+
+La narrativa ya no se valida contando copias del mismo leitmotiv. Un nuevo contrato de propiedad
+concentra `relay`, `timbral_handoff`, doblajes y refuerzos de octava en un protagonista, conserva
+como máximo una respuesta que cite el motivo y deja intactos los contrapuntos genuinamente
+independientes. La densidad se calcula por propietarios de contenido y detecta clones mediante
+el contorno relativo de cada frase, incluso cuando fueron transportados a otra tonalidad.
+
+Los instrumentos armónicos, de pedal, cuerpo, color y transición reciben desarrollos propios en
+lugar de heredar automáticamente la melodía principal. La IA conserva autoridad sobre el elenco:
+si su reparto está cerrado, PULSO no agrega un arpegio genérico ni instrumentos de catálogo. El
+arpegio sólo se exige cuando fue declarado como parte de la idea. La dirección de atención opera
+por compás, protege únicamente al protagonista, mantiene un piso armónico de dos propietarios y
+crea respiraciones periódicas del low-end sin cortar la memoria armónica.
+
+Las métricas de propietarios anteriores/finales, pistas consolidadas y notas reasignadas se
+persisten en el proyecto, aparecen en el registro y se exportan a Live y al manifiesto MIDI.
+
+### 0.55.9 — continuidad armónica y dirección de atención
+
+Un nuevo `AttentionDirector` trabaja sobre el material ya compuesto por la IA antes de la
+publicación. Conserva protagonistas, mutaciones rítmicas explícitas y pulsos obligatorios, pero
+evita que las capas se acumulen como un tutti permanente: asigna presupuestos dinámicos de partes
+por sección, crea respiraciones de frase y barras de contraste en fronteras formales, y rota el
+acompañamiento por ventanas de cuatro compases.
+
+En música electrónica también sostiene un piso armónico continuo mediante relevos entre las
+capas de fundamento existentes. Las notas auxiliares son tonos del acorde escritos como
+`PlanDerived`; no inventan una segunda composición procedural. Después del pase se vuelven a
+validar tonalidad, registro, métrica, solapamientos, duraciones, releases y expresión MIDI.
+La auditoría queda persistida en el proyecto y viaja a Live con métricas de respiración,
+congestión, notas retiradas y cobertura armónica creada.
+
 ### 0.55.8 — publicación compatible con main
 
 Una canción de IA que supera el contrato estructural completo vuelve a publicarse como en

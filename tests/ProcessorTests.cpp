@@ -1366,6 +1366,17 @@ int main(int argc, char** argv) {
                 restoredPatternSnapshot->expressions == originalPatternSnapshot->expressions &&
                 restoredPatternSnapshot->parts == originalPatternSnapshot->parts,
             "The complete approved AI composition must survive a DAW project reload exactly: " + reloadCounts);
+    require(restoredPatternSnapshot->thematicOwnershipDirected ==
+                originalPatternSnapshot->thematicOwnershipDirected &&
+                restoredPatternSnapshot->foregroundTracksBefore ==
+                    originalPatternSnapshot->foregroundTracksBefore &&
+                restoredPatternSnapshot->foregroundTracksAfter ==
+                    originalPatternSnapshot->foregroundTracksAfter &&
+                restoredPatternSnapshot->thematicTracksConsolidated ==
+                    originalPatternSnapshot->thematicTracksConsolidated &&
+                restoredPatternSnapshot->thematicNotesReassigned ==
+                    originalPatternSnapshot->thematicNotesReassigned,
+            "The thematic ownership audit must survive a DAW project reload");
     require(restoredPatternSnapshot->parts.empty() ||
                 restoredPatternSnapshot->parts.front().liveDevice == "Instrument Rack",
             "A manual Live-native instrument choice must survive a DAW project reload");
@@ -1405,6 +1416,20 @@ int main(int argc, char** argv) {
     pulso::Pattern deploymentPattern;
     deploymentPattern.lengthBeats = 8.0;
     deploymentPattern.productionModeSource = "gpt_plan";
+    deploymentPattern.attentionDirected = true;
+    deploymentPattern.structuralBreathBars = 2;
+    deploymentPattern.phraseBreathsCreated = 3;
+    deploymentPattern.attentionNotesRemoved = 11;
+    deploymentPattern.harmonicFloorNotesCreated = 5;
+    deploymentPattern.overcrowdedBarsBefore = 7;
+    deploymentPattern.overcrowdedBarsAfter = 1;
+    deploymentPattern.averageActivePartsBefore = 10.5;
+    deploymentPattern.averageActivePartsAfter = 6.25;
+    deploymentPattern.thematicOwnershipDirected = true;
+    deploymentPattern.foregroundTracksBefore = 6;
+    deploymentPattern.foregroundTracksAfter = 2;
+    deploymentPattern.thematicTracksConsolidated = 4;
+    deploymentPattern.thematicNotesReassigned = 73;
     deploymentPattern.parts = {
         {1, "kick_drum", "Kick Drum", pulso::VoiceId::CoreDrums,
          pulso::ScoreDepartment::Rhythm, "pulse", 35, 36, 1.0,
@@ -1464,6 +1489,22 @@ int main(int argc, char** argv) {
                 deploymentObject->hasProperty("narrative_audited") &&
                 deploymentObject->hasProperty("creative_ready") &&
                 deploymentObject->hasProperty("foreground_ai_authorship_ratio") &&
+                static_cast<bool>(deploymentObject->getProperty("attention_directed")) &&
+                static_cast<int>(deploymentObject->getProperty("structural_breath_bars")) == 2 &&
+                static_cast<int>(deploymentObject->getProperty("phrase_breaths_created")) == 3 &&
+                static_cast<int>(deploymentObject->getProperty("attention_notes_removed")) == 11 &&
+                static_cast<int>(deploymentObject->getProperty("harmonic_floor_notes_created")) == 5 &&
+                static_cast<int>(deploymentObject->getProperty("overcrowded_bars_before")) == 7 &&
+                static_cast<int>(deploymentObject->getProperty("overcrowded_bars_after")) == 1 &&
+                std::abs(static_cast<double>(deploymentObject->getProperty("average_active_parts_before")) -
+                         10.5) < 0.001 &&
+                std::abs(static_cast<double>(deploymentObject->getProperty("average_active_parts_after")) -
+                         6.25) < 0.001 &&
+                static_cast<bool>(deploymentObject->getProperty("thematic_ownership_directed")) &&
+                static_cast<int>(deploymentObject->getProperty("foreground_tracks_before")) == 6 &&
+                static_cast<int>(deploymentObject->getProperty("foreground_tracks_after")) == 2 &&
+                static_cast<int>(deploymentObject->getProperty("thematic_tracks_consolidated")) == 4 &&
+                static_cast<int>(deploymentObject->getProperty("thematic_notes_reassigned")) == 73 &&
                 deploymentObject->getProperty("tracks").getArray() != nullptr &&
                 deploymentObject->getProperty("tracks").getArray()->size() == 3,
             "Full orchestration must create one versioned editable Live track per populated instrument");

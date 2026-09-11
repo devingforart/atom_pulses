@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Generator.h"
+#include "AttentionDirector.h"
 #include "ArrangementDensityPlanner.h"
 #include "CreativeAuthority.h"
 #include "ElectronicCompositionFabric.h"
@@ -165,6 +166,7 @@ struct CompositionRenderReport {
     VerticalHarmonyReport verticalHarmony;
     CreativeAuthorityReport creativeAuthority;
     ElectronicFabricReport electronicFabric;
+    AttentionDirectionReport attention;
     ArrangementDensityReport arrangementDensity;
     ElectronicSoundscapeReport soundscape;
     TrackViabilityReport trackViability;

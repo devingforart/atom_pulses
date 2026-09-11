@@ -280,18 +280,50 @@ std::size_t develop(Pattern& pattern, const SongPlan& plan, const InstrumentPart
                         add(note * .5, .28, chordTone(note + variation, baseTarget + (variation > 1 ? 12 : 0)),
                             52 + (note % 2 == 0 ? 13 : 3));
                 break;
-            case TrackFunction::Protagonist:
-            case TrackFunction::Dialogue:
-            case TrackFunction::HarmonicVoice: {
-                const auto count = contract.function == TrackFunction::HarmonicVoice ? 3 : 5;
+            case TrackFunction::Protagonist: {
+                constexpr auto count = 5;
                 for (auto note = 0; note < count; ++note) {
                     const auto motif = plan.motifIntervals.empty() ? note * 2 :
                         plan.motifIntervals[static_cast<std::size_t>((note + variation) % plan.motifIntervals.size())];
-                    const auto target = baseTarget + (contract.function == TrackFunction::Dialogue ? -5 : 0) +
-                        (variation == 2 ? -motif : motif);
-                    add(note * (contract.function == TrackFunction::HarmonicVoice ? 1.5 : .75),
-                        note + 1 == count ? 1.15 : .42, nearestPitchInScale(target,
+                    const auto target = baseTarget + (variation == 2 ? -motif : motif);
+                    add(note * .75, note + 1 == count ? 1.15 : .42, nearestPitchInScale(target,
                             plan.rootPitchClass, plan.scale), 55 + variation * 5 + (note == 0 ? 8 : 0));
+                }
+                break;
+            }
+            case TrackFunction::Dialogue: {
+                // A reply quotes only a small intervallic clue, then moves in contrary
+                // motion after a deliberate gap. It must not be another complete copy
+                // of the protagonist distributed onto a different MIDI track.
+                constexpr auto count = 4;
+                const auto clue = plan.motifIntervals.empty() ? 3 :
+                    std::abs(plan.motifIntervals[static_cast<std::size_t>(variation) %
+                                                  plan.motifIntervals.size()]);
+                for (auto note = 0; note < count; ++note) {
+                    const auto contrary = note == 0 ? 0 : -(clue + note * 2) + variation;
+                    const auto target = baseTarget - 5 + contrary;
+                    add(1.5 + note * (note == 0 ? .75 : 1.0),
+                        note + 1 == count ? 1.25 : .34,
+                        nearestPitchInScale(target, plan.rootPitchClass, plan.scale),
+                        51 + variation * 4 + (note == 0 ? 7 : 0));
+                }
+                break;
+            }
+            case TrackFunction::HarmonicVoice: {
+                // Independent inner orchestration follows the chord trajectory and
+                // voice-leading register; it does not consume the song's leitmotif.
+                auto previous = baseTarget + (variation - 2) * 4;
+                for (auto note = 0; note < 3; ++note) {
+                    const auto offset = note * plan.beatsPerBar;
+                    const auto& localChord = chordAt(plan, start + offset);
+                    if (localChord.pitchClasses.empty()) continue;
+                    const auto tone = localChord.pitchClasses[
+                        (static_cast<std::size_t>(part.id) + static_cast<std::size_t>(note)) %
+                        localChord.pitchClasses.size()];
+                    const auto pitch = nearestPitch(tone, previous, part);
+                    add(offset, plan.beatsPerBar * (note == 1 ? .55 : .92) - .03125,
+                        pitch, 43 + variation * 4 + (note == 2 ? 5 : 0));
+                    previous = pitch;
                 }
                 break;
             }

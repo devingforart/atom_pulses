@@ -1,5 +1,6 @@
 #include "TestSupport.h"
 
+#include "core/AttentionDirector.h"
 #include "core/Generator.h"
 #include "core/HarmonyEngine.h"
 #include "core/MusicalCritic.h"
@@ -395,7 +396,11 @@ void runGeneratorTests() {
                 std::to_string(clubReport.electronicProduction.thematicWindows) + ", recall=" +
                 std::to_string(clubReport.electronicProduction.thematicRecurrenceRatio) + ", percussion=" +
                 std::to_string(clubReport.electronicProduction.percussionNotes) + ", articulations=" +
-                std::to_string(clubReport.electronicProduction.percussionArticulations));
+                std::to_string(clubReport.electronicProduction.percussionArticulations) + ", attention=" +
+                std::to_string(renderedClub.overcrowdedBarsBefore) + "->" +
+                std::to_string(renderedClub.overcrowdedBarsAfter) + ", active=" +
+                std::to_string(renderedClub.averageActivePartsBefore) + "->" +
+                std::to_string(renderedClub.averageActivePartsAfter));
     require(std::none_of(renderedClub.notes.begin(), renderedClub.notes.end(), [](const auto& note) {
                 return !isVoiceInFamily(note.voice, VoiceFamily::Rhythm) &&
                        note.voice != VoiceId::Transitions && note.durationBeats < 0.124;
@@ -537,13 +542,87 @@ void runGeneratorTests() {
                 std::to_string(renderedTexture.medianHarmonicFloorLayers) + ", speaker=" +
                 std::to_string(renderedTexture.protagonistPhraseWindows) + ", arp=" +
                 std::to_string(renderedTexture.arpeggioNoteCount) + ", dialogue=" +
-                std::to_string(renderedTexture.dialogueMusicalLines));
+                std::to_string(renderedTexture.dialogueMusicalLines) + ", viability=" +
+                std::to_string(renderedTexture.trackViabilityReady) + ", tokens=" +
+                std::to_string(renderedTexture.tokenInstrumentTracks) + ", attention=" +
+                std::to_string(renderedTexture.averageActivePartsBefore) + "->" +
+                std::to_string(renderedTexture.averageActivePartsAfter));
     const auto explicitArp = [](const InstrumentAssignment& part) {
         return part.instrumentId == "hypnotic_arp" ||
             (part.instrumentId == "fm_sequence" && part.sourceVoice == VoiceId::HarmonicPulse) ||
             part.role.find("arpeggio") != std::string::npos ||
             part.role.find("arpeggiated") != std::string::npos;
     };
+    auto authoredNoArp = texturePlan;
+    authoredNoArp.instrumentCastAuthored = true;
+    authoredNoArp.instruments.erase(std::remove_if(authoredNoArp.instruments.begin(),
+        authoredNoArp.instruments.end(), explicitArp), authoredNoArp.instruments.end());
+    const auto authoredNoArpSize = authoredNoArp.instruments.size();
+    ElectronicCompositionFabric::normalizePlan(authoredNoArp);
+    require(authoredNoArp.instruments.size() == authoredNoArpSize &&
+                std::none_of(authoredNoArp.instruments.begin(), authoredNoArp.instruments.end(), explicitArp),
+            "A closed AI cast without arpeggiation must remain arpeggio-free");
+
+    SongPlan ownershipPlan;
+    ownershipPlan.productionLanguage.domain = ProductionDomain::ClubElectronic;
+    ownershipPlan.productionLanguage.electronicIntent = .92;
+    ownershipPlan.instrumentCastAuthored = true;
+    ownershipPlan.narrativeSpine.protagonistInstrumentId = "speaker";
+    const auto thematicAssignment = [](std::string id, std::string relation, double prominence) {
+        InstrumentAssignment part;
+        part.id = std::move(id);
+        part.instrumentId = "lead_synth";
+        part.name = part.id;
+        part.sourceVoice = VoiceId::Lead;
+        part.role = relation == "call_response" ? "answer" : "thematic speaker";
+        part.minimumPitch = 48;
+        part.maximumPitch = 84;
+        part.prominence = prominence;
+        part.orchestralFunction = "counterpoint";
+        part.contentLaneId = "lane_" + part.id;
+        part.lineRelationship = std::move(relation);
+        return part;
+    };
+    ownershipPlan.instruments = {
+        thematicAssignment("speaker", "independent", .92),
+        thematicAssignment("fragment", "relay", .62),
+        thematicAssignment("answer", "call_response", .78),
+        thematicAssignment("inverted_answer", "call_response", .54)};
+    ElectronicCompositionFabric::normalizePlan(ownershipPlan);
+    require(ownershipPlan.instruments[1].contentLaneId ==
+                ownershipPlan.instruments[0].contentLaneId,
+            "A thematic relay must share the protagonist's content lane");
+    Pattern ownershipPattern;
+    ownershipPattern.lengthBeats = 32.0;
+    for (std::size_t index = 0; index < ownershipPlan.instruments.size(); ++index) {
+        const auto& source = ownershipPlan.instruments[index];
+        InstrumentPart part;
+        part.id = static_cast<std::uint16_t>(index + 1);
+        part.catalogId = source.instrumentId;
+        part.name = source.name;
+        part.sourceVoice = source.sourceVoice;
+        part.department = ScoreDepartment::Melody;
+        part.role = source.role;
+        part.minimumPitch = source.minimumPitch;
+        part.maximumPitch = source.maximumPitch;
+        part.prominence = source.prominence;
+        part.orchestralFunction = source.orchestralFunction;
+        part.contentLaneId = source.contentLaneId;
+        part.lineRelationship = source.lineRelationship;
+        ownershipPattern.parts.push_back(part);
+        for (auto note = 0; note < 4; ++note)
+            ownershipPattern.notes.push_back({index * 4.0 + note * .75, .42,
+                60 + note * 2, 72, 2, VoiceId::Lead, part.id, true,
+                NoteOrigin::AiAuthored, 0x51554553u});
+    }
+    const auto ownershipReport = ElectronicCompositionFabric::concentrateThematicOwnership(
+        ownershipPattern, ownershipPlan);
+    require(ownershipReport.active && ownershipReport.foregroundTracksBefore == 4 &&
+                ownershipReport.foregroundTracksAfter == 2 &&
+                ownershipReport.consolidatedTracks == 2 && ownershipReport.notesReassigned == 8 &&
+                std::none_of(ownershipPattern.notes.begin(), ownershipPattern.notes.end(),
+                    [](const auto& note) { return note.partId == 2 || note.partId == 4; }),
+            "One leitmotif may have one protagonist and one answerer, not nominal variant tracks");
     auto publishedArpNotes = std::size_t{};
     auto misplacedArpNotes = std::size_t{};
     std::map<std::uint32_t, std::vector<double>> protagonistOnsets;
@@ -2246,4 +2325,112 @@ void runGeneratorTests() {
     require(SelectiveRepair::criticalFailure(severeAudition) &&
                 !SelectiveRepair::editoriallyAcceptable(editorialBefore, severeAudition, 2),
             "A severely degraded narrative must remain a hard publication failure");
+
+    SongPlan attentionPlan;
+    attentionPlan.totalBars = 32;
+    attentionPlan.beatsPerBar = 4.0;
+    attentionPlan.rootPitchClass = 2;
+    attentionPlan.scale = ScaleKind::Minor;
+    attentionPlan.productionLanguage.domain = ProductionDomain::ClubElectronic;
+    attentionPlan.productionLanguage.electronicIntent = .92;
+    attentionPlan.chordPalette = {
+        {"dm", "D minor", 2, 2, {2, 5, 9}, HarmonicFunction::Tonic},
+        {"bb", "Bb major", 10, 10, {10, 2, 5}, HarmonicFunction::Predominant}
+    };
+    SongSection attentionA;
+    attentionA.name = "Premise";
+    attentionA.startBar = 0;
+    attentionA.bars = 16;
+    attentionA.energy = .48;
+    attentionA.tension = .36;
+    attentionA.density = .54;
+    attentionA.harmonicEvents = {{0, 0.0, "dm", .7, "establish"}};
+    SongSection attentionB = attentionA;
+    attentionB.name = "Transformation";
+    attentionB.startBar = 16;
+    attentionB.energy = .78;
+    attentionB.tension = .68;
+    attentionB.harmonicEvents = {{0, 0.0, "bb", .8, "contrast"}};
+    attentionPlan.sections = {attentionA, attentionB};
+
+    Pattern attentionPattern;
+    attentionPattern.lengthBeats = 128.0;
+    const auto addAttentionPart = [&](std::uint16_t id, std::string name, VoiceId voice,
+                                      ScoreDepartment department, std::string function,
+                                      double prominence) {
+        InstrumentPart part;
+        part.id = id;
+        part.catalogId = name;
+        part.name = std::move(name);
+        part.sourceVoice = voice;
+        part.department = department;
+        part.role = function;
+        part.orchestralFunction = std::move(function);
+        part.minimumPitch = department == ScoreDepartment::Rhythm ? 35 : 36;
+        part.maximumPitch = department == ScoreDepartment::Rhythm ? 81 : 88;
+        part.prominence = prominence;
+        attentionPattern.parts.push_back(std::move(part));
+    };
+    addAttentionPart(1, "foundation_a", VoiceId::HarmonicFoundation,
+                     ScoreDepartment::Harmony, "foundation", .82);
+    addAttentionPart(2, "foundation_b", VoiceId::HarmonicFoundation,
+                     ScoreDepartment::Harmony, "foundation", .76);
+    for (std::uint16_t id = 3; id <= 6; ++id)
+        addAttentionPart(id, "pulse_" + std::to_string(id), VoiceId::HarmonicPulse,
+                         ScoreDepartment::Harmony, "counterpoint", .42 + id * .02);
+    for (std::uint16_t id = 7; id <= 9; ++id)
+        addAttentionPart(id, "lead_" + std::to_string(id),
+                         id == 7 ? VoiceId::Lead : VoiceId::Countermelody,
+                         ScoreDepartment::Melody, "counterpoint", .72 - (id - 7) * .08);
+    for (std::uint16_t id = 10; id <= 12; ++id)
+        addAttentionPart(id, "rhythm_" + std::to_string(id),
+                         id == 10 ? VoiceId::CoreDrums : VoiceId::ClosedHats,
+                         ScoreDepartment::Rhythm, "rhythm", .64 - (id - 10) * .06);
+    addAttentionPart(13, "atmosphere_a", VoiceId::Atmosphere,
+                     ScoreDepartment::Harmony, "color", .34);
+    addAttentionPart(14, "atmosphere_b", VoiceId::Atmosphere,
+                     ScoreDepartment::Harmony, "color", .30);
+    addAttentionPart(15, "sub_anchor", VoiceId::SubBass,
+                     ScoreDepartment::Harmony, "foundation", .88);
+    for (auto bar = 0; bar < 32; ++bar) {
+        for (const auto& part : attentionPattern.parts) {
+            if ((part.id == 1 && bar % 2 != 0) || (part.id == 2 && bar % 2 == 0)) continue;
+            const auto rhythm = part.department == ScoreDepartment::Rhythm;
+            const auto pitch = rhythm ? (part.id == 10 ? 36 : 42) :
+                nearestPitchInScale(48 + static_cast<int>(part.id % 12), 2, ScaleKind::Minor);
+            attentionPattern.notes.push_back({bar * 4.0, rhythm ? .25 : 3.9, pitch,
+                68, rhythm ? 10 : voiceDefinition(part.sourceVoice).midiChannel,
+                part.sourceVoice, part.id, true, NoteOrigin::AiAuthored});
+            if (!rhythm && (part.sourceVoice == VoiceId::Lead ||
+                            part.sourceVoice == VoiceId::Countermelody ||
+                            part.sourceVoice == VoiceId::HarmonicPulse))
+                attentionPattern.notes.push_back({bar * 4.0 + 2.0, 1.75,
+                    nearestPitchInScale(pitch + 2, 2, ScaleKind::Minor), 64,
+                    voiceDefinition(part.sourceVoice).midiChannel, part.sourceVoice,
+                    part.id, true, NoteOrigin::AiAuthored});
+        }
+    }
+    const auto attentionReport = AttentionDirector::shape(attentionPattern, attentionPlan);
+    require(attentionReport.active && attentionReport.averageActivePartsAfter + 1.0 <
+                attentionReport.averageActivePartsBefore &&
+                attentionReport.peakActivePartsAfter <= 11 &&
+                attentionReport.overcrowdedBarsAfter < attentionReport.overcrowdedBarsBefore,
+            "Attention direction must reduce persistent tutti without flattening the energy budget");
+    require(attentionReport.structuralBreathBars >= 1 &&
+                attentionReport.phraseBreathsCreated > 0,
+            "Attention direction must create both phrase and structural breath");
+    require(std::none_of(attentionPattern.notes.begin(), attentionPattern.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::SubBass && note.startBeat < 64.0 && note.endBeat() > 60.0;
+            }), "A persistent low-end anchor must withdraw at a sixteen-bar phrase boundary");
+    require(attentionReport.harmonicFloorCoverageBefore < .10 &&
+                attentionReport.harmonicFloorCoverageAfter >= .90 &&
+                attentionReport.floorNotesCreated > 0,
+            "Complementary harmonic owners must relay a continuous two-layer floor");
+    require(std::none_of(attentionPattern.notes.begin(), attentionPattern.notes.end(),
+                [](const auto& note) { return note.origin == NoteOrigin::Procedural; }) &&
+                std::all_of(attentionPattern.notes.begin(), attentionPattern.notes.end(), [](const auto& note) {
+                    return isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ||
+                           nearestPitchInScale(note.pitch, 2, ScaleKind::Minor) == note.pitch;
+                }),
+            "Attention direction may transform AI intent but must not introduce procedural or off-key material");
 }

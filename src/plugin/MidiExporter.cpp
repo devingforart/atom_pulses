@@ -113,6 +113,18 @@ bool writeCompanionManifest(const Pattern& pattern, const juce::File& midi,
     root->setProperty("peak_simultaneous_parts", static_cast<int>(pattern.peakSimultaneousParts));
     root->setProperty("part_independence_score", pattern.partIndependenceScore);
     root->setProperty("maximum_part_note_share", pattern.maximumPartNoteShare);
+    root->setProperty("attention_directed", pattern.attentionDirected);
+    root->setProperty("structural_breath_bars", static_cast<int>(pattern.structuralBreathBars));
+    root->setProperty("phrase_breaths_created", static_cast<int>(pattern.phraseBreathsCreated));
+    root->setProperty("attention_notes_removed", static_cast<int>(pattern.attentionNotesRemoved));
+    root->setProperty("harmonic_floor_notes_created", static_cast<int>(pattern.harmonicFloorNotesCreated));
+    root->setProperty("thematic_ownership_directed", pattern.thematicOwnershipDirected);
+    root->setProperty("foreground_tracks_before", static_cast<int>(pattern.foregroundTracksBefore));
+    root->setProperty("foreground_tracks_after", static_cast<int>(pattern.foregroundTracksAfter));
+    root->setProperty("thematic_tracks_consolidated",
+                      static_cast<int>(pattern.thematicTracksConsolidated));
+    root->setProperty("thematic_notes_reassigned",
+                      static_cast<int>(pattern.thematicNotesReassigned));
     root->setProperty("soundscape_audited", pattern.soundscapeAuditPerformed);
     root->setProperty("percussion_free", pattern.percussionFreeArrangement);
     root->setProperty("soundscape_scene", juce::String::fromUTF8(pattern.soundscapeScene.c_str()));

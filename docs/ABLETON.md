@@ -2,8 +2,8 @@
 
 ## Contrato 0.55.0
 
-Durante una canción larga, el estado de PULSO distingue `SOL MAX · BLUEPRINT`,
-`SOL MAX · WRITING BLOCK n/N`, recuperación e integración final. Un fallo de un bloque no
+Durante una canción larga, el estado de PULSO distingue `TERRA MID · BLUEPRINT`,
+`TERRA MID · WRITING BLOCK n/N`, recuperación e integración final. Un fallo de un bloque no
 reinicia los ya aceptados. El reparto admite hasta 64 instrumentos y cada pista regular debe
 estar escrita en varias secciones antes de llegar al renderer y a `Crear en Live`.
 

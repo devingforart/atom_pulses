@@ -69,6 +69,20 @@ class DeploymentPlannerTests(unittest.TestCase):
         self.assertFalse(plan["blocking_timbres"])
         self.assertEqual(plan["timbre_contracts"][0]["fidelity"], 1.0)
 
+    def test_critical_character_contract_records_bounded_second_pass(self):
+        plan = resolve_deployment([
+            ("Basic Lead.adg", "Sounds/Synth Lead/Basic Lead.adg", "basic"),
+            ("Glassy Crystal Lead.adg", "Sounds/Synth Lead/Glassy Crystal Lead.adg", "glass"),
+        ], [{
+            "name": "Upper Speaker", "track_key": "lead", "catalog_id": "lead_synth",
+            "preset_intent": "glassy crystalline lead", "timbre_priority": "critical",
+            "minimum_intent_fidelity": 0.65, "sound_selection_seed": 4,
+            "notes": [{"pitch": 72, "start": 0.0}],
+        }])
+        self.assertEqual(len(plan["resolved"]), 1)
+        self.assertIn("character_retry_improved", plan["timbre_contracts"][0])
+        self.assertGreaterEqual(plan["timbre_contracts"][0]["fidelity"], 0.65)
+
 
 if __name__ == "__main__":
     unittest.main()

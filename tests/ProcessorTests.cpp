@@ -810,14 +810,21 @@ int main(int argc, char** argv) {
                 pulso::plugin::AiComposer::incrementalSchemasAreValid(),
             "Blueprint and bounded performance-block schemas must remain valid strict JSON schemas");
     require(pulso::plugin::AiComposer::maximumSongInstruments() == 64 &&
+                pulso::plugin::AiComposer::castDetailShardCount(0) == 0 &&
+                pulso::plugin::AiComposer::castDetailShardCount(10) == 1 &&
+                pulso::plugin::AiComposer::castDetailShardCount(50) == 5 &&
+                pulso::plugin::AiComposer::castDetailShardCount(64) == 7 &&
+                pulso::plugin::AiComposer::selectiveRepairShardCount(0) == 0 &&
+                pulso::plugin::AiComposer::selectiveRepairShardCount(1) == 1 &&
+                pulso::plugin::AiComposer::selectiveRepairShardCount(6) == 3 &&
                 pulso::plugin::AiComposer::performanceBlockCount(0) == 0 &&
                 pulso::plugin::AiComposer::performanceBlockCount(10) == 1 &&
                 pulso::plugin::AiComposer::performanceBlockCount(50) == 5 &&
                 pulso::plugin::AiComposer::performanceBlockCount(64) == 7,
-            "Large casts must be split into deterministic bounded performance blocks");
-    require(pulso::plugin::AiComposer::defaultModel() == "gpt-5.6-sol" &&
-                pulso::plugin::AiComposer::defaultReasoningEffort() == "max",
-            "PULSO composition must default to GPT-5.6 Sol at maximum reasoning effort");
+            "Large casts and selective repairs must use deterministic bounded shards");
+    require(pulso::plugin::AiComposer::defaultModel() == "gpt-5.6-terra" &&
+                pulso::plugin::AiComposer::defaultReasoningEffort() == "medium",
+            "PULSO composition must default to GPT-5.6 Terra at medium reasoning effort");
     require(pulso::plugin::AiComposer::parseCompositionJson(structuredExample, 1,
                                                              parsedComposition, parseError),
             "Structured GPT output must validate into a playable composition");
@@ -1448,8 +1455,8 @@ int main(int argc, char** argv) {
                     "native_editable_with_lossless_midi_source" &&
                 deploymentObject->getProperty("production_domain").toString() == "adaptive" &&
                 deploymentObject->getProperty("production_mode_source").toString() == "gpt_plan" &&
-                deploymentObject->getProperty("ai_model").toString() == "gpt-5.6-sol" &&
-                deploymentObject->getProperty("ai_reasoning_effort").toString() == "max" &&
+                deploymentObject->getProperty("ai_model").toString() == "gpt-5.6-terra" &&
+                deploymentObject->getProperty("ai_reasoning_effort").toString() == "medium" &&
                 !static_cast<bool>(deploymentObject->getProperty("electronic_production_audited")) &&
                 !deploymentObject->hasProperty("electronic_production_score") &&
                 deploymentObject->getProperty("sound_world").toString().isNotEmpty() &&
@@ -1520,6 +1527,20 @@ int main(int argc, char** argv) {
                 const auto* track = value.getDynamicObject();
                 return track != nullptr && track->getProperty("catalog_id").toString().isNotEmpty();
             }), "Quick stems must also carry a strict musical identity for native sound resolution");
+    auto editorialDeployment = deploymentPattern;
+    editorialDeployment.productionAuditPerformed = true;
+    editorialDeployment.productionReady = true;
+    editorialDeployment.narrativeAuditPerformed = true;
+    editorialDeployment.creativeReady = false;
+    editorialDeployment.narrativeScore = 0.55;
+    editorialDeployment.soundscapeAuditPerformed = true;
+    editorialDeployment.soundscapeReady = false;
+    editorialDeployment.trackViabilityAudited = true;
+    editorialDeployment.trackViabilityReady = false;
+    require(pulso::plugin::writeLiveDeploymentRequest(
+                editorialDeployment, deployment, deploymentStatus, bridgeTestDirectory),
+            "Creative, narrative, soundscape and track-development findings must remain "
+            "advisory when the MIDI-integrity contract passed");
     auto rejectedDeployment = deploymentPattern;
     rejectedDeployment.productionAuditPerformed = true;
     rejectedDeployment.productionReady = false;

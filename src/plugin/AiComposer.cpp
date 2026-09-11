@@ -1,8 +1,10 @@
 #include "AiComposer.h"
 
 #include "core/Scale.h"
+#include "core/SelectiveRepair.h"
 #include "core/TonalContract.h"
 #include "AiModelConfig.h"
+#include "OperationalJournal.h"
 
 #include <algorithm>
 #include <array>
@@ -10,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <initializer_list>
+#include <future>
 #include <map>
 #include <numeric>
 #include <set>
@@ -33,6 +36,10 @@ constexpr auto model = ai_config::model;
 constexpr auto reasoningEffort = ai_config::reasoningEffort;
 constexpr std::size_t maximumInstruments = 64;
 constexpr std::size_t instrumentsPerPerformanceBlock = 10;
+constexpr std::size_t instrumentsPerCastShard = 10;
+constexpr std::size_t maximumConcurrentCastShards = 3;
+constexpr std::size_t instrumentsPerRepairShard = 2;
+constexpr std::size_t maximumConcurrentRepairShards = 3;
 constexpr std::array layerNames{"harmony", "melody", "bass", "drums"};
 constexpr std::array layerChannels{3, 2, 1, 10};
 constexpr std::array layerVoices{VoiceId::HarmonicFoundation, VoiceId::Lead,
@@ -472,6 +479,147 @@ juce::String mergeBlueprintPhases(const juce::String& macroText,
     return juce::JSON::toString(macro);
 }
 
+std::vector<juce::String> manifestInstrumentIds(const juce::String& manifestText,
+                                                juce::String& error) {
+    std::vector<juce::String> ids;
+    const auto manifest = juce::JSON::parse(manifestText);
+    const auto* object = manifest.getDynamicObject();
+    const auto* instruments = object == nullptr
+        ? nullptr : object->getProperty("instruments").getArray();
+    if (instruments == nullptr || instruments->isEmpty()) {
+        error = "Cast manifest contains no instruments";
+        return {};
+    }
+    std::set<juce::String> unique;
+    for (const auto& item : *instruments) {
+        const auto* instrument = item.getDynamicObject();
+        const auto id = instrument == nullptr ? juce::String{} : instrument->getProperty("id").toString().trim();
+        if (id.isEmpty() || !unique.insert(id).second) {
+            error = "Cast manifest contains an empty or duplicate instrument id";
+            return {};
+        }
+        ids.push_back(id);
+    }
+    return ids;
+}
+
+juce::String manifestSubset(const juce::String& manifestText,
+                            const std::vector<juce::String>& targetIds) {
+    const auto source = juce::JSON::parse(manifestText);
+    const auto* sourceObject = source.getDynamicObject();
+    const auto* sourceInstruments = sourceObject == nullptr
+        ? nullptr : sourceObject->getProperty("instruments").getArray();
+    if (sourceInstruments == nullptr) return {};
+    const std::set<juce::String> targets(targetIds.begin(), targetIds.end());
+    juce::Array<juce::var> selected;
+    for (const auto& item : *sourceInstruments) {
+        const auto* object = item.getDynamicObject();
+        if (object != nullptr && targets.contains(object->getProperty("id").toString())) selected.add(item);
+    }
+    return juce::JSON::toString(juce::var(selected));
+}
+
+bool sameManifestAnchor(const juce::DynamicObject& manifest,
+                        const juce::DynamicObject& detail) {
+    for (const auto* field : {"id", "instrument", "name", "source_voice", "role",
+                              "content_lane_id", "line_relationship", "orchestral_function"}) {
+        if (manifest.getProperty(field).toString() != detail.getProperty(field).toString()) return false;
+    }
+    return juce::JSON::toString(manifest.getProperty("active_sections")) ==
+           juce::JSON::toString(detail.getProperty("active_sections"));
+}
+
+bool validateCastDetailShard(const juce::String& manifestText,
+                             const std::vector<juce::String>& targetIds,
+                             const juce::String& detailText,
+                             juce::String& error) {
+    const auto manifest = juce::JSON::parse(manifestText);
+    const auto detail = juce::JSON::parse(detailText);
+    const auto* manifestObject = manifest.getDynamicObject();
+    const auto* detailObject = detail.getDynamicObject();
+    const auto* manifestInstruments = manifestObject == nullptr
+        ? nullptr : manifestObject->getProperty("instruments").getArray();
+    const auto* detailInstruments = detailObject == nullptr
+        ? nullptr : detailObject->getProperty("instruments").getArray();
+    const auto* layers = detailObject == nullptr
+        ? nullptr : detailObject->getProperty("layers").getArray();
+    if (manifestInstruments == nullptr || detailInstruments == nullptr || layers == nullptr) {
+        error = "Cast detail shard is not a valid structured response";
+        return false;
+    }
+    const std::set<juce::String> targets(targetIds.begin(), targetIds.end());
+    std::map<juce::String, const juce::DynamicObject*> anchors;
+    for (const auto& item : *manifestInstruments) {
+        if (const auto* object = item.getDynamicObject(); object != nullptr)
+            anchors[object->getProperty("id").toString()] = object;
+    }
+    std::set<juce::String> detailed;
+    for (const auto& item : *detailInstruments) {
+        const auto* object = item.getDynamicObject();
+        const auto id = object == nullptr ? juce::String{} : object->getProperty("id").toString();
+        const auto anchor = anchors.find(id);
+        if (object == nullptr || !targets.contains(id) || anchor == anchors.end() ||
+            !detailed.insert(id).second || !sameManifestAnchor(*anchor->second, *object)) {
+            error = "Cast detail shard attempted to alter the global ensemble architecture";
+            return false;
+        }
+    }
+    std::set<juce::String> layered;
+    for (const auto& item : *layers) {
+        const auto* object = item.getDynamicObject();
+        const auto id = object == nullptr ? juce::String{} : object->getProperty("instrument_id").toString();
+        if (object == nullptr || !targets.contains(id) || !layered.insert(id).second) {
+            error = "Cast detail shard contains an invalid soundscape layer";
+            return false;
+        }
+    }
+    if (detailed.size() != targets.size() || layered.size() != targets.size()) {
+        error = "Cast detail shard did not complete every assigned instrument";
+        return false;
+    }
+    return true;
+}
+
+juce::String mergeCastManifestAndDetails(const juce::String& manifestText,
+                                         const std::vector<juce::String>& detailTexts,
+                                         juce::String& error) {
+    auto manifest = juce::JSON::parse(manifestText);
+    auto* manifestObject = manifest.getDynamicObject();
+    auto* soundscape = manifestObject == nullptr
+        ? nullptr : manifestObject->getProperty("electronic_soundscape").getDynamicObject();
+    if (manifestObject == nullptr || soundscape == nullptr) {
+        error = "Could not assemble the detailed cast";
+        return {};
+    }
+    juce::Array<juce::var> instruments;
+    juce::Array<juce::var> layers;
+    std::set<juce::String> ids;
+    for (const auto& text : detailTexts) {
+        const auto detail = juce::JSON::parse(text);
+        const auto* object = detail.getDynamicObject();
+        const auto* shardInstruments = object == nullptr
+            ? nullptr : object->getProperty("instruments").getArray();
+        const auto* shardLayers = object == nullptr ? nullptr : object->getProperty("layers").getArray();
+        if (shardInstruments == nullptr || shardLayers == nullptr) {
+            error = "Could not merge a cast detail shard";
+            return {};
+        }
+        for (const auto& item : *shardInstruments) {
+            const auto* instrument = item.getDynamicObject();
+            const auto id = instrument == nullptr ? juce::String{} : instrument->getProperty("id").toString();
+            if (id.isEmpty() || !ids.insert(id).second) {
+                error = "Detailed cast contains a duplicate instrument";
+                return {};
+            }
+            instruments.add(item);
+        }
+        for (const auto& layer : *shardLayers) layers.add(layer);
+    }
+    manifestObject->setProperty("instruments", juce::var(instruments));
+    soundscape->setProperty("layers", juce::var(layers));
+    return juce::JSON::toString(manifest);
+}
+
 const juce::String performanceBlockSchema = R"json({
   "type":"object",
   "properties":{
@@ -570,7 +718,7 @@ HttpResponse performSingleRequest(const wchar_t* method, const juce::String& pat
     }
 
     const auto timeoutMs = std::clamp(static_cast<int>(budget.count()), 1000, 120000);
-    const auto session = WinHttpOpen(L"PULSO/0.55.1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    const auto session = WinHttpOpen(L"PULSO/0.55.8", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) {
         result.nativeError = GetLastError();
@@ -1057,38 +1205,252 @@ void mergePerformanceBlock(PerformanceScore& destination, PerformanceScore sourc
 std::vector<std::size_t> uncoveredInstruments(const SongPlan& plan,
                                               const PerformanceScore& score,
                                               const std::vector<std::size_t>& candidates) {
-    std::map<std::string, std::size_t> noteCounts;
-    std::map<std::string, std::set<int>> sections;
-    std::map<std::string, std::set<std::string>> instrumentsByCell;
-    for (const auto& cell : score.cells)
-        for (const auto& note : cell.notes)
-            if (!note.instrumentId.empty()) {
-                ++noteCounts[note.instrumentId];
-                instrumentsByCell[cell.id].insert(note.instrumentId);
-            }
-    for (const auto& placement : score.placements)
-        if (const auto found = instrumentsByCell.find(placement.cellId);
-            found != instrumentsByCell.end())
-            for (const auto& id : found->second) sections[id].insert(placement.sectionIndex);
+    return SelectiveRepair::incompleteTargets(plan, score, candidates);
+}
 
-    std::vector<std::size_t> missing;
-    for (const auto index : candidates) {
-        if (index >= plan.instruments.size()) continue;
-        const auto& instrument = plan.instruments[index];
-        const auto layer = std::find_if(plan.soundscape.layers.begin(), plan.soundscape.layers.end(),
-            [&](const auto& candidate) { return candidate.instrumentId == instrument.id; });
-        const auto eventLayer = layer != plan.soundscape.layers.end() &&
-            (layer->kind == SoundscapeLayerKind::Transition ||
-             layer->kind == SoundscapeLayerKind::OneShot);
-        const auto rareEvent = eventLayer || instrument.sourceVoice == VoiceId::Transitions ||
-            instrument.orchestralFunction == "transition";
-        const auto minimumNotes = rareEvent ? std::size_t{1} : std::size_t{3};
-        const auto minimumSections = rareEvent || plan.sections.size() < 4 ? std::size_t{1}
-                                                                          : std::size_t{2};
-        if (noteCounts[instrument.id] < minimumNotes || sections[instrument.id].size() < minimumSections)
-            missing.push_back(index);
+// The global manifest decides the complete ensemble once. It deliberately omits
+// verbose implementation fields (preset descriptions and timbre signatures), so
+// even a 64-part request remains a small architectural decision. Detail shards are
+// not allowed to redesign these anchors; they only complete them.
+juce::String castManifestSchema() {
+    const auto full = juce::JSON::parse(songPlanSchema);
+    const auto* root = full.getDynamicObject();
+    const auto* fullProperties = root == nullptr
+        ? nullptr : root->getProperty("properties").getDynamicObject();
+    if (fullProperties == nullptr) return {};
+
+    const auto* fullSoundscape = fullProperties->getProperty("electronic_soundscape").getDynamicObject();
+    const auto* fullSoundscapeProperties = fullSoundscape == nullptr
+        ? nullptr : fullSoundscape->getProperty("properties").getDynamicObject();
+    const auto* fullInstruments = fullProperties->getProperty("instruments").getDynamicObject();
+    const auto* fullInstrumentItems = fullInstruments == nullptr
+        ? nullptr : fullInstruments->getProperty("items").getDynamicObject();
+    const auto* fullInstrumentProperties = fullInstrumentItems == nullptr
+        ? nullptr : fullInstrumentItems->getProperty("properties").getDynamicObject();
+    if (fullSoundscapeProperties == nullptr || fullInstrumentProperties == nullptr) return {};
+
+    auto manifestRoot = new juce::DynamicObject();
+    auto properties = new juce::DynamicObject();
+    auto soundscape = new juce::DynamicObject();
+    auto soundscapeProperties = new juce::DynamicObject();
+    juce::Array<juce::var> soundscapeRequired;
+    for (const auto* name : {"active", "percussion_free", "scene", "spatial_narrative",
+                             "target_median_active_layers"}) {
+        soundscapeProperties->setProperty(name, fullSoundscapeProperties->getProperty(name));
+        soundscapeRequired.add(name);
     }
-    return missing;
+    soundscape->setProperty("type", "object");
+    soundscape->setProperty("properties", juce::var(soundscapeProperties));
+    soundscape->setProperty("required", juce::var(soundscapeRequired));
+    soundscape->setProperty("additionalProperties", false);
+    properties->setProperty("electronic_soundscape", juce::var(soundscape));
+
+    auto instruments = new juce::DynamicObject();
+    auto instrumentItems = new juce::DynamicObject();
+    auto instrumentProperties = new juce::DynamicObject();
+    juce::Array<juce::var> instrumentRequired;
+    for (const auto* name : {"id", "instrument", "name", "source_voice", "role",
+                             "content_lane_id", "line_relationship", "orchestral_function",
+                             "active_sections"}) {
+        instrumentProperties->setProperty(name, fullInstrumentProperties->getProperty(name));
+        instrumentRequired.add(name);
+    }
+    instrumentItems->setProperty("type", "object");
+    instrumentItems->setProperty("properties", juce::var(instrumentProperties));
+    instrumentItems->setProperty("required", juce::var(instrumentRequired));
+    instrumentItems->setProperty("additionalProperties", false);
+    instruments->setProperty("type", "array");
+    instruments->setProperty("minItems", 8);
+    instruments->setProperty("maxItems", static_cast<int>(maximumInstruments));
+    instruments->setProperty("items", juce::var(instrumentItems));
+    properties->setProperty("instruments", juce::var(instruments));
+    properties->setProperty("rhythm_motifs", fullProperties->getProperty("rhythm_motifs"));
+    properties->setProperty("voices", fullProperties->getProperty("voices"));
+
+    juce::Array<juce::var> required;
+    for (const auto* name : {"electronic_soundscape", "instruments", "rhythm_motifs", "voices"})
+        required.add(name);
+    manifestRoot->setProperty("type", "object");
+    manifestRoot->setProperty("properties", juce::var(properties));
+    manifestRoot->setProperty("required", juce::var(required));
+    manifestRoot->setProperty("additionalProperties", false);
+    return juce::JSON::toString(juce::var(manifestRoot));
+}
+
+juce::String castDetailShardSchema() {
+    const auto full = juce::JSON::parse(songPlanSchema);
+    const auto* root = full.getDynamicObject();
+    const auto* properties = root == nullptr
+        ? nullptr : root->getProperty("properties").getDynamicObject();
+    const auto* soundscape = properties == nullptr
+        ? nullptr : properties->getProperty("electronic_soundscape").getDynamicObject();
+    const auto* soundscapeProperties = soundscape == nullptr
+        ? nullptr : soundscape->getProperty("properties").getDynamicObject();
+    const auto* instruments = properties == nullptr
+        ? nullptr : properties->getProperty("instruments").getDynamicObject();
+    if (soundscapeProperties == nullptr || instruments == nullptr) return {};
+
+    auto resultRoot = new juce::DynamicObject();
+    auto resultProperties = new juce::DynamicObject();
+    auto shardInstruments = new juce::DynamicObject();
+    shardInstruments->setProperty("type", "array");
+    shardInstruments->setProperty("minItems", 1);
+    shardInstruments->setProperty("maxItems", static_cast<int>(instrumentsPerCastShard));
+    shardInstruments->setProperty("items", instruments->getProperty("items"));
+    auto layers = new juce::DynamicObject();
+    const auto* fullLayers = soundscapeProperties->getProperty("layers").getDynamicObject();
+    if (fullLayers == nullptr) return {};
+    layers->setProperty("type", "array");
+    layers->setProperty("minItems", 1);
+    layers->setProperty("maxItems", static_cast<int>(instrumentsPerCastShard));
+    layers->setProperty("items", fullLayers->getProperty("items"));
+    resultProperties->setProperty("instruments", juce::var(shardInstruments));
+    resultProperties->setProperty("layers", juce::var(layers));
+    juce::Array<juce::var> required;
+    required.add("instruments");
+    required.add("layers");
+    resultRoot->setProperty("type", "object");
+    resultRoot->setProperty("properties", juce::var(resultProperties));
+    resultRoot->setProperty("required", juce::var(required));
+    resultRoot->setProperty("additionalProperties", false);
+    return juce::JSON::toString(juce::var(resultRoot));
+}
+
+std::set<std::string> instrumentIdsFor(const SongPlan& plan,
+                                       const std::vector<std::size_t>& indices) {
+    std::set<std::string> result;
+    for (const auto index : indices)
+        if (index < plan.instruments.size()) result.insert(plan.instruments[index].id);
+    return result;
+}
+
+void retainOnlyInstrumentMaterial(PerformanceScore& score,
+                                  const std::set<std::string>& instrumentIds) {
+    for (auto& cell : score.cells) {
+        cell.notes.erase(std::remove_if(cell.notes.begin(), cell.notes.end(), [&](const auto& note) {
+            return !instrumentIds.contains(note.instrumentId);
+        }), cell.notes.end());
+        cell.controls.erase(std::remove_if(cell.controls.begin(), cell.controls.end(), [&](const auto& control) {
+            return !instrumentIds.contains(control.instrumentId);
+        }), cell.controls.end());
+        std::set<VoiceId> survivingVoices;
+        for (const auto& note : cell.notes) survivingVoices.insert(note.voice);
+        for (const auto& control : cell.controls) survivingVoices.insert(control.voice);
+        cell.ownedVoices.assign(survivingVoices.begin(), survivingVoices.end());
+    }
+    std::set<std::string> emptyCells;
+    for (const auto& cell : score.cells)
+        if (cell.notes.empty()) emptyCells.insert(cell.id);
+    score.cells.erase(std::remove_if(score.cells.begin(), score.cells.end(), [&](const auto& cell) {
+        return emptyCells.contains(cell.id);
+    }), score.cells.end());
+    score.placements.erase(std::remove_if(score.placements.begin(), score.placements.end(),
+        [&](const auto& placement) { return emptyCells.contains(placement.cellId); }),
+        score.placements.end());
+}
+
+void eraseInstrumentMaterial(PerformanceScore& score,
+                             const std::set<std::string>& instrumentIds) {
+    for (auto& cell : score.cells) {
+        cell.notes.erase(std::remove_if(cell.notes.begin(), cell.notes.end(), [&](const auto& note) {
+            return instrumentIds.contains(note.instrumentId);
+        }), cell.notes.end());
+        cell.controls.erase(std::remove_if(cell.controls.begin(), cell.controls.end(), [&](const auto& control) {
+            return instrumentIds.contains(control.instrumentId);
+        }), cell.controls.end());
+        std::set<VoiceId> survivingVoices;
+        for (const auto& note : cell.notes) survivingVoices.insert(note.voice);
+        for (const auto& control : cell.controls) survivingVoices.insert(control.voice);
+        cell.ownedVoices.assign(survivingVoices.begin(), survivingVoices.end());
+    }
+    std::set<std::string> emptyCells;
+    for (const auto& cell : score.cells)
+        if (cell.notes.empty()) emptyCells.insert(cell.id);
+    score.cells.erase(std::remove_if(score.cells.begin(), score.cells.end(), [&](const auto& cell) {
+        return emptyCells.contains(cell.id);
+    }), score.cells.end());
+    score.placements.erase(std::remove_if(score.placements.begin(), score.placements.end(),
+        [&](const auto& placement) { return emptyCells.contains(placement.cellId); }),
+        score.placements.end());
+}
+
+juce::String existingTargetMaterial(const SongPlan& plan,
+                                    const std::set<std::string>& instrumentIds) {
+    juce::String result;
+    std::set<std::string> includedCells;
+    for (const auto& cell : plan.performanceScore.cells) {
+        const auto relevant = std::any_of(cell.notes.begin(), cell.notes.end(), [&](const auto& note) {
+            return instrumentIds.contains(note.instrumentId);
+        });
+        if (!relevant) continue;
+        includedCells.insert(cell.id);
+        result << "CELL " << juce::String::fromUTF8(cell.id.c_str()) << " length="
+               << juce::String(cell.lengthBeats, 3) << " theme="
+               << juce::String::fromUTF8(cell.themeId.c_str()) << " function="
+               << juce::String::fromUTF8(cell.narrativeFunction.c_str()) << "\n";
+        for (const auto& note : cell.notes) {
+            if (!instrumentIds.contains(note.instrumentId)) continue;
+            const auto key = voiceDefinition(note.voice).key;
+            result << "  NOTE id=" << juce::String::fromUTF8(note.instrumentId.c_str())
+                   << " voice=" << juce::String::fromUTF8(key.data(), static_cast<int>(key.size()))
+                   << " beat=" << juce::String(note.beat, 3)
+                   << " duration=" << juce::String(note.durationBeats, 3)
+                   << " pitch=" << note.pitch << " velocity=" << note.velocity << "\n";
+        }
+    }
+    for (const auto& placement : plan.performanceScore.placements) {
+        if (!includedCells.contains(placement.cellId)) continue;
+        result << "PLACEMENT cell=" << juce::String::fromUTF8(placement.cellId.c_str())
+               << " section=" << placement.sectionIndex
+               << " start=" << juce::String(placement.startBeat, 3)
+               << " repeats=" << placement.repeats
+               << " transpose=" << placement.transpose
+               << " time_scale=" << juce::String(placement.timeScale, 3)
+               << " purpose=" << juce::String::fromUTF8(placement.purpose.c_str()) << "\n";
+    }
+    return result;
+}
+
+juce::String selectiveRepairPrompt(const juce::String& direction,
+                                   const juce::String& blueprintJson,
+                                   const SongPlan& plan,
+                                   const SelectiveRepairPlan& diagnosis) {
+    juce::String issues;
+    for (const auto& issue : diagnosis.issues)
+        issues << "- " << juce::String::fromUTF8(issue.c_str()) << "\n";
+    const auto targetIds = instrumentIdsFor(plan, diagnosis.instrumentIndices);
+    return juce::String(
+        "You are PULSO's final score editor. The macro form, section harmony, tonal policy, cast and every instrument "
+        "not listed below are immutable and already accepted. Return replacement performance_score cells and placements "
+        "ONLY for the listed instrument ids. Solve every audible critic finding as one coherent edit. Do not add tracks, "
+        "change chords, rewrite unrelated ideas or increase global density. Preserve the song's recognisable motifs while "
+        "giving underwritten lines complete phrases, contrasting returns and meaningful rests. If a pulse or arpeggio is "
+        "dominant, create subtraction, mutations and hand-offs instead of a continuous note stream. If closure is weak, "
+        "make the final active phrases answer earlier material and resolve harmonic debt. All notes remain strict-grid, "
+        "inside the declared registers and compatible with the exact section chords. Use compact reusable cells; this is "
+        "a bounded repair, not a new composition.\nORIGINAL DIRECTION:\n") + direction +
+        "\nAUDIBLE CRITIC FINDINGS:\n" + issues +
+        "TARGET INSTRUMENTS (replace these only):\n" +
+        instrumentBlockBrief(plan, diagnosis.instrumentIndices) +
+        "\nCURRENT TARGET MATERIAL (retain its identity while improving it):\n" +
+        existingTargetMaterial(plan, targetIds) +
+        "\nIMMUTABLE SHARED BLUEPRINT:\n" + blueprintJson;
+}
+
+juce::String audibleAuditSummary(const CompositionRenderReport& report) {
+    return "production=" + juce::String(report.production.score, 3) +
+        " ready=" + juce::String(static_cast<int>(report.production.ready)) +
+        " | narrative=" + juce::String(report.narrative.score, 3) +
+        " ready=" + juce::String(static_cast<int>(report.narrative.creativeReady)) +
+        " resolution=" + juce::String(report.narrative.resolutionScore, 3) +
+        " density=" + juce::String(report.narrative.densityControl, 3) +
+        " | soundscape=" + juce::String(report.soundscape.score, 3) +
+        " ready=" + juce::String(static_cast<int>(report.soundscape.ready)) +
+        " static=" + juce::String(static_cast<int>(report.soundscape.staticLayerRuns)) +
+        " | viability=" + juce::String(report.trackViability.score, 3) +
+        " ready=" + juce::String(static_cast<int>(report.trackViability.ready)) +
+        " token_tracks=" + juce::String(static_cast<int>(report.trackViability.tokenTracks)) +
+        " | deficit=" + juce::String(SelectiveRepair::deficit(report), 3);
 }
 
 juce::String AiComposer::defaultModel() { return model; }
@@ -1106,14 +1468,30 @@ bool AiComposer::songPlanSchemaIsValid() {
 bool AiComposer::incrementalSchemasAreValid() {
     const auto macro = juce::JSON::parse(macroBlueprintSchema());
     const auto cast = juce::JSON::parse(castBlueprintSchema());
+    const auto manifest = juce::JSON::parse(castManifestSchema());
+    const auto castDetail = juce::JSON::parse(castDetailShardSchema());
     const auto performance = juce::JSON::parse(performanceBlockSchema);
-    return !macro.isVoid() && !cast.isVoid() && !performance.isVoid() &&
+    return !macro.isVoid() && !cast.isVoid() && !manifest.isVoid() &&
+        !castDetail.isVoid() && !performance.isVoid() &&
         !macroBlueprintSchema().contains("performance_score") &&
         !macroBlueprintSchema().contains("instruments") &&
+        !castManifestSchema().contains("timbre_signature") &&
+        castDetailShardSchema().contains("timbre_signature") &&
         performanceBlockSchema.contains("covered_instrument_ids");
 }
 
 std::size_t AiComposer::maximumSongInstruments() noexcept { return maximumInstruments; }
+
+std::size_t AiComposer::castDetailShardCount(std::size_t instruments) noexcept {
+    instruments = std::min(instruments, maximumInstruments);
+    return instruments == 0 ? 0 : (instruments + instrumentsPerCastShard - 1) /
+        instrumentsPerCastShard;
+}
+
+std::size_t AiComposer::selectiveRepairShardCount(std::size_t instruments) noexcept {
+    return instruments == 0 ? 0 : (instruments + instrumentsPerRepairShard - 1) /
+        instrumentsPerRepairShard;
+}
 
 std::size_t AiComposer::performanceBlockCount(std::size_t instruments) noexcept {
     instruments = std::min(instruments, maximumInstruments);
@@ -1293,6 +1671,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     const auto direction = creativeDirection.trim().isEmpty()
         ? "Create a memorable instrumental song with a clear emotional narrative."
         : creativeDirection.trim();
+    OperationalJournal::write("INFO", "GENERATION", "request started | seed=" +
+        juce::String(static_cast<juce::int64>(seed)) + " | target_seconds=" +
+        juce::String(targetSeconds) + " | bars=" + juce::String(totalBars) +
+        " | direction=" + direction.substring(0, 240));
     const auto directionLower = direction.toLowerCase();
     const auto hypnoticProgressiveReference = directionLower.contains("guy j");
     const auto referenceBrief = hypnoticProgressiveReference
@@ -1634,49 +2016,140 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         return result;
     }
 
-    if (progress) progress({AiSongStage::Blueprint, 1, 2, 1, "instrument cast and soundscape"});
-    const auto castPrompt = juce::String(
-        "You are the orchestration architect for PULSO. Complete the immutable macro blueprint below by returning only "
-        "electronic_soundscape, instruments, rhythm_motifs and voices. Preserve its scene, spatial narrative, production "
-        "domain and explicit percussion-free intent. Choose 8-64 concrete instrument instances; if the original direction "
-        "requests a specific count, satisfy it up to 64. Every instrument needs a unique stable id, independent musical "
-        "function or explicit relationship, register, active sections and distinct Live-native timbral intent. Build a cast "
-        "that can tell the macro story without constant tutti. Use at least 12 instances unless the direction explicitly "
-        "requests fewer musical parts. When percussion or rhythmic motion is explicitly excluded, rhythm_motifs may be "
-        "empty; otherwise return at least two contrasting, developable motifs and reference them consistently. Do not "
-        "write notes or performance_score. Original direction: ") +
-        direction + "\nIMMUTABLE MACRO BLUEPRINT:\n" + macroText;
-    const auto castBody = juce::String("{\"model\":\"") + model +
+    if (progress) progress({AiSongStage::Blueprint, 1, 2, 1,
+                            "global instrument architecture"});
+    const auto manifestPrompt = juce::String(
+        "You are PULSO's global orchestration director. Decide the complete ensemble once, before any detail is written. "
+        "Return the compact cast manifest only. Every member needs a unique stable id, a distinct musical responsibility "
+        "or an explicit complementary relationship, and an intentional section trajectory. The IDs, instrument types, "
+        "source voices, roles, lane identities, relationships, orchestral functions and active sections are immutable in "
+        "later phases. Satisfy any explicit requested instrument count up to 64 exactly; otherwise choose only the number "
+        "that the story can support with independent material. Preserve exclusions literally, especially percussion-free "
+        "requests. Avoid constant tutti and distribute foreground, harmonic floor, dialogue, movement and atmosphere over "
+        "the whole arc. Do not write registers, presets, timbre signatures, soundscape layers, notes or performances yet. "
+        "Original direction: ") + direction + "\nIMMUTABLE MACRO BLUEPRINT:\n" + macroText;
+    const auto manifestBody = juce::String("{\"model\":\"") + model +
         "\",\"background\":true,\"reasoning\":{\"effort\":\"" + realizationReasoningEffort +
-        "\"},\"max_output_tokens\":16000,\"prompt_cache_key\":\"pulso-song-cast-v3\",\"input\":" +
-        juce::JSON::toString(juce::var(castPrompt)) +
-        ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_song_cast\","
-        "\"strict\":true,\"schema\":" + castBlueprintSchema() + "}}}";
-    auto castHttp = performRequest(castBody, apiKey, token, std::chrono::minutes(3));
-    const auto transientCastFailure = [&] {
-        return !castHttp.connected || castHttp.timedOut || castHttp.status == 408 ||
-            castHttp.status == 409 || castHttp.status == 429 || castHttp.status >= 500;
-    };
-    if (!token.stop_requested() && transientCastFailure()) {
-        if (progress) progress({AiSongStage::Recovery, 1, 2, 2, "instrument-cast recovery"});
-        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-            aiStarted + totalAiBudget - std::chrono::steady_clock::now());
-        if (remaining >= std::chrono::seconds(45))
-            castHttp = performRequest(castBody, apiKey, token,
-                std::min(remaining, std::chrono::duration_cast<std::chrono::milliseconds>(
-                                        std::chrono::minutes(2))));
+        "\"},\"max_output_tokens\":14000,\"prompt_cache_key\":\"pulso-cast-manifest-v1\",\"input\":" +
+        juce::JSON::toString(juce::var(manifestPrompt)) +
+        ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_cast_manifest\","
+        "\"strict\":true,\"schema\":" + castManifestSchema() + "}}}";
+    auto manifestHttp = performRequest(manifestBody, apiKey, token, std::chrono::minutes(2));
+    auto manifestText = extractOutputText(juce::JSON::parse(manifestHttp.body));
+    juce::String manifestError;
+    auto castIds = manifestInstrumentIds(manifestText, manifestError);
+    if (!token.stop_requested() &&
+        (!manifestHttp.connected || manifestHttp.status < 200 || manifestHttp.status >= 300 ||
+         manifestHttp.cancelled || manifestHttp.timedOut || castIds.empty())) {
+        if (progress) progress({AiSongStage::Recovery, 1, 2, 2,
+                                "global cast manifest recovery"});
+        manifestHttp = performRequest(manifestBody, apiKey, token, std::chrono::seconds(90));
+        manifestText = extractOutputText(juce::JSON::parse(manifestHttp.body));
+        manifestError.clear();
+        castIds = manifestInstrumentIds(manifestText, manifestError);
     }
-    if (!castHttp.connected || castHttp.status < 200 || castHttp.status >= 300 ||
-        castHttp.cancelled || castHttp.timedOut) {
-        error = "OpenAI cast phase failed: " + apiErrorMessage(castHttp);
+    if (!manifestHttp.connected || manifestHttp.status < 200 || manifestHttp.status >= 300 ||
+        manifestHttp.cancelled || manifestHttp.timedOut || castIds.empty()) {
+        error = "OpenAI global cast manifest failed: " +
+            (manifestError.isNotEmpty() ? manifestError : apiErrorMessage(manifestHttp));
         return result;
     }
-    const auto castText = extractOutputText(juce::JSON::parse(castHttp.body));
+
+    std::vector<std::vector<juce::String>> castShards;
+    for (std::size_t begin = 0; begin < castIds.size(); begin += instrumentsPerCastShard) {
+        castShards.emplace_back(castIds.begin() + static_cast<std::ptrdiff_t>(begin),
+            castIds.begin() + static_cast<std::ptrdiff_t>(
+                std::min(castIds.size(), begin + instrumentsPerCastShard)));
+    }
+    std::vector<juce::String> castDetailTexts(castShards.size());
+    const auto castDetailBody = [&](std::size_t shardIndex) {
+        const auto shardPrompt = juce::String(
+            "You are a timbre and register specialist completing one shard of an already immutable global ensemble. "
+            "Return exactly one full instrument definition and exactly one soundscape layer for every listed manifest "
+            "member, and no others. Copy every manifest anchor literally: id, instrument, name, source_voice, role, "
+            "content_lane_id, line_relationship, orchestral_function and active_sections. You may decide only register, "
+            "octave, activity, prominence, doubling, articulation, divisi, Live device/preset intent, timbre signature and "
+            "soundscape evolution. Make those decisions complementary to the complete global cast; do not create a new "
+            "composition and do not write notes. ORIGINAL DIRECTION:\n") + direction +
+            "\nIMMUTABLE MACRO BLUEPRINT:\n" + macroText +
+            "\nCOMPLETE GLOBAL CAST MANIFEST:\n" + manifestText +
+            "\nYOUR EXACT ASSIGNED MEMBERS:\n" + manifestSubset(manifestText, castShards[shardIndex]);
+        return juce::String("{\"model\":\"") + model +
+            "\",\"background\":true,\"reasoning\":{\"effort\":\"" + realizationReasoningEffort +
+            "\"},\"max_output_tokens\":9000,\"prompt_cache_key\":\"pulso-cast-detail-v1\",\"input\":" +
+            juce::JSON::toString(juce::var(shardPrompt)) +
+            ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_cast_detail\","
+            "\"strict\":true,\"schema\":" + castDetailShardSchema() + "}}}";
+    };
+    const auto requestCastShard = [&](std::size_t shardIndex, std::chrono::milliseconds budget) {
+        return performRequest(castDetailBody(shardIndex), apiKey, token, budget);
+    };
+
+    std::vector<std::size_t> unresolved;
+    for (std::size_t batchBegin = 0; batchBegin < castShards.size();
+         batchBegin += maximumConcurrentCastShards) {
+        const auto batchEnd = std::min(castShards.size(), batchBegin + maximumConcurrentCastShards);
+        std::vector<std::future<HttpResponse>> requests;
+        for (auto index = batchBegin; index < batchEnd; ++index) {
+            requests.push_back(std::async(std::launch::async, requestCastShard, index,
+                                          std::chrono::milliseconds(std::chrono::seconds(90))));
+        }
+        for (auto index = batchBegin; index < batchEnd; ++index) {
+            auto response = requests[index - batchBegin].get();
+            auto detailText = extractOutputText(juce::JSON::parse(response.body));
+            juce::String detailError;
+            if (response.connected && response.status >= 200 && response.status < 300 &&
+                !response.cancelled && !response.timedOut &&
+                validateCastDetailShard(manifestText, castShards[index], detailText, detailError)) {
+                castDetailTexts[index] = std::move(detailText);
+                if (progress) progress({AiSongStage::Blueprint, index + 1, castShards.size(), 1,
+                                        "validated cast detail shard"});
+            } else {
+                unresolved.push_back(index);
+            }
+        }
+    }
+    if (!unresolved.empty() && !token.stop_requested()) {
+        if (progress) progress({AiSongStage::Recovery, castShards.size() - unresolved.size(),
+                                castShards.size(), 2,
+                                "recovering only unresolved cast detail shards"});
+        std::vector<std::size_t> stillMissing;
+        for (std::size_t batchBegin = 0; batchBegin < unresolved.size();
+             batchBegin += maximumConcurrentCastShards) {
+            const auto batchEnd = std::min(unresolved.size(), batchBegin + maximumConcurrentCastShards);
+            std::vector<std::future<HttpResponse>> retries;
+            for (auto offset = batchBegin; offset < batchEnd; ++offset) {
+                retries.push_back(std::async(std::launch::async, requestCastShard, unresolved[offset],
+                                             std::chrono::milliseconds(std::chrono::seconds(75))));
+            }
+            for (auto offset = batchBegin; offset < batchEnd; ++offset) {
+                const auto index = unresolved[offset];
+                auto response = retries[offset - batchBegin].get();
+                auto detailText = extractOutputText(juce::JSON::parse(response.body));
+                juce::String detailError;
+                if (response.connected && response.status >= 200 && response.status < 300 &&
+                    !response.cancelled && !response.timedOut &&
+                    validateCastDetailShard(manifestText, castShards[index], detailText, detailError)) {
+                    castDetailTexts[index] = std::move(detailText);
+                    if (progress) progress({AiSongStage::Blueprint, index + 1, castShards.size(), 2,
+                                            "recovered cast detail shard; prior shards preserved"});
+                } else {
+                    stillMissing.push_back(index);
+                }
+            }
+        }
+        unresolved = std::move(stillMissing);
+    }
+    if (!unresolved.empty() || token.stop_requested()) {
+        error = token.stop_requested() ? "Generation cancelled" :
+            "OpenAI cast detail phase failed after bounded shard recovery; accepted cast shards were preserved";
+        return result;
+    }
+    juce::String castMergeError;
+    const auto castText = mergeCastManifestAndDetails(manifestText, castDetailTexts, castMergeError);
     const auto outputText = mergeBlueprintPhases(macroText, castText);
     if (castText.isEmpty() || outputText.isEmpty()) {
-        error = castText.isEmpty()
-            ? structuredResponseError(castHttp.body, "OpenAI returned no structured instrument cast")
-            : "Could not merge AI macro and instrument cast";
+        error = castMergeError.isNotEmpty() ? castMergeError : "Could not merge AI macro and instrument cast";
         return result;
     }
     if (!parseSongPlanJson(outputText, targetSeconds, totalBars, bpm, beatsPerBar,
@@ -1952,9 +2425,293 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             return {};
         }
     }
+    // Restore the main/0.55.0 publication boundary. At this point the response has
+    // already passed strict JSON parsing, the requested cast contract, per-instrument
+    // coverage and final convergence. Rendering and MIDI-integrity validation happen
+    // once in PluginProcessor; editorial scores must not erase this completed plan.
+    OperationalJournal::write("OK", "CHECKPOINT",
+        "complete AI score accepted; publishing for final MIDI-integrity render");
     error.clear();
     return result;
 
+#if 0
+    // Experimental blocking editorial audition retained for source comparison only.
+    // The incremental writers deliberately own only bounded groups of instruments. Their
+    // blocks are now auditioned together before publication; previously this function
+    // returned here and the accurate creative/soundscape findings could only become UI
+    // warnings. Bounded editorial shards replace only the exact audible culprits.
+    GenerationContext auditFoundation;
+    auditFoundation.role = Role::Ensemble;
+    auditFoundation.rootPitchClass = result.rootPitchClass;
+    auditFoundation.scale = result.scale;
+    auditFoundation.beatsPerBar = result.beatsPerBar;
+    auditFoundation.seed = result.seed;
+    auditFoundation.humanize = 0.0;
+    CompositionRenderReport initialReport;
+    [[maybe_unused]] const auto initialPattern = SongComposer{}.render(
+        result, auditFoundation, {}, &initialReport);
+    OperationalJournal::write("INFO", "AUDITION", audibleAuditSummary(initialReport));
+    if (SelectiveRepair::publicationReady(initialReport)) {
+        OperationalJournal::write("OK", "AUDITION", "score passed without editorial repair");
+        error.clear();
+        return result;
+    }
+
+    // Match the publication policy used by PULSO 0.55.0/main: once the AI score has
+    // passed schema, cast, coverage and performance-block validation, creative audit
+    // findings are advisory. They must never erase a complete composition. The final
+    // host render still applies the independent MIDI-integrity gate for unsafe timing,
+    // durations, orphan events and unresolved tonal collisions.
+    OperationalJournal::write("WARN", "AUDITION",
+        "complete AI score published with editorial observations; MIDI integrity "
+        "will be verified after the final render");
+    error.clear();
+    return result;
+
+    // A failed or merely partial repair must not turn an otherwise complete AI
+    // composition into an empty result.
+    auto bestPlan = result;
+    auto bestPattern = initialPattern;
+    auto bestReport = initialReport;
+    std::set<std::string> repairedInstrumentIds;
+    auto completedRepairs = std::size_t{};
+    juce::String terminalReason = "audible quality remained below the publication threshold";
+    const auto repairDeadline = std::min(overallDeadline,
+        std::chrono::steady_clock::now() + std::chrono::minutes(3));
+
+    for (auto repairPass = 1; repairPass <= 2; ++repairPass) {
+        if (token.stop_requested()) {
+            error = "Generation cancelled";
+            return {};
+        }
+        auto diagnosis = SelectiveRepair::diagnose(bestPlan, bestPattern, bestReport, 6);
+        if (!diagnosis.needed) break;
+        if (repairPass > 1 && diagnosis.instrumentIndices.size() > 1) {
+            std::vector<std::size_t> freshTargets;
+            for (const auto index : diagnosis.instrumentIndices)
+                if (index < bestPlan.instruments.size() &&
+                    !repairedInstrumentIds.contains(bestPlan.instruments[index].id))
+                    freshTargets.push_back(index);
+            // Prefer a complementary second shard. If the same severe culprit is the
+            // only remaining one, allow one final focused refinement instead of stalling.
+            if (!freshTargets.empty()) diagnosis.instrumentIndices = std::move(freshTargets);
+        }
+        if (diagnosis.instrumentIndices.empty()) {
+            terminalReason = "creative audition found no bounded instrument owner for the remaining issue";
+            break;
+        }
+        const auto repairRemaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            repairDeadline - std::chrono::steady_clock::now());
+        if (repairRemaining < std::chrono::seconds(30)) {
+            terminalReason = "selective repair exhausted its three-minute global budget";
+            break;
+        }
+        const auto targetIds = instrumentIdsFor(bestPlan, diagnosis.instrumentIndices);
+        juce::String targetList;
+        for (const auto& id : targetIds) targetList += juce::String::fromUTF8(id.c_str()) + ",";
+        OperationalJournal::write("INFO", "REPAIR", "pass " + juce::String(repairPass) +
+            "/2 | targets=" + targetList + " | before " + audibleAuditSummary(bestReport));
+        if (progress) progress({AiSongStage::Validation, completedBlocks + repairPass - 1,
+            blocks.size() + 2, repairPass, "selective musical repair " +
+            juce::String(repairPass) + "/2 · " +
+            juce::String(static_cast<int>(diagnosis.instrumentIndices.size())) + " part(s)"});
+
+        std::vector<std::vector<std::size_t>> repairShards;
+        for (std::size_t begin = 0; begin < diagnosis.instrumentIndices.size();
+             begin += instrumentsPerRepairShard) {
+            repairShards.emplace_back(
+                diagnosis.instrumentIndices.begin() + static_cast<std::ptrdiff_t>(begin),
+                diagnosis.instrumentIndices.begin() + static_cast<std::ptrdiff_t>(
+                    std::min(diagnosis.instrumentIndices.size(), begin + instrumentsPerRepairShard)));
+        }
+        PerformanceScore repairedMaterial;
+        std::set<std::string> completedTargetIds;
+        auto repairSerial = std::size_t{};
+        auto makeRepairBody = [&](const std::vector<std::size_t>& indices,
+                                  int attempt, std::size_t shardIndex) {
+            auto shardDiagnosis = diagnosis;
+            shardDiagnosis.instrumentIndices = indices;
+            const auto repairPrompt = selectiveRepairPrompt(
+                direction, outputText, bestPlan, shardDiagnosis);
+            const auto repairCacheKey = "pulso-repair-" + juce::String::toHexString(
+                static_cast<juce::int64>(seed)) + "-p" + juce::String(repairPass) +
+                "-s" + juce::String(static_cast<int>(shardIndex + 1)) +
+                "-a" + juce::String(attempt);
+            return juce::String("{\"model\":\"") + model +
+                "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
+                realizationReasoningEffort +
+                "\"},\"max_output_tokens\":8000,\"prompt_cache_key\":" +
+                juce::JSON::toString(juce::var(repairCacheKey)) + ",\"input\":" +
+                juce::JSON::toString(juce::var(repairPrompt)) +
+                ",\"text\":{\"format\":{\"type\":\"json_schema\","
+                "\"name\":\"pulso_selective_repair_shard\",\"strict\":true,\"schema\":" +
+                performanceBlockSchema + "}}}";
+        };
+        auto executeRepairRound = [&](const std::vector<std::vector<std::size_t>>& shards,
+                                      int attempt, std::chrono::milliseconds requestBudget) {
+            std::vector<std::vector<std::size_t>> unresolved;
+            for (std::size_t batchBegin = 0; batchBegin < shards.size();
+                 batchBegin += maximumConcurrentRepairShards) {
+                const auto batchEnd = std::min(shards.size(),
+                    batchBegin + maximumConcurrentRepairShards);
+                std::vector<std::future<HttpResponse>> requests;
+                for (auto shardIndex = batchBegin; shardIndex < batchEnd; ++shardIndex) {
+                    requests.push_back(std::async(std::launch::async,
+                        [&, shardIndex] {
+                            return performRequest(makeRepairBody(shards[shardIndex], attempt,
+                                shardIndex), apiKey, token, requestBudget);
+                        }));
+                }
+                for (auto shardIndex = batchBegin; shardIndex < batchEnd; ++shardIndex) {
+                    auto response = requests[shardIndex - batchBegin].get();
+                    const auto shardIds = instrumentIdsFor(bestPlan, shards[shardIndex]);
+                    const auto repairText = extractOutputText(juce::JSON::parse(response.body));
+                    PerformanceScore shardMaterial;
+                    juce::String repairError;
+                    const auto transportOk = response.connected && response.status >= 200 &&
+                        response.status < 300 && !response.cancelled && !response.timedOut;
+                    const auto parsed = transportOk && repairText.isNotEmpty() &&
+                        parsePerformanceBlock(repairText, bestPlan, shardMaterial, repairError);
+                    if (!parsed) {
+                        const auto reason = !transportOk
+                            ? apiErrorMessage(response)
+                            : structuredResponseError(response.body,
+                                repairText.isEmpty() ? "OpenAI returned no repair shard" :
+                                "repair shard JSON was invalid: " + repairError);
+                        OperationalJournal::write(attempt == 1 ? "WARN" : "ERROR", "REPAIR",
+                            "pass " + juce::String(repairPass) + " shard " +
+                            juce::String(static_cast<int>(shardIndex + 1)) + "/" +
+                            juce::String(static_cast<int>(shards.size())) + " attempt " +
+                            juce::String(attempt) + " failed: " + reason);
+                        unresolved.push_back(shards[shardIndex]);
+                        terminalReason = reason;
+                        continue;
+                    }
+                    retainOnlyInstrumentMaterial(shardMaterial, shardIds);
+                    const auto missing = uncoveredInstruments(bestPlan, shardMaterial,
+                                                               shards[shardIndex]);
+                    auto acceptedIds = shardIds;
+                    for (const auto index : missing)
+                        if (index < bestPlan.instruments.size())
+                            acceptedIds.erase(bestPlan.instruments[index].id);
+                    if (!acceptedIds.empty()) {
+                        retainOnlyInstrumentMaterial(shardMaterial, acceptedIds);
+                        mergePerformanceBlock(repairedMaterial, std::move(shardMaterial),
+                                              requestSerial + repairSerial++);
+                        completedTargetIds.insert(acceptedIds.begin(), acceptedIds.end());
+                        OperationalJournal::write("OK", "CHECKPOINT",
+                            "repair pass " + juce::String(repairPass) + " shard " +
+                            juce::String(static_cast<int>(shardIndex + 1)) + " accepted " +
+                            juce::String(static_cast<int>(acceptedIds.size())) + " instrument(s)");
+                    }
+                    if (!missing.empty()) {
+                        for (std::size_t begin = 0; begin < missing.size();
+                             begin += instrumentsPerRepairShard) {
+                            unresolved.emplace_back(missing.begin() + static_cast<std::ptrdiff_t>(begin),
+                                missing.begin() + static_cast<std::ptrdiff_t>(
+                                    std::min(missing.size(), begin + instrumentsPerRepairShard)));
+                        }
+                        terminalReason = "repair shard omitted " +
+                            juce::String(static_cast<int>(missing.size())) + " instrument part(s)";
+                    }
+                }
+            }
+            return unresolved;
+        };
+
+        auto unresolved = executeRepairRound(repairShards, 1,
+            std::min(repairRemaining, std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::seconds(90))));
+        if (!unresolved.empty() && !token.stop_requested()) {
+            const auto retryRemaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                repairDeadline - std::chrono::steady_clock::now());
+            if (retryRemaining >= std::chrono::seconds(25)) {
+                OperationalJournal::write("WARN", "RECOVERY", "repair pass " +
+                    juce::String(repairPass) + " retrying only " +
+                    juce::String(static_cast<int>(unresolved.size())) + " unresolved shard(s)");
+                unresolved = executeRepairRound(unresolved, 2,
+                    std::min(retryRemaining,
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::seconds(75))));
+            }
+        }
+        if (!unresolved.empty()) {
+            terminalReason = "selective repair retained " +
+                juce::String(static_cast<int>(completedTargetIds.size())) + "/" +
+                juce::String(static_cast<int>(targetIds.size())) +
+                " instruments; unresolved shards remain after bounded recovery";
+            OperationalJournal::write("WARN", "REPAIR", terminalReason);
+        }
+        if (completedTargetIds.empty() || repairedMaterial.empty()) {
+            OperationalJournal::write("WARN", "REPAIR",
+                "no valid repair shard was available; preserving the prior score");
+            break;
+        }
+
+        auto candidatePlan = bestPlan;
+        eraseInstrumentMaterial(candidatePlan.performanceScore, completedTargetIds);
+        mergePerformanceBlock(candidatePlan.performanceScore, std::move(repairedMaterial), requestSerial++);
+        applyExplicitRhythmRequest(candidatePlan, direction);
+        candidatePlan.harmonicLanguage.tonalPolicy = tonalPolicy;
+        SongComposer::normalizePlan(candidatePlan);
+        CompositionRenderReport candidateReport;
+        const auto candidatePattern = SongComposer{}.render(
+            candidatePlan, auditFoundation, {}, &candidateReport);
+        OperationalJournal::write("INFO", "REPAIR", "pass " + juce::String(repairPass) +
+            "/2 result | " + audibleAuditSummary(candidateReport));
+        const auto safer = candidateReport.production.ready &&
+            SelectiveRepair::deficit(candidateReport) + 0.01 <
+                SelectiveRepair::deficit(bestReport);
+        if (!safer && !SelectiveRepair::publicationReady(candidateReport)) {
+            terminalReason = "selective repair did not produce a safer audible candidate";
+            OperationalJournal::write("WARN", "REPAIR", terminalReason);
+            break;
+        }
+        bestPlan = std::move(candidatePlan);
+        bestPattern = candidatePattern;
+        bestReport = candidateReport;
+        repairedInstrumentIds.insert(completedTargetIds.begin(), completedTargetIds.end());
+        ++completedRepairs;
+        if (SelectiveRepair::publicationReady(bestReport)) {
+            OperationalJournal::write("OK", "GATE", "strict audible contract passed after " +
+                juce::String(static_cast<int>(completedRepairs)) + " repair pass(es)");
+            if (progress) progress({AiSongStage::Validation, blocks.size() + completedRepairs,
+                blocks.size() + 2, repairPass, "selective repair passed the strict audible gate"});
+            error.clear();
+            return bestPlan;
+        }
+    }
+
+    if (SelectiveRepair::editoriallyAcceptable(initialReport, bestReport, completedRepairs)) {
+        OperationalJournal::write("OK", "GATE", "editorially accepted after measurable improvement | " +
+            audibleAuditSummary(bestReport));
+        if (progress) progress({AiSongStage::Validation, blocks.size() + completedRepairs,
+            blocks.size() + 2, static_cast<int>(completedRepairs),
+            "musically improved candidate accepted with non-critical editorial observations"});
+        error.clear();
+        return bestPlan;
+    }
+
+    if (SelectiveRepair::safeWithEditorialObservations(bestReport)) {
+        OperationalJournal::write("OK", "GATE",
+            "safe score published with non-critical editorial observations; optional repair was incomplete | " +
+            audibleAuditSummary(bestReport));
+        if (progress) progress({AiSongStage::Validation, blocks.size() + completedRepairs,
+            blocks.size() + 2, static_cast<int>(completedRepairs),
+            "safe composition accepted; remaining findings are editorial only"});
+        error.clear();
+        return bestPlan;
+    }
+
+    error = terminalReason + " | " + audibleAuditSummary(bestReport);
+    const auto auditFile = OperationalJournal::writeRejectedAudit(
+        bestPlan, bestReport, error, completedRepairs);
+    OperationalJournal::write("ERROR", "GATE", error + " | audit=" + auditFile.getFullPathName());
+    return {};
+#endif
+}
+
+#if 0
     // Legacy monolithic critic retained below for source-level comparison only. The
     // incremental path above is now the sole production path and returns before it.
     GenerationContext auditFoundation;
@@ -2492,6 +3249,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     SongComposer::normalizePlan(result);
     return result;
 }
+#endif
 
 bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
                                    int requestedBars, double bpm, double beatsPerBar,

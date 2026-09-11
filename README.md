@@ -1,5 +1,79 @@
 # PULSO
 
+### 0.55.8 — publicación compatible con main
+
+Una canción de IA que supera el contrato estructural completo vuelve a publicarse como en
+`main`/0.55.0. Las métricas de narrativa, densidad, soundscape y desarrollo permanecen visibles
+como diagnóstico editorial, pero ya no pueden borrar el resultado ni iniciar reparaciones remotas
+costosas. Después del render solo bloquean la publicación los defectos reales de integridad MIDI:
+tiempos inválidos, duraciones inseguras, eventos huérfanos o colisiones tonales no resueltas.
+
+El modelo continúa siendo `gpt-5.6-terra` con razonamiento `medium`; se conservan el reparto global
+fragmentado, los checkpoints y la recuperación acotada de transporte.
+
+### 0.55.7 — reparación editorial fragmentada
+
+Las correcciones posteriores a la audición se escriben en shards de hasta dos instrumentos, con
+un máximo de tres solicitudes Terra simultáneas. Cada shard válido se conserva por instrumento;
+una respuesta incompleta o inválida reintenta únicamente su material pendiente dentro del mismo
+presupuesto. La canción se vuelve a audicionar una sola vez con todas las mejoras recuperadas y
+el registro diferencia transporte, estado de Responses, JSON inválido y omisiones de cobertura.
+
+### 0.55.6 — Terra Medium
+
+La composición completa usa ahora `gpt-5.6-terra` con `reasoning.effort=medium` en todas las
+fases de Responses API. La interfaz, los metadatos MIDI y los contratos enviados a Live reflejan
+el mismo modelo; no queda una selección silenciosa ni una etiqueta heredada de Sol Max.
+
+### 0.55.5 — publicación editorial recuperable
+
+Una reparación selectiva incompleta ya no descarta una composición íntegra. PULSO conserva por
+instrumento cada reparación que cumple su contrato, reintenta únicamente las pistas omitidas y
+vuelve a audicionar el mejor candidato. Si la mejora opcional no termina, la obra original solo
+puede publicarse cuando producción, narrativa, viabilidad y los pisos estrictos de soundscape
+demuestran que las observaciones restantes son editoriales. Los fallos críticos continúan
+bloqueando la publicación sin excepción.
+
+### 0.55.4 — reparto global eficiente
+
+La IA decide primero un manifiesto compacto para todo el elenco: identidades, funciones,
+relaciones y trayectoria seccional de cada pista quedan fijadas antes de escribir detalles.
+Después, bloques de hasta diez instrumentos completan únicamente registros, articulaciones,
+timbres, dispositivos y evolución espacial. Hasta tres bloques se procesan en paralelo y una
+falla recupera solamente el bloque pendiente; nunca vuelve a pagar ni a rediseñar el reparto ya
+aceptado. Así, una solicitud de 50 pistas conserva una única intención compositiva global sin
+depender de un JSON monolítico propenso a vencer el plazo.
+
+### 0.55.3 — gate convergente y auditoría persistente
+
+El gate distingue ahora integridad crítica de observaciones editoriales. Tonalidad, MIDI
+inválido, narrativa realmente rota, soundscape severamente degradado y una proporción baja de
+pistas viables continúan bloqueando la publicación. Una composición segura que mejora de forma
+medible tras la reparación puede publicarse aunque conserve observaciones menores: el crítico ya
+no transforma cada recomendación en un rechazo absoluto.
+
+La reparación dispone de hasta dos tandas de seis instrumentos bajo un único presupuesto global
+de tres minutos. La segunda tanda prioriza pistas aún no editadas y solo conserva un candidato si
+reduce el déficit audible sin degradar producción. Cada fase se registra en
+`%APPDATA%\PULSO\pulso-operational.log`; un rechazo guarda además su auditoría estructurada en
+`%APPDATA%\PULSO\Audits`, con métricas, causas y conteo de notas por instrumento. Ningún prompt
+ni clave API se escribe en esos archivos.
+
+### 0.55.2 — reparación musical selectiva
+
+La ruta incremental ahora audiciona el MIDI ensamblado antes de publicarlo. El crítico
+identifica voces nominales o subdesarrolladas, concentración excesiva en un único arpegio,
+densidad estática y responsables concretos de un cierre sin resolución. Si encuentra uno de
+estos defectos, realiza una sola petición acotada para un máximo de seis instrumentos: forma,
+armonía, reparto y todo el MIDI aceptado de las demás pistas permanecen inmutables.
+
+La reparación recibe también las frases originales de esas pistas para desarrollar su identidad
+en vez de sustituirla por material inconexo. El candidato se vuelve a renderizar y debe superar
+producción, narrativa, soundscape y viabilidad de pistas. Un fallo de red, JSON incompleto o una
+revisión insuficiente conserva la composición anterior; ya no se publica silenciosamente un
+reemplazo procedural. En Live, los timbres `featured` y `critical` por debajo de su contrato
+obtienen un segundo intento determinista, aceptado únicamente cuando mejora la fidelidad audible.
+
 ### 0.55.1 — flujo creativo esencial
 
 La interfaz principal queda reducida a idioma, prompt, duración, composición,
@@ -206,7 +280,7 @@ movimiento armónico, tímbrico y espacial, nunca por ausencia de kick o groove.
   incompleta, PULSO muestra su estado y `incomplete_details` en lugar de sustituirla en silencio.
 - Un fallback local publica `production_mode_source=local_fallback`, registra el error exacto y
   lo incorpora a `production_issues` en el request de Live.
-- La autenticación y el acceso a `gpt-5.6-sol` se verifican contra Responses API; el motor
+- La autenticación y el acceso al modelo configurado se verifican contra Responses API; el motor
   local deja de confundirse con una composición AI en las auditorías posteriores.
 
 ### 0.44 — desarrollo musical humano
@@ -449,7 +523,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install-ableton-bridge.ps1
 
 ### Activar composición con GPT
 
-PULSO usa `gpt-5.6-sol` con razonamiento `max` mediante OpenAI Responses API y Structured Outputs. La clave
+PULSO usa `gpt-5.6-terra` con razonamiento `medium` mediante OpenAI Responses API y Structured Outputs. La clave
 no está incluida en el plugin ni en el repositorio. Configúrala para tu usuario:
 
 ```powershell
@@ -457,7 +531,7 @@ powershell -ExecutionPolicy Bypass -File scripts/configure-openai.ps1
 ```
 
 Cierra Ableton por completo y vuelve a abrirlo. El indicador mostrará
-`GPT-5.6 SOL MAX · VALIDATED` tras una composición válida. Si falta la clave, la red
+`GPT-5.6 TERRA MID · VALIDATED` tras una composición válida. Si falta la clave, la red
 falla o la respuesta no supera la validación, mostrará `LOCAL ENGINE` o
 `LOCAL FALLBACK`; nunca presenta el fallback como IA.
 

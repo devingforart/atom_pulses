@@ -11,6 +11,7 @@
 #include "core/PerformanceTiming.h"
 #include "core/RhythmEngine.h"
 #include "core/Scale.h"
+#include "core/SelectiveRepair.h"
 #include "core/SongComposer.h"
 #include "core/TonalContract.h"
 #include "core/VerticalHarmonyGate.h"
@@ -2127,4 +2128,122 @@ void runGeneratorTests() {
     require(compactPlan.totalBars == 8 && !compactPlan.sections.empty() &&
                 compactPlan.sections.back().startBar + compactPlan.sections.back().bars == 8,
             "Even the shortest slow song must form a valid contiguous dramatic arc");
+
+    SongPlan repairPlan;
+    repairPlan.sections.resize(4);
+    repairPlan.sections.back().name = "Final arrival";
+    InstrumentAssignment dominantArp;
+    dominantArp.id = "dominant_arp";
+    dominantArp.instrumentId = "hypnotic_arp";
+    dominantArp.name = "Dominant Arp";
+    dominantArp.sourceVoice = VoiceId::HarmonicPulse;
+    dominantArp.role = "support pulse";
+    dominantArp.prominence = 0.45;
+    dominantArp.activeSections = {"Final arrival"};
+    InstrumentAssignment resolvingLead;
+    resolvingLead.id = "resolving_lead";
+    resolvingLead.instrumentId = "lead_synth";
+    resolvingLead.name = "Resolving Lead";
+    resolvingLead.sourceVoice = VoiceId::Lead;
+    resolvingLead.role = "primary speaker";
+    resolvingLead.prominence = 0.9;
+    resolvingLead.activeSections = {"Final arrival"};
+    repairPlan.instruments = {dominantArp, resolvingLead};
+    for (const auto& instrument : repairPlan.instruments) {
+        PerformanceCell cell;
+        cell.id = instrument.id + "_cell";
+        cell.ownedVoices = {instrument.sourceVoice};
+        for (auto note = 0; note < 8; ++note)
+            cell.notes.push_back({note * 0.5, 0.25, 60 + note % 3, 80,
+                                  instrument.sourceVoice, MetricIntent::StrictGrid,
+                                  instrument.id});
+        repairPlan.performanceScore.cells.push_back(cell);
+        repairPlan.performanceScore.placements.push_back({cell.id, 0});
+        repairPlan.performanceScore.placements.push_back({cell.id, 3});
+    }
+    Pattern repairPattern;
+    for (auto note = 0; note < 30; ++note)
+        repairPattern.notes.push_back({note * 0.25, 0.125, 60 + note % 3, 80, 3,
+            VoiceId::HarmonicPulse, 1, true, NoteOrigin::AiAuthored});
+    for (auto note = 0; note < 10; ++note)
+        repairPattern.notes.push_back({note * 0.75, 0.5, 67 + note % 2, 90, 2,
+            VoiceId::Lead, 2, true, NoteOrigin::AiAuthored});
+    CompositionRenderReport failedAudition;
+    failedAudition.production.ready = true;
+    failedAudition.narrative.creativeReady = false;
+    failedAudition.narrative.score = 0.82;
+    failedAudition.narrative.resolutionScore = 0.40;
+    failedAudition.narrative.densityControl = 0.70;
+    failedAudition.narrative.narrativeSpineReady = false;
+    failedAudition.narrative.issues = {"overcrowded_arrangement"};
+    const auto repairDiagnosis = SelectiveRepair::diagnose(
+        repairPlan, repairPattern, failedAudition, 6);
+    require(repairDiagnosis.needed &&
+                std::find(repairDiagnosis.instrumentIndices.begin(),
+                          repairDiagnosis.instrumentIndices.end(), 0) !=
+                    repairDiagnosis.instrumentIndices.end() &&
+                std::find(repairDiagnosis.instrumentIndices.begin(),
+                          repairDiagnosis.instrumentIndices.end(), 1) !=
+                    repairDiagnosis.instrumentIndices.end(),
+            "Selective repair must target a dominant arp and the final narrative speaker");
+    CompositionRenderReport passedAudition;
+    passedAudition.production.ready = true;
+    passedAudition.narrative.creativeReady = true;
+    passedAudition.soundscape.ready = true;
+    passedAudition.trackViability.ready = true;
+    require(SelectiveRepair::publicationReady(passedAudition) &&
+                !SelectiveRepair::diagnose(repairPlan, repairPattern, passedAudition).needed,
+            "A passed audible score must not spend a repair request or rewrite accepted MIDI");
+
+    CompositionRenderReport editorialBefore;
+    editorialBefore.production.ready = true;
+    editorialBefore.narrative.active = true;
+    editorialBefore.narrative.creativeReady = false;
+    editorialBefore.narrative.score = 0.79;
+    editorialBefore.narrative.resolutionScore = 0.52;
+    editorialBefore.narrative.densityControl = 0.70;
+    editorialBefore.narrative.issues = {"overcrowded_arrangement", "weak_harmonic_direction"};
+    auto editorialAfter = editorialBefore;
+    editorialAfter.narrative.score = 0.82;
+    editorialAfter.narrative.resolutionScore = 0.68;
+    editorialAfter.narrative.densityControl = 0.82;
+    editorialAfter.narrative.issues = {"weak_harmonic_direction"};
+    require(!SelectiveRepair::criticalFailure(editorialAfter) &&
+                SelectiveRepair::editoriallyAcceptable(editorialBefore, editorialAfter, 1) &&
+                !SelectiveRepair::editoriallyAcceptable(editorialBefore, editorialAfter, 0),
+            "A bounded repair that measurably improves a safe score must publish with editorial observations");
+    CompositionRenderReport observedSafeFallback;
+    observedSafeFallback.production.ready = true;
+    observedSafeFallback.narrative.active = true;
+    observedSafeFallback.narrative.creativeReady = true;
+    observedSafeFallback.narrative.score = 0.902;
+    observedSafeFallback.narrative.resolutionScore = 0.85;
+    observedSafeFallback.narrative.densityControl = 0.833;
+    observedSafeFallback.soundscape.active = true;
+    observedSafeFallback.soundscape.ready = false;
+    observedSafeFallback.soundscape.score = 0.844;
+    observedSafeFallback.soundscape.meaningfulCoverage = 0.90;
+    observedSafeFallback.trackViability.active = true;
+    observedSafeFallback.trackViability.ready = true;
+    observedSafeFallback.trackViability.score = 1.0;
+    observedSafeFallback.trackViability.viabilityRatio = 1.0;
+    require(SelectiveRepair::safeWithEditorialObservations(observedSafeFallback),
+            "A healthy score must survive an unavailable optional editorial repair");
+    observedSafeFallback.soundscape.underdevelopedVoices = 1;
+    require(!SelectiveRepair::safeWithEditorialObservations(observedSafeFallback),
+            "An underdeveloped declared voice must not bypass the safe editorial fallback");
+
+    PerformanceScore partialRepair;
+    partialRepair.cells.push_back(repairPlan.performanceScore.cells.front());
+    partialRepair.placements.push_back({partialRepair.cells.front().id, 0});
+    partialRepair.placements.push_back({partialRepair.cells.front().id, 3});
+    const auto incompleteRepairTargets = SelectiveRepair::incompleteTargets(
+        repairPlan, partialRepair, {0, 1});
+    require(incompleteRepairTargets.size() == 1 && incompleteRepairTargets.front() == 1,
+            "Partial repair recovery must preserve a complete target and retry only the omitted instrument");
+    auto severeAudition = editorialAfter;
+    severeAudition.narrative.score = 0.60;
+    require(SelectiveRepair::criticalFailure(severeAudition) &&
+                !SelectiveRepair::editoriallyAcceptable(editorialBefore, severeAudition, 2),
+            "A severely degraded narrative must remain a hard publication failure");
 }

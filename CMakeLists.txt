@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.55.1 LANGUAGES C CXX)
+project(Pulso VERSION 0.55.8 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -61,6 +61,8 @@ add_library(pulso_core STATIC
     src/core/RhythmEngine.h
     src/core/Scale.cpp
     src/core/Scale.h
+    src/core/SelectiveRepair.cpp
+    src/core/SelectiveRepair.h
     src/core/SongComposer.cpp
     src/core/SongComposer.h
     src/core/TonalContract.cpp
@@ -148,6 +150,8 @@ if(PULSO_BUILD_PLUGIN)
         src/plugin/Localization.h
         src/plugin/MidiExporter.cpp
         src/plugin/MidiExporter.h
+        src/plugin/OperationalJournal.cpp
+        src/plugin/OperationalJournal.h
         src/plugin/PatternView.cpp
         src/plugin/PatternView.h
         src/plugin/PluginEditor.cpp

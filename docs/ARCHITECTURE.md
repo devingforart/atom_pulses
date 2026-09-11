@@ -5,7 +5,7 @@
 La generación larga separa decisión y ejecución:
 
 ```text
-Sol Max macro blueprint (sin reparto ni MIDI)
+Terra Medium macro blueprint (sin reparto ni MIDI)
     -> recuperación Sol Low si Max supera su SLA
     -> reparto/soundscape Sol Low
     -> bloques de performance Sol Low de <= 10 instrumentos
@@ -552,7 +552,7 @@ profundidad, calidez, brillo, definición transiente, balance acústico/electró
 y contraste. El resolver de Live mantiene identidad instrumental como contrato duro y usa
 la paleta sólo para desempatar candidatos de la familia correcta.
 
-Las pasadas GPT de arquitectura y crítica usan `gpt-5.6-sol` con razonamiento `max` y son
+Las pasadas GPT de arquitectura y crítica usan `gpt-5.6-terra` con razonamiento `medium` y son
 trabajos largos de Responses API. Se inician
 con `background: true`, conservan el ID de respuesta y sólo consultan mientras el estado sea
 `queued` o `in_progress`. Cancelar propaga `POST /v1/responses/{id}/cancel`; los fallos

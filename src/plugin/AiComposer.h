@@ -43,6 +43,8 @@ public:
     [[nodiscard]] static bool songPlanSchemaIsValid();
     [[nodiscard]] static bool incrementalSchemasAreValid();
     [[nodiscard]] static std::size_t maximumSongInstruments() noexcept;
+    [[nodiscard]] static std::size_t castDetailShardCount(std::size_t instruments) noexcept;
+    [[nodiscard]] static std::size_t selectiveRepairShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t performanceBlockCount(std::size_t instruments) noexcept;
     [[nodiscard]] static AiComposition compose(const juce::String& creativeDirection,
                                                int bars, double bpm,

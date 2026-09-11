@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 
+#include "OperationalJournal.h"
 #include "PluginEditor.h"
 #include "core/PerformanceTiming.h"
 #include "core/Scale.h"
@@ -1354,6 +1355,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         const auto operationToken = operationCancellation->get_token();
         const auto current = uiPatternSnapshot.load(std::memory_order_acquire);
         const auto previous = previousPatternSnapshot.load(std::memory_order_acquire);
+        const auto planBeforeOperation = songPlanSnapshot.load(std::memory_order_acquire);
         Pattern generated;
         auto metadata = std::make_shared<IdeaMetadata>();
 
@@ -1419,12 +1421,21 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                         currentTempo(), newest.beatsPerBar, newest.seed, operationToken, aiError,
                         [this, metadata](const AiSongProgressUpdate& update) {
                             auto progressMetadata = std::make_shared<IdeaMetadata>(*metadata);
+                            OperationalJournal::write(
+                                update.stage == AiSongStage::Recovery ? "WARN" : "INFO",
+                                update.stage == AiSongStage::Blueprint ? "BLUEPRINT" :
+                                update.stage == AiSongStage::PerformanceBlock ? "WRITING" :
+                                update.stage == AiSongStage::Recovery ? "RECOVERY" : "VALIDATION",
+                                update.detail + " | completed=" +
+                                juce::String(static_cast<int>(update.completed)) + "/" +
+                                juce::String(static_cast<int>(update.total)) + " | attempt=" +
+                                juce::String(update.attempt));
                             if (update.stage == AiSongStage::Blueprint) {
                                 const auto total = std::max<std::size_t>(1, update.total);
                                 generationProgress.store(0.06f + 0.04f *
                                     static_cast<float>(update.completed) / static_cast<float>(total),
                                     std::memory_order_relaxed);
-                                progressMetadata->status = "SOL MAX · BLUEPRINT " +
+                                progressMetadata->status = "TERRA MID · BLUEPRINT " +
                                     juce::String(static_cast<int>(update.completed + 1)) + "/" +
                                     juce::String(static_cast<int>(total));
                                 progressMetadata->description = update.detail;
@@ -1436,14 +1447,16 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                                 generationProgress.store(0.12f + fraction * 0.34f,
                                                          std::memory_order_relaxed);
                                 progressMetadata->status = update.stage == AiSongStage::Recovery
-                                    ? "SOL MAX · RECOVERING BLOCK · ATTEMPT " + juce::String(update.attempt)
-                                    : "SOL MAX · WRITING BLOCK " +
+                                    ? "TERRA MID · RECOVERING BLOCK · ATTEMPT " + juce::String(update.attempt)
+                                    : "TERRA MID · WRITING BLOCK " +
                                         juce::String(static_cast<int>(update.completed + 1)) + "/" +
                                         juce::String(static_cast<int>(total));
                                 progressMetadata->description = update.detail;
                             } else {
                                 generationProgress.store(0.47f, std::memory_order_relaxed);
-                                progressMetadata->status = "SOL MAX · ASSEMBLING SCORE";
+                                progressMetadata->status = update.detail.containsIgnoreCase("selective")
+                                    ? "TERRA MID · SELECTIVE MUSICAL REPAIR"
+                                    : "TERRA MID · AUDIBLE VALIDATION";
                                 progressMetadata->description = update.detail;
                             }
                             ideaMetadata.store(std::move(progressMetadata), std::memory_order_release);
@@ -1466,6 +1479,25 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     continue;
                 }
                 if (plan.sections.empty()) {
+                    if (AiComposer::hasApiKey() && aiError.isNotEmpty()) {
+                        compositionSeed.store(generationPreviousSeed.load(std::memory_order_relaxed),
+                                              std::memory_order_relaxed);
+                        variationIndex.store(generationPreviousVariation.load(std::memory_order_relaxed),
+                                             std::memory_order_relaxed);
+                        auto rejected = metadataBeforeOperation
+                            ? std::make_shared<IdeaMetadata>(*metadataBeforeOperation)
+                            : std::make_shared<IdeaMetadata>();
+                        rejected->status = "AI COMPOSITION REJECTED · CURRENT IDEA KEPT";
+                        rejected->description = "The AI score or its bounded selective repair did not pass "
+                            "the audible publication contract. No procedural replacement was published. " + aiError;
+                        OperationalJournal::write("ERROR", "GENERATION", aiError);
+                        juce::Logger::writeToLog("PULSO AI PUBLICATION GATE: " + aiError);
+                        ideaMetadata.store(std::move(rejected), std::memory_order_release);
+                        activeGenerationCancellation.store(nullptr, std::memory_order_release);
+                        generationInProgress.store(false, std::memory_order_release);
+                        generationProgress.store(0.0f, std::memory_order_relaxed);
+                        continue;
+                    }
                     plan = SongComposer::createLocalPlan(userSongDirection.toStdString(),
                         newest.targetSongSeconds, currentTempo(), newest.beatsPerBar,
                         newest.seed, context.rootPitchClass, context.scale);
@@ -1537,7 +1569,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     juce::Logger::writeToLog("PULSO AI FALLBACK: " + aiError);
                 }
                 generated.seed = newest.seed;
-                metadata->status = usedAiPlan ? "GPT-5.6 SOL MAX - VALIDATED - FULL SONG"
+                metadata->status = usedAiPlan ? "GPT-5.6 TERRA MID - VALIDATED - FULL SONG"
                     : reusedPlan ? "SONG RECOMPOSED - STRUCTURE PRESERVED"
                     : aiError.isNotEmpty() ? "GPT FAILED - " + aiError.substring(0, 72).toUpperCase()
                                            : "LOCAL LONG-FORM ENGINE";
@@ -1607,7 +1639,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     metadata->title = ai.title;
                     metadata->key = ai.key;
                     metadata->description = ai.summary;
-                    metadata->status = "GPT-5.6 SOL MAX · VALIDATED";
+                    metadata->status = "GPT-5.6 TERRA MID · VALIDATED";
                     usedAI = true;
                 }
             }
@@ -1633,6 +1665,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
 
         if (cancellableAction && (operationToken.stop_requested() || token.stop_requested() ||
             generationCancelRequested.load(std::memory_order_acquire))) {
+            songPlanSnapshot.store(planBeforeOperation, std::memory_order_release);
             compositionSeed.store(generationPreviousSeed.load(std::memory_order_relaxed), std::memory_order_relaxed);
             variationIndex.store(generationPreviousVariation.load(std::memory_order_relaxed), std::memory_order_relaxed);
             auto cancelled = metadataBeforeOperation
@@ -1647,7 +1680,11 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             continue;
         }
 
+        // Creative, narrative, density and soundscape audits are editorial diagnostics.
+        // As in main/0.55.0, they cannot hide a structurally complete AI composition.
+        // Only the post-render MIDI-integrity contract remains blocking.
         if (generated.productionAuditPerformed && !generated.productionReady) {
+            songPlanSnapshot.store(planBeforeOperation, std::memory_order_release);
             compositionSeed.store(generationPreviousSeed.load(std::memory_order_relaxed), std::memory_order_relaxed);
             variationIndex.store(generationPreviousVariation.load(std::memory_order_relaxed), std::memory_order_relaxed);
             auto rejected = metadataBeforeOperation
@@ -1659,9 +1696,15 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             juce::Logger::writeToLog("PULSO INTEGRITY GATE: score=" +
                 juce::String(generated.productionScore * 100.0, 1) + "% issues=" +
                 (issues.isEmpty() ? juce::String("unknown") : issues.joinIntoString(", ")));
-            rejected->description = "The rendered score failed the audible composition or MIDI integrity contract. "
-                "PULSO refused to publish a technically valid but musically incoherent result. The previous "
-                "composition was kept unchanged. Score " +
+            OperationalJournal::write("ERROR", "PUBLICATION", "score=" +
+                juce::String(generated.productionScore, 3) + " | creative=" +
+                juce::String(generated.creativeScore, 3) + " | soundscape=" +
+                juce::String(generated.soundscapeScore, 3) + " | viability=" +
+                juce::String(generated.trackViabilityScore, 3) + " | issues=" +
+                (issues.isEmpty() ? juce::String("unknown") : issues.joinIntoString(", ")));
+            rejected->description = "The rendered score failed the MIDI integrity contract. "
+                "PULSO refused to publish unsafe or internally inconsistent MIDI. Creative and editorial "
+                "observations do not block publication. The previous composition was kept unchanged. Score " +
                 juce::String(generated.productionScore * 100.0, 1) + "%. Issues: " +
                 (issues.isEmpty() ? juce::String("unknown") : issues.joinIntoString(", "));
             rejected->status = "COMPOSITION GATE - CURRENT IDEA KEPT";

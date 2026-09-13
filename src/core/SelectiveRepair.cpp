@@ -242,18 +242,39 @@ std::vector<std::size_t> SelectiveRepair::incompleteTargets(
     std::map<std::string, std::size_t> noteCounts;
     std::map<std::string, std::set<int>> sections;
     std::map<std::string, std::set<std::string>> instrumentsByCell;
+    std::map<std::string, std::set<std::string>> themesByInstrument;
     for (const auto& cell : score.cells) {
         for (const auto& note : cell.notes) {
             if (note.instrumentId.empty()) continue;
             ++noteCounts[note.instrumentId];
             instrumentsByCell[cell.id].insert(note.instrumentId);
+            if (!cell.themeId.empty()) themesByInstrument[note.instrumentId].insert(cell.themeId);
         }
     }
+    auto resolutionSection = plan.sections.empty() ? -1 : static_cast<int>(plan.sections.size() - 1);
+    for (const auto& act : plan.narrativeSpine.acts) {
+        if (act.stage != NarrativeStage::Resolution) continue;
+        const auto found = std::find_if(plan.sections.begin(), plan.sections.end(),
+            [&](const auto& section) { return section.name == act.sectionName; });
+        if (found != plan.sections.end())
+            resolutionSection = static_cast<int>(std::distance(plan.sections.begin(), found));
+    }
+    std::set<std::string> codaOwners;
     for (const auto& placement : score.placements) {
         const auto found = instrumentsByCell.find(placement.cellId);
         if (found == instrumentsByCell.end()) continue;
-        for (const auto& id : found->second) sections[id].insert(placement.sectionIndex);
+        for (const auto& id : found->second) {
+            sections[id].insert(placement.sectionIndex);
+            if (placement.sectionIndex == resolutionSection && resolutionSection >= 0) {
+                const auto sectionBeats = plan.sections[static_cast<std::size_t>(resolutionSection)].bars *
+                    plan.beatsPerBar;
+                const auto codaThreshold = std::max(0.0, sectionBeats - plan.beatsPerBar * 16.0);
+                if (placement.startBeat >= codaThreshold) codaOwners.insert(id);
+            }
+        }
     }
+
+    const auto protagonistThemes = themesByInstrument[plan.narrativeSpine.protagonistInstrumentId];
 
     std::vector<std::size_t> missing;
     for (const auto index : candidates) {
@@ -266,11 +287,27 @@ std::vector<std::size_t> SelectiveRepair::incompleteTargets(
              layer->kind == SoundscapeLayerKind::OneShot);
         const auto rareEvent = eventLayer || instrument.sourceVoice == VoiceId::Transitions ||
             instrument.orchestralFunction == "transition";
-        const auto minimumNotes = rareEvent ? std::size_t{1} : std::size_t{3};
+        const auto protagonist = instrument.id == plan.narrativeSpine.protagonistInstrumentId;
+        const auto answer = instrument.lineRelationship == "call_response";
+        const auto motion = instrument.sourceVoice == VoiceId::HarmonicPulse ||
+            containsAny(instrument, {"arp", "sequence", "pulse", "ostinato", "orbit"});
+        const auto minimumNotes = rareEvent ? std::size_t{1} : protagonist || motion
+            ? std::size_t{6} : answer ? std::size_t{4} : std::size_t{3};
         const auto minimumSections = rareEvent || plan.sections.size() < 4
             ? std::size_t{1} : std::size_t{2};
-        if (noteCounts[instrument.id] < minimumNotes ||
-            sections[instrument.id].size() < minimumSections)
+        auto incomplete = noteCounts[instrument.id] < minimumNotes ||
+            sections[instrument.id].size() < minimumSections;
+        // The model—not the renderer—must bring the protagonist back in the coda.
+        if (protagonist && !codaOwners.contains(instrument.id)) incomplete = true;
+        // A response belongs to the same thematic family, but its distinct cell and
+        // rhythm remain free. Labels alone cannot fabricate kinship.
+        if (answer && !protagonistThemes.empty()) {
+            const auto& answerThemes = themesByInstrument[instrument.id];
+            const auto related = std::any_of(answerThemes.begin(), answerThemes.end(),
+                [&](const auto& theme) { return protagonistThemes.contains(theme); });
+            if (!related) incomplete = true;
+        }
+        if (incomplete)
             missing.push_back(index);
     }
     return missing;

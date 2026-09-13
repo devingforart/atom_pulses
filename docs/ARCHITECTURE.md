@@ -926,3 +926,25 @@ instrument with no MIDI is therefore visible as missing realization rather than 
 The Ableton bridge expands multi-articulation percussion specs before preflight. Sound matching ranks
 the exact articulation ahead of its broad catalog family, and Live note insertion uses Python Remote
 Script `MidiNoteSpecification` objects rather than the dictionary contract exposed to Max devices.
+
+### Narrative authority and convergent attention (0.56.1)
+
+An AI-authored score has a strict creative ownership boundary. `AiAuthored` and `AiTransformed`
+are the only model-authorship origins; `PlanDerived` is deterministic realization. The local
+electronic fabric may maintain chord-floor sustains and technical continuity, but it cannot write
+the protagonist, call-response line, independent counterpoint or declared motion owner. Performance
+validation requires the protagonist to return during the last sixteen bars of the resolution and
+requires its answer to use the same named theme family.
+
+`AttentionDirector` treats the response as subordinate speech: at most sixty percent of the
+protagonist's note count and simultaneous presence in at most fifteen percent of its active bars.
+Its active-part budget is five-to-seven for normal sections and eight-to-nine for high-energy
+sections. Because harmonic-floor completion changes the measured density, a final exact-bar pass
+runs afterwards and removes the lowest-priority background owners while protecting the protagonist,
+two floor layers, structural events and required pulse.
+
+Consolidated tonality remains the default safety policy but is no longer synonymous with completely
+diatonic writing. A GPT chord with a functional chromatic, colour, modal, dominant or transitional
+label may retain at most two foreign pitch classes. A foreign note is legal only inside that exact
+window, under the global chromatic ceiling, and when the following lower-tension chord offers a
+home-scale resolution by semitone or whole tone. Undeclared or unresolved foreign notes are repaired.

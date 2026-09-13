@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <iterator>
 #include <map>
 #include <numeric>
 #include <set>
@@ -170,11 +171,11 @@ std::size_t partBudget(const SongPlan& plan, double beat) noexcept {
     const auto energy = section == nullptr ? .5 : section->energy;
     const auto density = section == nullptr ? .5 : section->density;
     const auto combined = energy * .62 + density * .38;
-    if (combined < .28) return 6;
-    if (combined < .50) return 7;
-    if (combined < .70) return 9;
-    if (combined < .86) return 10;
-    return 11;
+    if (combined < .28) return 5;
+    if (combined < .50) return 6;
+    if (combined < .70) return 7;
+    if (combined < .86) return 8;
+    return 9;
 }
 
 double priority(const InstrumentPart& part, std::size_t window,
@@ -321,6 +322,68 @@ AttentionDirectionReport AttentionDirector::shape(Pattern& pattern, const SongPl
     const auto protagonist = [&](const InstrumentPart& part) {
         return part.id != 0 && part.id == primarySpeakerId;
     };
+
+    // A call-response lane is subordinate speech. It may quote a clue, but it cannot
+    // out-talk the protagonist or occupy the same bars as a second lead for most of
+    // the form. This pass only subtracts existing notes and distributes the retained
+    // answer evenly; it never composes a replacement.
+    if (primarySpeakerId != 0) {
+        std::set<std::uint16_t> answerIds;
+        for (const auto& part : pattern.parts)
+            if (part.lineRelationship == "call_response") answerIds.insert(part.id);
+        const auto primaryNotes = std::count_if(pattern.notes.begin(), pattern.notes.end(),
+            [&](const auto& note) { return note.partId == primarySpeakerId; });
+        if (!answerIds.empty() && primaryNotes >= 6) {
+            std::set<int> primaryBars;
+            std::set<int> answerBars;
+            for (const auto& note : pattern.notes) {
+                const auto bar = std::clamp(static_cast<int>(std::floor(note.startBeat / beatsPerBar)),
+                                            0, bars - 1);
+                if (note.partId == primarySpeakerId) primaryBars.insert(bar);
+                if (answerIds.contains(note.partId)) answerBars.insert(bar);
+            }
+            std::vector<int> overlaps;
+            std::set_intersection(primaryBars.begin(), primaryBars.end(), answerBars.begin(), answerBars.end(),
+                                  std::back_inserter(overlaps));
+            const auto permittedOverlap = std::max<std::size_t>(1,
+                static_cast<std::size_t>(std::ceil(primaryBars.size() * .15)));
+            std::set<int> retainedOverlap;
+            if (!overlaps.empty()) {
+                for (std::size_t slot = 0; slot < std::min(permittedOverlap, overlaps.size()); ++slot) {
+                    const auto index = std::min(overlaps.size() - 1,
+                        slot * overlaps.size() / std::min(permittedOverlap, overlaps.size()));
+                    retainedOverlap.insert(overlaps[index]);
+                }
+            }
+            const auto beforeOverlap = pattern.notes.size();
+            pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+                if (!answerIds.contains(note.partId)) return false;
+                const auto bar = std::clamp(static_cast<int>(std::floor(note.startBeat / beatsPerBar)),
+                                            0, bars - 1);
+                return primaryBars.contains(bar) && !retainedOverlap.contains(bar);
+            }), pattern.notes.end());
+            report.notesRemoved += beforeOverlap - pattern.notes.size();
+
+            std::vector<std::size_t> answerNotes;
+            for (std::size_t index = 0; index < pattern.notes.size(); ++index)
+                if (answerIds.contains(pattern.notes[index].partId)) answerNotes.push_back(index);
+            const auto answerLimit = std::max<std::size_t>(6,
+                static_cast<std::size_t>(std::ceil(primaryNotes * .60)));
+            if (answerNotes.size() > answerLimit) {
+                std::set<std::size_t> keep;
+                for (std::size_t slot = 0; slot < answerLimit; ++slot)
+                    keep.insert(slot * answerNotes.size() / answerLimit);
+                const auto beforeLimit = pattern.notes.size();
+                auto ordinal = std::size_t{};
+                pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+                    if (!answerIds.contains(note.partId)) return false;
+                    const auto current = ordinal++;
+                    return !keep.contains(current);
+                }), pattern.notes.end());
+                report.notesRemoved += beforeLimit - pattern.notes.size();
+            }
+        }
+    }
 
     for (std::size_t window = 0; window < windows; ++window) {
         const auto firstBar = static_cast<int>(window) * windowBars;
@@ -598,6 +661,79 @@ AttentionDirectionReport AttentionDirector::shape(Pattern& pattern, const SongPl
             sounding.insert(part->id);
             ++report.floorNotesCreated;
         }
+    }
+
+    // Floor completion changes the density it is supposed to protect. Recompute the
+    // exact bar budget after those sustains exist and subtract the least important
+    // background owners until the final score—not the pre-floor draft—fits. Two floor
+    // layers, the protagonist and contractual pulse remain protected.
+    std::vector<std::set<std::uint16_t>> finalAllowed(static_cast<std::size_t>(bars));
+    auto needsFinalPass = false;
+    for (auto bar = 0; bar < bars; ++bar) {
+        const auto start = bar * beatsPerBar;
+        auto active = activeParts(pattern, start, std::min(pattern.lengthBeats, start + beatsPerBar));
+        const auto budget = partBudget(plan, start);
+        auto floorCount = std::count_if(active.begin(), active.end(), [&](auto id) {
+            const auto* part = partFor(pattern, id);
+            return part != nullptr && contractedFloor(*part, plan);
+        });
+        while (active.size() > budget) {
+            std::vector<const InstrumentPart*> removable;
+            for (const auto id : active) {
+                const auto* part = partFor(pattern, id);
+                if (part == nullptr || protagonist(*part) || eventPart(*part) ||
+                    (corePulse(*part) && requiredCorePulseAt(plan, start))) continue;
+                if (contractedFloor(*part, plan) && floorCount <= 2) continue;
+                removable.push_back(part);
+            }
+            if (removable.empty()) break;
+            const auto victim = *std::min_element(removable.begin(), removable.end(),
+                [&](const auto* left, const auto* right) {
+                    return priority(*left, static_cast<std::size_t>(bar / 4), selections[left->id]) <
+                           priority(*right, static_cast<std::size_t>(bar / 4), selections[right->id]);
+                });
+            if (contractedFloor(*victim, plan)) --floorCount;
+            active.erase(victim->id);
+            needsFinalPass = true;
+        }
+        finalAllowed[static_cast<std::size_t>(bar)] = std::move(active);
+    }
+    if (needsFinalPass) {
+        const auto postFloor = pattern.notes;
+        std::vector<NoteEvent> converged;
+        converged.reserve(postFloor.size());
+        for (const auto& note : postFloor) {
+            if (note.partId == 0 || partFor(pattern, note.partId) == nullptr) {
+                converged.push_back(note);
+                continue;
+            }
+            const auto firstBar = std::clamp(static_cast<int>(std::floor(note.startBeat / beatsPerBar)),
+                                             0, bars - 1);
+            const auto lastBar = std::clamp(static_cast<int>(std::floor(
+                std::max(note.startBeat, note.endBeat() - .001) / beatsPerBar)), 0, bars - 1);
+            auto fragmentStart = -1.0;
+            auto fragmentEnd = -1.0;
+            auto retained = false;
+            for (auto bar = firstBar; bar <= lastBar; ++bar) {
+                const auto barStart = bar * beatsPerBar;
+                const auto barEnd = std::min(pattern.lengthBeats, barStart + beatsPerBar);
+                const auto start = std::max(note.startBeat, barStart);
+                const auto end = std::min(note.endBeat(), barEnd);
+                const auto keep = finalAllowed[static_cast<std::size_t>(bar)].contains(note.partId);
+                if (keep && end > start + .001) {
+                    retained = true;
+                    if (fragmentStart < 0.0) fragmentStart = start;
+                    fragmentEnd = end;
+                } else if (fragmentStart >= 0.0) {
+                    retainInterval(note, fragmentStart, fragmentEnd, converged, report);
+                    fragmentStart = fragmentEnd = -1.0;
+                }
+            }
+            if (fragmentStart >= 0.0)
+                retainInterval(note, fragmentStart, fragmentEnd, converged, report);
+            if (!retained) ++report.notesRemoved;
+        }
+        pattern.notes = std::move(converged);
     }
 
     std::sort(pattern.notes.begin(), pattern.notes.end(), [](const auto& left, const auto& right) {

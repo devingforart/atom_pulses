@@ -1506,7 +1506,8 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 plan.targetSeconds = newest.targetSongSeconds;
                 const auto inferredProduction = ElectronicProductionDirector::infer(
                     userSongDirection.toStdString());
-                if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Adaptive) &&
+                if (!usedAiPlan &&
+                    newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Adaptive) &&
                     inferredProduction.electronicIntent > plan.productionLanguage.electronicIntent) {
                     plan.productionLanguage = inferredProduction;
                     plan.productionModeSource = "adaptive_prompt_inference";

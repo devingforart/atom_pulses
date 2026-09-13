@@ -1,5 +1,24 @@
 # PULSO
 
+### 0.56.1 — autoría narrativa, resolución y atención convergente
+
+En las composiciones de IA, PULSO ya no completa localmente protagonistas, respuestas,
+contrapuntos ni motores hipnóticos incompletos. Esas voces deben llegar escritas por Terra y
+se validan antes de publicar: el protagonista vuelve transformado en la coda, la respuesta
+comparte su familia temática sin copiar ritmo ni contorno, y el movimiento electrónico posee
+una línea propia. La generación local queda limitada al piso armónico y a continuidad técnica.
+
+`PlanDerived` deja de contabilizarse como autoría de IA. El origen `gpt_plan` y el modelo Terra
+se preservan también al usar intención adaptativa, por lo que los manifiestos MIDI y Live
+informan correctamente quién escribió la obra. La tonalidad consolidada admite ahora color
+cromático escaso únicamente cuando GPT lo declara en el acorde exacto y lo resuelve por grado
+conjunto hacia la escala principal.
+
+El director de atención limita la respuesta al 60 % de las notas del protagonista y a un 15 %
+de sus compases simultáneos. Después de completar el piso armónico ejecuta una segunda pasada
+sustractiva: el resultado final mantiene normalmente entre cinco y siete propietarios activos,
+sube hasta nueve en el ápice y ya no puede volver a congestionarse por las capas añadidas tarde.
+
 ### 0.56.0 — propiedad temática y orquestación con roles reales
 
 La narrativa ya no se valida contando copias del mismo leitmotiv. Un nuevo contrato de propiedad

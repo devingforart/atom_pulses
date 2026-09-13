@@ -56,6 +56,10 @@ bool dialoguePart(const InstrumentAssignment& part) noexcept {
            contains(part.role, "answer");
 }
 
+bool aiAuthoredScore(const SongPlan& plan) noexcept {
+    return plan.instrumentCastAuthored && !plan.performanceScore.empty();
+}
+
 bool thematicHandoff(const InstrumentAssignment& part) noexcept {
     return part.lineRelationship == "relay" || part.lineRelationship == "timbral_handoff";
 }
@@ -530,7 +534,7 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
 
     // A recognisable electronic motion line: repeated cells, sectional omissions,
     // directional changes and a full-bar breath at the end of every phrase.
-    if (!arps.empty()) {
+    if (!arps.empty() && !aiAuthoredScore(plan)) {
         for (auto block = 0; block * 8 < plan.totalBars; ++block) {
             const auto blockBar = block * 8;
             const auto blockStart = blockBar * plan.beatsPerBar;
@@ -596,7 +600,7 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
     // One protagonist owns the story at a time. Its statement, transformation and
     // return are derived from the AI motif, but rhythm and contour change per phrase.
     std::vector<std::pair<double, std::vector<int>>> createdPhrases;
-    if (!leads.empty()) {
+    if (!leads.empty() && !aiAuthoredScore(plan)) {
         struct PhraseWindow { double start{}; NarrativeStage stage{NarrativeStage::Transformation}; };
         std::vector<PhraseWindow> phraseWindows;
         std::set<NarrativeStage> scheduledStages;
@@ -744,6 +748,12 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
         std::vector<const NoteEvent*> existing;
         for (const auto& note : pattern.notes)
             if (note.partId == partId(index)) existing.push_back(&note);
+        // In an AI score, a named colour, counterpoint or transition must arrive with
+        // its actual GPT performance. Quietly developing dozens of nominal tracks here
+        // made the renderer—not the model—the effective composer. Only the harmonic
+        // floor above is technical continuity; incomplete authored colours are left to
+        // validation/compaction.
+        if (aiAuthoredScore(plan)) continue;
         const auto minimumBars = assignment.sourceVoice == VoiceId::Atmosphere ? 8U : 6U;
         if (existing.size() >= 8 && activeBarsFor(existing, plan.beatsPerBar) >= minimumBars) continue;
         const auto spacingBars = assignment.orchestralFunction == "transition" ? 24 :
@@ -874,7 +884,7 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
     // Presence is measured in eight-bar phrase windows, not raw sounding duration.
     // This preserves silence inside a sentence while ensuring the narrator returns
     // often enough to carry a long-form story.
-    if (!leads.empty()) {
+    if (!leads.empty() && !aiAuthoredScore(plan)) {
         std::vector<int> eligible;
         std::vector<int> missing;
         auto present = std::size_t{};
@@ -983,7 +993,7 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                 if (lastForeground == pattern.notes.end() || it->startBeat > lastForeground->startBeat)
                     lastForeground = it;
             }
-            if (lastForeground != pattern.notes.end() && lastForeground->partId > 0 &&
+            if (!aiAuthoredScore(plan) && lastForeground != pattern.notes.end() && lastForeground->partId > 0 &&
                 lastForeground->partId <= plan.instruments.size()) {
                 const auto ownerIndex = static_cast<std::size_t>(lastForeground->partId - 1);
                 const auto ownerPartId = lastForeground->partId;
@@ -1012,7 +1022,7 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                                 report.publicationClosureNotesCreated, 8))
                         ++report.resolutionCodaNotesCreated;
                 }
-            } else {
+            } else if (!aiAuthoredScore(plan)) {
                 const auto leadIndex = leads.front();
                 const auto& lead = plan.instruments[leadIndex];
                 constexpr std::array<double, 4> codaOnsets{0.0, 1.0, 2.5, 4.0};

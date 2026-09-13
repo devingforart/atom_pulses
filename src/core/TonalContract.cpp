@@ -101,6 +101,32 @@ const HarmonicWindow* windowAt(std::span<const HarmonicWindow> windows, double b
     return &*std::prev(after);
 }
 
+bool resolvedDeclaredColour(std::span<const HarmonicWindow> windows,
+                            const HarmonicWindow* window, int pitch,
+                            int rootPitchClass, ScaleKind scale) {
+    if (window == nullptr || isPitchClassInScale(pitch, rootPitchClass, scale) ||
+        !containsPitchClass(window->pitchClasses, pitch)) return false;
+    const auto functional = window->function == HarmonicFunction::Chromatic ||
+        window->function == HarmonicFunction::Colour ||
+        window->function == HarmonicFunction::Modal ||
+        window->function == HarmonicFunction::Dominant ||
+        window->function == HarmonicFunction::Transitional;
+    if (!functional) return false;
+    const HarmonicWindow* next = nullptr;
+    for (const auto& candidate : windows) {
+        if (candidate.startBeat <= window->startBeat + timingTolerance) continue;
+        next = &candidate;
+        break;
+    }
+    if (next == nullptr || next->tension > window->tension + .08) return false;
+    const auto source = positiveModulo(pitch, 12);
+    return std::any_of(next->pitchClasses.begin(), next->pitchClasses.end(), [&](int target) {
+        if (!isPitchClassInScale(target, rootPitchClass, scale)) return false;
+        const auto distance = positiveModulo(target - source, 12);
+        return distance == 1 || distance == 2 || distance == 10 || distance == 11;
+    });
+}
+
 bool strongMetricPosition(double beat, double beatsPerBar,
                           const HarmonicWindow* window) noexcept {
     const auto beatInBar = beat - std::floor(beat / beatsPerBar) * beatsPerBar;
@@ -129,7 +155,6 @@ bool harshInterval(int leftPitch, int rightPitch) noexcept {
 
 bool intentionalVerticalColour(const NoteEvent& left, const NoteEvent& right,
                                const HarmonicWindow* window, TonalPolicy policy) noexcept {
-    if (policy == TonalPolicy::Consolidated) return false;
     if (window == nullptr ||
         !containsPitchClass(window->pitchClasses, left.pitch) ||
         !containsPitchClass(window->pitchClasses, right.pitch)) return false;
@@ -138,6 +163,13 @@ bool intentionalVerticalColour(const NoteEvent& left, const NoteEvent& right,
     const auto structuralColour = window->function == HarmonicFunction::Dominant ||
                                   window->function == HarmonicFunction::Chromatic ||
                                   window->function == HarmonicFunction::Colour;
+    if (policy == TonalPolicy::Consolidated) {
+        if (!structuralColour || window->tension < .68) return false;
+        if (bassVoice(left.voice) || bassVoice(right.voice))
+            return distance >= 24 && (interval == 1 || interval == 6 || interval == 11);
+        return std::min(left.pitch, right.pitch) >= 55 && distance >= 12 &&
+            (interval == 1 || interval == 6 || interval == 11);
+    }
     if (bassVoice(left.voice) || bassVoice(right.voice)) {
         if (interval == 6) return structuralColour && distance >= 18;
         return (interval == 1 || interval == 11) && structuralColour &&
@@ -323,15 +355,17 @@ TonalAuditReport auditTonalContract(const Pattern& pattern, int rootPitchClass, 
         const auto inChord = containsPitchClass(chord, note.pitch);
         const auto inScale = scale == ScaleKind::Chromatic ||
             isPitchClassInScale(note.pitch, rootPitchClass, scale);
+        const auto declaredColour = policy == TonalPolicy::Consolidated && !inScale && inChord &&
+            resolvedDeclaredColour(harmony, window, note.pitch, rootPitchClass, scale);
         const auto resolvedLeadingTone = validResolvedLeadingTone(
             pattern, noteIndex, rootPitchClass, scale, beatsPerBar, harmony);
         const auto structural = harmonicNote(pattern, note) ||
             ((bassVoice(note.voice) || melodicVoice(note.voice)) && strong);
-        if (!resolvedLeadingTone && structural &&
+        if (!resolvedLeadingTone && !declaredColour && structural &&
             (!inChord || (policy == TonalPolicy::Consolidated && !inScale))) {
             ++report.strongNonChordNotes;
             addIssue(report, note.startBeat, note.voice, note.pitch, "strong_non_chord");
-        } else if (!resolvedLeadingTone && !inScale && (policy == TonalPolicy::Consolidated ||
+        } else if (!resolvedLeadingTone && !declaredColour && !inScale && (policy == TonalPolicy::Consolidated ||
                    (!inChord && !validPassingTone(pattern, noteIndex, rootPitchClass, scale, 0.36)))) {
             ++report.unsupportedChromaticNotes;
             addIssue(report, note.startBeat, note.voice, note.pitch, "unsupported_chromatic");
@@ -394,7 +428,12 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
             return melodicVoice(note.voice);
         }) * std::clamp(maximumChromaticRatio, 0.0,
             policy == TonalPolicy::Consolidated ? 0.02 : policy == TonalPolicy::Expanded ? 0.06 : 0.15))));
+    const auto maximumDeclaredChromatic = std::max(1, static_cast<int>(std::lround(
+        std::count_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+            return pitchedNote(pattern, note);
+        }) * std::clamp(maximumChromaticRatio * 2.0, 0.02, 0.08))));
     auto acceptedChromatic = 0;
+    auto acceptedDeclaredChromatic = 0;
     for (std::size_t index = 0; index < pattern.notes.size(); ++index) {
         auto& note = pattern.notes[index];
         if (!pitchedNote(pattern, note)) continue;
@@ -404,12 +443,20 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
         const auto inScale = scale == ScaleKind::Chromatic ||
             isPitchClassInScale(note.pitch, rootPitchClass, scale);
         const auto inChord = containsPitchClass(allowed, note.pitch);
+        const auto declaredColour = policy == TonalPolicy::Consolidated && !inScale && inChord &&
+            resolvedDeclaredColour(harmony, window, note.pitch, rootPitchClass, scale) &&
+            acceptedDeclaredChromatic < maximumDeclaredChromatic;
         const auto strong = strongMetricPosition(note.startBeat, beatsPerBar, window);
         const auto resolvedLeadingTone = validResolvedLeadingTone(
             pattern, index, rootPitchClass, scale, beatsPerBar, harmony);
         const auto passingDuration = policy == TonalPolicy::Consolidated ? 0.25 : 0.36;
         if (resolvedLeadingTone && acceptedChromatic < maximumChromatic) {
             ++acceptedChromatic;
+            ++report.intentionalChromaticNotes;
+            continue;
+        }
+        if (declaredColour) {
+            ++acceptedDeclaredChromatic;
             ++report.intentionalChromaticNotes;
             continue;
         }

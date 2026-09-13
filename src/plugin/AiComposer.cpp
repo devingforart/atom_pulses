@@ -718,7 +718,7 @@ HttpResponse performSingleRequest(const wchar_t* method, const juce::String& pat
     }
 
     const auto timeoutMs = std::clamp(static_cast<int>(budget.count()), 1000, 120000);
-    const auto session = WinHttpOpen(L"PULSO/0.56.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    const auto session = WinHttpOpen(L"PULSO/0.56.1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) {
         result.nativeError = GetLastError();
@@ -1051,7 +1051,12 @@ juce::String performanceBlockPrompt(const juce::String& direction,
         "short clue and must answer in negative space with a different rhythmic sentence; harmonic, color, pedal, body "
         "and transition instruments must follow their own chordal or textural trajectories and must not receive copies "
         "of the protagonist cell. Relay and timbral_handoff members share one content lane and never sound the complete "
-        "line simultaneously. "
+        "line simultaneously. Give protagonist, answerer and genuinely thematic counterpoint the same non-empty theme_id, "
+        "but differentiate their onset grammar and interval contour; related must never mean cloned. The protagonist must "
+        "have an authored transformed-return placement in the resolution section's final sixteen bars, containing at least "
+        "three notes and ending as a deliberate answer to the opening identity. A declared non-percussive motion owner "
+        "(arp, sequence, pulse, orbit or ostinato) must receive its own evolving GPT-authored cell and placements; the local "
+        "renderer will not write principal, response or motion material for you. "
         "Regular instruments must appear in at least two structurally different sections; one_shot/transition material "
         "may appear once. Keep each note inside the declared register and use only the declared source_voice for that "
         "instrument. Return no instrument outside this block. Cell ids must start with b") +
@@ -1968,6 +1973,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         " quarter-note beats per bar. Establish, develop, contrast, transform and resolve a recognisable musical identity; "
         "avoid interchangeable sections and arbitrary novelty. Make every harmonic event reference a declared chord ID, "
         "and keep tonal centers, modes, borrowed harmony and tension releases intentional under the declared tonal policy. "
+        "Consolidated tonality may still declare a small number of functional chromatic or modal-color chords: mark their "
+        "function honestly, keep every foreign pitch inside that exact chord window, and follow it with a chord whose "
+        "scale tone resolves the foreign pitch by semitone or whole step. Never promise Neapolitan, Dorian, altered or "
+        "chromatic color in prose unless chord_palette and harmonic_events actually materialize it. "
         "Honor exclusions literally (especially requests for no drums or percussion) and describe genre through musical "
         "behavior rather than artist imitation. Do not choose instruments, soundscape layers, rhythm motifs, voices, cells, "
         "placements or notes. Creative direction: " + direction;
@@ -2040,7 +2049,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "original, inversion, fragmentation, recovery and return belong to that protagonist's later performance cells, "
         "not to separate instrument members. Use additional tracks for true orchestration: independent inner voices, "
         "pedals, chord bodies, contrary counterpoint, spectral color and transition functions. Permit an arpeggiator only "
-        "when it is an intentional part of this particular production argument. Do not write registers, presets, timbre "
+        "when it is an intentional part of this particular production argument. In percussion-free electronic music, "
+        "declare exactly one non-percussive recurrence owner (arp, sequence, pulse, orbit or ostinato) unless the direction "
+        "explicitly requests a static/drone-only work; it supplies evolving hypnotic motion, not generic sixteenth-note filler. "
+        "Ensure the protagonist is active in the resolution section so its authored transformed return can occur in the "
+        "last sixteen bars. Do not write registers, presets, timbre "
         "signatures, soundscape layers, notes or performances yet. "
         "Original direction: ") + direction + "\nIMMUTABLE MACRO BLUEPRINT:\n" + macroText;
     const auto manifestBody = juce::String("{\"model\":\"") + model +

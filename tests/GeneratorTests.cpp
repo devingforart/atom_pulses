@@ -1627,6 +1627,46 @@ void runGeneratorTests() {
                 consolidatedRepair.outOfScaleRepaired == 1 && consolidatedRepair.after.productionReady(),
             "A declared chord must not legalise an out-of-key structural tone in consolidated mode");
 
+    Pattern resolvedColour;
+    resolvedColour.lengthBeats = 4.0;
+    resolvedColour.notes = {
+        {0.0, 1.0, 63, 72, 3, VoiceId::HarmonicUpper}, // Eb, declared colour in D minor.
+        {2.0, 1.0, 62, 76, 3, VoiceId::HarmonicUpper}
+    };
+    const std::vector<HarmonicWindow> resolvedColourWindows{
+        {0.0, 2.0, 2, 2, {2, 3, 7}, HarmonicFunction::Chromatic,
+         VoicingStrategy::Open, 0.76, "dm_eb_colour", "D minor with Eb colour"},
+        {2.0, 4.0, 2, 2, {2, 5, 9}, HarmonicFunction::Tonic,
+         VoicingStrategy::Open, 0.24, "dm_resolution", "D minor resolution"}
+    };
+    const auto resolvedColourRepair = repairTonalContract(
+        resolvedColour, 2, ScaleKind::Minor, 4.0, resolvedColourWindows, 0.035,
+        TonalPolicy::Consolidated);
+    require(resolvedColour.notes.front().pitch == 63 &&
+                resolvedColourRepair.intentionalChromaticNotes == 1 &&
+                resolvedColourRepair.outOfScaleRepaired == 0 &&
+                resolvedColourRepair.after.productionReady(),
+            "Consolidated tonality must preserve a sparse declared colour that resolves into the home scale");
+
+    SongPlan normalizedColourPlan;
+    normalizedColourPlan.rootPitchClass = 2;
+    normalizedColourPlan.scale = ScaleKind::Minor;
+    normalizedColourPlan.key = "D minor";
+    normalizedColourPlan.productionModeSource = "gpt_plan";
+    normalizedColourPlan.harmonicLanguage.tonalPolicy = TonalPolicy::Consolidated;
+    normalizedColourPlan.chordPalette = {
+        {"dm_eb_colour", "D minor with Eb colour", 2, 2, {2, 3, 7},
+         HarmonicFunction::Chromatic, VoicingStrategy::Open, .76},
+        {"dm_home", "D minor", 2, 2, {2, 5, 9},
+         HarmonicFunction::Tonic, VoicingStrategy::Open, .18}
+    };
+    SongComposer::normalizePlan(normalizedColourPlan);
+    require(std::find(normalizedColourPlan.chordPalette.front().pitchClasses.begin(),
+                      normalizedColourPlan.chordPalette.front().pitchClasses.end(), 3) !=
+                normalizedColourPlan.chordPalette.front().pitchClasses.end() &&
+                normalizedColourPlan.chordPalette.front().function == HarmonicFunction::Chromatic,
+            "GPT-declared functional colour must survive normalization in consolidated tonality");
+
     Pattern resolvedLeadingTone;
     resolvedLeadingTone.lengthBeats = 2.0;
     resolvedLeadingTone.notes = {
@@ -1817,13 +1857,14 @@ void runGeneratorTests() {
         {0.0, 0.5, 64, 90, 2, VoiceId::Lead, 0, false, NoteOrigin::AiAuthored, 41},
         {1.0, 0.5, 67, 72, 2, VoiceId::Lead, 0, false, NoteOrigin::Procedural},
         {2.0, 0.5, 69, 68, 7, VoiceId::Countermelody, 0, false, NoteOrigin::LocalContinuity},
+        {3.0, 0.5, 71, 70, 2, VoiceId::Lead, 0, false, NoteOrigin::PlanDerived},
         {0.5, 0.25, 43, 84, 6, VoiceId::MovementBass, 0, false, NoteOrigin::Procedural},
         {0.0, 2.0, 55, 62, 3, VoiceId::HarmonicFoundation, 0, false, NoteOrigin::Procedural},
         {0.0, 0.2, 36, 96, 10, VoiceId::CoreDrums, 0, false, NoteOrigin::LocalRepair},
         {4.0, 2.0, 72, 35, 8, VoiceId::Atmosphere, 0, false, NoteOrigin::Procedural},
     };
     const auto authorityReport = CreativeAuthority::enforce(authorityPattern, authorityPlan);
-    require(authorityReport.active && authorityReport.foregroundFallbackNotesRemoved == 2 &&
+    require(authorityReport.active && authorityReport.foregroundFallbackNotesRemoved == 3 &&
                 authorityReport.movementBassFallbackNotesRemoved == 1 &&
                 authorityReport.ownedHarmonyProceduralNotesRemoved == 1 &&
                 authorityReport.foregroundAiRatioAfter > 0.999 &&
@@ -1904,10 +1945,10 @@ void runGeneratorTests() {
                 narrativeRender.narrative.primaryVoiceCoverage >= 0.45 &&
                 narrativeRender.narrative.thematicRecallRatio >= 0.90 &&
                 narrativeSong.narrativeAuditPerformed &&
-                // The overall denominator includes deliberately procedural physical
-                // drum infrastructure; foreground and movement-bass authorship are
-                // governed separately at much stricter thresholds.
-                narrativeSong.aiAuthoredNoteRatio >= 0.24,
+                // The overall denominator includes deliberately local physical and
+                // harmonic infrastructure. Plan-derived notes are intentionally no
+                // longer misreported as model authorship.
+                narrativeSong.aiAuthoredNoteRatio >= 0.20,
             "A GPT-authored long-form score must expose measurable coverage, memory and note provenance: coverage=" +
                 std::to_string(narrativeRender.narrative.primaryVoiceCoverage) +
                 " recall=" + std::to_string(narrativeRender.narrative.thematicRecallRatio) +
@@ -2320,6 +2361,51 @@ void runGeneratorTests() {
         repairPlan, partialRepair, {0, 1});
     require(incompleteRepairTargets.size() == 1 && incompleteRepairTargets.front() == 1,
             "Partial repair recovery must preserve a complete target and retry only the omitted instrument");
+
+    SongPlan narrativeContractPlan;
+    narrativeContractPlan.beatsPerBar = 4.0;
+    narrativeContractPlan.sections.resize(4);
+    for (auto& section : narrativeContractPlan.sections) section.bars = 32;
+    narrativeContractPlan.sections.back().name = "Resolution";
+    narrativeContractPlan.narrativeSpine.protagonistInstrumentId = "protagonist";
+    narrativeContractPlan.narrativeSpine.acts.push_back(
+        {"Resolution", NarrativeStage::Resolution, "return", "repay", "old tension",
+         "tonic settlement", .3, .8});
+    auto protagonistAssignment = resolvingLead;
+    protagonistAssignment.id = "protagonist";
+    protagonistAssignment.lineRelationship = "independent";
+    auto answerAssignment = resolvingLead;
+    answerAssignment.id = "answer";
+    answerAssignment.sourceVoice = VoiceId::Countermelody;
+    answerAssignment.lineRelationship = "call_response";
+    narrativeContractPlan.instruments = {protagonistAssignment, answerAssignment};
+    PerformanceScore narrativeContractScore;
+    for (const auto& instrument : narrativeContractPlan.instruments) {
+        PerformanceCell cell;
+        cell.id = instrument.id + "_phrase";
+        cell.themeId = instrument.id == "protagonist" ? "central_theme" : "unrelated_theme";
+        cell.ownedVoices = {instrument.sourceVoice};
+        for (auto note = 0; note < 6; ++note)
+            cell.notes.push_back({note * .75, .4, 62 + note % 3, 82,
+                                  instrument.sourceVoice, MetricIntent::StrictGrid,
+                                  instrument.id});
+        narrativeContractScore.cells.push_back(std::move(cell));
+    }
+    narrativeContractScore.placements = {
+        {"protagonist_phrase", 0}, {"protagonist_phrase", 2},
+        {"answer_phrase", 0}, {"answer_phrase", 2}
+    };
+    const auto missingNarrativeContract = SelectiveRepair::incompleteTargets(
+        narrativeContractPlan, narrativeContractScore, {0, 1});
+    require(missingNarrativeContract.size() == 2,
+            "AI validation must reject a protagonist without a coda return and an unrelated answer label");
+    narrativeContractScore.placements.push_back(
+        {"protagonist_phrase", 3, 64.0, 1, 0, 1.0, 1.0, "transformed return"});
+    narrativeContractScore.cells[1].themeId = "central_theme";
+    const auto completeNarrativeContract = SelectiveRepair::incompleteTargets(
+        narrativeContractPlan, narrativeContractScore, {0, 1});
+    require(completeNarrativeContract.empty(),
+            "A GPT-authored coda return and a genuinely related answer must satisfy the narrative contract");
     auto severeAudition = editorialAfter;
     severeAudition.narrative.score = 0.60;
     require(SelectiveRepair::criticalFailure(severeAudition) &&
@@ -2382,6 +2468,7 @@ void runGeneratorTests() {
         addAttentionPart(id, "lead_" + std::to_string(id),
                          id == 7 ? VoiceId::Lead : VoiceId::Countermelody,
                          ScoreDepartment::Melody, "counterpoint", .72 - (id - 7) * .08);
+    attentionPattern.parts[7].lineRelationship = "call_response";
     for (std::uint16_t id = 10; id <= 12; ++id)
         addAttentionPart(id, "rhythm_" + std::to_string(id),
                          id == 10 ? VoiceId::CoreDrums : VoiceId::ClosedHats,
@@ -2413,9 +2500,24 @@ void runGeneratorTests() {
     const auto attentionReport = AttentionDirector::shape(attentionPattern, attentionPlan);
     require(attentionReport.active && attentionReport.averageActivePartsAfter + 1.0 <
                 attentionReport.averageActivePartsBefore &&
-                attentionReport.peakActivePartsAfter <= 11 &&
+                attentionReport.peakActivePartsAfter <= 9 &&
                 attentionReport.overcrowdedBarsAfter < attentionReport.overcrowdedBarsBefore,
             "Attention direction must reduce persistent tutti without flattening the energy budget");
+    const auto retainedAnswerNotes = std::count_if(attentionPattern.notes.begin(), attentionPattern.notes.end(),
+        [](const auto& note) { return note.partId == 8; });
+    std::set<int> retainedLeadBars;
+    std::set<int> retainedAnswerBars;
+    for (const auto& note : attentionPattern.notes) {
+        const auto bar = static_cast<int>(std::floor(note.startBeat / 4.0));
+        if (note.partId == 7) retainedLeadBars.insert(bar);
+        if (note.partId == 8) retainedAnswerBars.insert(bar);
+    }
+    std::vector<int> retainedDialogueOverlap;
+    std::set_intersection(retainedLeadBars.begin(), retainedLeadBars.end(),
+                          retainedAnswerBars.begin(), retainedAnswerBars.end(),
+                          std::back_inserter(retainedDialogueOverlap));
+    require(retainedAnswerNotes <= 39 && retainedDialogueOverlap.size() <= 5,
+            "A response voice must remain subordinate in both note count and simultaneous speaking bars");
     require(attentionReport.structuralBreathBars >= 1 &&
                 attentionReport.phraseBreathsCreated > 0,
             "Attention direction must create both phrase and structural breath");

@@ -10,8 +10,9 @@ namespace pulso {
 namespace {
 
 bool aiOrigin(NoteOrigin origin) noexcept {
-    return origin == NoteOrigin::AiAuthored || origin == NoteOrigin::AiTransformed ||
-           origin == NoteOrigin::PlanDerived;
+    // PlanDerived is deterministic realization, not model authorship. Treating it as
+    // AI hid the fact that the local renderer had written most of some protagonists.
+    return origin == NoteOrigin::AiAuthored || origin == NoteOrigin::AiTransformed;
 }
 
 bool foregroundVoice(VoiceId voice) noexcept {

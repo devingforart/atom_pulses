@@ -1483,12 +1483,31 @@ void SongComposer::normalizePlan(SongPlan& plan) {
                 uniquePitchClasses.push_back(pitchClass);
         chord.pitchClasses = std::move(uniquePitchClasses);
         if (plan.harmonicLanguage.tonalPolicy == TonalPolicy::Consolidated) {
-            chord.rootPitchClass = nearestScalePitchClass(chord.rootPitchClass, homeScale);
-            chord.bassPitchClass = nearestScalePitchClass(chord.bassPitchClass, homeScale);
-            chord.pitchClasses.erase(std::remove_if(chord.pitchClasses.begin(), chord.pitchClasses.end(),
-                [&](int pitchClass) {
+            const auto functionalColour = plan.productionModeSource == "gpt_plan" &&
+                (chord.function == HarmonicFunction::Chromatic ||
+                 chord.function == HarmonicFunction::Colour ||
+                 chord.function == HarmonicFunction::Modal ||
+                 chord.function == HarmonicFunction::Dominant ||
+                 chord.function == HarmonicFunction::Transitional) &&
+                std::any_of(chord.pitchClasses.begin(), chord.pitchClasses.end(), [&](int pitchClass) {
                     return std::find(homeScale.begin(), homeScale.end(), pitchClass) == homeScale.end();
-                }), chord.pitchClasses.end());
+                });
+            if (functionalColour) {
+                auto foreign = 0;
+                chord.pitchClasses.erase(std::remove_if(chord.pitchClasses.begin(), chord.pitchClasses.end(),
+                    [&](int pitchClass) {
+                        if (std::find(homeScale.begin(), homeScale.end(), pitchClass) != homeScale.end())
+                            return false;
+                        return foreign++ >= 2;
+                    }), chord.pitchClasses.end());
+            } else {
+                chord.rootPitchClass = nearestScalePitchClass(chord.rootPitchClass, homeScale);
+                chord.bassPitchClass = nearestScalePitchClass(chord.bassPitchClass, homeScale);
+                chord.pitchClasses.erase(std::remove_if(chord.pitchClasses.begin(), chord.pitchClasses.end(),
+                    [&](int pitchClass) {
+                        return std::find(homeScale.begin(), homeScale.end(), pitchClass) == homeScale.end();
+                    }), chord.pitchClasses.end());
+            }
             if (std::find(chord.pitchClasses.begin(), chord.pitchClasses.end(), chord.rootPitchClass) ==
                 chord.pitchClasses.end())
                 chord.pitchClasses.insert(chord.pitchClasses.begin(), chord.rootPitchClass);
@@ -1502,7 +1521,8 @@ void SongComposer::normalizePlan(SongPlan& plan) {
                         chord.pitchClasses.push_back(tone);
                 }
             }
-            if (chord.function == HarmonicFunction::Chromatic || chord.function == HarmonicFunction::Colour)
+            if (!functionalColour &&
+                (chord.function == HarmonicFunction::Chromatic || chord.function == HarmonicFunction::Colour))
                 chord.function = HarmonicFunction::Modal;
             if (chord.voicing == VoicingStrategy::Cluster || chord.voicing == VoicingStrategy::Quartal)
                 chord.voicing = VoicingStrategy::Open;

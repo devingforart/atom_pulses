@@ -17,8 +17,7 @@ namespace pulso {
 namespace {
 
 bool aiOrigin(NoteOrigin origin) noexcept {
-    return origin == NoteOrigin::AiAuthored || origin == NoteOrigin::AiTransformed ||
-           origin == NoteOrigin::PlanDerived;
+    return origin == NoteOrigin::AiAuthored || origin == NoteOrigin::AiTransformed;
 }
 
 bool primaryVoice(VoiceId voice) noexcept {

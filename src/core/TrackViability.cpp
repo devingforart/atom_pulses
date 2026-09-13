@@ -193,6 +193,10 @@ std::size_t soundingParts(const Pattern& pattern, double beat) {
 std::size_t develop(Pattern& pattern, const SongPlan& plan, const InstrumentPart& part,
                     const TrackViabilityContract& contract) {
     auto before = evidence(pattern, part.id, plan.beatsPerBar);
+    const auto authoredAiScore = plan.instrumentCastAuthored && !plan.performanceScore.empty();
+    if (authoredAiScore && contract.function != TrackFunction::HarmonicFloor &&
+        contract.function != TrackFunction::Environment)
+        return 0;
     // Only GPT-authored notes may seed new composition. A lone local placeholder is
     // evidence that the instrument was named but never actually written.
     if (before.authoredSeeds < 2 || contract.eventException) return 0;

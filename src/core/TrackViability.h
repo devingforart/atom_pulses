@@ -9,6 +9,7 @@
 namespace pulso {
 
 struct SongPlan;
+struct InstrumentAssignment;
 
 enum class TrackFunction {
     Rhythm,
@@ -57,8 +58,19 @@ struct TrackViabilityReport {
 // Technical filler without an authored seed is merged or removed.
 class TrackViability final {
 public:
+    // A one-bar rounding margin is acceptable only when note quantity and phrase
+    // development already satisfy the authored contract. This does not create MIDI
+    // or excuse a genuinely sparse performance.
+    [[nodiscard]] static bool marginalActiveBarAcceptance(
+        std::size_t notes, std::size_t activeBars, std::size_t phrases,
+        const TrackViabilityContract&) noexcept;
+    [[nodiscard]] static bool acceptsCoverage(
+        std::size_t notes, std::size_t activeBars, std::size_t phrases,
+        const TrackViabilityContract&) noexcept;
     [[nodiscard]] static TrackViabilityContract contractFor(
         const InstrumentPart&, const SongPlan&);
+    [[nodiscard]] static TrackViabilityContract contractFor(
+        const InstrumentAssignment&, const SongPlan&);
     [[nodiscard]] static TrackViabilityReport enforce(Pattern&, SongPlan&);
     // Terminal publication invariant: after all pitch/duration collision repair,
     // remove any lane that was made incomplete. This pass never authors new notes.

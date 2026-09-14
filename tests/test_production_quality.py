@@ -68,6 +68,24 @@ class ProductionQualityTests(unittest.TestCase):
         self.assertIn("electronic_arpeggio_incomplete", report["codes"])
         self.assertIn("melodic_dialogue_incomplete", report["codes"])
 
+    def test_static_electronic_score_does_not_invent_a_motion_requirement(self):
+        report = evaluate_creative_quality({
+            "narrative_audited": True,
+            "electronic_fabric_audited": True,
+            "electronic_motion_required": False,
+            "creative_ready": True,
+            "creative_score": 0.90,
+            "production_domain": "adaptive",
+            "independent_musical_lines": 12,
+            "meaningful_musical_lines": 12,
+            "harmonic_floor_coverage": 1.0,
+            "median_harmonic_floor_layers": 2.0,
+            "protagonist_phrase_windows": 4,
+            "arpeggio_note_count": 0,
+            "dialogue_musical_lines": 1,
+        })
+        self.assertNotIn("electronic_arpeggio_incomplete", report["codes"])
+
     def test_deliberately_instrumental_score_does_not_require_lead_or_bass(self):
         report = evaluate_creative_quality({
             "narrative_audited": True,

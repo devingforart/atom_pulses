@@ -1,9 +1,15 @@
 #include "SelectiveRepair.h"
 
+#include "ElectronicRoleContract.h"
+#include "PerformanceScore.h"
+#include "TrackViability.h"
+
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <map>
 #include <set>
+#include <tuple>
 
 namespace pulso {
 namespace {
@@ -40,6 +46,28 @@ bool eventInstrument(const SongPlan& plan, const InstrumentAssignment& instrumen
 }
 
 } // namespace
+
+std::string_view constraintAuthorityKey(ConstraintAuthority authority) noexcept {
+    switch (authority) {
+        case ConstraintAuthority::TechnicalInvariant: return "technical_invariant";
+        case ConstraintAuthority::ExplicitPromptCommitment: return "explicit_prompt_commitment";
+        case ConstraintAuthority::MusicalObjective: return "musical_objective";
+    }
+    return "musical_objective";
+}
+
+std::string_view performanceRepairOperationKey(
+    PerformanceRepairOperation operation) noexcept {
+    switch (operation) {
+        case PerformanceRepairOperation::SupplyMissingIdentity: return "supply_missing_identity";
+        case PerformanceRepairOperation::ExtendCoverage: return "extend_coverage";
+        case PerformanceRepairOperation::DevelopPhrase: return "develop_phrase";
+        case PerformanceRepairOperation::ResolveNarrative: return "resolve_narrative";
+        case PerformanceRepairOperation::EstablishThematicRelationship:
+            return "establish_thematic_relationship";
+    }
+    return "develop_phrase";
+}
 
 bool SelectiveRepair::publicationReady(const CompositionRenderReport& report) noexcept {
     return report.production.ready && report.narrative.creativeReady &&
@@ -236,9 +264,104 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
     return result;
 }
 
-std::vector<std::size_t> SelectiveRepair::incompleteTargets(
+std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficits(
     const SongPlan& plan, const PerformanceScore& score,
     const std::vector<std::size_t>& candidates) {
+    return performanceDeficitsImpl(plan, score, candidates, true);
+}
+
+std::vector<PerformanceCoverageDeficit> SelectiveRepair::marginalBarAcceptances(
+    const SongPlan& plan, const PerformanceScore& score,
+    const std::vector<std::size_t>& candidates) {
+    auto findings = performanceDeficitsImpl(plan, score, candidates, false);
+    findings.erase(std::remove_if(findings.begin(), findings.end(), [](const auto& finding) {
+        TrackViabilityContract contract;
+        contract.minimumNotes = finding.minimumNotes;
+        contract.minimumActiveBars = finding.minimumActiveBars;
+        contract.minimumPhrases = finding.minimumPhrases;
+        return finding.missingCodaResolution || finding.missingThematicRelationship ||
+            !TrackViability::marginalActiveBarAcceptance(
+                finding.notes, finding.activeBars, finding.phrases, contract);
+    }), findings.end());
+    return findings;
+}
+
+std::vector<PerformanceConstraint> SelectiveRepair::performanceConstraints(
+    const SongPlan& plan, const PerformanceScore& score,
+    const std::vector<std::size_t>& candidates,
+    bool explicitCastCommitment) {
+    return classifyPerformanceDeficits(
+        plan, performanceDeficits(plan, score, candidates), explicitCastCommitment);
+}
+
+std::vector<PerformanceConstraint> SelectiveRepair::classifyPerformanceDeficits(
+    const SongPlan& plan, std::vector<PerformanceCoverageDeficit> deficits,
+    bool explicitCastCommitment) {
+    std::vector<PerformanceConstraint> result;
+    for (auto& deficit : deficits) {
+        PerformanceConstraint constraint;
+        constraint.evidence = std::move(deficit);
+        const auto essential = constraint.evidence.instrumentId ==
+                plan.narrativeSpine.protagonistInstrumentId ||
+            (constraint.evidence.instrumentIndex < plan.instruments.size() &&
+             ElectronicRoleContract::motionOwner(
+                 plan.instruments[constraint.evidence.instrumentIndex]));
+        const auto missingIdentity = constraint.evidence.notes == 0;
+        constraint.authority = missingIdentity && explicitCastCommitment
+            ? ConstraintAuthority::ExplicitPromptCommitment
+            : ConstraintAuthority::MusicalObjective;
+        // A requested track with no concrete MIDI is a broken explicit commitment.
+        // An essential identity with no MIDI is structurally absent. Quantitative
+        // musical development and narrative interpretation remain editorial.
+        constraint.blocksPublication = missingIdentity &&
+            (explicitCastCommitment || essential);
+        if (missingIdentity)
+            constraint.operations.push_back(
+                PerformanceRepairOperation::SupplyMissingIdentity);
+        if (constraint.evidence.activeBars < constraint.evidence.minimumActiveBars)
+            constraint.operations.push_back(
+                PerformanceRepairOperation::ExtendCoverage);
+        if (constraint.evidence.notes < constraint.evidence.minimumNotes ||
+            constraint.evidence.phrases < constraint.evidence.minimumPhrases)
+            constraint.operations.push_back(
+                PerformanceRepairOperation::DevelopPhrase);
+        if (constraint.evidence.missingCodaResolution)
+            constraint.operations.push_back(
+                PerformanceRepairOperation::ResolveNarrative);
+        if (constraint.evidence.missingThematicRelationship)
+            constraint.operations.push_back(
+                PerformanceRepairOperation::EstablishThematicRelationship);
+        result.push_back(std::move(constraint));
+    }
+    return result;
+}
+
+std::vector<std::size_t> SelectiveRepair::blockingTargets(
+    const std::vector<PerformanceConstraint>& constraints) {
+    std::vector<std::size_t> result;
+    for (const auto& constraint : constraints)
+        if (constraint.blocksPublication)
+            result.push_back(constraint.evidence.instrumentIndex);
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+}
+
+std::vector<std::size_t> SelectiveRepair::editorialTargets(
+    const std::vector<PerformanceConstraint>& constraints) {
+    std::vector<std::size_t> result;
+    for (const auto& constraint : constraints)
+        if (!constraint.blocksPublication)
+            result.push_back(constraint.evidence.instrumentIndex);
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+}
+
+std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl(
+    const SongPlan& plan, const PerformanceScore& score,
+    const std::vector<std::size_t>& candidates,
+    bool allowMarginalBarAcceptance) {
     std::map<std::string, std::size_t> noteCounts;
     std::map<std::string, std::set<int>> sections;
     std::map<std::string, std::set<std::string>> instrumentsByCell;
@@ -251,6 +374,26 @@ std::vector<std::size_t> SelectiveRepair::incompleteTargets(
             if (!cell.themeId.empty()) themesByInstrument[note.instrumentId].insert(cell.themeId);
         }
     }
+
+    Pattern renderedScore;
+    renderedScore.lengthBeats = plan.totalBars * plan.beatsPerBar;
+    for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+        const auto& section = plan.sections[sectionIndex];
+        const auto sectionBeats = section.bars * plan.beatsPerBar;
+        Pattern chunk;
+        chunk.lengthBeats = sectionBeats;
+        PerformanceScoreEngine::replaceChunk(chunk, score, static_cast<int>(sectionIndex),
+                                              0.0, sectionBeats, plan.instruments);
+        const auto offset = section.startBar * plan.beatsPerBar;
+        for (auto note : chunk.notes) {
+            note.startBeat += offset;
+            renderedScore.notes.push_back(std::move(note));
+        }
+    }
+    std::map<std::string, std::vector<const NoteEvent*>> renderedByInstrument;
+    for (const auto& note : renderedScore.notes)
+        if (note.partId > 0 && note.partId <= plan.instruments.size())
+            renderedByInstrument[plan.instruments[note.partId - 1].id].push_back(&note);
     auto resolutionSection = plan.sections.empty() ? -1 : static_cast<int>(plan.sections.size() - 1);
     for (const auto& act : plan.narrativeSpine.acts) {
         if (act.stage != NarrativeStage::Resolution) continue;
@@ -259,24 +402,51 @@ std::vector<std::size_t> SelectiveRepair::incompleteTargets(
         if (found != plan.sections.end())
             resolutionSection = static_cast<int>(std::distance(plan.sections.begin(), found));
     }
-    std::set<std::string> codaOwners;
+    std::set<int> resolutionStablePitchClasses{positiveModulo(plan.rootPitchClass, 12)};
+    auto explicitTonicEnding = false;
+    const auto resolutionWords = lower(plan.narrativeSpine.resolution);
+    explicitTonicEnding = resolutionWords.find("tonic") != std::string::npos ||
+        resolutionWords.find("root") != std::string::npos ||
+        resolutionWords.find("home note") != std::string::npos ||
+        resolutionWords.find("tonica") != std::string::npos;
+    for (const auto& act : plan.narrativeSpine.acts) {
+        if (act.stage != NarrativeStage::Resolution) continue;
+        const auto target = lower(act.resolutionTarget);
+        if (target.find("tonic") != std::string::npos ||
+            target.find("root") != std::string::npos ||
+            target.find("home note") != std::string::npos ||
+            target.find("tonica") != std::string::npos)
+            explicitTonicEnding = true;
+    }
+    if (resolutionSection >= 0 &&
+        static_cast<std::size_t>(resolutionSection) < plan.sections.size()) {
+        const auto& section = plan.sections[static_cast<std::size_t>(resolutionSection)];
+        const HarmonicEvent* terminalEvent = nullptr;
+        for (const auto& event : section.harmonicEvents)
+            if (terminalEvent == nullptr ||
+                std::tie(event.barOffset, event.beatOffset) >
+                    std::tie(terminalEvent->barOffset, terminalEvent->beatOffset))
+                terminalEvent = &event;
+        if (terminalEvent != nullptr) {
+            const auto chord = std::find_if(plan.chordPalette.begin(), plan.chordPalette.end(),
+                [&](const auto& candidate) { return candidate.id == terminalEvent->chordId; });
+            if (chord != plan.chordPalette.end()) {
+                resolutionStablePitchClasses.insert(positiveModulo(chord->rootPitchClass, 12));
+                resolutionStablePitchClasses.insert(positiveModulo(chord->bassPitchClass, 12));
+                for (const auto pitchClass : chord->pitchClasses)
+                    resolutionStablePitchClasses.insert(positiveModulo(pitchClass, 12));
+            }
+        }
+    }
     for (const auto& placement : score.placements) {
         const auto found = instrumentsByCell.find(placement.cellId);
         if (found == instrumentsByCell.end()) continue;
-        for (const auto& id : found->second) {
-            sections[id].insert(placement.sectionIndex);
-            if (placement.sectionIndex == resolutionSection && resolutionSection >= 0) {
-                const auto sectionBeats = plan.sections[static_cast<std::size_t>(resolutionSection)].bars *
-                    plan.beatsPerBar;
-                const auto codaThreshold = std::max(0.0, sectionBeats - plan.beatsPerBar * 16.0);
-                if (placement.startBeat >= codaThreshold) codaOwners.insert(id);
-            }
-        }
+        for (const auto& id : found->second) sections[id].insert(placement.sectionIndex);
     }
 
     const auto protagonistThemes = themesByInstrument[plan.narrativeSpine.protagonistInstrumentId];
 
-    std::vector<std::size_t> missing;
+    std::vector<PerformanceCoverageDeficit> deficits;
     for (const auto index : candidates) {
         if (index >= plan.instruments.size()) continue;
         const auto& instrument = plan.instruments[index];
@@ -289,28 +459,122 @@ std::vector<std::size_t> SelectiveRepair::incompleteTargets(
             instrument.orchestralFunction == "transition";
         const auto protagonist = instrument.id == plan.narrativeSpine.protagonistInstrumentId;
         const auto answer = instrument.lineRelationship == "call_response";
-        const auto motion = instrument.sourceVoice == VoiceId::HarmonicPulse ||
-            containsAny(instrument, {"arp", "sequence", "pulse", "ostinato", "orbit"});
+        const auto motion = ElectronicRoleContract::motionOwner(instrument);
         const auto minimumNotes = rareEvent ? std::size_t{1} : protagonist || motion
             ? std::size_t{6} : answer ? std::size_t{4} : std::size_t{3};
         const auto minimumSections = rareEvent || plan.sections.size() < 4
             ? std::size_t{1} : std::size_t{2};
-        auto incomplete = noteCounts[instrument.id] < minimumNotes ||
-            sections[instrument.id].size() < minimumSections;
-        // The model—not the renderer—must bring the protagonist back in the coda.
-        if (protagonist && !codaOwners.contains(instrument.id)) incomplete = true;
+        PerformanceCoverageDeficit deficit;
+        deficit.instrumentIndex = index;
+        deficit.instrumentId = instrument.id;
+        deficit.notes = noteCounts[instrument.id];
+        deficit.minimumNotes = minimumNotes;
+        deficit.sections = sections[instrument.id].size();
+        deficit.minimumSections = minimumSections;
+        auto incomplete = false;
+        if (plan.instrumentCastAuthored) {
+            const auto contract = TrackViability::contractFor(instrument, plan);
+            const auto& notes = renderedByInstrument[instrument.id];
+            std::set<int> activeBars;
+            auto phrases = notes.empty() ? std::size_t{} : std::size_t{1};
+            std::vector<const NoteEvent*> ordered(notes.begin(), notes.end());
+            std::sort(ordered.begin(), ordered.end(), [](const auto* left, const auto* right) {
+                return left->startBeat < right->startBeat;
+            });
+            auto soundingUntil = ordered.empty() ? 0.0 : ordered.front()->endBeat();
+            for (std::size_t noteIndex = 0; noteIndex < ordered.size(); ++noteIndex) {
+                const auto* note = ordered[noteIndex];
+                const auto first = static_cast<int>(std::floor(note->startBeat / plan.beatsPerBar));
+                const auto last = static_cast<int>(std::floor(
+                    std::max(note->startBeat, note->endBeat() - .001) / plan.beatsPerBar));
+                for (auto bar = first; bar <= last; ++bar) activeBars.insert(bar);
+                if (noteIndex > 0 && note->startBeat - soundingUntil >= plan.beatsPerBar * .75)
+                    ++phrases;
+                soundingUntil = std::max(soundingUntil, note->endBeat());
+            }
+            deficit.notes = notes.size();
+            deficit.minimumNotes = contract.minimumNotes;
+            deficit.activeBars = activeBars.size();
+            deficit.minimumActiveBars = contract.minimumActiveBars;
+            deficit.phrases = phrases;
+            deficit.minimumPhrases = contract.minimumPhrases;
+            // An AI-authored cast uses the same function-aware contract advertised to
+            // the model and used at publication. In particular, rhythm articulations
+            // are judged by their dedicated rhythm pipeline, so the older generic
+            // three-note/two-section heuristic must not override that contract.
+            deficit.minimumSections = 0;
+            incomplete = allowMarginalBarAcceptance
+                ? !TrackViability::acceptsCoverage(
+                    deficit.notes, deficit.activeBars, deficit.phrases, contract)
+                : deficit.notes < deficit.minimumNotes ||
+                    deficit.activeBars < deficit.minimumActiveBars ||
+                    deficit.phrases < deficit.minimumPhrases;
+        } else {
+            incomplete = deficit.notes < deficit.minimumNotes ||
+                deficit.sections < deficit.minimumSections;
+        }
+        // The model—not the renderer—must complete the protagonist's transformed
+        // answer at the audible boundary. A phrase merely somewhere in the final act
+        // still leaves several bars of narrative vacuum.
+        if (protagonist && resolutionSection >= 0) {
+            const auto& resolution = plan.sections[static_cast<std::size_t>(resolutionSection)];
+            const auto resolutionEnd = (resolution.startBar + resolution.bars) * plan.beatsPerBar;
+            const auto codaStart = resolutionEnd - std::min(8, resolution.bars) * plan.beatsPerBar;
+            const auto finalTwoBars = resolutionEnd - std::min(2, resolution.bars) * plan.beatsPerBar;
+            std::vector<const NoteEvent*> coda;
+            for (const auto* note : renderedByInstrument[instrument.id])
+                if (note->startBeat >= codaStart && note->startBeat < resolutionEnd)
+                    coda.push_back(note);
+            std::sort(coda.begin(), coda.end(), [](const auto* left, const auto* right) {
+                return left->startBeat < right->startBeat;
+            });
+            const auto terminalPitchClass = coda.empty()
+                ? -1 : positiveModulo(coda.back()->pitch, 12);
+            const auto stableEnding = explicitTonicEnding
+                ? terminalPitchClass == positiveModulo(plan.rootPitchClass, 12)
+                : resolutionStablePitchClasses.contains(terminalPitchClass);
+            const auto audibleBoundary = coda.size() >= 3 &&
+                coda.back()->startBeat >= finalTwoBars && stableEnding;
+            if (!audibleBoundary) {
+                deficit.missingCodaResolution = true;
+                incomplete = true;
+            }
+        }
         // A response belongs to the same thematic family, but its distinct cell and
         // rhythm remain free. Labels alone cannot fabricate kinship.
         if (answer && !protagonistThemes.empty()) {
             const auto& answerThemes = themesByInstrument[instrument.id];
             const auto related = std::any_of(answerThemes.begin(), answerThemes.end(),
                 [&](const auto& theme) { return protagonistThemes.contains(theme); });
-            if (!related) incomplete = true;
+            if (!related) {
+                deficit.missingThematicRelationship = true;
+                incomplete = true;
+            }
         }
         if (incomplete)
-            missing.push_back(index);
+            deficits.push_back(std::move(deficit));
     }
+    return deficits;
+}
+
+std::vector<std::size_t> SelectiveRepair::incompleteTargets(
+    const SongPlan& plan, const PerformanceScore& score,
+    const std::vector<std::size_t>& candidates) {
+    const auto deficits = performanceDeficits(plan, score, candidates);
+    std::vector<std::size_t> missing;
+    missing.reserve(deficits.size());
+    for (const auto& deficit : deficits) missing.push_back(deficit.instrumentIndex);
     return missing;
+}
+
+bool SelectiveRepair::requiresReplacement(
+    const PerformanceCoverageDeficit& deficit) noexcept {
+    // Notes can repair missing quantity and placements can extend active coverage.
+    // They cannot create a phrase break inside material that already fills its
+    // required horizon; that target must be replaced so silence can be authored.
+    return deficit.minimumPhrases > 0 && deficit.phrases < deficit.minimumPhrases &&
+        deficit.notes >= deficit.minimumNotes &&
+        deficit.activeBars >= deficit.minimumActiveBars;
 }
 
 } // namespace pulso

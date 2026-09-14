@@ -1,5 +1,6 @@
 #include "ElectronicCompositionFabric.h"
 
+#include "ElectronicRoleContract.h"
 #include "OrchestrationScore.h"
 #include "Scale.h"
 #include "SongComposer.h"
@@ -28,12 +29,7 @@ bool contains(std::string_view text, std::string_view token) noexcept {
 }
 
 bool arpPart(const InstrumentAssignment& part) noexcept {
-    // Ostinato describes an articulation, not a musical department. A rolling bass,
-    // string ostinato or repeated chord must never become the destination of the
-    // arpeggiator merely because it repeats.
-    return part.instrumentId == "hypnotic_arp" ||
-           (part.instrumentId == "fm_sequence" && part.sourceVoice == VoiceId::HarmonicPulse) ||
-           contains(part.role, "arpeggio") || contains(part.role, "arpeggiated");
+    return ElectronicRoleContract::motionOwner(part);
 }
 
 bool floorPart(const InstrumentAssignment& part) noexcept {
@@ -1128,9 +1124,9 @@ ElectronicFabricReport ElectronicCompositionFabric::audit(const Pattern& pattern
         std::nth_element(copy.begin(), middle, copy.end());
         report.medianHarmonicFloorLayers = static_cast<double>(*middle);
     }
-    // Arpeggiation is evaluated only when the authored cast asks for it. Requiring an
-    // arp in every electronic score was a hidden style preset and caused the local
-    // fabric to stamp the same motion archetype onto unrelated directions.
+    // Electronic motion is evaluated only when the authored cast asks for it. The
+    // owner may be an arpeggio, sequence, orbit or ostinato; a transition or repeated
+    // bass can never satisfy this contract by accident.
     const auto requiredArpeggioNotes = arps.empty()
         ? std::size_t{} : std::min<std::size_t>(32, std::max(8, plan.totalBars / 4));
     const auto requiredDialogueLines = dialogues.empty() ? std::size_t{} : std::size_t{1};

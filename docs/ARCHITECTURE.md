@@ -948,3 +948,141 @@ diatonic writing. A GPT chord with a functional chromatic, colour, modal, domina
 label may retain at most two foreign pitch classes. A foreign note is legal only inside that exact
 window, under the global chromatic ceiling, and when the following lower-tension chord offers a
 home-scale resolution by semitone or whole tone. Undeclared or unresolved foreign notes are repaired.
+
+### Electronic role and audible-coda contract (0.56.2)
+
+`ElectronicRoleContract` centralizes classification of transition and motion owners so manifest
+validation, rendering and publication use one vocabulary. A percussion-free electronic work needs
+exactly one non-transition recurrence owner unless the prompt explicitly asks for a static work.
+Transition activity is capped to one eighth of the form (between four and twenty-four active bars),
+prioritizing section boundaries and preserving the AI-authored events that remain.
+
+Incremental coverage validation now renders the assembled `PerformanceScore` before measuring each
+instrument against `TrackViabilityContract`. Independently authored lines cannot be merged or pruned
+to conceal missing material. Protagonist and motion-owner parts are essential during recovery and
+cannot be retired. Narrative closure is measured from the declared protagonist alone: its coda must
+contain a phrase, attack during the final two bars and end on the home pitch class.
+
+### Bounded cast recovery and voicing convergence (0.56.3)
+
+The direction parser extracts numbers attached to track/instrument nouns and treats the largest as
+the total cast contract. Manifest validation enforces that count before detail or performance calls.
+Accepted performance material is checkpointed; missing instruments are requested in parallel shards
+of at most two parts, and an explicitly sized cast cannot be retired during fallback convergence.
+
+`VerticalHarmonyGate` now attempts octave-only displacement of secondary harmonic support before
+cutting sustained notes. The operation preserves pitch class and all temporal/dynamic data, marks AI
+material as transformed, and regards chromatic colour more than nineteen semitones above the bass as
+spacious rather than a low-register collision.
+
+### Incremental cast reconciliation (0.56.4)
+
+Explicit cast size is now reconciled after a structurally valid manifest has been accepted. An
+undersized response remains immutable and a strict supplemental schema requests exactly the missing
+anchors. The supplement uses a small token ceiling and low reasoning because it only completes
+orchestration identity; it does not reconsider form, harmony, existing roles or any MIDI performance.
+
+Supplement merging is transactional: the original order and objects are retained, new IDs must be
+unique, every compact anchor is required and the final count must match exactly. If the bounded remote
+supplement fails, a catalog reconciler supplies compatible identity metadata only, prioritizing the
+electronic family for electronic productions, respecting percussion-free intent and refusing to add a
+second motion owner. All completed members then pass through the normal AI detail and writing shards.
+
+### Single performance-coverage contract (0.56.5)
+
+Incremental coverage now derives exclusively from `TrackViability::contractFor` when the instrument
+cast is AI-authored. This removes the older generic note/section heuristic that accidentally overrode
+the explicit event exception for rhythm articulations. Non-AI legacy plans retain that safeguard, and
+the protagonist coda plus thematic-relationship checks remain independent hard requirements.
+
+`PerformanceCoverageDeficit` exposes the exact rendered evidence and required notes, active bars,
+phrases and narrative conditions. Recovery prompts consume those measurements and the operational
+journal prints them per stable instrument ID, making a retry both targeted and auditable.
+
+### Transactional phrase-boundary repair (0.56.6)
+
+`SelectiveRepair::requiresReplacement` distinguishes missing quantity from irreparable additive
+continuity. A target whose note and active-bar minima are already satisfied but whose phrase count is
+short cannot gain a rest by receiving more notes. Its granular request therefore asks for a complete
+identity-preserving rewrite with literal phrase gaps of at least three quarters of a bar.
+
+The returned shard is restricted to its assigned IDs and merged first into a candidate score after
+removing only replacement-target events. The candidate must independently satisfy every replacement
+contract before commit. Failure retains the original score; success atomically swaps the target while
+leaving unrelated cells, controls, placements and instrument identities unchanged.
+
+### Stable performance routing (0.56.7)
+
+Performance-block parsing is scoped to the stable instrument IDs assigned to that shard. Identity is
+authoritative: when a known ID arrives with a mismatched `source_voice`, the parser maps it back to the
+voice declared by the cast while preserving beat, pitch, duration, velocity and metric intent. Unknown
+or foreign IDs are discarded before normalization and cannot make an otherwise empty shard succeed.
+
+`PerformanceRoutingReport` records received, accepted, reassigned and discarded events per requested
+identity, plus foreign and unknown totals. Granular zero-event recovery adds a concrete-event contract:
+every empty identity must own an explicit note and placement under its exact ID; rhythm motifs,
+automation, prose and another instrument's notes are context only and never count as fulfillment.
+
+### Authoritative cross-phase protagonist (0.56.8)
+
+The macro schema deliberately omits `protagonist_instrument_id`, because no stable instrument identity
+exists during that phase. The global cast manifest owns the field instead. Its validator requires one
+exact matching instrument, `source_voice=lead`, and activity in the macro's declared resolution section.
+
+`bindCastProtagonist` writes that validated ID into the narrative spine before the detailed cast is
+parsed or any performance shard is requested. Cast details must continue copying the identity anchors
+literally. The final preservation gate therefore checks one canonical reference rather than comparing
+an obsolete macro placeholder with the later ensemble. This operation changes metadata only and never
+edits generated MIDI.
+
+### Exact cast cardinality schema (0.56.9)
+
+`castManifestSchema(exactInstrumentCount)` specializes the manifest's `instruments` array when the
+creative direction contains an explicit global track count. Both `minItems` and `maxItems` equal that
+count, making cardinality a constrained-decoding property rather than a natural-language request. The
+initial response and its bounded transport retry use the identical specialized schema.
+
+With no explicit count, the schema retains its adaptive 8–64 range. Reconciliation remains available
+for defensive compatibility, but an exact structured response cannot legally arrive under- or
+oversized. No post-composition truncation is performed, preserving orchestration decisions and MIDI.
+
+### Scalable global performance capacity (0.56.10)
+
+Remote performance shards keep their bounded schemas (12 cells and 192 placements), but the assembled
+score has an independent capacity of 512 cells and 4096 placements. `PerformanceScoreEngine::normalize`
+reports invalid input separately from capacity loss. Every initial and recovery merge is normalized
+under that same global contract before its checkpoint is accepted.
+
+Final song normalization is surrounded by pre/post telemetry. Any unexpected reduction is therefore
+observable, and capacity loss is transactional: it cannot masquerade as an underwritten AI instrument.
+Regression coverage assembles 50 stable identities across 100 cells and verifies preservation of the
+last identity as well as explicit reporting at the capacity boundary.
+
+### Bounded semantic bar tolerance (0.56.11)
+
+`TrackViability::marginalActiveBarAcceptance` is the shared predicate for incremental coverage and
+terminal track viability. It accepts exactly one missing active bar only when note and phrase minima
+are already satisfied. Terminal use is further restricted to an AI-authored cast with accepted AI
+note provenance, leaving procedural and legacy behavior exact.
+
+`SelectiveRepair` exposes marginal acceptances separately from hard deficits. The incremental writer
+therefore avoids a wasteful recovery/rejection cycle while journaling the accepted identity and its
+complete measurements. No MIDI is synthesized, moved or removed by this policy.
+
+### Universal constraint authority and non-destructive publication (0.57.0)
+
+`PerformanceConstraint` classifies measured evidence as a technical invariant, explicit prompt
+commitment or musical objective. It carries a bounded operation vocabulary rather than special-case
+control flow: supply an absent identity, extend active coverage, develop phrases, resolve narrative or
+establish thematic kinship. Classification depends on structured score evidence and cast authority,
+not genre names or prompt wording.
+
+Block recovery is checkpointed and non-terminal. Unresolved populated identities are deferred to the
+global classifier while later blocks continue writing. A non-explicit, non-essential identity may be
+retired only when it owns zero concrete notes. An explicitly requested or essential identity with no
+MIDI remains blocking. All populated musical lines survive quantitative or narrative observations.
+
+Terminal harmony supplies the stable pitch-class set for narrative closure. Root-only closure is
+enforced when the AI blueprint explicitly commits to tonic resolution; otherwise chord root, bass and
+declared chord tones are valid. This preserves open, modal and suspended endings without weakening
+timing, range, ownership, note-off or cast-cardinality invariants.

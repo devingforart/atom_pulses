@@ -131,10 +131,20 @@ Evidence evidence(const Pattern& pattern, std::uint16_t partId, double beatsPerB
     return result;
 }
 
-bool viable(const Evidence& value, const TrackViabilityContract& contract) noexcept {
-    return value.notes >= contract.minimumNotes &&
-           value.activeBars >= contract.minimumActiveBars &&
-           value.phrases >= contract.minimumPhrases;
+bool viable(const Evidence& value, const TrackViabilityContract& contract,
+            const SongPlan& plan) noexcept {
+    const auto exact = value.notes >= contract.minimumNotes &&
+        value.activeBars >= contract.minimumActiveBars &&
+        value.phrases >= contract.minimumPhrases;
+    return exact || (plan.instrumentCastAuthored && value.authoredSeeds > 0 &&
+        TrackViability::marginalActiveBarAcceptance(
+            value.notes, value.activeBars, value.phrases, contract));
+}
+
+bool protectedIndependentAuthorship(const InstrumentPart& part, const SongPlan& plan,
+                                    const Evidence& value) noexcept {
+    return plan.instrumentCastAuthored && !plan.performanceScore.empty() &&
+        part.lineRelationship == "independent" && value.authoredSeeds > 0;
 }
 
 const SongSection* sectionAt(const SongPlan& plan, int bar) noexcept {
@@ -228,7 +238,7 @@ std::size_t develop(Pattern& pattern, const SongPlan& plan, const InstrumentPart
 
     for (std::size_t attempt = 0; attempt < candidates.size() * 2; ++attempt) {
         const auto current = evidence(pattern, part.id, plan.beatsPerBar);
-        if (viable(current, contract)) break;
+        if (viable(current, contract, plan)) break;
         const auto bar = candidates[attempt % candidates.size()];
         const auto start = bar * plan.beatsPerBar;
         if (soundingParts(pattern, start + .01) >= maximumParts) continue;
@@ -359,6 +369,24 @@ void removePerformanceFor(Pattern& pattern, std::uint16_t partId) {
 
 } // namespace
 
+bool TrackViability::marginalActiveBarAcceptance(
+    std::size_t notes, std::size_t activeBars, std::size_t phrases,
+    const TrackViabilityContract& contract) noexcept {
+    return notes >= contract.minimumNotes &&
+        phrases >= contract.minimumPhrases &&
+        activeBars < contract.minimumActiveBars &&
+        contract.minimumActiveBars - activeBars == 1;
+}
+
+bool TrackViability::acceptsCoverage(
+    std::size_t notes, std::size_t activeBars, std::size_t phrases,
+    const TrackViabilityContract& contract) noexcept {
+    const auto exact = notes >= contract.minimumNotes &&
+        activeBars >= contract.minimumActiveBars &&
+        phrases >= contract.minimumPhrases;
+    return exact || marginalActiveBarAcceptance(notes, activeBars, phrases, contract);
+}
+
 TrackViabilityContract TrackViability::contractFor(const InstrumentPart& part,
                                                     const SongPlan& plan) {
     TrackViabilityContract result;
@@ -434,6 +462,31 @@ TrackViabilityContract TrackViability::contractFor(const InstrumentPart& part,
     return result;
 }
 
+TrackViabilityContract TrackViability::contractFor(const InstrumentAssignment& assignment,
+                                                    const SongPlan& plan) {
+    InstrumentPart part;
+    part.contentLaneId = assignment.id;
+    part.catalogId = assignment.instrumentId;
+    part.name = assignment.name;
+    part.sourceVoice = assignment.sourceVoice;
+    part.role = assignment.role;
+    part.minimumPitch = assignment.minimumPitch;
+    part.maximumPitch = assignment.maximumPitch;
+    part.orchestralFunction = assignment.orchestralFunction;
+    part.articulation = assignment.articulation;
+    part.lineRelationship = assignment.lineRelationship;
+    if (const auto* definition = instrumentDefinition(assignment.instrumentId))
+        part.department = definition->department;
+    else if (isVoiceInFamily(assignment.sourceVoice, VoiceFamily::Rhythm))
+        part.department = ScoreDepartment::Rhythm;
+    else if (assignment.sourceVoice == VoiceId::Lead ||
+             assignment.sourceVoice == VoiceId::Countermelody)
+        part.department = ScoreDepartment::Melody;
+    else
+        part.department = ScoreDepartment::Harmony;
+    return contractFor(part, plan);
+}
+
 TrackViabilityReport TrackViability::enforce(Pattern& pattern, SongPlan& plan) {
     TrackViabilityReport report;
     report.active = !pattern.parts.empty();
@@ -443,7 +496,7 @@ TrackViabilityReport TrackViability::enforce(Pattern& pattern, SongPlan& plan) {
         const auto current = evidence(pattern, part.id, plan.beatsPerBar);
         if (current.notes == 0) continue;
         ++report.populatedBefore;
-        if (viable(current, contractFor(part, plan))) ++report.meaningfulBefore;
+        if (viable(current, contractFor(part, plan), plan)) ++report.meaningfulBefore;
     }
 
     // A later tonal, vertical-harmony or duration pass can remove material that was
@@ -456,7 +509,7 @@ TrackViabilityReport TrackViability::enforce(Pattern& pattern, SongPlan& plan) {
         for (const auto& part : pattern.parts) {
             const auto current = evidence(pattern, part.id, plan.beatsPerBar);
             const auto contract = contractFor(part, plan);
-            if (current.notes == 0 || viable(current, contract)) continue;
+            if (current.notes == 0 || viable(current, contract, plan)) continue;
             const auto created = develop(pattern, plan, part, contract);
             if (created > 0) {
                 ++report.developedTracks;
@@ -467,13 +520,18 @@ TrackViabilityReport TrackViability::enforce(Pattern& pattern, SongPlan& plan) {
 
         std::set<std::uint16_t> viableParts;
         for (const auto& part : pattern.parts)
-            if (viable(evidence(pattern, part.id, plan.beatsPerBar), contractFor(part, plan)))
+            if (viable(evidence(pattern, part.id, plan.beatsPerBar), contractFor(part, plan), plan))
                 viableParts.insert(part.id);
 
         for (const auto& source : pattern.parts) {
             const auto sourceEvidence = evidence(pattern, source.id, plan.beatsPerBar);
             const auto sourceContract = contractFor(source, plan);
             if (sourceEvidence.notes == 0 || viableParts.contains(source.id)) continue;
+            // An independent GPT line is a real orchestration decision. Folding it into
+            // another instrument turns a large ensemble into a handful of supertracks
+            // and changes timbre, register and dialogue. Keep it visible as incomplete
+            // evidence so the AI contract can repair it; only relays/doublings may merge.
+            if (protectedIndependentAuthorship(source, plan, sourceEvidence)) continue;
             const InstrumentPart* target = nullptr;
             for (const auto& candidate : pattern.parts) {
                 if (!viableParts.contains(candidate.id) || candidate.id == source.id) continue;
@@ -533,7 +591,7 @@ TrackViabilityReport TrackViability::audit(const Pattern& pattern, const SongPla
         ++report.retainedTracks;
         const auto contract = contractFor(part, plan);
         if (contract.eventException) ++report.eventTracks;
-        if (viable(current, contract)) ++report.viableTracks;
+        if (viable(current, contract, plan)) ++report.viableTracks;
         else ++report.tokenTracks;
     }
     report.viabilityRatio = static_cast<double>(report.viableTracks) /
@@ -561,11 +619,12 @@ TrackViabilityReport TrackViability::compactIncomplete(Pattern& pattern, SongPla
     std::set<std::string> removedAssignments;
     std::set<std::uint16_t> viableParts;
     for (const auto& part : pattern.parts)
-        if (viable(evidence(pattern, part.id, plan.beatsPerBar), contractFor(part, plan)))
+        if (viable(evidence(pattern, part.id, plan.beatsPerBar), contractFor(part, plan), plan))
             viableParts.insert(part.id);
     for (const auto& part : pattern.parts) {
         const auto current = evidence(pattern, part.id, plan.beatsPerBar);
-        if (current.notes == 0 || viable(current, contractFor(part, plan))) continue;
+        if (current.notes == 0 || viable(current, contractFor(part, plan), plan)) continue;
+        if (protectedIndependentAuthorship(part, plan, current)) continue;
         const auto sourceFunction = contractFor(part, plan).function;
         const auto hasStructuralAuthorship = std::any_of(pattern.notes.begin(), pattern.notes.end(),
             [&](const auto& note) {

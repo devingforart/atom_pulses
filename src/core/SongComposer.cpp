@@ -3,6 +3,7 @@
 #include "AttentionDirector.h"
 #include "CreativeAuthority.h"
 #include "ElectronicCompositionFabric.h"
+#include "ElectronicRoleContract.h"
 #include "Random.h"
 #include "HarmonyEngine.h"
 #include "ElectronicProductionDirector.h"
@@ -2392,6 +2393,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     song.meaningfulMusicalLines = electronicFabric.meaningfulLines;
     song.protagonistPhraseWindows = electronicFabric.protagonistPhraseWindows;
     song.arpeggioNoteCount = electronicFabric.arpeggioNoteCount;
+    song.electronicMotionRequired = ElectronicRoleContract::requiresMotionOwner(plan);
     song.dialogueMusicalLines = electronicFabric.dialogueLines;
     song.harmonicFloorCoverage = electronicFabric.harmonicFloorCoverage;
     song.medianHarmonicFloorLayers = electronicFabric.medianHarmonicFloorLayers;
@@ -2443,6 +2445,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     verticalHarmony.collisionsBefore += finalVerticalHarmony.collisionsBefore;
     verticalHarmony.collisionsAfter = finalVerticalHarmony.collisionsAfter;
     verticalHarmony.supportNotesDucked += finalVerticalHarmony.supportNotesDucked;
+    verticalHarmony.supportNotesOctaveDisplaced += finalVerticalHarmony.supportNotesOctaveDisplaced;
     verticalHarmony.continuationFragmentsCreated +=
         finalVerticalHarmony.continuationFragmentsCreated;
     verticalHarmony.score = verticalHarmony.collisionsBefore == 0 ? 1.0 :
@@ -2484,6 +2487,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         verticalHarmony.collisionsBefore += closureVertical.collisionsBefore;
         verticalHarmony.collisionsAfter = closureVertical.collisionsAfter;
         verticalHarmony.supportNotesDucked += closureVertical.supportNotesDucked;
+        verticalHarmony.supportNotesOctaveDisplaced += closureVertical.supportNotesOctaveDisplaced;
         verticalHarmony.continuationFragmentsCreated += closureVertical.continuationFragmentsCreated;
         [[maybe_unused]] const auto closureDuration = enforceAudibleDurations(song, harmonicWindows);
         [[maybe_unused]] const auto closureFinalOverlap = repairSamePitchOverlaps(song);
@@ -2528,6 +2532,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     verticalHarmony.collisionsBefore += attentionVertical.collisionsBefore;
     verticalHarmony.collisionsAfter = attentionVertical.collisionsAfter;
     verticalHarmony.supportNotesDucked += attentionVertical.supportNotesDucked;
+    verticalHarmony.supportNotesOctaveDisplaced += attentionVertical.supportNotesOctaveDisplaced;
     verticalHarmony.continuationFragmentsCreated +=
         attentionVertical.continuationFragmentsCreated;
     [[maybe_unused]] const auto attentionDurations = enforceAudibleDurations(song, harmonicWindows);
@@ -2569,6 +2574,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     song.meaningfulMusicalLines = electronicFabric.meaningfulLines;
     song.protagonistPhraseWindows = electronicFabric.protagonistPhraseWindows;
     song.arpeggioNoteCount = electronicFabric.arpeggioNoteCount;
+    song.electronicMotionRequired = ElectronicRoleContract::requiresMotionOwner(plan);
     song.dialogueMusicalLines = electronicFabric.dialogueLines;
     song.harmonicFloorCoverage = electronicFabric.harmonicFloorCoverage;
     song.medianHarmonicFloorLayers = electronicFabric.medianHarmonicFloorLayers;

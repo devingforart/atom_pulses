@@ -46,6 +46,17 @@ public:
     [[nodiscard]] static std::size_t castDetailShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t selectiveRepairShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t performanceBlockCount(std::size_t instruments) noexcept;
+    [[nodiscard]] static bool castManifestUsesExactCount(std::size_t instruments) noexcept;
+    [[nodiscard]] static std::size_t requestedInstrumentCount(const juce::String& direction) noexcept;
+    [[nodiscard]] static bool reconcileCastManifest(const juce::String& acceptedManifest,
+                                                    const juce::String& supplement,
+                                                    std::size_t requestedCount,
+                                                    juce::String& reconciledManifest,
+                                                    juce::String& error);
+    [[nodiscard]] static bool bindCastProtagonist(const juce::String& macroBlueprint,
+                                                  const juce::String& castManifest,
+                                                  juce::String& mergedBlueprint,
+                                                  juce::String& error);
     [[nodiscard]] static AiComposition compose(const juce::String& creativeDirection,
                                                int bars, double bpm,
                                                const Pattern* reference,
@@ -54,6 +65,9 @@ public:
                                                juce::String& error);
     [[nodiscard]] static bool parseCompositionJson(const juce::String&, int requestedBars,
                                                    AiComposition&, juce::String& error);
+    [[nodiscard]] static bool parsePerformanceBlockJson(
+        const juce::String&, const SongPlan&, const std::vector<std::size_t>& assignedInstruments,
+        PerformanceScore&, juce::String& error);
     [[nodiscard]] static SongPlan planSong(const juce::String& creativeDirection,
                                            int targetSeconds, int totalBars, double bpm,
                                            double beatsPerBar, std::uint64_t seed,

@@ -1,5 +1,6 @@
 #include "AttentionDirector.h"
 
+#include "ElectronicRoleContract.h"
 #include "HarmonyPlan.h"
 #include "Scale.h"
 #include "SongComposer.h"
@@ -258,6 +259,68 @@ void retainInterval(NoteEvent source, double start, double end,
     destination.push_back(source);
 }
 
+std::size_t limitTransitionActivity(Pattern& pattern, const SongPlan& plan,
+                                    int bars, double beatsPerBar) {
+    // A transition marks a boundary; it is not a hidden sequencer lane. Keep authored
+    // events around formal boundaries first, then preserve a small, evenly distributed
+    // remainder. Pitches and rhythms are never rewritten.
+    std::set<int> structuralBars;
+    for (std::size_t index = 1; index < plan.sections.size(); ++index) {
+        const auto boundary = plan.sections[index].startBar;
+        for (auto offset = -1; offset <= 1; ++offset)
+            if (boundary + offset >= 0 && boundary + offset < bars)
+                structuralBars.insert(boundary + offset);
+    }
+    const auto maximumBars = std::clamp(static_cast<std::size_t>(std::ceil(bars * .125)),
+                                        std::size_t{4}, std::size_t{24});
+    auto removed = std::size_t{};
+    for (const auto& part : pattern.parts) {
+        if (!ElectronicRoleContract::transition(part)) continue;
+        std::set<int> active;
+        for (const auto& note : pattern.notes)
+            if (note.partId == part.id)
+                active.insert(std::clamp(static_cast<int>(std::floor(note.startBeat / beatsPerBar)),
+                                         0, bars - 1));
+        if (active.size() <= maximumBars) continue;
+
+        std::vector<int> preferred;
+        std::vector<int> remainder;
+        for (const auto bar : active) {
+            if (structuralBars.contains(bar)) preferred.push_back(bar);
+            else remainder.push_back(bar);
+        }
+        std::set<int> retained;
+        const auto distribute = [&](const std::vector<int>& source, std::size_t capacity) {
+            if (source.empty() || capacity == 0) return;
+            const auto count = std::min(capacity, source.size());
+            for (std::size_t slot = 0; slot < count; ++slot) {
+                const auto index = std::min(source.size() - 1, slot * source.size() / count);
+                retained.insert(source[index]);
+            }
+        };
+        distribute(preferred, maximumBars);
+        distribute(remainder, maximumBars - retained.size());
+
+        const auto before = pattern.notes.size();
+        pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+            if (note.partId != part.id) return false;
+            const auto bar = std::clamp(static_cast<int>(std::floor(note.startBeat / beatsPerBar)),
+                                        0, bars - 1);
+            return !retained.contains(bar);
+        }), pattern.notes.end());
+        removed += before - pattern.notes.size();
+        pattern.controls.erase(std::remove_if(pattern.controls.begin(), pattern.controls.end(), [&](const auto& event) {
+            return event.partId == part.id && !retained.contains(std::clamp(
+                static_cast<int>(std::floor(event.beat / beatsPerBar)), 0, bars - 1));
+        }), pattern.controls.end());
+        pattern.expressions.erase(std::remove_if(pattern.expressions.begin(), pattern.expressions.end(), [&](const auto& event) {
+            return event.partId == part.id && !retained.contains(std::clamp(
+                static_cast<int>(std::floor(event.beat / beatsPerBar)), 0, bars - 1));
+        }), pattern.expressions.end());
+    }
+    return removed;
+}
+
 } // namespace
 
 AttentionDirectionReport AttentionDirector::audit(const Pattern& pattern,
@@ -286,6 +349,7 @@ AttentionDirectionReport AttentionDirector::shape(Pattern& pattern, const SongPl
 
     const auto beatsPerBar = std::max(1.0, plan.beatsPerBar);
     const auto bars = std::max(1, static_cast<int>(std::ceil(pattern.lengthBeats / beatsPerBar)));
+    report.notesRemoved += limitTransitionActivity(pattern, plan, bars, beatsPerBar);
     const auto windowBars = 4;
     const auto windows = static_cast<std::size_t>((bars + windowBars - 1) / windowBars);
     report.windows = windows;

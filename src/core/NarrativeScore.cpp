@@ -380,15 +380,60 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
         if (item.stage == NarrativeStage::Climax) climax = &item;
         if (item.stage == NarrativeStage::Resolution) resolution = &item;
     }
-    if (premise != nullptr && resolution != nullptr)
-        report.motifClosure = contourClosure(premise->melody, resolution->melody);
-    if (resolution != nullptr && !resolution->melody.empty()) {
-        const auto* last = resolution->melody.back();
+    auto protagonistPart = std::uint16_t{};
+    const auto protagonist = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+        [&](const auto& instrument) {
+            return instrument.id == plan.narrativeSpine.protagonistInstrumentId;
+        });
+    if (protagonist != plan.instruments.end())
+        protagonistPart = static_cast<std::uint16_t>(
+            std::distance(plan.instruments.begin(), protagonist) + 1);
+
+    const auto notesInAct = [&](NarrativeStage stage) {
+        std::vector<const NoteEvent*> notes;
+        const auto act = std::find_if(plan.narrativeSpine.acts.begin(), plan.narrativeSpine.acts.end(),
+            [&](const auto& item) { return item.stage == stage; });
+        const auto section = act == plan.narrativeSpine.acts.end() ? plan.sections.end() :
+            std::find_if(plan.sections.begin(), plan.sections.end(), [&](const auto& item) {
+                return item.name == act->sectionName;
+            });
+        if (section == plan.sections.end()) return notes;
+        const auto start = section->startBar * plan.beatsPerBar;
+        const auto end = (section->startBar + section->bars) * plan.beatsPerBar;
+        for (const auto& note : pattern.notes)
+            if ((protagonistPart == 0 ? primaryVoice(note.voice) : note.partId == protagonistPart) &&
+                note.startBeat >= start && note.startBeat < end)
+                notes.push_back(&note);
+        std::sort(notes.begin(), notes.end(), [](const auto* left, const auto* right) {
+            if (left->startBeat != right->startBeat) return left->startBeat < right->startBeat;
+            return left->pitch < right->pitch;
+        });
+        return notes;
+    };
+    const auto premiseTheme = notesInAct(NarrativeStage::Premise);
+    const auto totalBeats = plan.totalBars * plan.beatsPerBar;
+    const auto codaStart = std::max(0.0, totalBeats - plan.beatsPerBar * 8.0);
+    std::vector<const NoteEvent*> codaTheme;
+    for (const auto& note : pattern.notes)
+        if ((protagonistPart == 0 ? primaryVoice(note.voice) : note.partId == protagonistPart) &&
+            note.startBeat >= codaStart && note.startBeat < totalBeats)
+            codaTheme.push_back(&note);
+    std::sort(codaTheme.begin(), codaTheme.end(), [](const auto* left, const auto* right) {
+        if (left->startBeat != right->startBeat) return left->startBeat < right->startBeat;
+        return left->pitch < right->pitch;
+    });
+    const auto protagonistCloses = codaTheme.size() >= 3 &&
+        codaTheme.back()->startBeat >= totalBeats - plan.beatsPerBar * 2.0 &&
+        positiveModulo(codaTheme.back()->pitch, 12) == plan.rootPitchClass;
+    if (!premiseTheme.empty() && !codaTheme.empty())
+        report.motifClosure = contourClosure(premiseTheme, codaTheme);
+    if (!codaTheme.empty()) {
+        const auto* last = codaTheme.back();
         const auto pitchClass = positiveModulo(last->pitch, 12);
         report.tonalClosure = pitchClass == plan.rootPitchClass ? 1.0 :
             pitchClass == positiveModulo(plan.rootPitchClass + 7, 12) ? .55 : 0.0;
         std::vector<double> durations;
-        for (const auto* note : resolution->melody) durations.push_back(note->durationBeats);
+        for (const auto* note : codaTheme) durations.push_back(note->durationBeats);
         std::sort(durations.begin(), durations.end());
         const auto median = durations[durations.size() / 2];
         report.tonalClosure = std::clamp(report.tonalClosure * .8 +
@@ -404,7 +449,7 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
         report.registerRelease * .20 + report.densityRelease * .15;
     report.narrativeSpineReady = report.causalNarrative >= .62 && report.resolutionScore >= .58 &&
         premise != nullptr && climax != nullptr && resolution != nullptr &&
-        premise->audible && climax->audible && resolution->audible;
+        premise->audible && climax->audible && resolution->audible && protagonistCloses;
 }
 
 } // namespace

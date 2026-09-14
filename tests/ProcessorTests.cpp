@@ -820,11 +820,125 @@ int main(int argc, char** argv) {
                 pulso::plugin::AiComposer::performanceBlockCount(0) == 0 &&
                 pulso::plugin::AiComposer::performanceBlockCount(10) == 1 &&
                 pulso::plugin::AiComposer::performanceBlockCount(50) == 5 &&
-                pulso::plugin::AiComposer::performanceBlockCount(64) == 7,
+                pulso::plugin::AiComposer::performanceBlockCount(64) == 7 &&
+                pulso::plugin::AiComposer::castManifestUsesExactCount(50) &&
+                pulso::plugin::AiComposer::castManifestUsesExactCount(64) &&
+                !pulso::plugin::AiComposer::castManifestUsesExactCount(0) &&
+                !pulso::plugin::AiComposer::castManifestUsesExactCount(65) &&
+                pulso::plugin::AiComposer::requestedInstrumentCount(
+                    "Deben ser al menos 50 pistas; solo 10 de ellas baterias") == 50 &&
+                pulso::plugin::AiComposer::requestedInstrumentCount(
+                    "at least 40 MIDI tracks, with 8 percussion tracks") == 40 &&
+                pulso::plugin::AiComposer::requestedInstrumentCount(
+                    "deep electronic music for 390 seconds") == 0,
             "Large casts and selective repairs must use deterministic bounded shards");
     require(pulso::plugin::AiComposer::defaultModel() == "gpt-5.6-terra" &&
                 pulso::plugin::AiComposer::defaultReasoningEffort() == "medium",
             "PULSO composition must default to GPT-5.6 Terra at medium reasoning effort");
+    const auto acceptedManifest = juce::String(R"json({"instruments":[
+      {"id":"pad","instrument":"analog_pad","name":"Pad","source_voice":"atmosphere","role":"floor","content_lane_id":"pad_lane","line_relationship":"independent","orchestral_function":"body","active_sections":["A"]},
+      {"id":"lead","instrument":"lead_synth","name":"Lead","source_voice":"lead","role":"speaker","content_lane_id":"lead_lane","line_relationship":"independent","orchestral_function":"counterpoint","active_sections":["B"]}
+    ]})json");
+    const auto castSupplement = juce::String(R"json({"instruments":[
+      {"id":"air","instrument":"shimmer_tail","name":"Air","source_voice":"harmonic_upper","role":"complementary depth","content_lane_id":"air_lane","line_relationship":"independent","orchestral_function":"color","active_sections":["A","B"]}
+    ]})json");
+    juce::String reconciledManifest;
+    juce::String reconciliationError;
+    require(pulso::plugin::AiComposer::reconcileCastManifest(
+                acceptedManifest, castSupplement, 3, reconciledManifest, reconciliationError),
+            "A short valid AI cast must preserve accepted identities and append only the deficit");
+    const auto reconciledJson = juce::JSON::parse(reconciledManifest);
+    const auto* reconciledObject = reconciledJson.getDynamicObject();
+    const auto* reconciledInstruments = reconciledObject == nullptr
+        ? nullptr : reconciledObject->getProperty("instruments").getArray();
+    require(reconciledInstruments != nullptr && reconciledInstruments->size() == 3 &&
+                (*reconciledInstruments)[0].getDynamicObject()->getProperty("id").toString() == "pad" &&
+                (*reconciledInstruments)[1].getDynamicObject()->getProperty("id").toString() == "lead" &&
+                (*reconciledInstruments)[2].getDynamicObject()->getProperty("id").toString() == "air",
+            "Cast reconciliation must retain order and every previously accepted member");
+    const auto duplicateSupplement = castSupplement.replace("\"air\"", "\"pad\"");
+    require(!pulso::plugin::AiComposer::reconcileCastManifest(
+                acceptedManifest, duplicateSupplement, 3, reconciledManifest, reconciliationError),
+            "Cast reconciliation must reject duplicate identities instead of corrupting the ensemble");
+    const auto protagonistMacro = juce::String(R"json({
+      "narrative_spine":{"protagonist_instrument_id":"obsolete_macro_placeholder","acts":[
+        {"stage":"premise","section_name":"Intro"},
+        {"stage":"resolution","section_name":"Resolve"}
+      ]},
+      "sections":[{"name":"Intro"},{"name":"Resolve"}]
+    })json");
+    const auto protagonistManifest = juce::String(R"json({
+      "protagonist_instrument_id":"ld_protagonist_identity",
+      "electronic_soundscape":{},"rhythm_motifs":[],"voices":[],
+      "instruments":[
+        {"id":"hm_floor","source_voice":"harmonic_foundation","active_sections":["Intro","Resolve"]},
+        {"id":"ld_protagonist_identity","source_voice":"lead","active_sections":["Intro","Resolve"]}
+      ]
+    })json");
+    juce::String boundBlueprint;
+    juce::String protagonistError;
+    require(pulso::plugin::AiComposer::bindCastProtagonist(
+                protagonistMacro, protagonistManifest, boundBlueprint, protagonistError),
+            "The cast must bind its definitive protagonist into the earlier narrative macro");
+    const auto boundJson = juce::JSON::parse(boundBlueprint);
+    const auto* boundObject = boundJson.getDynamicObject();
+    const auto* boundSpine = boundObject == nullptr
+        ? nullptr : boundObject->getProperty("narrative_spine").getDynamicObject();
+    require(boundSpine != nullptr &&
+                boundSpine->getProperty("protagonist_instrument_id").toString() ==
+                    "ld_protagonist_identity",
+            "The authoritative cast ID must replace any obsolete macro protagonist placeholder");
+    const auto nonLeadProtagonist = protagonistManifest.replace(
+        "\"ld_protagonist_identity\",\"source_voice\":\"lead\"",
+        "\"ld_protagonist_identity\",\"source_voice\":\"atmosphere\"");
+    require(!pulso::plugin::AiComposer::bindCastProtagonist(
+                protagonistMacro, nonLeadProtagonist, boundBlueprint, protagonistError),
+            "A non-Lead cast identity must never become the narrative protagonist");
+    const auto absentResolutionProtagonist = protagonistManifest.replace(
+        "\"active_sections\":[\"Intro\",\"Resolve\"]}",
+        "\"active_sections\":[\"Intro\"]}");
+    require(!pulso::plugin::AiComposer::bindCastProtagonist(
+                protagonistMacro, absentResolutionProtagonist, boundBlueprint, protagonistError),
+            "The definitive protagonist must be active in the macro resolution section");
+    pulso::SongPlan routingPlan;
+    routingPlan.beatsPerBar = 4.0;
+    routingPlan.totalBars = 4;
+    routingPlan.sections.resize(1);
+    routingPlan.sections[0].name = "Test";
+    routingPlan.sections[0].bars = 4;
+    pulso::InstrumentAssignment routedHat;
+    routedHat.id = "dr_open_hat_lift";
+    routedHat.instrumentId = "hi_hats";
+    routedHat.name = "Open Hat Lift";
+    routedHat.sourceVoice = pulso::VoiceId::OpenHatsShaker;
+    pulso::InstrumentAssignment foreignLead;
+    foreignLead.id = "foreign_lead";
+    foreignLead.instrumentId = "lead_synth";
+    foreignLead.name = "Foreign Lead";
+    foreignLead.sourceVoice = pulso::VoiceId::Lead;
+    routingPlan.instruments = {routedHat, foreignLead};
+    const auto routedBlock = juce::String(R"json({"performance_score":{"cells":[{
+      "id":"b1_route","length_beats":4,"owned_voices":["core_drums"],"theme_id":"","narrative_function":"support",
+      "notes":[
+        {"beat":0,"duration":0.25,"pitch":46,"velocity":88,"voice":"core_drums","instrument_id":"dr_open_hat_lift","metric_intent":"strict_grid"},
+        {"beat":1,"duration":0.5,"pitch":67,"velocity":80,"voice":"lead","instrument_id":"foreign_lead","metric_intent":"strict_grid"}
+      ],"controls":[]}],"placements":[{
+        "cell_id":"b1_route","section_index":0,"start_beat":0,"repeats":1,"transpose":0,
+        "velocity_scale":1,"time_scale":1,"purpose":"route test","voice_map":[],"retrograde":false,
+        "invert_contour":false,"inversion_axis":60,"fragment_start":0,"fragment_end":4,"metric_intent":"strict_grid"
+      }]}})json");
+    pulso::PerformanceScore routedScore;
+    juce::String routingError;
+    require(pulso::plugin::AiComposer::parsePerformanceBlockJson(
+                routedBlock, routingPlan, {0}, routedScore, routingError) &&
+                routedScore.cells.size() == 1 && routedScore.cells.front().notes.size() == 1 &&
+                routedScore.cells.front().notes.front().instrumentId == "dr_open_hat_lift" &&
+                routedScore.cells.front().notes.front().voice == pulso::VoiceId::OpenHatsShaker,
+            "Stable instrument_id must rebind a mismatched AI voice while foreign shard material is removed");
+    const auto foreignOnlyBlock = routedBlock.replace("\"dr_open_hat_lift\"", "\"foreign_lead\"");
+    require(!pulso::plugin::AiComposer::parsePerformanceBlockJson(
+                foreignOnlyBlock, routingPlan, {0}, routedScore, routingError),
+            "A shard containing no assigned instrument notes must fail instead of passing as an empty repair");
     require(pulso::plugin::AiComposer::parseCompositionJson(structuredExample, 1,
                                                              parsedComposition, parseError),
             "Structured GPT output must validate into a playable composition");

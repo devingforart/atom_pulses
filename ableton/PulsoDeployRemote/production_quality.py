@@ -65,7 +65,8 @@ def evaluate_creative_quality(request):
             codes.append("harmonic_floor_incomplete")
         if int(_number(request, "protagonist_phrase_windows", 0.0)) < 3:
             codes.append("primary_speaker_incomplete")
-        if int(_number(request, "arpeggio_note_count", 0.0)) < 32:
+        motion_required = bool(request.get("electronic_motion_required", True))
+        if motion_required and int(_number(request, "arpeggio_note_count", 0.0)) < 32:
             codes.append("electronic_arpeggio_incomplete")
         if int(_number(request, "dialogue_musical_lines", 0.0)) < 1:
             codes.append("melodic_dialogue_incomplete")

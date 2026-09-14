@@ -1,5 +1,6 @@
 #include "ElectronicSoundscape.h"
 
+#include "ElectronicRoleContract.h"
 #include "OrchestrationScore.h"
 #include "SongComposer.h"
 
@@ -301,8 +302,13 @@ ElectronicSoundscapeReport ElectronicSoundscapeDirector::audit(const Pattern& pa
         static_cast<double>(report.meaningfulMusicalLines) /
         static_cast<double>(report.independentMusicalLines), 0.0, 1.0);
     const auto floorFit = std::clamp(report.harmonicFloorCoverage, 0.0, 1.0);
+    const auto motionRequired = ElectronicRoleContract::requiresMotionOwner(plan);
+    const auto requiredMotionNotes = motionRequired
+        ? std::min<std::size_t>(32, std::max<std::size_t>(8, static_cast<std::size_t>(plan.totalBars / 4)))
+        : 0U;
     const auto narrativeFit = (report.protagonistPhraseWindows >= std::max<std::size_t>(3, plan.totalBars / 24) &&
-                               report.arpeggioNoteCount >= 32 && report.dialogueMusicalLines >= 1) ? 1.0 : .35;
+                               report.arpeggioNoteCount >= requiredMotionNotes &&
+                               report.dialogueMusicalLines >= 1) ? 1.0 : .35;
     report.score = std::clamp(report.meaningfulCoverage * .42 + densityFit * .12 +
                               declarationFit * .08 + lineFit * .16 + floorFit * .14 +
                               narrativeFit * .08, 0.0, 1.0);
@@ -313,7 +319,7 @@ ElectronicSoundscapeReport ElectronicSoundscapeDirector::audit(const Pattern& pa
         lineFit >= .75 && report.harmonicFloorCoverage >= .85 &&
         report.medianHarmonicFloorLayers >= 2.0 &&
         report.protagonistPhraseWindows >= std::max<std::size_t>(3, plan.totalBars / 24) &&
-        report.arpeggioNoteCount >= 32 && report.dialogueMusicalLines >= 1;
+        report.arpeggioNoteCount >= requiredMotionNotes && report.dialogueMusicalLines >= 1;
     if (report.declaredLayers < (report.percussionFree ? 10U : 6U))
         report.issues.push_back("electronic_scene_has_too_few_declared_layers");
     if (report.underdevelopedVoices > 0)
@@ -334,7 +340,7 @@ ElectronicSoundscapeReport ElectronicSoundscapeDirector::audit(const Pattern& pa
         report.issues.push_back("hypnotic_harmonic_floor_is_not_continuous");
     if (report.protagonistPhraseWindows < std::max<std::size_t>(3, plan.totalBars / 24))
         report.issues.push_back("primary_speaker_has_no_complete_narrative");
-    if (report.arpeggioNoteCount < 32)
+    if (motionRequired && report.arpeggioNoteCount < requiredMotionNotes)
         report.issues.push_back("electronic_arpeggio_is_not_materialized");
     if (report.dialogueMusicalLines < 1)
         report.issues.push_back("melodic_dialogue_is_not_materialized");

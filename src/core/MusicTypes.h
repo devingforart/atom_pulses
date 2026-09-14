@@ -253,6 +253,7 @@ struct Pattern {
     std::size_t meaningfulMusicalLines{};
     std::size_t protagonistPhraseWindows{};
     std::size_t arpeggioNoteCount{};
+    bool electronicMotionRequired{};
     std::size_t dialogueMusicalLines{};
     double harmonicFloorCoverage{};
     double medianHarmonicFloorLayers{};

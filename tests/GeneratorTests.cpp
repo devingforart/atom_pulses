@@ -1,6 +1,7 @@
 #include "TestSupport.h"
 
 #include "core/AttentionDirector.h"
+#include "core/ElectronicRoleContract.h"
 #include "core/Generator.h"
 #include "core/HarmonyEngine.h"
 #include "core/MusicalCritic.h"
@@ -548,10 +549,7 @@ void runGeneratorTests() {
                 std::to_string(renderedTexture.averageActivePartsBefore) + "->" +
                 std::to_string(renderedTexture.averageActivePartsAfter));
     const auto explicitArp = [](const InstrumentAssignment& part) {
-        return part.instrumentId == "hypnotic_arp" ||
-            (part.instrumentId == "fm_sequence" && part.sourceVoice == VoiceId::HarmonicPulse) ||
-            part.role.find("arpeggio") != std::string::npos ||
-            part.role.find("arpeggiated") != std::string::npos;
+        return ElectronicRoleContract::motionOwner(part);
     };
     auto authoredNoArp = texturePlan;
     authoredNoArp.instrumentCastAuthored = true;
@@ -562,6 +560,30 @@ void runGeneratorTests() {
     require(authoredNoArp.instruments.size() == authoredNoArpSize &&
                 std::none_of(authoredNoArp.instruments.begin(), authoredNoArp.instruments.end(), explicitArp),
             "A closed AI cast without arpeggiation must remain arpeggio-free");
+    SongPlan motionContract;
+    motionContract.productionLanguage.domain = ProductionDomain::ClubElectronic;
+    motionContract.productionLanguage.electronicIntent = .95;
+    motionContract.percussionFreeIntent = true;
+    InstrumentAssignment transitionPulse;
+    transitionPulse.id = "transition_pulse";
+    transitionPulse.instrumentId = "ambient_texture";
+    transitionPulse.name = "Transition Pulse";
+    transitionPulse.sourceVoice = VoiceId::Transitions;
+    transitionPulse.orchestralFunction = "transition";
+    InstrumentAssignment sequenceOwner = transitionPulse;
+    sequenceOwner.id = "hypnotic_sequence";
+    sequenceOwner.instrumentId = "fm_sequence";
+    sequenceOwner.name = "Hypnotic Sequence";
+    sequenceOwner.sourceVoice = VoiceId::HarmonicPulse;
+    sequenceOwner.orchestralFunction = "motion";
+    motionContract.instruments = {transitionPulse, sequenceOwner};
+    require(ElectronicRoleContract::requiresMotionOwner(motionContract) &&
+                ElectronicRoleContract::motionOwnerCount(motionContract) == 1 &&
+                !ElectronicRoleContract::motionOwner(transitionPulse),
+            "A transition label cannot satisfy the percussion-free electronic motion contract");
+    motionContract.summary = "static work without motion";
+    require(!ElectronicRoleContract::requiresMotionOwner(motionContract),
+            "A deliberately static electronic work must remain exempt from sequencer motion");
 
     SongPlan ownershipPlan;
     ownershipPlan.productionLanguage.domain = ProductionDomain::ClubElectronic;
@@ -636,7 +658,7 @@ void runGeneratorTests() {
             protagonistOnsets[note.narrativeId].push_back(note.startBeat);
     }
     require(misplacedArpNotes == 0 && publishedArpNotes == renderedTexture.arpeggioNoteCount,
-            "Published arpeggio metrics and MIDI must refer only to explicit arp owners: misplaced=" +
+            "Published motion metrics and MIDI must refer only to explicit motion owners: misplaced=" +
                 std::to_string(misplacedArpNotes) + ", published=" +
                 std::to_string(publishedArpNotes) + ", metric=" +
                 std::to_string(renderedTexture.arpeggioNoteCount));
@@ -862,13 +884,19 @@ void runGeneratorTests() {
         {0.0, 1.0, 45, 68, 2, VoiceId::HarmonicFoundation, 2}
     };
     const auto verticalReport = VerticalHarmonyGate::enforce(verticalPattern);
+    const auto displacedSupport = std::find_if(verticalPattern.notes.begin(), verticalPattern.notes.end(),
+        [](const auto& note) { return note.partId == 2; });
     require(verticalReport.collisionsBefore == 1 && verticalReport.collisionsAfter == 0 &&
-                verticalReport.supportNotesDucked == 1 &&
+                verticalReport.supportNotesOctaveDisplaced == 1 &&
+                verticalReport.supportNotesDucked == 0 &&
                 VerticalHarmonyGate::audit(verticalPattern) == 0 &&
-                std::all_of(verticalPattern.notes.begin(), verticalPattern.notes.end(), [](const auto& note) {
-                    return note.pitch == 34 || note.pitch == 45;
-                }),
-            "Vertical harmony must preserve legal pitches while carving low semitone clashes out of sustained support");
+                verticalPattern.notes.size() == 2 && displacedSupport != verticalPattern.notes.end() &&
+                displacedSupport->pitch == 57 &&
+                positiveModulo(displacedSupport->pitch, 12) == positiveModulo(45, 12) &&
+                std::abs(displacedSupport->startBeat) < .001 &&
+                std::abs(displacedSupport->durationBeats - 1.0) < .001 &&
+                displacedSupport->velocity == 68,
+            "Vertical harmony must resolve low clashes by octave voicing without changing pitch class, rhythm or dynamics");
 
     Pattern lateUpper;
     lateUpper.lengthBeats = 8.0;
@@ -1803,6 +1831,51 @@ void runGeneratorTests() {
     require(authoredReport.cellsAccepted == 2 && authoredReport.exactDuplicateCells == 1 &&
                 authoredReport.novelty < 0.51,
             "Performance fingerprints must expose renamed duplicate musical cells");
+
+    PerformanceScore largeCastScore;
+    for (auto instrument = 0; instrument < 50; ++instrument) {
+        const auto instrumentId = "large_cast_" + std::to_string(instrument);
+        for (auto phrase = 0; phrase < 2; ++phrase) {
+            const auto cellId = instrumentId + "_phrase_" + std::to_string(phrase);
+            PerformanceCell cell;
+            cell.id = cellId;
+            cell.lengthBeats = 4.0;
+            cell.ownedVoices = {VoiceId::Lead};
+            cell.themeId = instrumentId;
+            cell.narrativeFunction = phrase == 0 ? "establish" : "develop";
+            cell.notes.push_back({0.0, 1.0, 48 + instrument % 24, 72 + phrase * 8,
+                                  VoiceId::Lead, MetricIntent::StrictGrid, instrumentId});
+            largeCastScore.cells.push_back(std::move(cell));
+            largeCastScore.placements.push_back(
+                {cellId, 0, static_cast<double>((instrument * 8 + phrase * 4) % 508),
+                 1, 0, 1.0, 1.0});
+        }
+    }
+    const auto largeCastReport = PerformanceScoreEngine::normalize(
+        largeCastScore, 1, {512.0});
+    const auto largeCastOwners = PerformanceScoreEngine::ownedInstrumentIdsForSection(
+        largeCastScore, 0);
+    require(largeCastScore.cells.size() == 100 && largeCastScore.placements.size() == 100 &&
+                largeCastReport.cellsDroppedByCapacity == 0 &&
+                largeCastReport.placementsDroppedByCapacity == 0 &&
+                largeCastOwners.size() == 50 && largeCastOwners.contains("large_cast_49"),
+            "A 50-instrument score with more than 64 authored cells must preserve every late-cast identity");
+
+    PerformanceScore capacityProbe;
+    for (std::size_t index = 0; index < PerformanceScoreEngine::maximumGlobalCells + 1; ++index) {
+        PerformanceCell cell;
+        cell.id = "capacity_" + std::to_string(index);
+        cell.lengthBeats = 1.0;
+        cell.ownedVoices = {VoiceId::Atmosphere};
+        cell.notes.push_back({0.0, 0.5, 60, 70, VoiceId::Atmosphere,
+                              MetricIntent::StrictGrid, "capacity_owner"});
+        capacityProbe.cells.push_back(std::move(cell));
+    }
+    const auto capacityReport = PerformanceScoreEngine::normalize(capacityProbe, 1, {4.0});
+    require(capacityProbe.cells.size() == PerformanceScoreEngine::maximumGlobalCells &&
+                capacityReport.cellsDroppedByCapacity == 1 &&
+                capacityReport.cellsRejected >= capacityReport.cellsDroppedByCapacity,
+            "A defensive global capacity event must be reported explicitly rather than truncated silently");
     Pattern authoredChunk;
     authoredChunk.lengthBeats = 8.0;
     authoredChunk.notes = {
@@ -1962,6 +2035,7 @@ void runGeneratorTests() {
 
     auto causalPlan = narrativePlan;
     causalPlan.narrativeSpine.authored = true;
+    causalPlan.narrativeSpine.protagonistInstrumentId.clear();
     causalPlan.narrativeSpine.acts.clear();
     const std::array<NarrativeStage, 5> causalStages{NarrativeStage::Premise,
         NarrativeStage::Question, NarrativeStage::Transformation, NarrativeStage::Climax,
@@ -1993,6 +2067,15 @@ void runGeneratorTests() {
                 VoiceId::HarmonicFoundation, static_cast<std::uint16_t>(2 + layer), false,
                 NoteOrigin::AiAuthored, 0});
     }
+    const auto finalBeat = causalPlan.totalBars * causalPlan.beatsPerBar;
+    causalMidi.notes.push_back({finalBeat - 4.0, .5, tonic, 74, 2, VoiceId::Lead, 1,
+        false, NoteOrigin::AiTransformed, 9001});
+    causalMidi.notes.push_back({finalBeat - 3.0, .5, tonic + 3, 76, 2, VoiceId::Lead, 1,
+        false, NoteOrigin::AiTransformed, 9001});
+    causalMidi.notes.push_back({finalBeat - 2.0, .5, tonic + 7, 72, 2, VoiceId::Lead, 1,
+        false, NoteOrigin::AiTransformed, 9001});
+    causalMidi.notes.push_back({finalBeat - 1.0, .9, tonic, 68, 2, VoiceId::Lead, 1,
+        false, NoteOrigin::AiTransformed, 9001});
     const auto causalAudit = NarrativeScoreGate::audit(causalMidi, causalPlan);
     require(causalAudit.narrativeSpineReady && causalAudit.causalNarrative >= .62 &&
                 causalAudit.resolutionScore >= .58 && causalAudit.tonalClosure > .95,
@@ -2066,6 +2149,22 @@ void runGeneratorTests() {
                 std::any_of(viabilityMidi.notes.begin(), viabilityMidi.notes.end(),
                     [](const auto& note) { return note.partId == 3; }),
             "Track viability must develop an authored bed, prune technical filler and preserve a true one-shot");
+    auto independentPlan = viabilityPlan;
+    independentPlan.instrumentCastAuthored = true;
+    independentPlan.performanceScore.cells.push_back({"authored", 4.0});
+    independentPlan.performanceScore.placements.push_back({"authored", 0});
+    auto independentMidi = viabilityMidi;
+    independentMidi.notes.push_back({32.0, 1.0, 67, 55, 4, VoiceId::HarmonicUpper, 2,
+        true, NoteOrigin::AiAuthored, 7002});
+    const auto independentReport = TrackViability::enforce(independentMidi, independentPlan);
+    require(independentReport.tokenTracks == 1 && independentReport.mergedTracks == 0 &&
+                independentReport.prunedTracks == 0 &&
+                std::any_of(independentMidi.notes.begin(), independentMidi.notes.end(),
+                    [](const auto& note) { return note.partId == 2; }),
+            "An independently authored AI line must remain visible for targeted repair, never be merged away: token=" +
+                std::to_string(independentReport.tokenTracks) + ", merged=" +
+                std::to_string(independentReport.mergedTracks) + ", pruned=" +
+                std::to_string(independentReport.prunedTracks));
 
     auto weakNarrativePlan = narrativePlan;
     weakNarrativePlan.performanceScore = {};
@@ -2362,10 +2461,190 @@ void runGeneratorTests() {
     require(incompleteRepairTargets.size() == 1 && incompleteRepairTargets.front() == 1,
             "Partial repair recovery must preserve a complete target and retry only the omitted instrument");
 
+    SongPlan rhythmCoveragePlan;
+    rhythmCoveragePlan.beatsPerBar = 4.0;
+    rhythmCoveragePlan.totalBars = 192;
+    rhythmCoveragePlan.instrumentCastAuthored = true;
+    rhythmCoveragePlan.sections.resize(4);
+    for (std::size_t index = 0; index < rhythmCoveragePlan.sections.size(); ++index) {
+        rhythmCoveragePlan.sections[index].name = "Rhythm " + std::to_string(index + 1);
+        rhythmCoveragePlan.sections[index].startBar = static_cast<int>(index * 48);
+        rhythmCoveragePlan.sections[index].bars = 48;
+    }
+    InstrumentAssignment sparseRhythm;
+    sparseRhythm.id = "single_transition_hit";
+    sparseRhythm.instrumentId = "cymbals";
+    sparseRhythm.name = "Single Transition Hit";
+    sparseRhythm.sourceVoice = VoiceId::HighPercussion;
+    sparseRhythm.role = "specialized rhythmic articulation";
+    sparseRhythm.orchestralFunction = "body";
+    sparseRhythm.activeSections = {rhythmCoveragePlan.sections.front().name};
+    rhythmCoveragePlan.instruments = {sparseRhythm};
+    PerformanceScore sparseRhythmScore;
+    PerformanceCell sparseHit;
+    sparseHit.id = "single_hit";
+    sparseHit.lengthBeats = 4.0;
+    sparseHit.ownedVoices = {VoiceId::HighPercussion};
+    sparseHit.notes.push_back({0.0, .25, 49, 92, VoiceId::HighPercussion,
+                               MetricIntent::StrictGrid, sparseRhythm.id});
+    sparseRhythmScore.cells.push_back(std::move(sparseHit));
+    PerformancePlacement sparseHitPlacement;
+    sparseHitPlacement.cellId = "single_hit";
+    sparseHitPlacement.sectionIndex = 0;
+    sparseHitPlacement.fragmentEnd = 4.0;
+    sparseRhythmScore.placements.push_back(std::move(sparseHitPlacement));
+    require(SelectiveRepair::performanceDeficits(
+                rhythmCoveragePlan, sparseRhythmScore, {0}).empty() &&
+                SelectiveRepair::incompleteTargets(
+                    rhythmCoveragePlan, sparseRhythmScore, {0}).empty(),
+            "AI rhythm articulation must use the advertised one-note TrackViability contract");
+    rhythmCoveragePlan.instrumentCastAuthored = false;
+    const auto legacyRhythmDeficits = SelectiveRepair::performanceDeficits(
+        rhythmCoveragePlan, sparseRhythmScore, {0});
+    require(legacyRhythmDeficits.size() == 1 &&
+                legacyRhythmDeficits.front().notes == 1 &&
+                legacyRhythmDeficits.front().minimumNotes == 3 &&
+                legacyRhythmDeficits.front().sections == 1 &&
+                legacyRhythmDeficits.front().minimumSections == 2,
+            "Legacy non-AI plans must retain their generic anti-token-track safeguard");
+
+    TrackViabilityContract oneBarMarginContract;
+    oneBarMarginContract.minimumNotes = 19;
+    oneBarMarginContract.minimumActiveBars = 19;
+    oneBarMarginContract.minimumPhrases = 3;
+    require(TrackViability::marginalActiveBarAcceptance(
+                19, 18, 4, oneBarMarginContract) &&
+            TrackViability::acceptsCoverage(19, 18, 4, oneBarMarginContract),
+            "A developed performance may use the explicit one-bar coverage margin");
+    require(!TrackViability::acceptsCoverage(18, 18, 4, oneBarMarginContract) &&
+            !TrackViability::acceptsCoverage(19, 17, 4, oneBarMarginContract) &&
+            !TrackViability::acceptsCoverage(19, 18, 2, oneBarMarginContract),
+            "The one-bar margin must not excuse missing notes, two bars, or phrase development");
+
+    SongPlan marginalCoveragePlan;
+    marginalCoveragePlan.beatsPerBar = 4.0;
+    marginalCoveragePlan.totalBars = 192;
+    marginalCoveragePlan.instrumentCastAuthored = true;
+    for (auto sectionIndex = 0; sectionIndex < 4; ++sectionIndex) {
+        SongSection section;
+        section.name = "Margin " + std::to_string(sectionIndex + 1);
+        section.startBar = sectionIndex * 48;
+        section.bars = 48;
+        marginalCoveragePlan.sections.push_back(std::move(section));
+    }
+    InstrumentAssignment marginalBass;
+    marginalBass.id = "bs04_reese_weight";
+    marginalBass.instrumentId = "reese_layer";
+    marginalBass.name = "Reese Weight";
+    marginalBass.sourceVoice = VoiceId::MovementBass;
+    marginalBass.role = "developed bass phrase";
+    marginalBass.orchestralFunction = "bass";
+    marginalBass.activeSections = {marginalCoveragePlan.sections.front().name};
+    marginalCoveragePlan.instruments = {marginalBass};
+    PerformanceScore marginalCoverageScore;
+    PerformanceCell marginalBassCell;
+    marginalBassCell.id = "reese_developed_phrase";
+    marginalBassCell.lengthBeats = 72.0;
+    marginalBassCell.ownedVoices = {VoiceId::MovementBass};
+    marginalBassCell.notes.push_back(
+        {0.0, .25, 38, 82, VoiceId::MovementBass, MetricIntent::StrictGrid, marginalBass.id});
+    marginalBassCell.notes.push_back(
+        {.5, .25, 41, 78, VoiceId::MovementBass, MetricIntent::StrictGrid, marginalBass.id});
+    for (auto bar = 1; bar < 18; ++bar)
+        marginalBassCell.notes.push_back(
+            {bar * 4.0, .25, 38 + bar % 3, 80, VoiceId::MovementBass,
+             MetricIntent::StrictGrid, marginalBass.id});
+    marginalCoverageScore.cells.push_back(std::move(marginalBassCell));
+    PerformancePlacement marginalPlacement;
+    marginalPlacement.cellId = "reese_developed_phrase";
+    marginalPlacement.sectionIndex = 0;
+    marginalPlacement.fragmentEnd = 72.0;
+    marginalCoverageScore.placements.push_back(std::move(marginalPlacement));
+    const auto marginalAcceptances = SelectiveRepair::marginalBarAcceptances(
+        marginalCoveragePlan, marginalCoverageScore, {0});
+    require(marginalAcceptances.size() == 1 &&
+                marginalAcceptances.front().instrumentId == marginalBass.id &&
+                marginalAcceptances.front().notes == 19 &&
+                marginalAcceptances.front().activeBars == 18 &&
+                marginalAcceptances.front().minimumActiveBars == 19 &&
+                SelectiveRepair::performanceDeficits(
+                    marginalCoveragePlan, marginalCoverageScore, {0}).empty() &&
+                SelectiveRepair::incompleteTargets(
+                    marginalCoveragePlan, marginalCoverageScore, {0}).empty(),
+            "Incremental coverage must preserve a musically developed 18/19-bar AI bass part");
+    marginalCoverageScore.cells.front().notes.pop_back();
+    require(!SelectiveRepair::performanceDeficits(
+                marginalCoveragePlan, marginalCoverageScore, {0}).empty(),
+            "A two-bar and one-note deficit must remain a hard incremental failure");
+
+    SongPlan universalConstraintPlan;
+    InstrumentAssignment universalProtagonist;
+    universalProtagonist.id = "universal_protagonist";
+    universalProtagonist.sourceVoice = VoiceId::Lead;
+    universalConstraintPlan.instruments = {universalProtagonist};
+    universalConstraintPlan.narrativeSpine.protagonistInstrumentId = universalProtagonist.id;
+    PerformanceCoverageDeficit absentExplicitIdentity;
+    absentExplicitIdentity.instrumentIndex = 0;
+    absentExplicitIdentity.instrumentId = universalProtagonist.id;
+    absentExplicitIdentity.minimumNotes = 18;
+    absentExplicitIdentity.minimumActiveBars = 12;
+    absentExplicitIdentity.minimumPhrases = 3;
+    auto classifiedConstraints = SelectiveRepair::classifyPerformanceDeficits(
+        universalConstraintPlan, {absentExplicitIdentity}, true);
+    require(classifiedConstraints.size() == 1 &&
+                classifiedConstraints.front().blocksPublication &&
+                classifiedConstraints.front().authority ==
+                    ConstraintAuthority::ExplicitPromptCommitment &&
+                std::find(classifiedConstraints.front().operations.begin(),
+                          classifiedConstraints.front().operations.end(),
+                          PerformanceRepairOperation::SupplyMissingIdentity) !=
+                    classifiedConstraints.front().operations.end() &&
+                SelectiveRepair::blockingTargets(classifiedConstraints) ==
+                    std::vector<std::size_t>{0},
+            "An explicitly requested identity with no MIDI must remain a universal hard commitment");
+    PerformanceCoverageDeficit unresolvedMusicalEnding = absentExplicitIdentity;
+    unresolvedMusicalEnding.notes = 49;
+    unresolvedMusicalEnding.activeBars = 20;
+    unresolvedMusicalEnding.phrases = 4;
+    unresolvedMusicalEnding.missingCodaResolution = true;
+    classifiedConstraints = SelectiveRepair::classifyPerformanceDeficits(
+        universalConstraintPlan, {unresolvedMusicalEnding}, true);
+    require(classifiedConstraints.size() == 1 &&
+                !classifiedConstraints.front().blocksPublication &&
+                classifiedConstraints.front().authority == ConstraintAuthority::MusicalObjective &&
+                std::find(classifiedConstraints.front().operations.begin(),
+                          classifiedConstraints.front().operations.end(),
+                          PerformanceRepairOperation::ResolveNarrative) !=
+                    classifiedConstraints.front().operations.end() &&
+                SelectiveRepair::blockingTargets(classifiedConstraints).empty() &&
+                SelectiveRepair::editorialTargets(classifiedConstraints) ==
+                    std::vector<std::size_t>{0},
+            "A populated unresolved ending must be repaired generically but never erase the full score");
+
+    PerformanceCoverageDeficit continuousBassDeficit;
+    continuousBassDeficit.instrumentId = "sub_anchor";
+    continuousBassDeficit.notes = 238;
+    continuousBassDeficit.minimumNotes = 44;
+    continuousBassDeficit.activeBars = 224;
+    continuousBassDeficit.minimumActiveBars = 44;
+    continuousBassDeficit.phrases = 1;
+    continuousBassDeficit.minimumPhrases = 3;
+    require(SelectiveRepair::requiresReplacement(continuousBassDeficit),
+            "A fully covered but unbroken bass line must use surgical replacement to create silence");
+    continuousBassDeficit.notes = 0;
+    continuousBassDeficit.activeBars = 0;
+    continuousBassDeficit.phrases = 0;
+    require(!SelectiveRepair::requiresReplacement(continuousBassDeficit),
+            "Missing note quantity must remain an additive repair instead of deleting accepted material");
+
     SongPlan narrativeContractPlan;
     narrativeContractPlan.beatsPerBar = 4.0;
+    narrativeContractPlan.totalBars = 128;
     narrativeContractPlan.sections.resize(4);
-    for (auto& section : narrativeContractPlan.sections) section.bars = 32;
+    for (std::size_t index = 0; index < narrativeContractPlan.sections.size(); ++index) {
+        narrativeContractPlan.sections[index].startBar = static_cast<int>(index * 32);
+        narrativeContractPlan.sections[index].bars = 32;
+    }
     narrativeContractPlan.sections.back().name = "Resolution";
     narrativeContractPlan.narrativeSpine.protagonistInstrumentId = "protagonist";
     narrativeContractPlan.narrativeSpine.acts.push_back(
@@ -2399,13 +2678,43 @@ void runGeneratorTests() {
         narrativeContractPlan, narrativeContractScore, {0, 1});
     require(missingNarrativeContract.size() == 2,
             "AI validation must reject a protagonist without a coda return and an unrelated answer label");
+    narrativeContractScore.cells[0].notes.back().pitch = 60;
     narrativeContractScore.placements.push_back(
-        {"protagonist_phrase", 3, 64.0, 1, 0, 1.0, 1.0, "transformed return"});
+        {"protagonist_phrase", 3, 124.0, 1, 0, 1.0, 1.0, "transformed return"});
+    for (auto slot = 0; slot < 7; ++slot) {
+        narrativeContractScore.placements.push_back(
+            {"protagonist_phrase", 1, slot * 8.0, 1, 0, 1.0, 1.0, "development"});
+        narrativeContractScore.placements.push_back(
+            {"answer_phrase", 1, slot * 8.0 + 4.0, 1, 0, 1.0, 1.0, "answer"});
+    }
+    for (auto& placement : narrativeContractScore.placements)
+        if (placement.fragmentEnd < 0.0) placement.fragmentEnd = 4.0;
     narrativeContractScore.cells[1].themeId = "central_theme";
     const auto completeNarrativeContract = SelectiveRepair::incompleteTargets(
         narrativeContractPlan, narrativeContractScore, {0, 1});
     require(completeNarrativeContract.empty(),
-            "A GPT-authored coda return and a genuinely related answer must satisfy the narrative contract");
+            "A GPT-authored coda return and a genuinely related answer must satisfy the narrative contract: missing=" +
+                (completeNarrativeContract.empty() ? std::string{"none"} :
+                    std::to_string(completeNarrativeContract.front())));
+    auto openResolutionPlan = narrativeContractPlan;
+    openResolutionPlan.narrativeSpine.resolution = "stable modal arrival";
+    openResolutionPlan.narrativeSpine.acts.front().resolutionTarget =
+        "stable terminal harmony with intentional openness";
+    openResolutionPlan.chordPalette = {
+        {"c_minor_terminal", "C minor", 0, 0, {0, 3, 7}, HarmonicFunction::Tonic}};
+    openResolutionPlan.sections.back().harmonicEvents = {
+        {0, 0.0, "c_minor_terminal", .8, "stable open arrival"}};
+    auto chordToneResolutionScore = narrativeContractScore;
+    chordToneResolutionScore.cells[0].notes.back().pitch = 63;
+    require(SelectiveRepair::incompleteTargets(
+                openResolutionPlan, chordToneResolutionScore, {0, 1}).empty(),
+            "A blueprint-defined stable chord tone must be a valid narrative ending without forced tonic closure");
+    openResolutionPlan.narrativeSpine.acts.front().resolutionTarget = "explicit home tonic";
+    const auto forcedTonicDeficits = SelectiveRepair::performanceDeficits(
+        openResolutionPlan, chordToneResolutionScore, {0});
+    require(forcedTonicDeficits.size() == 1 &&
+                forcedTonicDeficits.front().missingCodaResolution,
+            "An explicit tonic commitment must still require the home pitch at the final boundary");
     auto severeAudition = editorialAfter;
     severeAudition.narrative.score = 0.60;
     require(SelectiveRepair::criticalFailure(severeAudition) &&
@@ -2479,6 +2788,8 @@ void runGeneratorTests() {
                      ScoreDepartment::Harmony, "color", .30);
     addAttentionPart(15, "sub_anchor", VoiceId::SubBass,
                      ScoreDepartment::Harmony, "foundation", .88);
+    addAttentionPart(16, "spectral_transition", VoiceId::Transitions,
+                     ScoreDepartment::Harmony, "transition", .28);
     for (auto bar = 0; bar < 32; ++bar) {
         for (const auto& part : attentionPattern.parts) {
             if ((part.id == 1 && bar % 2 != 0) || (part.id == 2 && bar % 2 == 0)) continue;
@@ -2503,6 +2814,12 @@ void runGeneratorTests() {
                 attentionReport.peakActivePartsAfter <= 9 &&
                 attentionReport.overcrowdedBarsAfter < attentionReport.overcrowdedBarsBefore,
             "Attention direction must reduce persistent tutti without flattening the energy budget");
+    std::set<int> transitionBars;
+    for (const auto& note : attentionPattern.notes)
+        if (note.partId == 16)
+            transitionBars.insert(static_cast<int>(std::floor(note.startBeat / 4.0)));
+    require(transitionBars.size() <= 4,
+            "A transition voice must punctuate formal boundaries instead of becoming a continuous sequencer");
     const auto retainedAnswerNotes = std::count_if(attentionPattern.notes.begin(), attentionPattern.notes.end(),
         [](const auto& note) { return note.partId == 8; });
     std::set<int> retainedLeadBars;

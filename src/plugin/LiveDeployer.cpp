@@ -270,6 +270,7 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     root->setProperty("meaningful_musical_lines", static_cast<int>(pattern.meaningfulMusicalLines));
     root->setProperty("protagonist_phrase_windows", static_cast<int>(pattern.protagonistPhraseWindows));
     root->setProperty("arpeggio_note_count", static_cast<int>(pattern.arpeggioNoteCount));
+    root->setProperty("electronic_motion_required", pattern.electronicMotionRequired);
     root->setProperty("dialogue_musical_lines", static_cast<int>(pattern.dialogueMusicalLines));
     root->setProperty("harmonic_floor_coverage", pattern.harmonicFloorCoverage);
     root->setProperty("median_harmonic_floor_layers", pattern.medianHarmonicFloorLayers);

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.56.1 LANGUAGES C CXX)
+project(Pulso VERSION 0.57.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,6 +25,8 @@ add_library(pulso_core STATIC
     src/core/ElectronicCompositionFabric.h
     src/core/ElectronicProductionDirector.cpp
     src/core/ElectronicProductionDirector.h
+    src/core/ElectronicRoleContract.cpp
+    src/core/ElectronicRoleContract.h
     src/core/ElectronicSoundscape.cpp
     src/core/ElectronicSoundscape.h
     src/core/Generator.cpp

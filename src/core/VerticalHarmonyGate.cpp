@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <set>
 #include <vector>
 
 namespace pulso {
@@ -36,11 +37,20 @@ bool duckableSupport(const InstrumentPart* part, const NoteEvent& note) {
 
 bool harshLowInterval(const NoteEvent& low, const NoteEvent& support) {
     if (low.partId == support.partId || std::min(low.pitch, support.pitch) >= 55) return false;
+    // A chromatic colour two or more octaves above the bass is spacious, not a muddy
+    // low-register collision. Pitch-class-only comparison used to reject valid 9ths.
+    if (std::abs(low.pitch - support.pitch) > 19) return false;
     auto interval = positiveModulo(std::abs(low.pitch - support.pitch), 12);
     interval = std::min(interval, 12 - interval);
     if (interval != 1 && interval != 6) return false;
     return std::min(low.endBeat(), support.endBeat()) -
            std::max(low.startBeat, support.startBeat) >= 1.0 / 16.0 - 0.000001;
+}
+
+bool octaveMovableSupport(const InstrumentPart* part, const NoteEvent& note) {
+    return part != nullptr && part->department == ScoreDepartment::Harmony &&
+        !lowFoundation(part, note) && !isVoiceInFamily(note.voice, VoiceFamily::Rhythm) &&
+        note.voice != VoiceId::Transitions;
 }
 
 double durationFloor(const InstrumentPart* part) {
@@ -95,6 +105,35 @@ VerticalHarmonyReport VerticalHarmonyGate::enforce(Pattern& pattern) {
     VerticalHarmonyReport report;
     report.collisionsBefore = audit(pattern);
     if (report.collisionsBefore == 0) return report;
+
+    // Prefer an arranger's least invasive fix: move the secondary harmonic colour by
+    // whole octaves. Pitch class, onset, duration, velocity and narrative identity stay
+    // unchanged. Only unresolved collisions proceed to the existing negative-space pass.
+    std::set<std::size_t> displaced;
+    for (std::size_t lowIndex = 0; lowIndex < pattern.notes.size(); ++lowIndex) {
+        const auto& low = pattern.notes[lowIndex];
+        const auto* lowPart = partFor(pattern, low);
+        if (!lowFoundation(lowPart, low)) continue;
+        for (std::size_t supportIndex = 0; supportIndex < pattern.notes.size(); ++supportIndex) {
+            if (supportIndex == lowIndex) continue;
+            auto& support = pattern.notes[supportIndex];
+            const auto* supportPart = partFor(pattern, support);
+            if (!octaveMovableSupport(supportPart, support) ||
+                !harshLowInterval(low, support)) continue;
+            auto target = support.pitch;
+            for (const auto shift : {12, 24}) {
+                const auto candidate = support.pitch + shift;
+                if (candidate > std::min(127, supportPart->maximumPitch)) continue;
+                if (std::abs(candidate - low.pitch) > 19) { target = candidate; break; }
+            }
+            if (target == support.pitch) continue;
+            support.pitch = target;
+            if (support.origin == NoteOrigin::AiAuthored)
+                support.origin = NoteOrigin::AiTransformed;
+            if (displaced.insert(supportIndex).second)
+                ++report.supportNotesOctaveDisplaced;
+        }
+    }
 
     std::map<std::size_t, std::vector<Span>> cuts;
     for (std::size_t lowIndex = 0; lowIndex < pattern.notes.size(); ++lowIndex) {

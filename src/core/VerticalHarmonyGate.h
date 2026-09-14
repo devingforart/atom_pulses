@@ -9,6 +9,7 @@ namespace pulso {
 struct VerticalHarmonyReport {
     std::size_t collisionsBefore{};
     std::size_t collisionsAfter{};
+    std::size_t supportNotesOctaveDisplaced{};
     std::size_t supportNotesDucked{};
     std::size_t continuationFragmentsCreated{};
     double score{1.0};

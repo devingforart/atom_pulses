@@ -75,7 +75,12 @@ std::uint64_t PerformanceScoreEngine::fingerprint(const PerformanceCell& cell) n
 PerformanceScoreReport PerformanceScoreEngine::normalize(
     PerformanceScore& score, std::size_t sectionCount, const std::vector<double>& sectionLengths) {
     PerformanceScoreReport report;
-    if (score.cells.size() > 64) score.cells.resize(64);
+    if (score.cells.size() > PerformanceScoreEngine::maximumGlobalCells) {
+        report.cellsDroppedByCapacity =
+            score.cells.size() - PerformanceScoreEngine::maximumGlobalCells;
+        report.cellsRejected += report.cellsDroppedByCapacity;
+        score.cells.resize(PerformanceScoreEngine::maximumGlobalCells);
+    }
     std::set<std::string> ids;
     std::set<std::string> themes;
     std::set<std::uint64_t> fingerprints;
@@ -142,11 +147,19 @@ PerformanceScoreReport PerformanceScoreEngine::normalize(
         return cell.ownedVoices.empty();
     }), score.cells.end());
 
-    if (score.placements.size() > 512) score.placements.resize(512);
+    if (score.placements.size() > PerformanceScoreEngine::maximumGlobalPlacements) {
+        report.placementsDroppedByCapacity =
+            score.placements.size() - PerformanceScoreEngine::maximumGlobalPlacements;
+        report.placementsRejected += report.placementsDroppedByCapacity;
+        score.placements.resize(PerformanceScoreEngine::maximumGlobalPlacements);
+    }
     score.placements.erase(std::remove_if(score.placements.begin(), score.placements.end(), [&](auto& placement) {
         if (placement.sectionIndex < 0 || static_cast<std::size_t>(placement.sectionIndex) >= sectionCount ||
             findCell(score, placement.cellId) == nullptr || !std::isfinite(placement.startBeat) ||
-            !std::isfinite(placement.velocityScale) || !std::isfinite(placement.timeScale)) return true;
+            !std::isfinite(placement.velocityScale) || !std::isfinite(placement.timeScale)) {
+            ++report.placementsRejected;
+            return true;
+        }
         const auto* cell = findCell(score, placement.cellId);
         const auto sectionLength = placement.sectionIndex < static_cast<int>(sectionLengths.size())
             ? sectionLengths[static_cast<std::size_t>(placement.sectionIndex)] : 0.0;
@@ -186,6 +199,7 @@ PerformanceScoreReport PerformanceScoreEngine::normalize(
             placement.fragmentEnd = cellLength;
         placement.fragmentEnd = std::clamp(placement.fragmentEnd,
             placement.fragmentStart + 0.01, cellLength);
+        ++report.placementsAccepted;
         return false;
     }), score.placements.end());
     report.novelty = report.cellsAccepted == 0 ? 1.0

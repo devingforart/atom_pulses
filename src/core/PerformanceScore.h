@@ -83,8 +83,12 @@ struct PerformanceScore {
 struct PerformanceScoreReport {
     std::size_t cellsAccepted{};
     std::size_t cellsRejected{};
+    std::size_t cellsDroppedByCapacity{};
     std::size_t notesAccepted{};
     std::size_t notesRejected{};
+    std::size_t placementsAccepted{};
+    std::size_t placementsRejected{};
+    std::size_t placementsDroppedByCapacity{};
     std::size_t exactDuplicateCells{};
     double novelty{1.0};
     std::size_t namedThemes{};
@@ -93,6 +97,8 @@ struct PerformanceScoreReport {
 
 class PerformanceScoreEngine final {
 public:
+    static constexpr std::size_t maximumGlobalCells = 512;
+    static constexpr std::size_t maximumGlobalPlacements = 4096;
     static PerformanceScoreReport normalize(PerformanceScore&, std::size_t sectionCount,
                                             const std::vector<double>& sectionLengths);
     [[nodiscard]] static std::array<bool, static_cast<std::size_t>(VoiceId::Count)>

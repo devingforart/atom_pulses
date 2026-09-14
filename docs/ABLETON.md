@@ -1,5 +1,110 @@
 # Probar PULSO en Ableton Live
 
+## Contrato 0.57.0
+
+El registro de una recuperación muestra descriptores con `authority`, `blocking`, `evidence` y
+`operations`. Una coda, cobertura o relación temática pendiente aparece como `musical_objective` y el
+pipeline continúa hasta escribir todos los bloques. Al terminar debe verse `all hard invariants and
+explicit commitments satisfied; editorial objectives preserved` antes de publicar.
+
+Una pista solicitada que no contenga ningún MIDI continúa siendo un bloqueo
+`explicit_prompt_commitment`. Una pista que sí contiene interpretación nunca se elimina por una cifra
+editorial. Los finales aceptan notas estables del acorde terminal salvo que el blueprint declare
+textualmente una llegada obligatoria a la tónica.
+
+Para comprobar el comportamiento, solicite una obra larga y observe que una recuperación no
+convergente ya no interrumpe, por ejemplo, el bloque 4/5: el bloque 5/5 debe escribirse y la clasificación
+global debe decidir después.
+
+## Contrato 0.56.11
+
+El caso `notes=19/19 bars=18/19 phrases=4/3` ya no detiene una composición. El registro muestra
+`accepted one-bar coverage margin` y continúa con el bloque siguiente. PULSO no añade ninguna nota
+para conseguirlo: conserva literalmente la interpretación aceptada de la IA.
+
+El margen requiere simultáneamente todas las notas, todas las frases y exactamente un solo compás
+faltante. `18/19` notas, `17/19` compases o `2/3` frases continúan siendo déficits duros y activan la
+recuperación o el rechazo correspondiente.
+
+## Contrato 0.56.10
+
+Una composición grande debe registrar una línea `[NORMALIZATION]` después de cada fusión y otra antes
+del saneamiento final. Para una solicitud normal, ambas capacidades deben indicar
+`capacity cells=0 placements=0`; las cantidades de celdas y ubicaciones no deben disminuir por un
+límite interno.
+
+El contrato global admite 512 celdas y 4096 ubicaciones, independientemente del límite pequeño usado
+para cada shard remoto. Una prueba de 50 instrumentos debe conservar también la última identidad. Si
+la respuesta de IA deja una parte realmente vacía, el error final enumera esa identidad y su déficit;
+ya no puede confundirse con un recorte interno de PULSO.
+
+## Contrato 0.56.9
+
+Una instrucción como `50 pistas` produce un manifiesto estructuralmente limitado a exactamente 50
+instrumentos. El texto del prompt y el JSON Schema ya no pueden discrepar. Por eso no debe reaparecer
+`requested 50 instruments; reconciled manifest contains 51`, ni sus variantes por defecto o exceso.
+
+Sin una cantidad explícita, PULSO mantiene el reparto adaptativo. La restricción afecta solamente la
+arquitectura del conjunto y ocurre antes de escribir MIDI; no recorta material aceptado posteriormente.
+
+## Contrato 0.56.8
+
+Antes del primer bloque de escritura, el registro debe mostrar `authoritative protagonist bound to cast
+identity <id>`. El ID procede del reparto definitivo, corresponde a una pista Lead y está activo durante
+la resolución. La macro ya no fabrica un identificador prematuro que pueda quedar huérfano.
+
+Si el manifiesto omite el protagonista, apunta a otra identidad, elige una voz no Lead o lo excluye de
+la resolución, se recupera el manifiesto antes de gastar llamadas en cinco bloques de MIDI. Una obra
+completa nunca vuelve a rechazarse al final por una mera desalineación entre fases.
+
+## Contrato 0.56.7
+
+Durante escritura o recuperación, el registro incluye una línea `ROUTING` con contadores por
+`instrument_id`: `received`, `accepted`, `reassigned` y `discarded`. Una reasignación significa que
+Terra escribió el ID correcto con una etiqueta de voz equivocada; PULSO corrigió sólo esa etiqueta y
+preservó la interpretación MIDI. Los eventos de identidades ajenas al bloque se descartan y no pueden
+validar una pista vacía.
+
+Si el diagnóstico muestra `notes=0/1`, el pedido de recuperación obliga a devolver al menos una nota
+con ubicación concreta para ese ID. Si sigue en cero, el score anterior se conserva y el registro deja
+evidencia exacta en lugar de repetir una recuperación ambigua.
+
+## Contrato 0.56.6
+
+Cuando una pista muestra suficientes notas y compases pero `phrases=1/3`, la recuperación entra en
+modo de reemplazo quirúrgico. El registro confirma `committed surgical replacement` únicamente después
+de validar el nuevo material. Las demás pistas y el original de la pista objetivo permanecen intactos
+si la propuesta no alcanza sus mínimos.
+
+## Contrato 0.56.5
+
+El registro identifica cada pista incompleta con mediciones como `notes=0/1 bars=0/1 phrases=0/1`.
+La recuperación utiliza exactamente esos mismos mínimos. Las articulaciones rítmicas escasas no se
+rechazan por una segunda regla genérica; después continúan hacia la validación especializada de ritmo.
+
+## Contrato 0.56.4
+
+Cuando Terra devuelve menos pistas que el mínimo explícito, el registro muestra `completing N missing
+cast identities`. Las pistas ya aceptadas se conservan y sólo se solicita el déficit. Si aparece
+`catalog completed N cast identities only`, PULSO agregó únicamente identidades instrumentales; no
+escribió MIDI local. La siguiente fase de escritura sigue siendo responsable de componer cada pista.
+
+## Contrato 0.56.3
+
+Un número ligado a `pistas`, `tracks` o `instrumentos` se valida en el manifiesto antes de pagar la
+escritura. Si hay varios números, el mayor es el reparto total y los menores son subconjuntos. Las
+pistas incompletas se recuperan en grupos paralelos de hasta dos sin modificar los bloques aceptados.
+Un reparto numérico explícito no puede reducirse silenciosamente. Los choques graves reparables se
+resuelven por octavas antes del gate, conservando clase tonal y timing.
+
+## Contrato 0.56.2
+
+En una obra electrónica sin percusión, `arpeggio_note_count` representa el único propietario
+de movimiento declarado por la IA; `electronic_motion_required` distingue ese caso de una obra
+estática. Las transiciones ocupan como máximo un octavo del arreglo y el protagonista debe cerrar
+en la tónica dentro de los últimos dos compases. Las pistas independientes incompletas permanecen
+identificables durante la recuperación y nunca se ocultan fusionándolas con otra pista al exportar.
+
 ## Contrato 0.55.0
 
 Durante una canción larga, el estado de PULSO distingue `TERRA MID · BLUEPRINT`,

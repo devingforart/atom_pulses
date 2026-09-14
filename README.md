@@ -1,5 +1,140 @@
 # PULSO
 
+### 0.57.0 — restricciones universales y publicación no destructiva
+
+PULSO separa ahora tres autoridades: invariantes técnicos, compromisos explícitos del músico y
+objetivos musicales. Solamente MIDI técnicamente inválido o una identidad explícitamente solicitada
+sin ningún evento pueden bloquear la publicación. Cobertura, fraseo, relación temática, tensión y
+resolución son objetivos editoriales reparables; nunca vuelven a borrar por sí solos una canción
+completa.
+
+Las recuperaciones reciben descriptores estructurados e independientes del género o del prompt:
+`supply_missing_identity`, `extend_coverage`, `develop_phrase`, `resolve_narrative` y
+`establish_thematic_relationship`. Cada bloque termina y conserva sus checkpoints. Si una mejora no
+converge, PULSO continúa, evalúa la obra global y publica la mejor versión que cumpla los contratos
+duros.
+
+Las resoluciones ya no están forzadas universalmente a la tónica. El último ataque puede descansar en
+un tono estable de la armonía terminal; la tónica permanece obligatoria cuando el blueprint la exige
+explícitamente. No se crean notas para aprobar una observación editorial y ninguna pista poblada se
+retira por quedar debajo de una métrica musical.
+
+### 0.56.11 — tolerancia musical de un compás
+
+Una interpretación AI que ya cumple cantidad de notas y desarrollo de frases puede quedar un solo
+compás por debajo de su horizonte cuantitativo sin invalidar una canción completa. Este margen no
+genera notas, no se aplica a material procedural y no acepta déficits de dos compases, de notas o de
+fraseo.
+
+La recuperación incremental y la auditoría final comparten el mismo criterio. Cada uso excepcional se
+registra como `accepted one-bar coverage margin`, con identidad y mediciones completas, para que una
+aceptación editorial nunca sea silenciosa.
+
+### 0.56.10 — partitura global sin truncamiento oculto
+
+La capacidad de cada respuesta parcial y la capacidad de la canción completa son ahora contratos
+distintos. Los shards continúan siendo pequeños y económicos, mientras que la partitura ensamblada
+admite hasta 512 celdas y 4096 ubicaciones MIDI. Una orquestación extensa ya no pierde silenciosamente
+los instrumentos finales al atravesar el saneamiento global.
+
+Cada fusión se normaliza inmediatamente con el mismo contrato global. El registro muestra las
+cantidades anteriores y posteriores, los eventos inválidos y cualquier pérdida por capacidad. Si se
+alcanzara un límite, la generación conserva el checkpoint y declara las identidades incompletas en vez
+de terminar con el ambiguo rechazo `did not complete every explicitly requested instrument`.
+
+### 0.56.9 — reparto de tamaño exacto
+
+Una cantidad explícita de pistas es ahora parte del JSON Schema enviado a OpenAI. Si el músico pide 50
+identidades, el arreglo `instruments` se genera con `minItems=50` y `maxItems=50`; Terra ya no puede
+responder válidamente con 47, 48 o 51 pistas. El mismo esquema se reutiliza en la recuperación del
+manifiesto, antes de comenzar cualquier bloque de interpretación MIDI.
+
+Cuando el prompt no fija una cantidad, el reparto continúa siendo creativo y flexible dentro del máximo
+profesional. No se elimina ninguna pista después de componer ni se altera la música para ajustar una
+cuota: la arquitectura nace con el tamaño correcto.
+
+### 0.56.8 — protagonista autoritativo entre fases
+
+La macro narrativa ya no intenta nombrar un instrumento antes de que exista. El manifiesto global de
+reparto declara un único `protagonist_instrument_id`, que debe coincidir exactamente con una identidad
+Lead y estar activa en la sección de resolución. Ese ID se incorpora a la narrativa antes de solicitar
+cualquier interpretación MIDI y permanece inmutable en los shards posteriores.
+
+La corrección elimina el falso rechazo `lost its declared protagonist`: una composición completa ya no
+puede descartarse porque la macro y el reparto hayan usado nombres distintos para la misma función. No
+se infiere por texto ni se reescriben notas; el vínculo es estructurado, validado y registrado.
+
+### 0.56.7 — enrutamiento estable de interpretación
+
+El `instrument_id` declarado por el reparto es ahora la autoridad al interpretar cada bloque de Terra.
+Si el modelo devuelve ese ID con una voz incorrecta, PULSO conserva íntegramente tiempo, altura,
+duración y velocidad, y normaliza únicamente la voz hacia la propietaria declarada. Así una apertura
+de hi-hat válida ya no desaparece por un error de etiqueta del modelo.
+
+Cada respuesta se limita a las identidades del shard solicitado: notas de otras pistas ya no pueden
+hacer que una reparación vacía parezca válida. El registro muestra por identidad eventos recibidos,
+aceptados, reasignados y descartados. Para una pista con cero eventos, la recuperación exige una nota
+y una ubicación concretas con el ID exacto; motivos globales, controles o prosa no sustituyen MIDI.
+
+### 0.56.6 — recuperación quirúrgica de respiración
+
+Los déficits cuantitativos continúan completándose de forma aditiva. Cuando una pista ya supera sus
+mínimos de notas y cobertura pero sigue formando una única frase continua, PULSO reconoce que añadir
+eventos no puede crear silencio y solicita una interpretación completa de reemplazo para esa sola
+identidad. Terra debe conservar función, registro y relación formal, introduciendo frases separadas.
+
+El reemplazo es transaccional: el material original permanece intacto hasta que la nueva interpretación
+cumple por sí misma el contrato medido. Sólo entonces se sustituye esa pista; las demás identidades,
+celdas y notas se preservan. Una propuesta que no converge se descarta sin dañar el score aceptado.
+
+### 0.56.5 — contrato único de escritura instrumental
+
+La escritura incremental y la publicación consultan ahora el mismo contrato `TrackViability`.
+Desapareció la regla genérica oculta que exigía tres notas y dos secciones incluso cuando una pista
+rítmica especializada estaba correctamente declarada como evento escaso. Las exigencias musicales
+de protagonista, relación temática y cierre en la coda permanecen intactas.
+
+Cada recuperación recibe y registra evidencia concreta por instrumento: notas, compases activos,
+frases y, cuando corresponde, cierre o parentesco temático faltante. Terra completa únicamente ese
+déficit medido y deja de repetir reparaciones ciegas que ya satisfacían el contrato comunicado.
+
+### 0.56.4 — reconciliación incremental del reparto
+
+Un manifiesto válido pero corto ya no se descarta ni se solicita nuevamente por completo. PULSO
+conserva todas las identidades aceptadas y pide a Terra únicamente el déficit mediante una respuesta
+estructurada pequeña, de razonamiento bajo y presupuesto acotado. Por ejemplo, un resultado 47/50
+se transforma en una solicitud de tres identidades complementarias antes de comenzar la escritura.
+
+Si esa reparación remota no está disponible, el catálogo completa exclusivamente los metadatos de
+identidad, respetando exclusiones, voces existentes, secciones y el único propietario de movimiento.
+No genera notas: el registro, el detalle sonoro y la interpretación continúan hacia las fases de IA.
+Los identificadores originales permanecen en el mismo orden y cualquier duplicado se rechaza.
+
+### 0.56.3 — recuperación granular sin pérdida compositiva
+
+Los pedidos explícitos de pistas se convierten en un contrato numérico antes de escribir MIDI.
+PULSO distingue el total de sus subconjuntos —por ejemplo, 50 pistas con 10 de batería— y rechaza
+un manifiesto de tamaño incorrecto antes de iniciar los bloques costosos. Durante la escritura,
+cada bloque aceptado queda intacto: únicamente los instrumentos incompletos se recuperan en shards
+paralelos de hasta dos pistas y un reparto solicitado explícitamente nunca se reduce retirando voces.
+
+Los choques verticales graves se corrigen primero como voicing: la voz armónica secundaria sube una
+o dos octavas sin cambiar clase tonal, ritmo, duración, velocidad ni identidad narrativa. Solo cuando
+ese desplazamiento no es posible se conserva la reparación anterior mediante espacio negativo.
+
+### 0.56.2 — roles electrónicos y cierre audible
+
+La escritura electrónica sin percusión exige ahora un único propietario de movimiento —arp,
+secuencia, pulso, órbita u ostinato— y una pista de transición no puede satisfacer ese contrato.
+Las transiciones quedan limitadas a ventanas breves alrededor de cambios formales, evitando que
+una textura técnica domine decenas de compases como un secuenciador continuo.
+
+El protagonista debe materializar su retorno en la coda con al menos tres notas, atacar dentro de
+los últimos dos compases y cerrar sobre la tónica. Los mínimos de notas, compases activos y frases
+se validan sobre el MIDI realmente renderizado. Las líneas independientes escritas por la IA ya no
+se fusionan ni podan durante la publicación: una carencia vuelve al bloque exacto de Terra para su
+reparación, preservando instrumentación, registro y diálogo propios.
+
 ### 0.56.1 — autoría narrativa, resolución y atención convergente
 
 En las composiciones de IA, PULSO ya no completa localmente protagonistas, respuestas,

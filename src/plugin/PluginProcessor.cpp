@@ -1800,6 +1800,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->meaningfulMusicalLines = generated.meaningfulMusicalLines;
         playbackPattern->protagonistPhraseWindows = generated.protagonistPhraseWindows;
         playbackPattern->arpeggioNoteCount = generated.arpeggioNoteCount;
+        playbackPattern->electronicMotionRequired = generated.electronicMotionRequired;
         playbackPattern->dialogueMusicalLines = generated.dialogueMusicalLines;
         playbackPattern->harmonicFloorCoverage = generated.harmonicFloorCoverage;
         playbackPattern->medianHarmonicFloorLayers = generated.medianHarmonicFloorLayers;
@@ -2240,7 +2241,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(23); // Binary composition state version.
+        composition.writeInt(24); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -2370,6 +2371,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
         composition.writeInt(static_cast<int>(pattern->meaningfulMusicalLines));
         composition.writeInt(static_cast<int>(pattern->protagonistPhraseWindows));
         composition.writeInt(static_cast<int>(pattern->arpeggioNoteCount));
+        composition.writeBool(pattern->electronicMotionRequired);
         composition.writeInt(static_cast<int>(pattern->dialogueMusicalLines));
         composition.writeDouble(pattern->harmonicFloorCoverage);
         composition.writeDouble(pattern->medianHarmonicFloorLayers);
@@ -2455,7 +2457,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 23) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 24) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2734,6 +2736,8 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                                         std::max(0, composition.readInt()));
                                                     restoredPattern->arpeggioNoteCount = static_cast<std::size_t>(
                                                         std::max(0, composition.readInt()));
+                                                    if (version >= 24)
+                                                        restoredPattern->electronicMotionRequired = composition.readBool();
                                                     restoredPattern->dialogueMusicalLines = static_cast<std::size_t>(
                                                         std::max(0, composition.readInt()));
                                                     restoredPattern->harmonicFloorCoverage = std::clamp(

@@ -623,9 +623,78 @@ bool validateProtagonistManifest(const juce::String& macroText,
     return true;
 }
 
+bool reconcileMotionManifest(const juce::String& macroText,
+                             juce::String& manifestText,
+                             const juce::String& direction,
+                             juce::String& report,
+                             juce::String& error) {
+    const auto macro = juce::JSON::parse(macroText);
+    auto manifest = juce::JSON::parse(manifestText);
+    const auto* macroObject = macro.getDynamicObject();
+    auto* manifestObject = manifest.getDynamicObject();
+    const auto* production = macroObject == nullptr
+        ? nullptr : macroObject->getProperty("production_language").getDynamicObject();
+    const auto* soundscape = manifestObject == nullptr
+        ? nullptr : manifestObject->getProperty("electronic_soundscape").getDynamicObject();
+    auto* instruments = manifestObject == nullptr
+        ? nullptr : manifestObject->getProperty("instruments").getArray();
+    if (production == nullptr || soundscape == nullptr || instruments == nullptr) return true;
+    const auto domain = production->getProperty("domain").toString();
+    const auto electronic = (domain == "club_electronic" || domain == "hybrid") &&
+        static_cast<double>(production->getProperty("electronic_intent")) >= .58;
+    const auto text = direction.toLowerCase();
+    const auto explicitlyStatic = text.contains("drone-only") || text.contains("drone only") ||
+        text.contains("without pulse") || text.contains("without motion") ||
+        text.contains("sin pulso") || text.contains("sin movimiento");
+    const auto required = electronic && static_cast<bool>(soundscape->getProperty("percussion_free")) &&
+        !explicitlyStatic;
+    if (!required) return true;
+
+    std::vector<InstrumentAssignment> assignments;
+    std::vector<juce::DynamicObject*> objects;
+    assignments.reserve(instruments->size());
+    objects.reserve(instruments->size());
+    for (auto& item : *instruments) {
+        auto* object = item.getDynamicObject();
+        if (object == nullptr) continue;
+        const auto voice = voiceIdFromKey(object->getProperty("source_voice").toString().toStdString());
+        if (!voice) continue;
+        InstrumentAssignment instrument;
+        instrument.id = object->getProperty("id").toString().toStdString();
+        instrument.instrumentId = object->getProperty("instrument").toString().toStdString();
+        instrument.name = object->getProperty("name").toString().toStdString();
+        instrument.sourceVoice = *voice;
+        instrument.role = object->getProperty("role").toString().toStdString();
+        instrument.contentLaneId = object->getProperty("content_lane_id").toString().toStdString();
+        instrument.lineRelationship = object->getProperty("line_relationship").toString().toStdString();
+        instrument.orchestralFunction = object->getProperty("orchestral_function").toString().toStdString();
+        assignments.push_back(std::move(instrument));
+        objects.push_back(object);
+    }
+    const auto authoredCandidates = static_cast<std::size_t>(std::count_if(
+        assignments.begin(), assignments.end(), [](const auto& part) {
+            return ElectronicRoleContract::motionCandidate(part);
+        }));
+    const auto protagonist = manifestObject->getProperty("protagonist_instrument_id")
+        .toString().toStdString();
+    const auto primary = ElectronicRoleContract::electPrimaryMotionOwner(assignments, protagonist);
+    if (!primary || *primary >= assignments.size()) {
+        error = "Percussion-free electronic cast contains no pitched instrument eligible to conduct motion";
+        return false;
+    }
+    for (std::size_t index = 0; index < assignments.size(); ++index)
+        objects[index]->setProperty("role", juce::String::fromUTF8(assignments[index].role.c_str()));
+    manifestText = juce::JSON::toString(manifest);
+    report = "motion candidates=" + juce::String(static_cast<int>(authoredCandidates)) +
+        " | primary=" + juce::String::fromUTF8(assignments[*primary].id.c_str()) +
+        " | supporting=" + juce::String(static_cast<int>(authoredCandidates > 0
+            ? authoredCandidates - 1 : 0));
+    return true;
+}
+
 bool validateMotionManifest(const juce::String& macroText,
-                            const juce::String& manifestText,
-                            const juce::String& direction,
+                             const juce::String& manifestText,
+                             const juce::String& direction,
                             juce::String& error) {
     const auto macro = juce::JSON::parse(macroText);
     const auto manifest = juce::JSON::parse(manifestText);
@@ -665,7 +734,7 @@ bool validateMotionManifest(const juce::String& macroText,
         if (ElectronicRoleContract::motionOwner(instrument)) ++owners;
     }
     if (owners == 1) return true;
-    error = "Percussion-free electronic cast requires exactly one non-transition motion owner; received " +
+    error = "Percussion-free electronic cast requires exactly one elected primary motion owner; received " +
         juce::String(static_cast<int>(owners));
     return false;
 }
@@ -1436,14 +1505,19 @@ juce::String performanceBlockPrompt(const juce::String& direction,
         "three notes; its last attack must occur inside the final two bars and land on a stable pitch of the terminal "
         "harmony. Use the home tonic only when the blueprint explicitly requires tonic closure; suspended, modal and "
         "open endings remain valid creative decisions. A declared "
-        "non-percussive motion owner "
-        "(arp, sequence, pulse, orbit or ostinato) must receive its own evolving GPT-authored cell and placements; the local "
+        "primary non-percussive motion owner, identified by primary_motion_owner in its role, "
+        "must receive its own evolving GPT-authored cell and placements. Instruments identified as supporting_motion "
+        "remain independent complementary movement and must receive distinct cells rather than copies; the local "
         "renderer will not write principal, response or motion material for you. "
         "Every independent instrument must meet its publication_minimums after placement repetitions are rendered; later "
         "stages will neither develop nor merge an incomplete independent AI line. Regular instruments must appear in at "
         "least two structurally different sections; one_shot/transition material may be rare. Rhythm motifs in the shared "
         "blueprint are context, not a substitute for this block: every assigned drum or percussion identity must still own "
         "at least one explicit note event with its exact instrument_id and a valid placement. "
+        "For relay, timbral_handoff, doubling and octave_reinforcement members, write the shared content owner only; "
+        "do not spend output reproducing the same phrase for every destination. PULSO distributes complete phrase "
+        "segments across every declared timbral destination after the global performance is assembled. The normalized "
+        "INSTRUMENTS IN THIS BLOCK contract overrides stale content-lane labels in the immutable JSON blueprint. "
         "A transition is boundary "
         "punctuation, never the recurring motor: keep each transition within one-to-three-bar windows around structural "
         "changes and below one eighth of the complete form. Keep each note inside the declared register and use only the declared source_voice for that "
@@ -2358,7 +2432,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "vocal_chop_texture only when they serve the brief. Arpeggiation is optional and must never be inserted merely "
         "because the work is electronic. Preserve a complete harmonic foundation and ADD long pads, "
         "stabs, drones, swells, sparse phrase replies and transition breath around it. Never split one complete line "
-        "among many tracks merely to increase track count. Every instrument has content_lane_id: use a unique id for "
+        "among many tracks merely to increase track count. For casts of 24 or more pitched instruments, normally design "
+        "18-24 genuinely independent pitched content lanes. Preserve every foundation, body, bass, motion owner, "
+        "protagonist and real counterpoint as a complete independent line; only ornamental colour changes may become explicit timbral handoffs, "
+        "relays, restrained doublings or octave reinforcement of those developed lines. Every instrument has "
+        "content_lane_id: use a unique id for "
         "every genuinely independent musical line. Share a content_lane_id only when line_relationship explicitly "
         "declares doubling, relay, timbral_handoff or octave_reinforcement. call_response is a distinct line derived "
         "from, but never identical to, the speaker. "
@@ -2377,8 +2455,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "genuinely isolated impact or singular event. Never call an underwritten musical part a one_shot to evade the "
         "development contract. Give each layer a narrative_role, a relationship to another layer, a concrete evolution, "
         "its fast/medium/slow/event time scale, minimum active bars and phrases, and the longest number of literal static "
-        "bars it may sustain. target_median_active_layers describes the complete rendered fabric, normally 3-4 for a "
-        "percussion-free electronic journey and 3-5 with rhythm, while peaks may be richer. These are rotating layers, "
+        "bars it may sustain. target_median_active_layers describes the complete rendered fabric, normally 7-10 for a "
+        "percussion-free electronic journey and 7-11 with rhythm, while climaxes may reach 10-14 complementary layers. These are evolving layers, "
         "not a command for constant tutti. A voice must receive at least two separated phrases and enough authored notes "
         "to develop; an environment must evolve across sections; transitions must occur at multiple meaningful boundaries. "
         "Set percussion_free true exactly when the user prohibits drums/percussion, and in that case create no rhythm "
@@ -2500,8 +2578,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "the same leitmotif: those are cells and placements owned by the protagonist, not new instruments. Other melodic "
         "parts must introduce genuinely independent counterpoint rather than another contour transformation. Add an "
         "arpeggio only when the creative direction or this song's specific production argument calls for one. Target "
-        "14-28 populated instrument parts "
-        "across the complete arrangement while normally limiting simultaneous parts to five-to-eight. "
+        "14-40 populated instrument parts "
+        "across the complete arrangement. Target roughly 7-10 perceptually complementary responsibilities in normal "
+        "sections and 10-14 at earned peaks; do not obey a raw simultaneous-track ceiling because a short hat, a narrow "
+        "texture and a wide sustained pad consume very different perceptual space. "
         "This is the authoritative compositional layer, not an optional sketch. Give every cell a stable theme_id "
         "shared by its recognisable transformations and a narrative_function describing what it does. Across active "
         "lead, countermelody, bass and harmonic voices, placements must author at least 65 percent of their available "
@@ -2667,8 +2747,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "not to separate instrument members. Use additional tracks for true orchestration: independent inner voices, "
         "pedals, chord bodies, contrary counterpoint, spectral color and transition functions. Permit an arpeggiator only "
         "when it is an intentional part of this particular production argument. In percussion-free electronic music, "
-        "declare exactly one non-percussive recurrence owner (arp, sequence, pulse, orbit or ostinato) unless the direction "
-        "explicitly requests a static/drone-only work; it supplies evolving hypnotic motion, not generic sixteenth-note filler. "
+        "several complementary recurrence instruments (arp, sequence, pulse, orbit or ostinato) are valid when their "
+        "trajectories are distinct. PULSO will elect exactly one primary_motion_owner locally and retain all remaining "
+        "candidates as supporting_motion; never collapse or remove them. Unless the direction explicitly requests a "
+        "static/drone-only work, this family supplies evolving hypnotic motion, not generic sixteenth-note filler. "
         "At the manifest root, protagonist_instrument_id must equal the exact stable id of that one protagonist. It must "
         "use source_voice=lead and include the macro's resolution section in active_sections so its authored transformed "
         "return can occur in the last sixteen bars. This manifest ID is authoritative and replaces any earlier narrative "
@@ -2685,9 +2767,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     auto manifestText = extractOutputText(juce::JSON::parse(manifestHttp.body));
     juce::String manifestError;
     auto castIds = manifestInstrumentIds(manifestText, manifestError);
+    juce::String motionReport;
     auto manifestContractsReady = !castIds.empty() &&
         validateProtagonistManifest(macroText, manifestText, manifestError) &&
+        reconcileMotionManifest(macroText, manifestText, direction, motionReport, manifestError) &&
         validateMotionManifest(macroText, manifestText, direction, manifestError);
+    if (manifestContractsReady && motionReport.isNotEmpty())
+        OperationalJournal::write("OK", "CAST", "local motion leadership elected | " + motionReport);
     if (!token.stop_requested() &&
         (!manifestHttp.connected || manifestHttp.status < 200 || manifestHttp.status >= 300 ||
          manifestHttp.cancelled || manifestHttp.timedOut || !manifestContractsReady)) {
@@ -2697,9 +2783,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         manifestText = extractOutputText(juce::JSON::parse(manifestHttp.body));
         manifestError.clear();
         castIds = manifestInstrumentIds(manifestText, manifestError);
+        motionReport.clear();
         manifestContractsReady = !castIds.empty() &&
             validateProtagonistManifest(macroText, manifestText, manifestError) &&
+            reconcileMotionManifest(macroText, manifestText, direction, motionReport, manifestError) &&
             validateMotionManifest(macroText, manifestText, direction, manifestError);
+        if (manifestContractsReady && motionReport.isNotEmpty())
+            OperationalJournal::write("OK", "CAST", "local motion leadership elected | " + motionReport);
     }
     if (!manifestHttp.connected || manifestHttp.status < 200 || manifestHttp.status >= 300 ||
         manifestHttp.cancelled || manifestHttp.timedOut || !manifestContractsReady) {
@@ -2747,22 +2837,32 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         auto reconciledByAi = supplementHttp.connected && supplementHttp.status >= 200 &&
             supplementHttp.status < 300 && !supplementHttp.cancelled && !supplementHttp.timedOut &&
             mergeCastManifestSupplement(manifestText, supplementText, requestedCastCount,
-                                        reconciledText, reconciliationError) &&
+                                        reconciledText, reconciliationError);
+        juce::String reconciliationMotionReport;
+        reconciledByAi = reconciledByAi &&
             validateProtagonistManifest(macroText, reconciledText, reconciliationError) &&
+            reconcileMotionManifest(macroText, reconciledText, direction,
+                                    reconciliationMotionReport, reconciliationError) &&
             validateMotionManifest(macroText, reconciledText, direction, reconciliationError);
         if (reconciledByAi) {
             manifestText = std::move(reconciledText);
             OperationalJournal::write("OK", "CHECKPOINT",
                 "AI cast reconciliation accepted; all " +
                 juce::String(static_cast<int>(requestedCastCount)) + " identities preserved");
+            if (reconciliationMotionReport.isNotEmpty())
+                OperationalJournal::write("OK", "CAST",
+                    "local motion leadership reconciled | " + reconciliationMotionReport);
         } else {
             if (reconciliationError.isEmpty()) reconciliationError = apiErrorMessage(supplementHttp);
             OperationalJournal::write("WARN", "RECOVERY",
                 "bounded cast supplement unavailable (" + reconciliationError +
                 "); completing identity metadata from the catalog without generating notes");
+            reconciliationMotionReport.clear();
             if (!completeCastManifestFromCatalog(manifestText, macroText, requestedCastCount,
                                                  reconciledText, reconciliationError) ||
                 !validateProtagonistManifest(macroText, reconciledText, reconciliationError) ||
+                !reconcileMotionManifest(macroText, reconciledText, direction,
+                                         reconciliationMotionReport, reconciliationError) ||
                 !validateMotionManifest(macroText, reconciledText, direction, reconciliationError)) {
                 error = "OpenAI global cast reconciliation failed: " + reconciliationError;
                 return result;
@@ -2771,6 +2871,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             OperationalJournal::write("OK", "CHECKPOINT",
                 "catalog completed " + juce::String(static_cast<int>(missing)) +
                 " cast identities only; no local notes were generated and performance remains assigned to AI writing");
+            if (reconciliationMotionReport.isNotEmpty())
+                OperationalJournal::write("OK", "CAST",
+                    "local motion leadership reconciled | " + reconciliationMotionReport);
         }
         manifestError.clear();
         castIds = manifestInstrumentIds(manifestText, manifestError);
@@ -2911,8 +3014,21 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     // A completed block is merged immediately, so a later transport failure never
     // discards already validated musical work.
     std::vector<std::vector<std::size_t>> blocks;
-    std::vector<std::size_t> orderedInstruments(result.instruments.size());
-    std::iota(orderedInstruments.begin(), orderedInstruments.end(), std::size_t{});
+    std::vector<std::size_t> orderedInstruments;
+    orderedInstruments.reserve(result.instruments.size());
+    for (std::size_t index = 0; index < result.instruments.size(); ++index) {
+        const auto& instrument = result.instruments[index];
+        if (!ElectronicCompositionFabric::rendererOwnedDestination(result, instrument))
+            orderedInstruments.push_back(index);
+    }
+    const auto rendererDestinations = result.instruments.size() - orderedInstruments.size();
+    OperationalJournal::write("INFO", "WRITING",
+        "content architecture | " +
+        juce::String(static_cast<int>(orderedInstruments.size())) +
+        " authored lane owner(s) | " +
+        juce::String(static_cast<int>(rendererDestinations)) +
+        " renderer-owned timbral destination(s) | " +
+        juce::String(static_cast<int>(result.instruments.size())) + " exported tracks");
     std::stable_sort(orderedInstruments.begin(), orderedInstruments.end(), [&](auto left, auto right) {
         const auto& a = result.instruments[left];
         const auto& b = result.instruments[right];
@@ -3526,7 +3642,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     }
     if (ElectronicRoleContract::requiresMotionOwner(result) &&
         ElectronicRoleContract::motionOwnerCount(result) != 1) {
-        error = "Incremental GPT score must preserve exactly one electronic motion owner";
+        error = "Incremental GPT score must preserve exactly one elected primary electronic motion owner";
         return {};
     }
     if (requestedCastCount > 0 && result.instruments.size() != requestedCastCount) {
@@ -3950,7 +4066,19 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                  << ", arrangement_texture_parts=" << static_cast<int>(draftReport.arrangementDensity.textureParts)
                  << ", arrangement_peak_parts=" << static_cast<int>(draftReport.arrangementDensity.peakSimultaneousParts)
                  << ", arrangement_independence=" << juce::String(draftReport.arrangementDensity.independenceScore, 3)
-                 << ", arrangement_ready=" << (draftReport.arrangementDensity.ready ? "true" : "false") << ".\n";
+                  << ", arrangement_ready=" << (draftReport.arrangementDensity.ready ? "true" : "false") << ".\n";
+    auditSummary << "perceptual_load="
+                 << juce::String(draftReport.attention.averagePerceptualLoadBefore, 2) << "->"
+                 << juce::String(draftReport.attention.averagePerceptualLoadAfter, 2)
+                 << ", perceptual_peak=" << juce::String(draftReport.attention.peakPerceptualLoadAfter, 2)
+                 << ", underfilled_bars=" << static_cast<int>(draftReport.attention.underfilledBarsBefore)
+                 << "->" << static_cast<int>(draftReport.attention.underfilledBarsAfter)
+                 << ", overloaded_bars=" << static_cast<int>(draftReport.attention.overloadedBarsBefore)
+                 << "->" << static_cast<int>(draftReport.attention.overloadedBarsAfter)
+                 << ", density_notes_removed=" << static_cast<int>(draftReport.attention.densityNotesRemoved)
+                 << ", semantic_notes_removed=" << static_cast<int>(draftReport.attention.semanticNotesRemoved)
+                 << ", authored_notes_preserved=" << static_cast<int>(draftReport.attention.authoredNotesPreserved)
+                 << ".\n";
     auditSummary << "soundscape_active=" << (draftReport.soundscape.active ? "true" : "false")
                  << ", soundscape_percussion_free=" << (draftReport.soundscape.percussionFree ? "true" : "false")
                  << ", soundscape_declared_layers=" << static_cast<int>(draftReport.soundscape.declaredLayers)
@@ -3972,6 +4100,15 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                  << ", track_viability_pruned=" << static_cast<int>(draftReport.trackViability.prunedTracks)
                  << ", track_viability_score=" << juce::String(draftReport.trackViability.score, 3)
                  << ", track_viability_ready=" << (draftReport.trackViability.ready ? "true" : "false") << ".\n";
+    auditSummary << "content_lanes=" << static_cast<int>(draftReport.timbralHandoffs.contentLanes)
+                 << ", timbral_destinations="
+                 << static_cast<int>(draftReport.timbralHandoffs.timbralDestinations)
+                 << ", timbral_handoff_windows="
+                 << static_cast<int>(draftReport.timbralHandoffs.phraseWindowsReassigned)
+                 << ", timbral_handoff_notes="
+                 << static_cast<int>(draftReport.timbralHandoffs.notesReassigned)
+                 << ", exact_cast_published="
+                 << (draftReport.timbralHandoffs.exactCast ? "true" : "false") << ".\n";
     auditSummary << "thematic_voice_mappings=" << static_cast<int>(mappedDialoguePlacements)
                  << ", transformed_placements=" << static_cast<int>(transformedPlacements)
                  << ", dialogue_voices=" << static_cast<int>(dialogueVoices.size())

@@ -510,7 +510,7 @@ juce::String PulsoAudioProcessor::currentPreviewWorldName() const {
     return ids::previewWorldNames[static_cast<std::size_t>(std::clamp(resolved, 0, 7))];
 }
 
-bool PulsoAudioProcessor::deployCurrentSongToLive(bool aggregateDepartmentStems) {
+bool PulsoAudioProcessor::deployCurrentSongToLive(bool aggregateDepartmentStems, bool midiOnly) {
     const auto pattern = currentPattern();
     if (pattern == nullptr) return false;
     if (!liveBridgeIsAvailable()) {
@@ -518,7 +518,7 @@ bool PulsoAudioProcessor::deployCurrentSongToLive(bool aggregateDepartmentStems)
         liveDeployStatus = "ENABLE PulsoDeployRemote IN LIVE SETTINGS";
         return false;
     }
-    if (!liveNativeInventoryIsReady()) {
+    if (!midiOnly && !liveNativeInventoryIsReady()) {
         const std::scoped_lock lock(liveDeployStatusMutex);
         liveDeployStatus = "WAIT FOR LIVE NATIVE INVENTORY";
         return false;
@@ -529,6 +529,8 @@ bool PulsoAudioProcessor::deployCurrentSongToLive(bool aggregateDepartmentStems)
     options.numerator = currentTimeSignatureNumerator();
     options.denominator = currentTimeSignatureDenominator();
     options.aggregateDepartmentStems = aggregateDepartmentStems;
+    options.soundMode = midiOnly ? LiveDeploymentOptions::SoundMode::MidiOnly
+                                 : LiveDeploymentOptions::SoundMode::NeutralAudition;
     juce::String message;
     const auto success = writeLiveDeploymentRequest(*pattern, options, message);
     const std::scoped_lock lock(liveDeployStatusMutex);
@@ -1783,6 +1785,17 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->overcrowdedBarsAfter = generated.overcrowdedBarsAfter;
         playbackPattern->averageActivePartsBefore = generated.averageActivePartsBefore;
         playbackPattern->averageActivePartsAfter = generated.averageActivePartsAfter;
+        playbackPattern->underfilledBarsBefore = generated.underfilledBarsBefore;
+        playbackPattern->underfilledBarsAfter = generated.underfilledBarsAfter;
+        playbackPattern->overloadedBarsBefore = generated.overloadedBarsBefore;
+        playbackPattern->overloadedBarsAfter = generated.overloadedBarsAfter;
+        playbackPattern->averagePerceptualLoadBefore = generated.averagePerceptualLoadBefore;
+        playbackPattern->averagePerceptualLoadAfter = generated.averagePerceptualLoadAfter;
+        playbackPattern->peakPerceptualLoadBefore = generated.peakPerceptualLoadBefore;
+        playbackPattern->peakPerceptualLoadAfter = generated.peakPerceptualLoadAfter;
+        playbackPattern->densityNotesRemoved = generated.densityNotesRemoved;
+        playbackPattern->semanticNotesRemoved = generated.semanticNotesRemoved;
+        playbackPattern->authoredNotesPreserved = generated.authoredNotesPreserved;
         playbackPattern->thematicOwnershipDirected = generated.thematicOwnershipDirected;
         playbackPattern->foregroundTracksBefore = generated.foregroundTracksBefore;
         playbackPattern->foregroundTracksAfter = generated.foregroundTracksAfter;
@@ -1814,16 +1827,26 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         playbackPattern->developedInstrumentTracks = generated.developedInstrumentTracks;
         playbackPattern->mergedInstrumentTracks = generated.mergedInstrumentTracks;
         playbackPattern->prunedInstrumentTracks = generated.prunedInstrumentTracks;
+        playbackPattern->contentLaneCount = generated.contentLaneCount;
+        playbackPattern->timbralHandoffDestinations = generated.timbralHandoffDestinations;
+        playbackPattern->timbralHandoffWindows = generated.timbralHandoffWindows;
+        playbackPattern->timbralHandoffNotes = generated.timbralHandoffNotes;
+        playbackPattern->exactInstrumentCastPublished = generated.exactInstrumentCastPublished;
         playbackPattern->underdevelopedSoundscapeLayers = generated.underdevelopedSoundscapeLayers;
         playbackPattern->medianActiveSoundscapeLayers = generated.medianActiveSoundscapeLayers;
         playbackPattern->narrativeIssues = generated.narrativeIssues;
         if (generated.attentionDirected) {
             OperationalJournal::write("OK", "ATTENTION",
-                "active parts " + juce::String(generated.averageActivePartsBefore, 2) +
+                "perceptual load " + juce::String(generated.averagePerceptualLoadBefore, 2) +
+                " -> " + juce::String(generated.averagePerceptualLoadAfter, 2) +
+                " | active parts " + juce::String(generated.averageActivePartsBefore, 2) +
                 " -> " + juce::String(generated.averageActivePartsAfter, 2) +
-                " | overcrowded bars " +
-                juce::String(static_cast<int>(generated.overcrowdedBarsBefore)) + " -> " +
-                juce::String(static_cast<int>(generated.overcrowdedBarsAfter)) +
+                " | underfilled " + juce::String(static_cast<int>(generated.underfilledBarsBefore)) +
+                " -> " + juce::String(static_cast<int>(generated.underfilledBarsAfter)) +
+                " | overloaded " + juce::String(static_cast<int>(generated.overloadedBarsBefore)) +
+                " -> " + juce::String(static_cast<int>(generated.overloadedBarsAfter)) +
+                " | density removals " + juce::String(static_cast<int>(generated.densityNotesRemoved)) +
+                " | authored preserved " + juce::String(static_cast<int>(generated.authoredNotesPreserved)) +
                 " | structural breaths " +
                 juce::String(static_cast<int>(generated.structuralBreathBars)) +
                 " | phrase breaths " +
@@ -1840,6 +1863,19 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 juce::String(static_cast<int>(generated.thematicTracksConsolidated)) +
                 " | notes reassigned " +
                 juce::String(static_cast<int>(generated.thematicNotesReassigned)));
+        }
+        if (generated.timbralHandoffDestinations > 0) {
+            OperationalJournal::write(generated.exactInstrumentCastPublished ? "OK" : "WARN",
+                "CAST", "content lanes " +
+                juce::String(static_cast<int>(generated.contentLaneCount)) +
+                " | timbral destinations " +
+                juce::String(static_cast<int>(generated.timbralHandoffDestinations)) +
+                " | phrase handoffs " +
+                juce::String(static_cast<int>(generated.timbralHandoffWindows)) +
+                " | notes reassigned " +
+                juce::String(static_cast<int>(generated.timbralHandoffNotes)) +
+                " | exact cast " +
+                juce::String(generated.exactInstrumentCastPublished ? "yes" : "no"));
         }
         realtime.pattern = std::move(playbackPattern);
         realtime.lengthBeats = generated.lengthBeats;
@@ -2241,7 +2277,7 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
     if (const auto pattern = uiPatternSnapshot.load(std::memory_order_acquire);
         pattern && !pattern->notes.empty()) {
         juce::MemoryOutputStream composition;
-        composition.writeInt(24); // Binary composition state version.
+        composition.writeInt(26); // Binary composition state version.
         composition.writeDouble(pattern->lengthBeats);
         composition.writeInt64(static_cast<juce::int64>(pattern->seed));
         composition.writeInt(static_cast<int>(pattern->notes.size()));
@@ -2402,6 +2438,22 @@ void PulsoAudioProcessor::getStateInformation(juce::MemoryBlock& destination) {
         composition.writeInt(static_cast<int>(pattern->foregroundTracksAfter));
         composition.writeInt(static_cast<int>(pattern->thematicTracksConsolidated));
         composition.writeInt(static_cast<int>(pattern->thematicNotesReassigned));
+        composition.writeInt(static_cast<int>(pattern->contentLaneCount));
+        composition.writeInt(static_cast<int>(pattern->timbralHandoffDestinations));
+        composition.writeInt(static_cast<int>(pattern->timbralHandoffWindows));
+        composition.writeInt(static_cast<int>(pattern->timbralHandoffNotes));
+        composition.writeBool(pattern->exactInstrumentCastPublished);
+        composition.writeInt(static_cast<int>(pattern->underfilledBarsBefore));
+        composition.writeInt(static_cast<int>(pattern->underfilledBarsAfter));
+        composition.writeInt(static_cast<int>(pattern->overloadedBarsBefore));
+        composition.writeInt(static_cast<int>(pattern->overloadedBarsAfter));
+        composition.writeDouble(pattern->averagePerceptualLoadBefore);
+        composition.writeDouble(pattern->averagePerceptualLoadAfter);
+        composition.writeDouble(pattern->peakPerceptualLoadBefore);
+        composition.writeDouble(pattern->peakPerceptualLoadAfter);
+        composition.writeInt(static_cast<int>(pattern->densityNotesRemoved));
+        composition.writeInt(static_cast<int>(pattern->semanticNotesRemoved));
+        composition.writeInt(static_cast<int>(pattern->authoredNotesPreserved));
         state.setProperty("compositionData", composition.getMemoryBlock().toBase64Encoding(), nullptr);
         if (const auto metadata = ideaMetadata.load(std::memory_order_acquire)) {
             state.setProperty("ideaTitle", metadata->title, nullptr);
@@ -2457,7 +2509,7 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                 restoredPattern->lengthBeats = composition.readDouble();
                 restoredPattern->seed = static_cast<std::uint64_t>(composition.readInt64());
                 const auto noteCount = composition.readInt();
-                if ((version < 1 || version > 24) || !std::isfinite(restoredPattern->lengthBeats) ||
+                if ((version < 1 || version > 26) || !std::isfinite(restoredPattern->lengthBeats) ||
                     restoredPattern->lengthBeats < 1.0 || noteCount < 0 ||
                     noteCount > static_cast<int>(maxPatternNotes))
                     restoredPattern->notes.clear();
@@ -2798,6 +2850,42 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                                                         std::max(0, composition.readInt()));
                                                                     restoredPattern->thematicNotesReassigned = static_cast<std::size_t>(
                                                                         std::max(0, composition.readInt()));
+                                                                    if (version >= 25) {
+                                                                        restoredPattern->contentLaneCount = static_cast<std::size_t>(
+                                                                            std::max(0, composition.readInt()));
+                                                                        restoredPattern->timbralHandoffDestinations = static_cast<std::size_t>(
+                                                                            std::max(0, composition.readInt()));
+                                                                        restoredPattern->timbralHandoffWindows = static_cast<std::size_t>(
+                                                                            std::max(0, composition.readInt()));
+                                                                        restoredPattern->timbralHandoffNotes = static_cast<std::size_t>(
+                                                                            std::max(0, composition.readInt()));
+                                                                        restoredPattern->exactInstrumentCastPublished =
+                                                                            composition.readBool();
+                                                                        if (version >= 26) {
+                                                                            restoredPattern->underfilledBarsBefore = static_cast<std::size_t>(
+                                                                                std::max(0, composition.readInt()));
+                                                                            restoredPattern->underfilledBarsAfter = static_cast<std::size_t>(
+                                                                                std::max(0, composition.readInt()));
+                                                                            restoredPattern->overloadedBarsBefore = static_cast<std::size_t>(
+                                                                                std::max(0, composition.readInt()));
+                                                                            restoredPattern->overloadedBarsAfter = static_cast<std::size_t>(
+                                                                                std::max(0, composition.readInt()));
+                                                                            restoredPattern->averagePerceptualLoadBefore = std::max(
+                                                                                0.0, composition.readDouble());
+                                                                            restoredPattern->averagePerceptualLoadAfter = std::max(
+                                                                                0.0, composition.readDouble());
+                                                                            restoredPattern->peakPerceptualLoadBefore = std::max(
+                                                                                0.0, composition.readDouble());
+                                                                            restoredPattern->peakPerceptualLoadAfter = std::max(
+                                                                                0.0, composition.readDouble());
+                                                                            restoredPattern->densityNotesRemoved = static_cast<std::size_t>(
+                                                                                std::max(0, composition.readInt()));
+                                                                            restoredPattern->semanticNotesRemoved = static_cast<std::size_t>(
+                                                                                std::max(0, composition.readInt()));
+                                                                            restoredPattern->authoredNotesPreserved = static_cast<std::size_t>(
+                                                                                std::max(0, composition.readInt()));
+                                                                        }
+                                                                    }
                                                                 }
                                                             }
                                                         }

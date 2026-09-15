@@ -1,5 +1,78 @@
 # PULSO
 
+### 0.58.4 — audición neutral y MIDI limpio en Live
+
+`CREAR EN LIVE` ya no busca presets expresivos a partir de descripciones poéticas. Cada
+pista recibe una plantilla de audición estable según su función: Operator para subgraves,
+bajos, arpegios y plucks; Drift para cuerpo armónico; Wavetable para pads, texturas y
+voces melódicas; y un 909/808 verificado para material rítmico. Las alternativas sólo se
+usan dentro de esa pequeña paleta nativa y nunca se eligen al azar.
+
+La intención tímbrica escrita por la IA permanece en `authored_native_device` y
+`authored_preset_intent`, de modo que puede recuperarse durante una fase posterior de diseño
+sonoro sin contaminar la evaluación de las notas. Ataque, filtro, anchura y release se
+normalizan mediante perfiles versionados y sin jitter. `Shift + clic` en `CREAR EN LIVE`
+publica exactamente las mismas pistas y clips sin cargar ningún dispositivo, incluso si el
+índice de sonidos de Live todavía no está listo.
+
+### 0.58.3 — arquitectura tímbrica congelada y validación por propietario
+
+La arquitectura de carriles queda congelada cuando comienza la escritura AI. Las normalizaciones
+posteriores ya no pueden promover un destino tímbrico sin notas y reemplazar a un propietario para
+el cual Terra ya compuso. Cada destino se conecta localmente con un propietario independiente y
+compatible antes de crear los bloques de performance.
+
+Durante la escritura se valida el contenido del carril propietario; la pista de destino se valida
+después de realizar el relevo. El renderizador distribuye primero una ventana de frase a cada color
+compatible para evitar que una pista solicitada quede vacía por un simple orden de rotación.
+
+### 0.58.2 — liderazgo de movimiento sin rechazos falsos
+
+Una composición electrónica sin percusión puede contener varios arpegios, secuencias, pulsos u
+ostinatos complementarios. PULSO conserva todas esas identidades y elige localmente una sola como
+`primary_motion_owner`; las restantes quedan declaradas como `supporting_motion`. La elección no
+escribe, elimina ni transforma notas y no consume una solicitud adicional de IA.
+
+El registro operativo informa la cantidad de candidatos, el identificador del conductor elegido y
+la cantidad de apoyos. El gate solamente rechaza un reparto si no existe ningún instrumento tonal
+capaz de asumir la conducción, no porque Terra haya diseñado más de una capa móvil válida.
+
+### 0.58.1 — densidad perceptual sin borrar la composición
+
+PULSO ya no reduce una obra electrónica a un techo rígido de pistas simultáneas. El director de
+atención mide ocupación, duración y peso espectral por función: un pad ancho, un sub sostenido, un
+hat corto y un impacto no consumen el mismo espacio. Las notas armónicas, melódicas, de bajo y de
+movimiento escritas por Terra se conservan; el contador `density_notes_removed` debe permanecer en
+cero. Solamente una transición semánticamente inválida que se comporte como una cama continua puede
+ser acotada y queda declarada por separado.
+
+El piso armónico se adapta ahora entre dos y cuatro capas según la densidad y energía de cada
+sección, sin superar su objetivo perceptual. Los repartos grandes conservan como líneas completas
+los fundamentos, cuerpos, bajos, movimientos, protagonista y contrapuntos. Los relevos tímbricos se
+reservan para cambios de color explícitos, no para fragmentar automáticamente la instrumentación.
+
+LiveBridge, el manifiesto MIDI, el estado del plug-in y el registro publican carga perceptual,
+compases subocupados/sobrecargados, notas preservadas y la separación entre saneamiento semántico y
+recorte de densidad.
+
+### 0.58.0 — arquitectura musical antes que cantidad de pistas
+
+En 0.58.0 los repartos electrónicos extensos separaban entre 12 y 18 arcos tonales independientes de
+sus destinos tímbricos. Terra escribe las líneas musicales una sola vez; `relay`,
+`timbral_handoff`, `doubling` y `octave_reinforcement` se realizan después como relevos de frases
+completas. El número total de notas no aumenta y cada instrumento solicitado sigue llegando como
+una pista MIDI distinta.
+
+Esto reduce los bloques de escritura remota y evita pagar por copias del mismo motivo. El contrato
+rítmico también exige desarrollo seccional proporcional al lenguaje creado por la IA: un único
+golpe ya no puede justificar una pista de clap, hat o percusión. Esa versión reducía las respiraciones
+a dos responsabilidades; 0.58.1 reemplaza ese límite y los auditores siguen al protagonista a
+través de todo su `content_lane_id`.
+
+LiveBridge y el sidecar MIDI publican `content_lane_count`, `timbral_handoff_destinations`,
+`timbral_handoff_windows`, `timbral_handoff_notes` y `exact_instrument_cast_published`. El gate
+declara un error explícito si el reparto solicitado no llega completo a Live.
+
 ### 0.57.0 — restricciones universales y publicación no destructiva
 
 PULSO separa ahora tres autoridades: invariantes técnicos, compromisos explícitos del músico y

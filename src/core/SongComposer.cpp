@@ -2389,6 +2389,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     song.foregroundTracksAfter = thematicOwnership.foregroundTracksAfter;
     song.thematicTracksConsolidated = thematicOwnership.consolidatedTracks;
     song.thematicNotesReassigned = thematicOwnership.notesReassigned;
+    auto timbralHandoffs = ElectronicCompositionFabric::realizeTimbralHandoffs(song, plan);
     song.independentMusicalLines = electronicFabric.independentLines;
     song.meaningfulMusicalLines = electronicFabric.meaningfulLines;
     song.protagonistPhraseWindows = electronicFabric.protagonistPhraseWindows;
@@ -2522,6 +2523,17 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     song.overcrowdedBarsAfter = attentionReport.overcrowdedBarsAfter;
     song.averageActivePartsBefore = attentionReport.averageActivePartsBefore;
     song.averageActivePartsAfter = attentionReport.averageActivePartsAfter;
+    song.underfilledBarsBefore = attentionReport.underfilledBarsBefore;
+    song.underfilledBarsAfter = attentionReport.underfilledBarsAfter;
+    song.overloadedBarsBefore = attentionReport.overloadedBarsBefore;
+    song.overloadedBarsAfter = attentionReport.overloadedBarsAfter;
+    song.averagePerceptualLoadBefore = attentionReport.averagePerceptualLoadBefore;
+    song.averagePerceptualLoadAfter = attentionReport.averagePerceptualLoadAfter;
+    song.peakPerceptualLoadBefore = attentionReport.peakPerceptualLoadBefore;
+    song.peakPerceptualLoadAfter = attentionReport.peakPerceptualLoadAfter;
+    song.densityNotesRemoved = attentionReport.densityNotesRemoved;
+    song.semanticNotesRemoved = attentionReport.semanticNotesRemoved;
+    song.authoredNotesPreserved = attentionReport.authoredNotesPreserved;
     publishedTonalReport = repairTonalContract(
         song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
         plan.harmonicLanguage.tonalPolicy);
@@ -2543,6 +2555,35 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     const auto attentionCompaction = TrackViability::compactIncomplete(song, plan);
     viabilityMerged += attentionCompaction.mergedTracks;
     viabilityPruned += attentionCompaction.prunedTracks;
+    const auto finalTimbralHandoffs =
+        ElectronicCompositionFabric::realizeTimbralHandoffs(song, plan);
+    timbralHandoffs.phraseWindowsReassigned += finalTimbralHandoffs.phraseWindowsReassigned;
+    timbralHandoffs.notesReassigned += finalTimbralHandoffs.notesReassigned;
+    timbralHandoffs.populatedDestinations = finalTimbralHandoffs.populatedDestinations;
+    timbralHandoffs.exactCast = finalTimbralHandoffs.exactCast;
+    song.contentLaneCount = timbralHandoffs.contentLanes;
+    song.timbralHandoffDestinations = timbralHandoffs.timbralDestinations;
+    song.timbralHandoffWindows = timbralHandoffs.phraseWindowsReassigned;
+    song.timbralHandoffNotes = timbralHandoffs.notesReassigned;
+    song.exactInstrumentCastPublished = timbralHandoffs.exactCast;
+    publishedTonalReport = repairTonalContract(
+        song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
+        plan.harmonicLanguage.tonalPolicy);
+    orchestrationReport.registerRepairs += OrchestrationScore::enforcePublishedRegisters(song);
+    [[maybe_unused]] const auto handoffMetric = ProductionPolish::enforceMetricContract(song);
+    [[maybe_unused]] const auto handoffOverlap = repairSamePitchOverlaps(song);
+    const auto handoffVertical = VerticalHarmonyGate::enforce(song);
+    verticalHarmony.collisionsBefore += handoffVertical.collisionsBefore;
+    verticalHarmony.collisionsAfter = handoffVertical.collisionsAfter;
+    verticalHarmony.supportNotesDucked += handoffVertical.supportNotesDucked;
+    verticalHarmony.supportNotesOctaveDisplaced += handoffVertical.supportNotesOctaveDisplaced;
+    verticalHarmony.continuationFragmentsCreated += handoffVertical.continuationFragmentsCreated;
+    [[maybe_unused]] const auto handoffDuration = enforceAudibleDurations(song, harmonicWindows);
+    [[maybe_unused]] const auto handoffFinalOverlap = repairSamePitchOverlaps(song);
+    // Ownership changed after expression was bound; rebuild CC/expression against the
+    // exact destination tracks that will be exported.
+    PerformanceExpression::apply(song, plan, false);
+    OrchestrationScore::applyPartExpression(song, plan, &orchestrationReport);
     auto publishedTrackViability = TrackViability::audit(song, plan);
     publishedTrackViability.populatedBefore = trackViability.populatedBefore;
     publishedTrackViability.meaningfulBefore = trackViability.meaningfulBefore;
@@ -2555,6 +2596,10 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     if (publishedTrackViability.prunedTracks > 0 || publishedTrackViability.mergedTracks > 0)
         publishedTrackViability.issues.push_back("token_tracks_compacted_before_publication");
     trackViability = std::move(publishedTrackViability);
+    song.exactInstrumentCastPublished =
+        trackViability.retainedTracks == plan.instruments.size();
+    timbralHandoffs.populatedDestinations = trackViability.retainedTracks;
+    timbralHandoffs.exactCast = song.exactInstrumentCastPublished;
     const auto arrangementDensity = ArrangementDensityPlanner::auditAndStamp(song, plan);
     // All exported fabric metrics come from the post-orchestration, post-duration,
     // post-percussion-strip publication boundary. Preserve only construction counters.
@@ -2663,6 +2708,7 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         renderReport->verticalHarmony = verticalHarmony;
         renderReport->creativeAuthority = creativeAuthority;
         renderReport->electronicFabric = electronicFabric;
+        renderReport->timbralHandoffs = timbralHandoffs;
         renderReport->attention = attentionReport;
         renderReport->arrangementDensity = arrangementDensity;
         renderReport->soundscape = soundscapeReport;

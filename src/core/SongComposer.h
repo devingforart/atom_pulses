@@ -166,6 +166,7 @@ struct CompositionRenderReport {
     VerticalHarmonyReport verticalHarmony;
     CreativeAuthorityReport creativeAuthority;
     ElectronicFabricReport electronicFabric;
+    TimbralHandoffReport timbralHandoffs;
     AttentionDirectionReport attention;
     ArrangementDensityReport arrangementDensity;
     ElectronicSoundscapeReport soundscape;

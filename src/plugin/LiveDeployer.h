@@ -7,11 +7,14 @@
 namespace pulso::plugin {
 
 struct LiveDeploymentOptions {
+    enum class SoundMode : std::uint8_t { NeutralAudition = 0, MidiOnly };
+
     juce::String title;
     double bpm{120.0};
     int numerator{4};
     int denominator{4};
     bool aggregateDepartmentStems{};
+    SoundMode soundMode{SoundMode::NeutralAudition};
 };
 
 [[nodiscard]] bool writeLiveDeploymentRequest(const Pattern&, const LiveDeploymentOptions&,

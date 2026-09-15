@@ -105,6 +105,65 @@ estática. Las transiciones ocupan como máximo un octavo del arreglo y el prota
 en la tónica dentro de los últimos dos compases. Las pistas independientes incompletas permanecen
 identificables durante la recuperación y nunca se ocultan fusionándolas con otra pista al exportar.
 
+## Contrato 0.58.4: audición separada del diseño sonoro
+
+El request `schema_version: 11` admite dos motores de despliegue:
+
+- `ableton_live_native` con `audition_policy: neutral_role_v1`: carga una paleta cerrada
+  de Operator, Drift, Wavetable y los Core Kits 909/808 según el rol musical.
+- `midi_only`: crea las pistas y clips editables sin dispositivos. En la interfaz reducida
+  se activa manteniendo `Shift` mientras se pulsa `CREAR EN LIVE`.
+
+La selección neutral es determinista. No consulta el historial, no rota presets, no aplica
+el jitter tímbrico de la IA y no rechaza una exportación porque el nombre de un preset no
+coincida con adjetivos del prompt. La intención original se conserva en metadatos. Los
+perfiles imponen releases acotados y ganancia conservadora para que la escucha compare la
+composición, no el diseño sonoro.
+
+## Contrato 0.58.3
+
+Una pista `timbral_handoff`, `relay`, `doubling` u `octave_reinforcement` no necesita duplicar MIDI
+en la respuesta AI. Antes de escribir debe apuntar a un propietario independiente válido; durante
+la escritura se audita ese propietario. El destino obtiene una frase completa en el render final y
+recién entonces participa en `exact_instrument_cast_published`. La normalización final no puede
+cambiar quién era propietario después de que Terra haya compuesto.
+
+## Contrato 0.58.2
+
+En una obra electrónica sin percusión, varias pistas pueden tener movimiento independiente. Una
+sola se publica como `primary_motion_owner` y las demás como `supporting_motion`; todas conservan su
+MIDI, identidad y pista de Live. El registro muestra `motion candidates`, `primary` y `supporting`.
+Esta reconciliación es local y no provoca reintentos facturables de OpenAI.
+
+## Contrato 0.58.1
+
+`request.json` distingue cantidad de pistas y densidad audible mediante:
+
+- `average_perceptual_load_before/after` y `peak_perceptual_load_before/after`;
+- `underfilled_bars_before/after` y `overloaded_bars_before/after`;
+- `density_notes_removed`, que debe ser cero para una publicación válida;
+- `semantic_notes_removed`, reservado a eventos que contradicen su función;
+- `authored_notes_preserved`, cantidad verificable de notas AI retenidas.
+
+El puente rechaza una regresión que elimine material por un techo numérico con el código
+`authored_material_removed_by_density`. Una sobrecarga breve se conserva para decisión del músico;
+la producción ya no se destruye para hacer coincidir un contador.
+
+## Contrato 0.58.0
+
+Un reparto extenso puede publicar más pistas que ideas independientes sin fingir contenido. Cada
+pista conserva `content_lane_id` y `line_relationship`; los relevos reciben ventanas completas del
+propietario y nunca una copia simultánea. La raíz de `request.json` incluye:
+
+- `content_lane_count`: arcos musicales reales.
+- `timbral_handoff_destinations`: instrumentos que interpretan esos arcos por relevo.
+- `timbral_handoff_windows` y `timbral_handoff_notes`: material reasignado sin duplicación.
+- `exact_instrument_cast_published`: confirma que todas las identidades solicitadas tienen MIDI.
+
+Si el último valor es falso, `production_quality.py` devuelve
+`requested_instrument_cast_not_fully_published`. La exportación se conserva para diagnóstico, pero
+no se presenta silenciosamente como cumplimiento exacto.
+
 ## Contrato 0.55.0
 
 Durante una canción larga, el estado de PULSO distingue `TERRA MID · BLUEPRINT`,

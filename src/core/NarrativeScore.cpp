@@ -198,18 +198,31 @@ void auditDensity(const Pattern& pattern, const SongPlan& plan,
         for (auto bar = first; bar <= last; ++bar)
             if (note.voice != VoiceId::Unspecified) active[static_cast<std::size_t>(bar)].insert(note.voice);
     }
-    const auto club = plan.productionLanguage.domain == ProductionDomain::ClubElectronic;
-    const auto ceiling = club ? std::size_t{9} : std::size_t{11};
     auto soundingBars = std::size_t{};
-    for (const auto& voices : active) {
+    for (std::size_t bar = 0; bar < active.size(); ++bar) {
+        const auto& voices = active[bar];
         if (voices.empty()) continue;
         ++soundingBars;
         report.peakActiveVoices = std::max(report.peakActiveVoices, voices.size());
-        const auto foreground = static_cast<int>(voices.contains(VoiceId::Lead)) +
-            static_cast<int>(voices.contains(VoiceId::Countermelody)) +
-            static_cast<int>(voices.contains(VoiceId::HarmonicPulse)) +
-            static_cast<int>(voices.contains(VoiceId::HarmonicUpper));
-        if (voices.size() > ceiling || foreground > 2) ++report.overcrowdedBars;
+        auto load = 0.0;
+        for (const auto voice : voices) {
+            if (isVoiceInFamily(voice, VoiceFamily::Rhythm)) load += .38;
+            else if (voice == VoiceId::SubBass || voice == VoiceId::MovementBass) load += 1.05;
+            else if (voice == VoiceId::HarmonicFoundation) load += 1.10;
+            else if (voice == VoiceId::Lead || voice == VoiceId::Countermelody) load += .88;
+            else if (voice == VoiceId::Atmosphere || voice == VoiceId::Transitions) load += .55;
+            else load += .72;
+        }
+        const auto beat = static_cast<double>(bar) * plan.beatsPerBar;
+        const SongSection* section = plan.sections.empty() ? nullptr : &plan.sections.front();
+        for (const auto& candidate : plan.sections) {
+            if (candidate.startBar * plan.beatsPerBar > beat + .001) break;
+            section = &candidate;
+        }
+        const auto energy = section == nullptr ? .5 : section->energy;
+        const auto density = section == nullptr ? .5 : section->density;
+        const auto ceiling = 8.2 + (energy * .62 + density * .38) * 3.8;
+        if (load > ceiling) ++report.overcrowdedBars;
     }
     report.densityControl = 1.0 - static_cast<double>(report.overcrowdedBars) /
         static_cast<double>(std::max<std::size_t>(1, soundingBars));
@@ -380,14 +393,25 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
         if (item.stage == NarrativeStage::Climax) climax = &item;
         if (item.stage == NarrativeStage::Resolution) resolution = &item;
     }
-    auto protagonistPart = std::uint16_t{};
+    std::set<std::uint16_t> protagonistParts;
     const auto protagonist = std::find_if(plan.instruments.begin(), plan.instruments.end(),
         [&](const auto& instrument) {
             return instrument.id == plan.narrativeSpine.protagonistInstrumentId;
         });
-    if (protagonist != plan.instruments.end())
-        protagonistPart = static_cast<std::uint16_t>(
-            std::distance(plan.instruments.begin(), protagonist) + 1);
+    if (protagonist != plan.instruments.end()) {
+        const auto lane = protagonist->contentLaneId.empty() ? protagonist->id : protagonist->contentLaneId;
+        for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+            const auto& candidate = plan.instruments[index];
+            const auto candidateLane = candidate.contentLaneId.empty()
+                ? candidate.id : candidate.contentLaneId;
+            if (candidateLane == lane)
+                protagonistParts.insert(static_cast<std::uint16_t>(index + 1));
+        }
+    }
+    const auto protagonistNote = [&](const NoteEvent& note) {
+        return protagonistParts.empty() ? primaryVoice(note.voice) :
+            protagonistParts.contains(note.partId);
+    };
 
     const auto notesInAct = [&](NarrativeStage stage) {
         std::vector<const NoteEvent*> notes;
@@ -401,7 +425,7 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
         const auto start = section->startBar * plan.beatsPerBar;
         const auto end = (section->startBar + section->bars) * plan.beatsPerBar;
         for (const auto& note : pattern.notes)
-            if ((protagonistPart == 0 ? primaryVoice(note.voice) : note.partId == protagonistPart) &&
+            if (protagonistNote(note) &&
                 note.startBeat >= start && note.startBeat < end)
                 notes.push_back(&note);
         std::sort(notes.begin(), notes.end(), [](const auto* left, const auto* right) {
@@ -415,7 +439,7 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
     const auto codaStart = std::max(0.0, totalBeats - plan.beatsPerBar * 8.0);
     std::vector<const NoteEvent*> codaTheme;
     for (const auto& note : pattern.notes)
-        if ((protagonistPart == 0 ? primaryVoice(note.voice) : note.partId == protagonistPart) &&
+        if (protagonistNote(note) &&
             note.startBeat >= codaStart && note.startBeat < totalBeats)
             codaTheme.push_back(&note);
     std::sort(codaTheme.begin(), codaTheme.end(), [](const auto* left, const auto* right) {

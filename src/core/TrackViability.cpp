@@ -396,13 +396,35 @@ TrackViabilityContract TrackViability::contractFor(const InstrumentPart& part,
     const auto capped = [&](std::size_t target) { return std::min(available, std::max<std::size_t>(1, target)); };
     switch (result.function) {
         case TrackFunction::Rhythm:
-            // Rhythm owns a separate lane-level contract in RhythmEngine. This release
-            // must not prune a kick or articulation after that engine has approved it;
-            // pitched-track viability is intentionally orthogonal to the later drum pass.
-            result.minimumActiveBars = 1;
-            result.minimumNotes = 1;
-            result.minimumPhrases = 1;
-            result.eventException = true;
+            // AI rhythm is a coordinated long-form narrative, not merely proof that a
+            // drum exists. Derive coverage from the authored rhythmic language rather
+            // than imposing a genre template. Legacy/local plans keep the permissive
+            // articulation contract because RhythmEngine owns their realization.
+            if (!plan.instrumentCastAuthored || plan.percussionFreeIntent) {
+                result.minimumActiveBars = 1;
+                result.minimumNotes = 1;
+                result.minimumPhrases = 1;
+                result.eventException = true;
+                break;
+            }
+            {
+                auto ratio = .025 + plan.rhythmLanguage.callResponse * .055;
+                if (part.sourceVoice == VoiceId::CoreDrums)
+                    ratio = .12 + plan.rhythmLanguage.pulseStability * .18;
+                else if (part.sourceVoice == VoiceId::SnareClap)
+                    ratio = .055 + plan.rhythmLanguage.backbeatGravity * .14;
+                else if (part.sourceVoice == VoiceId::ClosedHats)
+                    ratio = .05 + plan.rhythmLanguage.orchestrationMotion * .12;
+                else if (part.sourceVoice == VoiceId::OpenHatsShaker)
+                    ratio = .035 + plan.rhythmLanguage.orchestrationMotion * .08;
+                result.minimumActiveBars = capped(std::max<std::size_t>(4,
+                    static_cast<std::size_t>(std::lround(horizon * ratio))));
+                const auto attacksPerBar = part.sourceVoice == VoiceId::CoreDrums ||
+                    part.sourceVoice == VoiceId::ClosedHats ? 2U : 1U;
+                result.minimumNotes = std::max<std::size_t>(6,
+                    result.minimumActiveBars * attacksPerBar);
+                result.minimumPhrases = result.minimumActiveBars >= 12 ? 3 : 2;
+            }
             break;
         case TrackFunction::Bass:
             result.minimumActiveBars = capped(std::max<std::size_t>(12,

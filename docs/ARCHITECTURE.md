@@ -1,5 +1,89 @@
 # Arquitectura
 
+## Frontera composición–audición (0.58.4)
+
+La partitura y su instrumentación semántica continúan siendo autoría del compositor AI. Al
+publicar en Live, esa instrumentación no se convierte directamente en un preset: primero se
+proyecta a uno de nueve perfiles neutrales (`drum`, `sub`, `bass`, `pluck`, `arp`, `chord`,
+`pad`, `lead`, `texture`). El perfil elige una familia nativa estable y parámetros seguros.
+
+Esta frontera permite auditar la misma partitura con una referencia repetible y sustituir
+después cualquier dispositivo sin perder nombres, roles, clips, expresión ni metadatos de
+intención. La ruta `midi_only` salta por completo el inventario y el cargador asíncrono de
+dispositivos, pero conserva la transacción: el despliegue anterior sólo se elimina después
+de crear correctamente todas las pistas nuevas.
+
+## Congelación de propietarios tímbricos (0.58.3)
+
+`normalizePlan` distingue el momento anterior a la escritura —`performanceScore` vacío— del plan
+que ya contiene celdas y placements de Terra. La elección de propietarios ocurre solamente en el
+primer momento. Las pasadas terminales pueden reparar referencias, pero nunca volver a repartir qué
+instrumentos debían recibir contenido AI.
+
+Un destino realizable debe ser tonal, no transicional, declarar una relación compartida y apuntar a
+un propietario independiente del mismo `content_lane_id`. Los destinos huérfanos se conectan al
+propietario más compatible por voz, familia, función y secciones activas. `AiComposer`,
+`SelectiveRepair` y el renderizador consultan este mismo contrato: antes del render se exige MIDI al
+propietario; después del render se exige que todas las pistas solicitadas estén pobladas.
+
+## Liderazgo de movimiento (0.58.2)
+
+`ElectronicRoleContract` distingue ahora entre candidato de movimiento y propietario principal.
+La candidatura describe capacidad musical: `harmonic_pulse`, arpegio, secuencia, órbita u ostinato.
+La propiedad es una responsabilidad exclusiva indicada por `primary_motion_owner`. En obras
+electrónicas sin percusión y no estáticas, el reconciliador del manifiesto puntúa los candidatos,
+respeta una elección explícita, prefiere una voz de pulso independiente y evita cargar esa tarea
+sobre el protagonista cuando existe una alternativa equivalente.
+
+La reconciliación sucede localmente antes de solicitar los detalles instrumentales. No cambia IDs,
+cantidad de pistas, secciones, carriles ni relaciones; solamente anota un conductor y los apoyos
+`supporting_motion`. Así, los detalles y la escritura de Terra reciben desde el principio un reparto
+inmutable y coherente. Un reparto local usa la misma elección; un reparto de IA cerrado no recibe
+material procedural nuevo.
+
+## Dirección de densidad perceptual (0.58.1)
+
+La densidad ya no se controla contando pistas. `AttentionDirector` integra por compás la ocupación
+temporal de cada `partId` y la pondera por responsabilidad espectral. Fundamentos y bajos sostenidos
+tienen mayor carga; ritmo breve, texturas estrechas y eventos de transición tienen menor carga. El
+objetivo cambia con energía, densidad y presencia o ausencia de percusión.
+
+El resultado de Terra es autoridad compositiva: ningún evento escrito por la IA se elimina por
+exceder una cifra abstracta. El director mide subocupación y sobrecarga, reconoce respiraciones ya
+escritas y completa únicamente un piso armónico de dos a cuatro capas con tonos del acorde validado
+mientras exista presupuesto perceptual. El único saneamiento sustractivo restante es semántico para
+transiciones que ocupan la obra como un secuenciador continuo.
+
+Los repartos de 24 o más instrumentos apuntan normalmente a 18–24 propietarios, pero el número no
+puede degradar fundamentos, cuerpos, bajos, movimiento, protagonista ni contrapuntos reales a
+relevos. `timbral_handoff` queda reservado a colores ornamentales o relaciones compartidas
+declaradas por la IA. El estado binario v26 y los manifiestos separan explícitamente
+`density_notes_removed`, `semantic_notes_removed` y `authored_notes_preserved`.
+
+## Arcos musicales y destinos tímbricos (0.58)
+
+En repartos electrónicos con 24 o más instrumentos tonales, la normalización conserva entre 12 y
+18 `content_lane_id` independientes. Protagonista, movimiento, piso armónico y diálogo tienen
+prioridad como propietarios. Las demás identidades no simulan nuevas ideas: se convierten en
+`timbral_handoff` y comparten el carril de un propietario compatible por voz, familia y función.
+
+Los bloques remotos contienen solamente propietarios independientes, ritmo y eventos. Los destinos
+tímbricos no consumen otra respuesta de Terra. Después de ensamblar la partitura,
+`realizeTimbralHandoffs` agrupa el MIDI por ventanas de dos compases y rota cada frase entre los
+instrumentos activos del carril. Es una transformación conservativa: no crea ni duplica notas y
+mantiene alturas dentro del registro de destino. Tonalidad, métrica, armonía vertical, duración y
+expresión vuelven a validarse sobre la asignación definitiva.
+
+La viabilidad continúa aplicándose por pista exportada. Por eso una capa tímbrica debe recibir
+frases completas y no una nota testimonial. La auditoría distingue el número de ideas del número
+de instrumentos, verifica que todas las identidades estén pobladas y publica ese resultado hasta
+LiveBridge.
+
+El ritmo de un reparto AI ya no usa la excepción universal de una nota. Sus mínimos de compases,
+ataques y frases se derivan de estabilidad de pulso, gravedad del backbeat, movimiento orquestal y
+call-response. Esto valida una narrativa rítmica sin imponer un patrón de género. En respiraciones
+estructurales, `AttentionDirector` conserva como máximo dos responsabilidades audibles.
+
 ## Propiedad temática y diferenciación de funciones (0.56)
 
 `ElectronicCompositionFabric::concentrateThematicOwnership` se ejecuta después de materializar
@@ -25,9 +109,9 @@ MIDI, permitiendo verificar cuántas pistas aparentes fueron consolidadas en voc
 
 `AttentionDirector` se ejecuta después de la compactación terminal de `TrackViability` y antes
 de los auditores finales. Opera por `partId` y compás para que dos instrumentos que comparten una
-voz lógica sigan teniendo papeles independientes. En arreglos electrónicos congestionados asigna
-un presupuesto seccional de partes simultáneas, rota apoyos cada cuatro compases y protege el
-protagonista, el bombo contractual, los eventos formales y las mutaciones escritas por la IA.
+voz lógica sigan teniendo papeles independientes. Desde 0.58.1 mide carga perceptual por sección y
+preserva la escritura de Terra; los límites de cantidad de pistas descritos históricamente debajo ya
+no forman parte del camino de publicación.
 
 Las respiraciones se introducen en dos escalas: pequeños huecos al final de frases densas y
 reducciones estructurales antes de cambios importantes de sección. La continuidad no se resuelve
@@ -908,9 +992,9 @@ cannot reinsert drums after the user explicitly requested a non-percussive arran
 
 `ArrangementDensityPlanner` converts duration, electronic intent, ensemble scale and harmonic depth
 into one explicit production cast target. For deep electronic work it normally plans 14-24 available
-parts, requires most of them to receive material across the complete form, and keeps the expected peak
-simultaneous cast around five-to-eight. Extra scale comes from rotating harmonic, texture and melodic
-responsibilities; low-end tracks are never added merely to satisfy a density quota.
+parts and requires most of them to receive material across the complete form. Since 0.58.1 its former
+five-to-eight simultaneous-track ceiling is superseded by perceptual load, with richer complementary
+peaks and no deletion merely to satisfy a density quota.
 
 `performance_score.notes[].instrument_id` and `controls[].instrument_id` may reference the stable
 `instruments[].id`. A compatible reference resolves immediately to the final `partId`, survives
@@ -936,12 +1020,11 @@ the protagonist, call-response line, independent counterpoint or declared motion
 validation requires the protagonist to return during the last sixteen bars of the resolution and
 requires its answer to use the same named theme family.
 
-`AttentionDirector` treats the response as subordinate speech: at most sixty percent of the
-protagonist's note count and simultaneous presence in at most fifteen percent of its active bars.
-Its active-part budget is five-to-seven for normal sections and eight-to-nine for high-energy
-sections. Because harmonic-floor completion changes the measured density, a final exact-bar pass
-runs afterwards and removes the lowest-priority background owners while protecting the protagonist,
-two floor layers, structural events and required pulse.
+Before 0.58.1, `AttentionDirector` treated the response as subordinate speech with count-based caps
+and used a five-to-nine active-part budget. The current director preserves the authored dialogue and
+measures temporal/spectral load instead. Harmonic-floor completion is bounded by that perceptual
+target and no final pass removes background owners merely because their track count is high.
+Harmonic floors, structural events and required pulse remain independently auditable.
 
 Consolidated tonality remains the default safety policy but is no longer synonymous with completely
 diatonic writing. A GPT chord with a functional chromatic, colour, modal, dominant or transitional

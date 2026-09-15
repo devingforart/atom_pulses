@@ -131,6 +131,28 @@ class ProductionQualityTests(unittest.TestCase):
         self.assertIn("token_instrument_tracks_present", report["codes"])
         self.assertIn("instrument_cast_exceeds_authored_material", report["codes"])
 
+    def test_explicit_cast_rejects_missing_published_destinations(self):
+        report = evaluate_creative_quality({
+            "narrative_audited": True,
+            "creative_ready": True,
+            "creative_score": 0.95,
+            "exact_instrument_cast_published": False,
+        })
+        self.assertFalse(report["passed"])
+        self.assertIn("requested_instrument_cast_not_fully_published", report["codes"])
+
+    def test_density_director_may_not_delete_authored_material(self):
+        report = evaluate_creative_quality({
+            "narrative_audited": True,
+            "creative_ready": True,
+            "creative_score": 0.95,
+            "density_notes_removed": 3,
+            "semantic_notes_removed": 0,
+            "authored_notes_preserved": 997,
+        })
+        self.assertFalse(report["passed"])
+        self.assertIn("authored_material_removed_by_density", report["codes"])
+
 
 if __name__ == "__main__":
     unittest.main()

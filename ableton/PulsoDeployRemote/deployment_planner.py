@@ -4,6 +4,7 @@ from .playback_adapter import (articulation_substitution_specs,
                                requested_audible_variants, split_audible_variants,
                                timbre_contract)
 from .sound_matcher import intent_fidelity, select_track_sound_variants
+from .neutral_audition import (apply_neutral_contract, select_neutral_sound)
 
 
 def _retry_critical_character(items, spec, match, reserved_paths):
@@ -46,6 +47,31 @@ def resolve_deployment(items, tracks, used_paths=None):
     blocking = []
     warnings = []
     for source_spec in tracks:
+        if str(source_spec.get("audition_policy", "")).casefold() == "neutral_role_v1":
+            spec = apply_neutral_contract(source_spec)
+            match = select_neutral_sound(items, spec)
+            if match is None:
+                unresolved.append(str(spec.get("name", "PULSO Part")))
+                continue
+            contract = {
+                "track": str(spec.get("name", "PULSO Part")),
+                "profile": str(spec.get("audition_profile", "chord")),
+                "matched": str(match[0]),
+                "fidelity": 1.0,
+                "passed": True,
+                "blocking": False,
+                "deployment_blocking": False,
+                "deployment_policy": "neutral_role_audition",
+                "audible_variant_group": "",
+                "audible_variant_index": 0,
+                "audible_variant_count": 1,
+                "character_retry_improved": False,
+            }
+            contracts.append(contract)
+            used.add(str(match[1]).casefold())
+            used.add("name:" + str(match[0]).casefold())
+            resolved.append((spec, match))
+            continue
         spec = source_spec
         matches = select_track_sound_variants(
             items, spec, requested_audible_variants(spec), used)

@@ -139,7 +139,7 @@ void ElectronicSoundscapeDirector::normalize(SongPlan& plan) {
     plan.percussionFreeIntent = plan.percussionFreeIntent || plan.soundscape.percussionFree;
     plan.soundscape.percussionFree = plan.percussionFreeIntent;
     plan.soundscape.targetMedianActiveLayers = std::clamp(
-        plan.soundscape.targetMedianActiveLayers, plan.percussionFreeIntent ? 2.5 : 2.0, 6.0);
+        plan.soundscape.targetMedianActiveLayers, plan.percussionFreeIntent ? 6.0 : 5.5, 12.0);
     if (!plan.soundscape.active) return;
 
     std::set<std::string> accepted;

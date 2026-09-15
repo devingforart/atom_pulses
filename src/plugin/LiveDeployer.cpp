@@ -34,6 +34,50 @@ bool isSilentContainer(const juce::String& device) {
            device == "External Instrument";
 }
 
+juce::String neutralAuditionProfile(ScoreDepartment department, const juce::String& catalogId,
+                                    const juce::String& intent) {
+    const auto identity = catalogId.toLowerCase();
+    const auto words = (identity.replaceCharacter('_', ' ') + " " + intent).toLowerCase();
+    if (department == ScoreDepartment::Rhythm) return "drum";
+    if (identity == "sub_synth" || words.containsWholeWord("sub")) return "sub";
+    if (words.contains("bass") || words.contains("reese") || words.contains("low end")) return "bass";
+    if (words.contains("arpegg") || words.contains("ostinato") || words.contains("sequence") ||
+        words.containsWholeWord("pulse")) return "arp";
+    if (words.contains("pluck") || words.contains("staccato") || words.contains("stab") ||
+        words.contains("detached") || identity == "piano" || identity == "harp" ||
+        identity == "guitar" || identity == "mallets" || identity == "marimba" ||
+        identity == "vibraphone") return "pluck";
+    if (words.contains("texture") || words.contains("noise") || words.contains("riser") ||
+        words.contains("shimmer") || words.contains("spectral") || words.contains("transition") ||
+        words.contains("atmos") || words.contains("ambient")) return "texture";
+    if (words.contains("pad") || words.contains("drone") || words.contains("sustain") ||
+        words.contains("foundation") || words.contains("pedal") || words.contains("floor") ||
+        words.contains("choir") || words.contains("ensemble")) return "pad";
+    if (department == ScoreDepartment::Melody || words.contains("lead") ||
+        words.contains("protagonist") || words.contains("foreground") ||
+        words.contains("countermelody")) return "lead";
+    return "chord";
+}
+
+juce::String neutralDeviceForProfile(const juce::String& profile) {
+    if (profile == "drum") return "Drum Rack";
+    if (profile == "pad" || profile == "lead" || profile == "texture") return "Wavetable";
+    if (profile == "chord") return "Drift";
+    return "Operator";
+}
+
+double neutralReleaseForProfile(const juce::String& profile) {
+    if (profile == "sub") return 0.12;
+    if (profile == "bass") return 0.18;
+    if (profile == "pluck") return 0.12;
+    if (profile == "arp") return 0.10;
+    if (profile == "chord") return 0.28;
+    if (profile == "lead") return 0.24;
+    if (profile == "pad") return 0.58;
+    if (profile == "texture") return 0.72;
+    return 0.22;
+}
+
 juce::String expressionTypeName(ExpressionEventType type) {
     if (type == ExpressionEventType::ChannelPressure) return "channel_pressure";
     if (type == ExpressionEventType::PolyAftertouch) return "poly_aftertouch";
@@ -108,69 +152,34 @@ void addPerformanceProperties(juce::DynamicObject& track, const Pattern& pattern
 void addNativeSoundProperties(juce::DynamicObject& track, const juce::String& device,
                               const juce::String& intent, double prominence,
                               ScoreDepartment department, const juce::String& catalogId = {}) {
-    track.setProperty("sound_source", "live_native");
-    const auto requestedDevice = device.isNotEmpty() && device != "auto" ? device :
-        (department == ScoreDepartment::Rhythm ? "Drum Rack" : "Drift");
+    track.setProperty("sound_source", "live_native_neutral_audition");
+    track.setProperty("authored_native_device", device);
+    track.setProperty("authored_preset_intent", intent);
+    const auto semanticContext = intent + " " + track.getProperty("role").toString() + " " +
+                                 track.getProperty("orchestral_function").toString();
+    const auto profile = neutralAuditionProfile(department, catalogId, semanticContext);
+    const auto requestedDevice = neutralDeviceForProfile(profile);
+    track.setProperty("audition_policy", "neutral_role_v1");
+    track.setProperty("audition_profile", profile);
     track.setProperty("native_device", requestedDevice);
-    track.setProperty("preset_intent", intent);
+    track.setProperty("preset_intent", "PULSO neutral " + profile + " audition");
     track.setProperty("playback_mode", department == ScoreDepartment::Rhythm
         ? "adaptive_percussion" : "chromatic_instrument");
     track.setProperty("same_pitch_overlap_policy", "trim_previous");
     track.setProperty("articulation_duration_policy", "instrument_bound");
-    const auto identity = catalogId.toLowerCase();
-    const auto critical = identity == "kick_drum" || identity == "sub_synth" ||
-                          identity == "electric_bass" || identity == "rolling_mid_bass" ||
-                          identity == "reese_layer" || identity == "lead_synth";
-    const auto featured = !critical && (prominence >= 0.68 || department == ScoreDepartment::Melody);
-    track.setProperty("timbre_priority", critical ? "critical" : featured ? "featured" : "support");
-    track.setProperty("minimum_intent_fidelity", critical ? 0.65 : featured ? 0.50 : 0.35);
-    const auto releaseSeconds = identity == "kick_drum" ? 0.14 :
-        identity == "snare_clap" ? 0.30 : identity == "hi_hats" ? 0.16 :
-        identity == "shakers" ? 0.22 : identity == "latin_percussion" ? 0.28 :
-        identity == "orchestral_percussion" ? 0.55 : identity == "cymbals" ? 1.40 :
-        identity == "sub_synth" ? 0.16 : identity == "electric_bass" ? 0.24 :
-        identity == "rolling_mid_bass" ? 0.22 : identity == "reese_layer" ? 0.32 :
-        identity == "poly_synth" ? 0.22 : identity == "dub_chord" ? 0.48 :
-        identity == "filtered_stab" ? 0.24 : identity == "hypnotic_arp" ? 0.20 :
-        identity == "piano" ? 0.55 :
-        identity == "guitar" ? 0.42 : identity == "lead_synth" ? 0.42 :
-        identity == "deep_pluck" ? 0.28 : identity == "acid_line" ? 0.24 :
-        identity == "fm_sequence" ? 0.26 : identity == "vocal_chop_texture" ? 0.18 :
-        identity == "alto_flute" ? 0.60 : identity == "flute" ? 0.55 :
-        identity == "piccolo" ? 0.48 : identity == "analog_pad" ? 0.95 :
-        identity == "ambient_texture" ? 1.35 : identity == "granular_pad" ? 1.20 :
-        identity == "spectral_drone" ? 1.45 : identity == "noise_riser" ? 1.20 :
-        identity == "shimmer_tail" ? 1.10 : 0.65;
-    track.setProperty("release_max_seconds", releaseSeconds);
+    track.setProperty("timbre_priority", "audit");
+    track.setProperty("minimum_intent_fidelity", 0.0);
+    track.setProperty("strict_timbre_gate", false);
+    track.setProperty("release_max_seconds", neutralReleaseForProfile(profile));
     juce::Array<juce::var> candidates;
-    addCandidate(candidates, intent);
-    addCandidate(candidates, catalogId.replaceCharacter('_', ' ') +
-                             (department == ScoreDepartment::Rhythm ? " kit" : " orchestral"));
-    if (department == ScoreDepartment::Rhythm) {
-        if (identity.contains("taiko") || identity.contains("timpani") ||
-            identity.contains("percussion") || identity.contains("shaker")) {
-            addCandidate(candidates, "Percussion Spirit Kit.adg");
-            addCandidate(candidates, "Percussion Core Kit.adg");
-        }
+    if (profile == "drum") {
         addCandidate(candidates, "909 Core Kit.adg");
         addCandidate(candidates, "808 Core Kit.adg");
     } else {
-        if (identity == "rolling_mid_bass") addCandidate(candidates, "Wavetable rolling warm mono bass");
-        if (identity == "reese_layer") addCandidate(candidates, "Meld dark reese bass");
-        if (identity == "dub_chord") addCandidate(candidates, "Drift dub chord stab");
-        if (identity == "filtered_stab") addCandidate(candidates, "Meld filtered chord stab");
-        if (identity == "hypnotic_arp") addCandidate(candidates, "Wavetable muted arpeggiated pulse");
-        if (identity == "deep_pluck") addCandidate(candidates, "Drift deep pluck");
-        if (identity == "acid_line") addCandidate(candidates, "Operator resonant acid line");
-        if (identity == "fm_sequence") addCandidate(candidates, "Operator FM sequence");
-        if (identity == "vocal_chop_texture") addCandidate(candidates, "Sampler vocal chop");
-        if (identity == "granular_pad") addCandidate(candidates, "Granulator III granular pad");
-        if (identity == "spectral_drone") addCandidate(candidates, "Wavetable spectral drone");
-        if (identity == "noise_riser") addCandidate(candidates, "Wavetable noise riser");
-        if (identity == "shimmer_tail") addCandidate(candidates, "Wavetable shimmer pad");
-        if (!isSilentContainer(requestedDevice)) addCandidate(candidates, requestedDevice);
-        // A raw synthesizer is audible; an empty Instrument/Sampler Rack is not.
-        addCandidate(candidates, department == ScoreDepartment::Melody ? "Wavetable" : "Drift");
+        addCandidate(candidates, requestedDevice);
+        addCandidate(candidates, "Drift");
+        addCandidate(candidates, "Operator");
+        addCandidate(candidates, "Wavetable");
     }
     track.setProperty("device_candidates", candidates);
     track.setProperty("mixer_gain_db", juce::jlimit(-18.0, 0.0, -12.0 + prominence * 10.0));
@@ -215,7 +224,7 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
         return false;
     }
     auto root = new juce::DynamicObject();
-    root->setProperty("schema_version", 10);
+    root->setProperty("schema_version", 11);
     root->setProperty("request_id", juce::Uuid().toString());
     root->setProperty("created_utc_ms", juce::Time::getCurrentTime().toMilliseconds());
     auto safeTitle = options.title.isNotEmpty() ? options.title : juce::String("PULSO Song");
@@ -230,7 +239,9 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     root->setProperty("deployment_mode",
         options.aggregateDepartmentStems ? "quick_3_stem" : "full_orchestration");
 
-    root->setProperty("sound_engine", "ableton_live_native");
+    const auto midiOnly = options.soundMode == LiveDeploymentOptions::SoundMode::MidiOnly;
+    root->setProperty("sound_engine", midiOnly ? "midi_only" : "ableton_live_native");
+    root->setProperty("audition_policy", midiOnly ? "midi_only" : "neutral_role_v1");
     root->setProperty("expression_delivery", "native_editable_with_lossless_midi_source");
     root->setProperty("production_score", pattern.productionScore);
     root->setProperty("production_domain", juce::String::fromUTF8(pattern.productionDomain.c_str()));
@@ -318,11 +329,29 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     root->setProperty("overcrowded_bars_after", static_cast<int>(pattern.overcrowdedBarsAfter));
     root->setProperty("average_active_parts_before", pattern.averageActivePartsBefore);
     root->setProperty("average_active_parts_after", pattern.averageActivePartsAfter);
+    root->setProperty("underfilled_bars_before", static_cast<int>(pattern.underfilledBarsBefore));
+    root->setProperty("underfilled_bars_after", static_cast<int>(pattern.underfilledBarsAfter));
+    root->setProperty("overloaded_bars_before", static_cast<int>(pattern.overloadedBarsBefore));
+    root->setProperty("overloaded_bars_after", static_cast<int>(pattern.overloadedBarsAfter));
+    root->setProperty("average_perceptual_load_before", pattern.averagePerceptualLoadBefore);
+    root->setProperty("average_perceptual_load_after", pattern.averagePerceptualLoadAfter);
+    root->setProperty("peak_perceptual_load_before", pattern.peakPerceptualLoadBefore);
+    root->setProperty("peak_perceptual_load_after", pattern.peakPerceptualLoadAfter);
+    root->setProperty("density_notes_removed", static_cast<int>(pattern.densityNotesRemoved));
+    root->setProperty("semantic_notes_removed", static_cast<int>(pattern.semanticNotesRemoved));
+    root->setProperty("authored_notes_preserved", static_cast<int>(pattern.authoredNotesPreserved));
     root->setProperty("thematic_ownership_directed", pattern.thematicOwnershipDirected);
     root->setProperty("foreground_tracks_before", static_cast<int>(pattern.foregroundTracksBefore));
     root->setProperty("foreground_tracks_after", static_cast<int>(pattern.foregroundTracksAfter));
     root->setProperty("thematic_tracks_consolidated",
                       static_cast<int>(pattern.thematicTracksConsolidated));
+    root->setProperty("content_lane_count", static_cast<int>(pattern.contentLaneCount));
+    root->setProperty("timbral_handoff_destinations",
+                      static_cast<int>(pattern.timbralHandoffDestinations));
+    root->setProperty("timbral_handoff_windows",
+                      static_cast<int>(pattern.timbralHandoffWindows));
+    root->setProperty("timbral_handoff_notes", static_cast<int>(pattern.timbralHandoffNotes));
+    root->setProperty("exact_instrument_cast_published", pattern.exactInstrumentCastPublished);
     root->setProperty("thematic_notes_reassigned",
                       static_cast<int>(pattern.thematicNotesReassigned));
     juce::Array<juce::var> narrativeIssues;

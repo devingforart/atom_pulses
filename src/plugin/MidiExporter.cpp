@@ -118,11 +118,29 @@ bool writeCompanionManifest(const Pattern& pattern, const juce::File& midi,
     root->setProperty("phrase_breaths_created", static_cast<int>(pattern.phraseBreathsCreated));
     root->setProperty("attention_notes_removed", static_cast<int>(pattern.attentionNotesRemoved));
     root->setProperty("harmonic_floor_notes_created", static_cast<int>(pattern.harmonicFloorNotesCreated));
+    root->setProperty("underfilled_bars_before", static_cast<int>(pattern.underfilledBarsBefore));
+    root->setProperty("underfilled_bars_after", static_cast<int>(pattern.underfilledBarsAfter));
+    root->setProperty("overloaded_bars_before", static_cast<int>(pattern.overloadedBarsBefore));
+    root->setProperty("overloaded_bars_after", static_cast<int>(pattern.overloadedBarsAfter));
+    root->setProperty("average_perceptual_load_before", pattern.averagePerceptualLoadBefore);
+    root->setProperty("average_perceptual_load_after", pattern.averagePerceptualLoadAfter);
+    root->setProperty("peak_perceptual_load_before", pattern.peakPerceptualLoadBefore);
+    root->setProperty("peak_perceptual_load_after", pattern.peakPerceptualLoadAfter);
+    root->setProperty("density_notes_removed", static_cast<int>(pattern.densityNotesRemoved));
+    root->setProperty("semantic_notes_removed", static_cast<int>(pattern.semanticNotesRemoved));
+    root->setProperty("authored_notes_preserved", static_cast<int>(pattern.authoredNotesPreserved));
     root->setProperty("thematic_ownership_directed", pattern.thematicOwnershipDirected);
     root->setProperty("foreground_tracks_before", static_cast<int>(pattern.foregroundTracksBefore));
     root->setProperty("foreground_tracks_after", static_cast<int>(pattern.foregroundTracksAfter));
     root->setProperty("thematic_tracks_consolidated",
                       static_cast<int>(pattern.thematicTracksConsolidated));
+    root->setProperty("content_lane_count", static_cast<int>(pattern.contentLaneCount));
+    root->setProperty("timbral_handoff_destinations",
+                      static_cast<int>(pattern.timbralHandoffDestinations));
+    root->setProperty("timbral_handoff_windows",
+                      static_cast<int>(pattern.timbralHandoffWindows));
+    root->setProperty("timbral_handoff_notes", static_cast<int>(pattern.timbralHandoffNotes));
+    root->setProperty("exact_instrument_cast_published", pattern.exactInstrumentCastPublished);
     root->setProperty("thematic_notes_reassigned",
                       static_cast<int>(pattern.thematicNotesReassigned));
     root->setProperty("soundscape_audited", pattern.soundscapeAuditPerformed);

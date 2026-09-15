@@ -155,7 +155,7 @@ ArrangementDensityTargets ArrangementDensityPlanner::targetsFor(const SongPlan& 
         result.minimumHarmonyParts = 4;
         result.minimumMelodyParts = 2;
         result.minimumTextureParts = 1;
-        result.maximumSimultaneousParts = 10;
+        result.maximumSimultaneousParts = 14;
         return result;
     }
     const auto durationScale = std::clamp(static_cast<double>(plan.totalBars) / 96.0, .35, 1.5);
@@ -167,8 +167,10 @@ ArrangementDensityTargets ArrangementDensityPlanner::targetsFor(const SongPlan& 
     result.minimumHarmonyParts = result.percussionFree ? 9 : 7;
     result.minimumMelodyParts = result.percussionFree ? 3 : 2;
     result.minimumTextureParts = result.percussionFree ? 4 : 3;
+    // Advisory compatibility value only. Publication is no longer rejected from a
+    // raw track peak: perceptual load is measured by AttentionDirector instead.
     result.maximumSimultaneousParts = static_cast<std::size_t>(std::clamp(
-        static_cast<int>(std::lround(4.0 + depth * 4.0)), 5, 8));
+        static_cast<int>(std::lround(10.0 + depth * 4.0)), 10, 14));
     // Relay, handoff and doubling assignments can deliberately share one content lane.
     // They are timbral destinations for one musical owner, not independent material;
     // demanding that every destination remain populated would reward the exact
@@ -340,10 +342,7 @@ ArrangementDensityReport ArrangementDensityPlanner::auditAndStamp(Pattern& patte
         report.harmonyParts >= report.targets.minimumHarmonyParts &&
         report.melodyParts >= report.targets.minimumMelodyParts &&
         report.textureParts >= report.targets.minimumTextureParts &&
-        report.independenceScore >= .80 &&
-        // Permit a brief two-part arrival above the normal sectional budget, but reject
-        // arrangements whose apparent depth is actually a persistent overcrowded tutti.
-        report.peakSimultaneousParts <= report.targets.maximumSimultaneousParts + 2;
+        report.independenceScore >= .80;
 
     pattern.arrangementTargetParts = report.targets.proposedParts;
     pattern.populatedInstrumentParts = report.populatedParts;

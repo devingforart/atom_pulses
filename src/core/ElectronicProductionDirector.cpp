@@ -849,32 +849,71 @@ std::pair<std::size_t, std::size_t> reinforceThematicMemory(Pattern& pattern,
 
 struct ThematicAudit { std::size_t windows{}; std::size_t recurring{}; double ratio{}; };
 
-ThematicAudit auditThematicMemory(const Pattern& pattern, double beatsPerBar) {
+ThematicAudit auditThematicMemory(const Pattern& pattern, const SongPlan& plan) {
     using Signature = std::vector<std::pair<int, int>>;
+    const auto beatsPerBar = plan.beatsPerBar;
     const auto windowBeats = beatsPerBar * 4.0;
     const auto windows = static_cast<int>(std::ceil(pattern.lengthBeats / windowBeats));
     std::map<Signature, std::size_t> occurrences;
+    std::map<std::uint32_t, std::vector<Signature>> lineage;
+    std::set<std::uint16_t> protagonistParts;
+    const auto protagonist = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+        [&](const auto& instrument) {
+            return instrument.id == plan.narrativeSpine.protagonistInstrumentId;
+        });
+    if (protagonist != plan.instruments.end()) {
+        const auto lane = protagonist->contentLaneId.empty() ? protagonist->id : protagonist->contentLaneId;
+        for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+            const auto& instrument = plan.instruments[index];
+            const auto candidateLane = instrument.contentLaneId.empty()
+                ? instrument.id : instrument.contentLaneId;
+            if (candidateLane == lane)
+                protagonistParts.insert(static_cast<std::uint16_t>(index + 1));
+        }
+    }
     ThematicAudit result;
     for (auto window = 0; window < windows; ++window) {
         std::vector<NoteEvent> notes;
         const auto start = window * windowBeats;
         for (const auto& note : pattern.notes)
-            if (note.voice == VoiceId::Lead && note.startBeat >= start && note.startBeat < start + windowBeats)
+            if ((protagonistParts.empty() ? note.voice == VoiceId::Lead :
+                    protagonistParts.contains(note.partId)) &&
+                note.startBeat >= start && note.startBeat < start + windowBeats)
                 notes.push_back(note);
         if (notes.size() < 3) continue;
         std::sort(notes.begin(), notes.end(), [](const auto& left, const auto& right) {
             return left.startBeat < right.startBeat;
         });
         Signature signature;
+        std::map<std::uint32_t, std::size_t> lineageVotes;
         for (std::size_t index = 0; index < notes.size(); ++index) {
             const auto onset = static_cast<int>(std::lround((notes[index].startBeat - start) * 4.0));
             const auto contour = index == 0 ? 0 :
                 (notes[index].pitch > notes[index - 1].pitch ? 1 : notes[index].pitch < notes[index - 1].pitch ? -1 : 0);
             signature.push_back({onset, contour});
+            if (notes[index].narrativeId != 0) ++lineageVotes[notes[index].narrativeId];
         }
         ++result.windows;
         auto& count = occurrences[signature];
-        if (count++ > 0) ++result.recurring;
+        auto recurring = count++ > 0;
+        if (!lineageVotes.empty()) {
+            const auto identity = std::max_element(lineageVotes.begin(), lineageVotes.end(),
+                [](const auto& left, const auto& right) { return left.second < right.second; })->first;
+            auto& previous = lineage[identity];
+            for (const auto& candidate : previous) {
+                const auto compared = std::min(candidate.size(), signature.size());
+                if (compared < 3) continue;
+                auto related = std::size_t{};
+                for (std::size_t index = 0; index < compared; ++index) {
+                    const auto onsetClose = std::abs(candidate[index].first - signature[index].first) <= 2;
+                    const auto contourClose = candidate[index].second == signature[index].second;
+                    if (onsetClose && contourClose) ++related;
+                }
+                if (related * 5 >= compared * 3) { recurring = true; break; }
+            }
+            previous.push_back(signature);
+        }
+        if (recurring) ++result.recurring;
     }
     result.ratio = static_cast<double>(result.recurring) / std::max<std::size_t>(1, result.windows);
     return result;
@@ -1178,7 +1217,7 @@ ElectronicProductionReport ElectronicProductionDirector::audit(const Pattern& pa
     report.maximumRhythmRun = runs.maximum;
     report.maximumHarmonicRun = maximumRunForVoice(
         pattern, VoiceId::HarmonicFoundation, plan.beatsPerBar);
-    const auto thematic = auditThematicMemory(pattern, plan.beatsPerBar);
+    const auto thematic = auditThematicMemory(pattern, plan);
     report.thematicWindows = thematic.windows;
     report.recurringThematicWindows = thematic.recurring;
     report.thematicRecurrenceRatio = thematic.ratio;

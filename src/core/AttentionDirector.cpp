@@ -167,16 +167,89 @@ std::size_t activeFloorLayers(const Pattern& pattern, const SongPlan& plan,
     return result.size();
 }
 
-std::size_t partBudget(const SongPlan& plan, double beat) noexcept {
+struct PerceptualBudget {
+    double minimum{};
+    double target{};
+    double maximum{};
+};
+
+PerceptualBudget perceptualBudget(const SongPlan& plan, double beat) noexcept {
     const auto* section = sectionAt(plan, beat);
     const auto energy = section == nullptr ? .5 : section->energy;
     const auto density = section == nullptr ? .5 : section->density;
     const auto combined = energy * .62 + density * .38;
-    if (combined < .28) return 5;
-    if (combined < .50) return 6;
-    if (combined < .70) return 7;
-    if (combined < .86) return 8;
-    return 9;
+    const auto percussionFree = std::none_of(plan.instruments.begin(), plan.instruments.end(),
+        [](const auto& part) { return isVoiceInFamily(part.sourceVoice, VoiceFamily::Rhythm); });
+    // These are equivalent perceptual layers, not track counts. A sustained wide pad
+    // consumes more of the budget than a short hat or a boundary impact.
+    const auto target = (percussionFree ? 5.8 : 6.4) + combined * (percussionFree ? 3.8 : 4.2);
+    return {std::max(2.8, target - (percussionFree ? 2.1 : 2.4)),
+            target,
+            target + (percussionFree ? 3.2 : 3.8)};
+}
+
+// Compatibility for the legacy scheduling code kept below the perceptual path. It is
+// intentionally unreachable, but retaining it for one release makes state migrations
+// and focused regression diffs easier to audit.
+std::size_t partBudget(const SongPlan& plan, double beat) noexcept {
+    return static_cast<std::size_t>(std::clamp(
+        static_cast<int>(std::lround(perceptualBudget(plan, beat).maximum)), 10, 14));
+}
+
+double spectralWeight(const InstrumentPart& part) noexcept {
+    if (eventPart(part)) return .22;
+    if (corePulse(part)) return .52;
+    if (part.department == ScoreDepartment::Rhythm) return .38;
+    if (lowEnd(part)) return 1.08;
+    if (foundation(part)) return 1.12;
+    if (foreground(part)) return .88;
+    if (part.sourceVoice == VoiceId::HarmonicPulse) return .68;
+    if (texture(part)) return .58;
+    return .78;
+}
+
+double mergedOccupancy(std::vector<std::pair<double, double>> intervals,
+                       double start, double end) {
+    if (intervals.empty()) return 0.0;
+    std::sort(intervals.begin(), intervals.end());
+    auto covered = 0.0;
+    auto currentStart = intervals.front().first;
+    auto currentEnd = intervals.front().second;
+    for (std::size_t index = 1; index < intervals.size(); ++index) {
+        if (intervals[index].first <= currentEnd + .001) {
+            currentEnd = std::max(currentEnd, intervals[index].second);
+        } else {
+            covered += currentEnd - currentStart;
+            currentStart = intervals[index].first;
+            currentEnd = intervals[index].second;
+        }
+    }
+    covered += currentEnd - currentStart;
+    return std::clamp(covered / std::max(.001, end - start), 0.0, 1.0);
+}
+
+double perceptualLoad(const Pattern& pattern, double start, double end) {
+    std::map<std::uint16_t, std::vector<std::pair<double, double>>> intervalsByPart;
+    for (const auto& note : pattern.notes) {
+        if (note.partId == 0 || note.startBeat >= end - .001 || note.endBeat() <= start + .001)
+            continue;
+        intervalsByPart[note.partId].emplace_back(
+            std::max(start, note.startBeat), std::min(end, note.endBeat()));
+    }
+    auto result = 0.0;
+    for (const auto& part : pattern.parts) {
+        const auto found = intervalsByPart.find(part.id);
+        if (found == intervalsByPart.end()) continue;
+        const auto presence = mergedOccupancy(found->second, start, end);
+        if (presence <= 0.0) continue;
+        // Transients remain perceptible despite short MIDI duration, while a sustained
+        // bed consumes the complete bar. This avoids treating 16 hats like 16 pads.
+        const auto effectivePresence = part.department == ScoreDepartment::Rhythm || eventPart(part)
+            ? std::max(.22, std::sqrt(presence))
+            : .28 + .72 * std::sqrt(presence);
+        result += spectralWeight(part) * effectivePresence;
+    }
+    return result;
 }
 
 double priority(const InstrumentPart& part, std::size_t window,
@@ -212,8 +285,12 @@ std::set<int> structuralBreathBars(const SongPlan& plan) {
 
 struct ActivitySummary {
     std::size_t overcrowded{};
+    std::size_t underfilled{};
+    std::size_t overloaded{};
     std::size_t peak{};
     double average{};
+    double averageLoad{};
+    double peakLoad{};
 };
 
 ActivitySummary activity(const Pattern& pattern, const SongPlan& plan) {
@@ -221,14 +298,22 @@ ActivitySummary activity(const Pattern& pattern, const SongPlan& plan) {
     const auto bars = std::max(1, static_cast<int>(std::ceil(
         pattern.lengthBeats / std::max(1.0, plan.beatsPerBar))));
     auto total = std::size_t{};
+    auto totalLoad = 0.0;
     for (auto bar = 0; bar < bars; ++bar) {
         const auto start = bar * plan.beatsPerBar;
         const auto count = activeParts(pattern, start, start + plan.beatsPerBar).size();
+        const auto load = perceptualLoad(pattern, start, start + plan.beatsPerBar);
+        const auto budget = perceptualBudget(plan, start);
         total += count;
+        totalLoad += load;
         result.peak = std::max(result.peak, count);
-        if (count > partBudget(plan, start)) ++result.overcrowded;
+        result.peakLoad = std::max(result.peakLoad, load);
+        if (load < budget.minimum) ++result.underfilled;
+        if (load > budget.maximum) ++result.overloaded;
     }
     result.average = static_cast<double>(total) / static_cast<double>(bars);
+    result.averageLoad = totalLoad / static_cast<double>(bars);
+    result.overcrowded = result.overloaded;
     return result;
 }
 
@@ -332,8 +417,12 @@ AttentionDirectionReport AttentionDirector::audit(const Pattern& pattern,
     report.windows = static_cast<std::size_t>(std::ceil(
         pattern.lengthBeats / std::max(1.0, plan.beatsPerBar * 4.0)));
     report.overcrowdedBarsAfter = summary.overcrowded;
+    report.underfilledBarsAfter = summary.underfilled;
+    report.overloadedBarsAfter = summary.overloaded;
     report.peakActivePartsAfter = summary.peak;
     report.averageActivePartsAfter = summary.average;
+    report.averagePerceptualLoadAfter = summary.averageLoad;
+    report.peakPerceptualLoadAfter = summary.peakLoad;
     report.harmonicFloorCoverageAfter = floorCoverage(pattern, plan);
     return report;
 }
@@ -343,12 +432,121 @@ AttentionDirectionReport AttentionDirector::shape(Pattern& pattern, const SongPl
     if (!report.active) return report;
     const auto before = activity(pattern, plan);
     report.overcrowdedBarsBefore = before.overcrowded;
+    report.underfilledBarsBefore = before.underfilled;
+    report.overloadedBarsBefore = before.overloaded;
     report.peakActivePartsBefore = before.peak;
     report.averageActivePartsBefore = before.average;
+    report.averagePerceptualLoadBefore = before.averageLoad;
+    report.peakPerceptualLoadBefore = before.peakLoad;
     report.harmonicFloorCoverageBefore = floorCoverage(pattern, plan);
 
     const auto beatsPerBar = std::max(1.0, plan.beatsPerBar);
     const auto bars = std::max(1, static_cast<int>(std::ceil(pattern.lengthBeats / beatsPerBar)));
+    {
+        const auto authoredBefore = std::count_if(pattern.notes.begin(), pattern.notes.end(), [](const auto& note) {
+            return note.origin == NoteOrigin::AiAuthored || note.origin == NoteOrigin::AiTransformed;
+        });
+
+        // Semantic sanitation remains valid: a transition is an event at a boundary,
+        // not a disguised continuous sequencer. No harmonic, bass, pulse or melodic
+        // event is removed to meet a numeric density target.
+        report.semanticNotesRemoved = limitTransitionActivity(pattern, plan, bars, beatsPerBar);
+        report.notesRemoved = report.semanticNotesRemoved;
+        report.densityNotesRemoved = 0;
+        report.windows = static_cast<std::size_t>((bars + 3) / 4);
+
+        // Recognise authored breath around formal boundaries; do not manufacture it by
+        // muting an otherwise intentional ensemble.
+        for (std::size_t index = 1; index < plan.sections.size(); ++index) {
+            const auto bar = plan.sections[index].startBar - 1;
+            if (bar < 0 || bar >= bars) continue;
+            const auto start = bar * beatsPerBar;
+            if (perceptualLoad(pattern, start, start + beatsPerBar) <
+                perceptualBudget(plan, start).target * .72)
+                ++report.structuralBreathBars;
+        }
+
+        // The floor is a section-aware 2-4 layer fabric. Existing notes always win;
+        // PlanDerived chord sustains are added only while the bar remains below its
+        // perceptual target. This creates depth without turning every section into tutti.
+        std::vector<const InstrumentPart*> floors;
+        for (const auto& part : pattern.parts)
+            if (contractedFloor(part, plan)) floors.push_back(&part);
+        std::stable_sort(floors.begin(), floors.end(), [](const auto* left, const auto* right) {
+            return left->prominence > right->prominence;
+        });
+        if (floors.size() > 6) floors.resize(6);
+        std::map<std::uint16_t, int> previousPitch;
+        for (const auto* part : floors)
+            previousPitch[part->id] = (part->minimumPitch + part->maximumPitch) / 2;
+
+        for (auto bar = 0; bar < bars && floors.size() >= 2; ++bar) {
+            const auto start = bar * beatsPerBar;
+            const auto end = std::min(pattern.lengthBeats, start + beatsPerBar);
+            const auto* section = sectionAt(plan, start);
+            const auto density = section == nullptr ? .5 : section->density;
+            const auto energy = section == nullptr ? .5 : section->energy;
+            const auto percussionFree = std::none_of(plan.instruments.begin(), plan.instruments.end(),
+                [](const auto& part) { return isVoiceInFamily(part.sourceVoice, VoiceFamily::Rhythm); });
+            auto desired = std::size_t{2};
+            if (density >= .40 || percussionFree) desired = 3;
+            if (density * .62 + energy * .38 >= .68) desired = 4;
+            desired = std::min(desired, floors.size());
+
+            std::set<std::uint16_t> sounding;
+            for (const auto* part : floors)
+                if (std::any_of(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+                        return note.partId == part->id && note.startBeat < end - .001 &&
+                               note.endBeat() > start + .001;
+                    })) sounding.insert(part->id);
+            const auto& chord = chordAt(plan, start);
+            const auto tones = chord.pitchClasses.empty()
+                ? std::vector<int>{plan.rootPitchClass, positiveModulo(plan.rootPitchClass + 7, 12)}
+                : chord.pitchClasses;
+            const auto budget = perceptualBudget(plan, start);
+            for (std::size_t attempt = 0;
+                 attempt < floors.size() * 2 && sounding.size() < desired; ++attempt) {
+                // Two layers are the minimum harmonic floor. Third/fourth layers are
+                // optional and only enter while perceptual room remains.
+                if (sounding.size() >= 2 && perceptualLoad(pattern, start, end) >= budget.target) break;
+                const auto ordinal = (static_cast<std::size_t>(bar / 4) + attempt) % floors.size();
+                const auto* part = floors[ordinal];
+                if (sounding.contains(part->id)) continue;
+                const auto tone = tones[(ordinal + static_cast<std::size_t>(bar / 4)) % tones.size()];
+                const auto pitch = nearestPitch(tone, previousPitch[part->id], *part);
+                pattern.notes.push_back({start, std::max(.0625, end - start - .03125), pitch,
+                    std::clamp(static_cast<int>(42 + part->prominence * 24.0), 34, 72),
+                    voiceDefinition(part->sourceVoice).midiChannel, part->sourceVoice, part->id,
+                    true, NoteOrigin::PlanDerived, 0x5044524eu});
+                previousPitch[part->id] = pitch;
+                sounding.insert(part->id);
+                ++report.floorNotesCreated;
+            }
+        }
+
+        std::sort(pattern.notes.begin(), pattern.notes.end(), [](const auto& left, const auto& right) {
+            if (left.startBeat != right.startBeat) return left.startBeat < right.startBeat;
+            if (left.partId != right.partId) return left.partId < right.partId;
+            return left.pitch < right.pitch;
+        });
+        const auto after = activity(pattern, plan);
+        report.overcrowdedBarsAfter = after.overcrowded;
+        report.underfilledBarsAfter = after.underfilled;
+        report.overloadedBarsAfter = after.overloaded;
+        report.peakActivePartsAfter = after.peak;
+        report.averageActivePartsAfter = after.average;
+        report.averagePerceptualLoadAfter = after.averageLoad;
+        report.peakPerceptualLoadAfter = after.peakLoad;
+        report.harmonicFloorCoverageAfter = floorCoverage(pattern, plan);
+        const auto authoredAfter = std::count_if(pattern.notes.begin(), pattern.notes.end(), [](const auto& note) {
+            return note.origin == NoteOrigin::AiAuthored || note.origin == NoteOrigin::AiTransformed;
+        });
+        report.authoredNotesPreserved = std::min(authoredBefore, authoredAfter);
+        return report;
+    }
+
+    // Legacy count-based scheduler retained unreachable for one state-compatible
+    // release. It will be removed once 0.59 project migration coverage is complete.
     report.notesRemoved += limitTransitionActivity(pattern, plan, bars, beatsPerBar);
     const auto windowBars = 4;
     const auto windows = static_cast<std::size_t>((bars + windowBars - 1) / windowBars);
@@ -581,20 +779,22 @@ AttentionDirectionReport AttentionDirector::shape(Pattern& pattern, const SongPl
             for (const auto* part : ranked)
                 if (corePulse(*part)) reduced.insert(part->id);
         for (const auto* part : ranked)
-            if (protagonist(*part)) {
+            if (protagonist(*part) && reduced.size() < 2) {
                 reduced.insert(part->id);
                 foregroundKept = true;
             }
         for (const auto* part : ranked) {
             if (reduced.contains(part->id)) continue;
-            if (eventPart(*part)) { reduced.insert(part->id); continue; }
-            if (contractedFloor(*part, plan) && !floorKept) {
+            if (eventPart(*part) && reduced.size() < 2) {
+                reduced.insert(part->id); continue;
+            }
+            if (contractedFloor(*part, plan) && !floorKept && reduced.size() < 2) {
                 reduced.insert(part->id); floorKept = true; continue;
             }
-            if (foreground(*part) && !foregroundKept) {
+            if (foreground(*part) && !foregroundKept && reduced.size() < 2) {
                 reduced.insert(part->id); foregroundKept = true; continue;
             }
-            if (reduced.size() < 4 && !corePulse(*part) && !lowEnd(*part)) reduced.insert(part->id);
+            if (reduced.size() < 2 && !corePulse(*part) && !lowEnd(*part)) reduced.insert(part->id);
         }
         allowed[static_cast<std::size_t>(bar)] = std::move(reduced);
     }

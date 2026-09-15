@@ -145,7 +145,7 @@ public:
     }
     [[nodiscard]] bool liveBridgeAvailable() const { return liveBridgeIsAvailable(); }
     [[nodiscard]] bool liveNativeInventoryReady() const { return liveNativeInventoryIsReady(); }
-    bool deployCurrentSongToLive(bool aggregateDepartmentStems = false);
+    bool deployCurrentSongToLive(bool aggregateDepartmentStems = false, bool midiOnly = false);
     [[nodiscard]] juce::String currentLiveDeployStatus() const;
     [[nodiscard]] juce::String currentLiveNativeInventorySummary() const {
         return readLiveNativeInventorySummary();

@@ -1539,11 +1539,27 @@ int main(int argc, char** argv) {
     deploymentPattern.overcrowdedBarsAfter = 1;
     deploymentPattern.averageActivePartsBefore = 10.5;
     deploymentPattern.averageActivePartsAfter = 6.25;
+    deploymentPattern.underfilledBarsBefore = 12;
+    deploymentPattern.underfilledBarsAfter = 3;
+    deploymentPattern.overloadedBarsBefore = 4;
+    deploymentPattern.overloadedBarsAfter = 4;
+    deploymentPattern.averagePerceptualLoadBefore = 5.25;
+    deploymentPattern.averagePerceptualLoadAfter = 7.75;
+    deploymentPattern.peakPerceptualLoadBefore = 12.5;
+    deploymentPattern.peakPerceptualLoadAfter = 12.5;
+    deploymentPattern.densityNotesRemoved = 0;
+    deploymentPattern.semanticNotesRemoved = 11;
+    deploymentPattern.authoredNotesPreserved = 742;
     deploymentPattern.thematicOwnershipDirected = true;
     deploymentPattern.foregroundTracksBefore = 6;
     deploymentPattern.foregroundTracksAfter = 2;
     deploymentPattern.thematicTracksConsolidated = 4;
     deploymentPattern.thematicNotesReassigned = 73;
+    deploymentPattern.contentLaneCount = 14;
+    deploymentPattern.timbralHandoffDestinations = 21;
+    deploymentPattern.timbralHandoffWindows = 48;
+    deploymentPattern.timbralHandoffNotes = 384;
+    deploymentPattern.exactInstrumentCastPublished = true;
     deploymentPattern.parts = {
         {1, "kick_drum", "Kick Drum", pulso::VoiceId::CoreDrums,
          pulso::ScoreDepartment::Rhythm, "pulse", 35, 36, 1.0,
@@ -1588,8 +1604,9 @@ int main(int argc, char** argv) {
         bridgeTestDirectory.getChildFile("request.json").loadFileAsString());
     auto* deploymentObject = deploymentJson.getDynamicObject();
     require(deploymentObject != nullptr &&
-                static_cast<int>(deploymentObject->getProperty("schema_version")) == 10 &&
+                static_cast<int>(deploymentObject->getProperty("schema_version")) == 11 &&
                 deploymentObject->getProperty("sound_engine").toString() == "ableton_live_native" &&
+                deploymentObject->getProperty("audition_policy").toString() == "neutral_role_v1" &&
                 deploymentObject->getProperty("expression_delivery").toString() ==
                     "native_editable_with_lossless_midi_source" &&
                 deploymentObject->getProperty("production_domain").toString() == "adaptive" &&
@@ -1613,12 +1630,28 @@ int main(int argc, char** argv) {
                 std::abs(static_cast<double>(deploymentObject->getProperty("average_active_parts_before")) -
                          10.5) < 0.001 &&
                 std::abs(static_cast<double>(deploymentObject->getProperty("average_active_parts_after")) -
-                         6.25) < 0.001 &&
+                          6.25) < 0.001 &&
+                static_cast<int>(deploymentObject->getProperty("underfilled_bars_before")) == 12 &&
+                static_cast<int>(deploymentObject->getProperty("underfilled_bars_after")) == 3 &&
+                static_cast<int>(deploymentObject->getProperty("overloaded_bars_before")) == 4 &&
+                static_cast<int>(deploymentObject->getProperty("overloaded_bars_after")) == 4 &&
+                std::abs(static_cast<double>(deploymentObject->getProperty("average_perceptual_load_before")) -
+                         5.25) < 0.001 &&
+                std::abs(static_cast<double>(deploymentObject->getProperty("average_perceptual_load_after")) -
+                         7.75) < 0.001 &&
+                static_cast<int>(deploymentObject->getProperty("density_notes_removed")) == 0 &&
+                static_cast<int>(deploymentObject->getProperty("semantic_notes_removed")) == 11 &&
+                static_cast<int>(deploymentObject->getProperty("authored_notes_preserved")) == 742 &&
                 static_cast<bool>(deploymentObject->getProperty("thematic_ownership_directed")) &&
                 static_cast<int>(deploymentObject->getProperty("foreground_tracks_before")) == 6 &&
                 static_cast<int>(deploymentObject->getProperty("foreground_tracks_after")) == 2 &&
                 static_cast<int>(deploymentObject->getProperty("thematic_tracks_consolidated")) == 4 &&
                 static_cast<int>(deploymentObject->getProperty("thematic_notes_reassigned")) == 73 &&
+                static_cast<int>(deploymentObject->getProperty("content_lane_count")) == 14 &&
+                static_cast<int>(deploymentObject->getProperty("timbral_handoff_destinations")) == 21 &&
+                static_cast<int>(deploymentObject->getProperty("timbral_handoff_windows")) == 48 &&
+                static_cast<int>(deploymentObject->getProperty("timbral_handoff_notes")) == 384 &&
+                static_cast<bool>(deploymentObject->getProperty("exact_instrument_cast_published")) &&
                 deploymentObject->getProperty("tracks").getArray() != nullptr &&
                 deploymentObject->getProperty("tracks").getArray()->size() == 3,
             "Full orchestration must create one versioned editable Live track per populated instrument");
@@ -1626,12 +1659,17 @@ int main(int argc, char** argv) {
     require(nativeTracks != nullptr && std::all_of(nativeTracks->begin(), nativeTracks->end(), [](const auto& value) {
                 const auto* track = value.getDynamicObject();
                 const auto* notes = track == nullptr ? nullptr : track->getProperty("notes").getArray();
-                return track != nullptr && track->getProperty("sound_source").toString() == "live_native" &&
+                return track != nullptr && track->getProperty("sound_source").toString() ==
+                                             "live_native_neutral_audition" &&
+                       track->getProperty("audition_policy").toString() == "neutral_role_v1" &&
+                       track->getProperty("audition_profile").toString().isNotEmpty() &&
+                       track->hasProperty("authored_native_device") &&
+                       track->hasProperty("authored_preset_intent") &&
                        track->getProperty("native_device").toString().isNotEmpty() &&
                        track->getProperty("playback_mode").toString().isNotEmpty() &&
                        track->getProperty("same_pitch_overlap_policy").toString() == "trim_previous" &&
                        track->getProperty("timbre_priority").toString().isNotEmpty() &&
-                       static_cast<double>(track->getProperty("minimum_intent_fidelity")) >= 0.35 &&
+                       static_cast<double>(track->getProperty("minimum_intent_fidelity")) == 0.0 &&
                        static_cast<double>(track->getProperty("release_max_seconds")) > 0.0 &&
                        track->getProperty("controls").getArray() != nullptr &&
                        track->getProperty("expressions").getArray() != nullptr &&
@@ -1650,9 +1688,11 @@ int main(int argc, char** argv) {
             }), "Every deployed part must carry a validated Live-native sound contract without VST identifiers");
     const auto* kickDeployment = (*nativeTracks)[0].getDynamicObject();
     require(kickDeployment != nullptr && kickDeployment->getProperty("native_device").toString() == "Drum Rack" &&
-                kickDeployment->getProperty("preset_intent").toString() == "tight modern acoustic kick" &&
+                kickDeployment->getProperty("preset_intent").toString() == "PULSO neutral drum audition" &&
+                kickDeployment->getProperty("authored_preset_intent").toString() ==
+                    "tight modern acoustic kick" &&
                 !kickDeployment->hasProperty("plugin_identifier") && !kickDeployment->hasProperty("plugin_name"),
-            "AI-selected native device and timbral intent must reach Live without any legacy plug-in contract");
+            "Neutral audition must preserve AI timbre as metadata without letting it choose an arbitrary preset");
     const auto* kickCandidates = kickDeployment->getProperty("device_candidates").getArray();
     require(kickCandidates != nullptr && kickCandidates->contains("909 Core Kit.adg") &&
                 kickCandidates->contains("808 Core Kit.adg") && !kickCandidates->contains("Drum Rack"),
@@ -1662,9 +1702,11 @@ int main(int argc, char** argv) {
                 violinDeployment->getProperty("expressions").getArray()->size() == 2,
             "Voice and part expression must follow audible phrases without leaking distant generic curves");
     const auto* violinCandidates = violinDeployment->getProperty("device_candidates").getArray();
-    require(violinCandidates != nullptr && violinCandidates->contains("violin 1 orchestral") &&
-                !violinCandidates->contains("Instrument Rack") && violinCandidates->contains("Wavetable"),
-            "Orchestral deployment must search by instrument identity and end on an audible synth fallback");
+    require(violinCandidates != nullptr && violinCandidates->contains("Wavetable") &&
+                violinCandidates->contains("Drift") && violinCandidates->contains("Operator") &&
+                !violinCandidates->contains("violin 1 orchestral") &&
+                (*nativeTracks)[2].getDynamicObject()->getProperty("native_device").toString() == "Wavetable",
+            "Melodic audit must use only the bounded native synth palette");
     deployment.aggregateDepartmentStems = true;
     require(pulso::plugin::writeLiveDeploymentRequest(
                 deploymentPattern, deployment, deploymentStatus, bridgeTestDirectory),
@@ -1682,6 +1724,21 @@ int main(int argc, char** argv) {
                 const auto* track = value.getDynamicObject();
                 return track != nullptr && track->getProperty("catalog_id").toString().isNotEmpty();
             }), "Quick stems must also carry a strict musical identity for native sound resolution");
+    deployment.aggregateDepartmentStems = false;
+    deployment.soundMode = pulso::plugin::LiveDeploymentOptions::SoundMode::MidiOnly;
+    require(pulso::plugin::writeLiveDeploymentRequest(
+                deploymentPattern, deployment, deploymentStatus, bridgeTestDirectory),
+            "MIDI-only deployment must publish the complete editable score");
+    const auto midiOnlyJson = juce::JSON::parse(
+        bridgeTestDirectory.getChildFile("request.json").loadFileAsString());
+    const auto* midiOnlyObject = midiOnlyJson.getDynamicObject();
+    require(midiOnlyObject != nullptr &&
+                midiOnlyObject->getProperty("sound_engine").toString() == "midi_only" &&
+                midiOnlyObject->getProperty("audition_policy").toString() == "midi_only" &&
+                midiOnlyObject->getProperty("tracks").getArray() != nullptr &&
+                midiOnlyObject->getProperty("tracks").getArray()->size() == 3,
+            "MIDI-only export must retain every populated part without requesting a sound engine");
+    deployment.soundMode = pulso::plugin::LiveDeploymentOptions::SoundMode::NeutralAudition;
     auto editorialDeployment = deploymentPattern;
     editorialDeployment.productionAuditPerformed = true;
     editorialDeployment.productionReady = true;

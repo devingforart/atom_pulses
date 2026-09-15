@@ -20,6 +20,7 @@ from .sound_matcher import catalog_capabilities, intent_fidelity, spec_intent_co
 from .audible_contract import (aggregate_meter_snapshots, apply_release_contract,
                                meter_snapshot)
 from .deployment_planner import resolve_deployment
+from .neutral_audition import neutral_patch
 from .production_quality import evaluate_creative_quality
 
 
@@ -160,11 +161,16 @@ class PulsoDeployRemote(ControlSurface):
         if self._deployment_busy:
             self._write_status("busy", "LIVE DEPLOYMENT ALREADY IN PROGRESS")
             return
-        tracks = expand_percussion_specs(request.get("tracks", []))
-        if request.get("schema_version") not in (2, 3, 4, 5, 6, 7, 8, 9, 10) or not tracks:
+        source_tracks = request.get("tracks", [])
+        if request.get("schema_version") not in (2, 3, 4, 5, 6, 7, 8, 9, 10, 11) or not source_tracks:
             raise RuntimeError("invalid or empty deployment request")
-        if request.get("sound_engine", "ableton_live_native") != "ableton_live_native":
+        sound_engine = request.get("sound_engine", "ableton_live_native")
+        if sound_engine == "midi_only":
+            self._deploy_midi_only(request, source_tracks)
+            return
+        if sound_engine != "ableton_live_native":
             raise RuntimeError("unsupported sound engine")
+        tracks = expand_percussion_specs(source_tracks)
         # Resolve the complete playback contract before touching the Set. This catches
         # unavailable identities and empty-container fallbacks without creating tracks.
         history = self._read_sound_history()
@@ -248,6 +254,56 @@ class PulsoDeployRemote(ControlSurface):
             raise
         self._write_status("loading", "STAGING {} TRACKS - LOADING VERIFIED SOUNDS".format(len(resolved)))
         self.schedule_message(2, self._load_next_device)
+
+    def _deploy_midi_only(self, request, tracks):
+        """Publish the authored clips unchanged and without committing to any sound."""
+        song = self.song()
+        previous = list(self._deployed_tracks)
+        staged = []
+        length_beats = float(request.get("length_beats", 4.0))
+        self._deployment_busy = True
+        if hasattr(song, "tempo"):
+            song.tempo = max(20.0, min(999.0, float(request.get("bpm", song.tempo))))
+        try:
+            for spec in tracks:
+                song.create_midi_track(-1)
+                track = song.tracks[len(song.tracks) - 1]
+                staged.append(track)
+                track.name = (str(spec.get("name", "PULSO Part")) + " | MIDI")[:120]
+                track.mute = False
+                self._create_arrangement_clip(track, spec, length_beats)
+                self._apply_mixer_defaults(track, spec)
+        except Exception:
+            self._remove_tracks(song, staged)
+            self._deployment_busy = False
+            raise
+        self._remove_tracks(song, previous)
+        self._previous_deployed_tracks = []
+        self._deployed_tracks = staged
+        self._verified_tracks = list(staged)
+        self._failed_tracks = []
+        self._device_queue = []
+        self._loaded_devices = 0
+        self._fallback_devices = 0
+        self._missing_devices = []
+        self._sound_report = [{
+            "track": str(spec.get("name", "PULSO Part")),
+            "track_key": str(spec.get("track_key", spec.get("name", "PULSO Part"))),
+            "catalog_id": str(spec.get("catalog_id", "")),
+            "state": "midi_only",
+        } for spec in tracks]
+        self._timbre_contracts = []
+        self._meter_probe_tracks = []
+        self._deployment_total = len(staged)
+        self._deployment_busy = False
+        self._write_status("complete", "MIDI ONLY COMPLETE - {}/{} EDITABLE TRACKS".format(
+            len(staged), len(tracks)), {
+                "committed_tracks": len(staged),
+                "sound_engine": "midi_only",
+                "devices_loaded": 0,
+                "notes_preserved": sum(len(spec.get("notes", ())) for spec in tracks),
+                "previous_deployment_preserved": False,
+            })
 
     def _load_next_device(self):
         if not self._running:
@@ -591,25 +647,36 @@ class PulsoDeployRemote(ControlSurface):
     @staticmethod
     def _apply_timbre_patch(device, spec):
         """Translate the semantic GPT signature into conservative native-synth edits."""
-        signature = spec.get("timbre_signature", {}) or {}
-        if not signature:
-            return {"status": "not_requested", "parameters_changed": []}
-        spectrum = {"dark": .30, "warm": .44, "neutral": .56,
-                    "bright": .72, "glassy": .84}.get(str(signature.get("spectrum")), .56)
-        envelope = str(signature.get("envelope", "natural"))
-        attack = {"percussive": .01, "pluck": .02, "short": .03, "gated": .04,
-                  "natural": .12, "sustained": .20, "swelling": .46}.get(envelope, .12)
-        release = {"percussive": .05, "pluck": .10, "short": .14, "gated": .08,
-                   "natural": .28, "sustained": .48, "swelling": .62}.get(envelope, .28)
-        motion = {"static": .03, "subtle": .16, "evolving": .36,
-                  "rhythmic": .48, "chaotic": .65}.get(str(signature.get("motion")), .16)
-        width = {"dry": .12, "close": .24, "wide": .62,
-                 "deep": .48, "wet": .72}.get(str(signature.get("space")), .24)
-        uniqueness = max(0.0, min(1.0, float(signature.get("uniqueness", .5))))
-        seed_text = "{}:{}".format(spec.get("sound_selection_seed", "0"),
-                                    spec.get("sound_variation", 0))
-        jitter = (int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest()[:8], 16) /
-                  float(0xffffffff) - .5) * .12 * uniqueness
+        neutral = str(spec.get("audition_policy", "")).casefold() == "neutral_role_v1"
+        profile = str(spec.get("audition_profile", "chord")).casefold()
+        if neutral:
+            patch = neutral_patch(profile)
+            spectrum = patch["cutoff"]
+            attack = patch["attack"]
+            release = patch["release"]
+            motion = patch["motion"]
+            width = patch["width"]
+            jitter = 0.0
+        else:
+            signature = spec.get("timbre_signature", {}) or {}
+            if not signature:
+                return {"status": "not_requested", "parameters_changed": []}
+            spectrum = {"dark": .30, "warm": .44, "neutral": .56,
+                        "bright": .72, "glassy": .84}.get(str(signature.get("spectrum")), .56)
+            envelope = str(signature.get("envelope", "natural"))
+            attack = {"percussive": .01, "pluck": .02, "short": .03, "gated": .04,
+                      "natural": .12, "sustained": .20, "swelling": .46}.get(envelope, .12)
+            release = {"percussive": .05, "pluck": .10, "short": .14, "gated": .08,
+                       "natural": .28, "sustained": .48, "swelling": .62}.get(envelope, .28)
+            motion = {"static": .03, "subtle": .16, "evolving": .36,
+                      "rhythmic": .48, "chaotic": .65}.get(str(signature.get("motion")), .16)
+            width = {"dry": .12, "close": .24, "wide": .62,
+                     "deep": .48, "wet": .72}.get(str(signature.get("space")), .24)
+            uniqueness = max(0.0, min(1.0, float(signature.get("uniqueness", .5))))
+            seed_text = "{}:{}".format(spec.get("sound_selection_seed", "0"),
+                                        spec.get("sound_variation", 0))
+            jitter = (int(hashlib.sha256(seed_text.encode("utf-8")).hexdigest()[:8], 16) /
+                      float(0xffffffff) - .5) * .12 * uniqueness
         targets = (("filter cutoff", ("filter freq", "filter cutoff", "cutoff"), spectrum + jitter),
                    ("attack", ("attack",), attack),
                    ("release", ("release",), release),
@@ -640,7 +707,9 @@ class PulsoDeployRemote(ControlSurface):
                     break
                 except (AttributeError, RuntimeError, TypeError, ValueError):
                     continue
-        return {"status": "applied" if changed else "no_supported_parameters",
+        return {"status": ("neutral_applied" if neutral else "applied") if changed
+                          else "no_supported_parameters",
+                "audition_profile": profile if neutral else None,
                 "parameters_changed": changed}
         self.schedule_message(6, self._probe_audible_output)
 

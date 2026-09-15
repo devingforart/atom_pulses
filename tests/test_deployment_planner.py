@@ -4,6 +4,26 @@ from ableton.PulsoDeployRemote.deployment_planner import resolve_deployment
 
 
 class DeploymentPlannerTests(unittest.TestCase):
+    def test_neutral_audition_bypasses_poetic_preset_search_deterministically(self):
+        items = [
+            ("Breathy Flute.adg", "Sounds/Winds/Breathy Flute.adg", "flute"),
+            ("Wavetable", "Instruments/Wavetable", "wavetable"),
+            ("Drift", "Instruments/Drift", "drift"),
+        ]
+        track = {
+            "name": "Impossible Rare Flute", "department": "melody", "catalog_id": "flute",
+            "preset_intent": "breathy orchestral flute", "audition_policy": "neutral_role_v1",
+            "notes": [{"pitch": 72, "start": 0.0}],
+        }
+        plan = resolve_deployment(items, [track])
+        self.assertEqual(len(plan["resolved"]), 1)
+        spec, match = plan["resolved"][0]
+        self.assertEqual(match[0], "Wavetable")
+        self.assertEqual(spec["authored_preset_intent"], "breathy orchestral flute")
+        self.assertEqual(plan["timbre_contracts"][0]["deployment_policy"],
+                         "neutral_role_audition")
+        self.assertFalse(plan["blocking_timbres"])
+
     def test_preflight_expands_distinct_hat_variants_and_keeps_critical_kick(self):
         items = [
             ("Kick 909 Tight.wav", "Drums/Drum Hits/Kick/Kick 909 Tight.wav", "kick"),

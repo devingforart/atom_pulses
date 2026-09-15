@@ -576,11 +576,36 @@ void runGeneratorTests() {
     sequenceOwner.name = "Hypnotic Sequence";
     sequenceOwner.sourceVoice = VoiceId::HarmonicPulse;
     sequenceOwner.orchestralFunction = "motion";
+    sequenceOwner.role = "evolving recurrence primary_motion_owner";
     motionContract.instruments = {transitionPulse, sequenceOwner};
     require(ElectronicRoleContract::requiresMotionOwner(motionContract) &&
                 ElectronicRoleContract::motionOwnerCount(motionContract) == 1 &&
                 !ElectronicRoleContract::motionOwner(transitionPulse),
             "A transition label cannot satisfy the percussion-free electronic motion contract");
+    std::vector<InstrumentAssignment> motionEnsemble;
+    for (int index = 0; index < 5; ++index) {
+        auto candidate = sequenceOwner;
+        candidate.id = "motion_" + std::to_string(index);
+        candidate.instrumentId = index == 2 ? "hypnotic_arp" : "fm_sequence";
+        candidate.role = index == 4 ? "orbit primary_motion_owner" : "complementary sequence";
+        candidate.prominence = .4 + static_cast<double>(index) * .1;
+        motionEnsemble.push_back(std::move(candidate));
+    }
+    const auto elected = ElectronicRoleContract::electPrimaryMotionOwner(motionEnsemble);
+    require(elected && *elected == 4 &&
+                std::count_if(motionEnsemble.begin(), motionEnsemble.end(), [](const auto& part) {
+                    return ElectronicRoleContract::motionOwner(part);
+                }) == 1 &&
+                std::count_if(motionEnsemble.begin(), motionEnsemble.end(), [](const auto& part) {
+                    return ElectronicRoleContract::motionCandidate(part) &&
+                           !ElectronicRoleContract::motionOwner(part);
+                }) == 4,
+            "Five complementary motion instruments must retain one stable primary and four supporting roles");
+    require(std::all_of(motionEnsemble.begin(), motionEnsemble.end(), [](const auto& part) {
+                return part.role.find("primary_motion_owner") != std::string::npos ||
+                       part.role.find("supporting_motion") != std::string::npos;
+            }),
+            "Motion election must preserve and explicitly classify every authored candidate");
     motionContract.summary = "static work without motion";
     require(!ElectronicRoleContract::requiresMotionOwner(motionContract),
             "A deliberately static electronic work must remain exempt from sequencer motion");
@@ -2493,11 +2518,13 @@ void runGeneratorTests() {
     sparseHitPlacement.sectionIndex = 0;
     sparseHitPlacement.fragmentEnd = 4.0;
     sparseRhythmScore.placements.push_back(std::move(sparseHitPlacement));
-    require(SelectiveRepair::performanceDeficits(
-                rhythmCoveragePlan, sparseRhythmScore, {0}).empty() &&
-                SelectiveRepair::incompleteTargets(
-                    rhythmCoveragePlan, sparseRhythmScore, {0}).empty(),
-            "AI rhythm articulation must use the advertised one-note TrackViability contract");
+    const auto authoredRhythmDeficits = SelectiveRepair::performanceDeficits(
+        rhythmCoveragePlan, sparseRhythmScore, {0});
+    require(authoredRhythmDeficits.size() == 1 &&
+                authoredRhythmDeficits.front().minimumActiveBars >= 4 &&
+                authoredRhythmDeficits.front().minimumNotes >= 6 &&
+                authoredRhythmDeficits.front().minimumPhrases >= 2,
+            "AI rhythm lanes must author a sectional narrative instead of passing with one token hit");
     rhythmCoveragePlan.instrumentCastAuthored = false;
     const auto legacyRhythmDeficits = SelectiveRepair::performanceDeficits(
         rhythmCoveragePlan, sparseRhythmScore, {0});
@@ -2808,12 +2835,15 @@ void runGeneratorTests() {
                     part.id, true, NoteOrigin::AiAuthored});
         }
     }
+    const auto authoredAttentionNotes = std::count_if(attentionPattern.notes.begin(), attentionPattern.notes.end(),
+        [](const auto& note) { return note.origin == NoteOrigin::AiAuthored; });
     const auto attentionReport = AttentionDirector::shape(attentionPattern, attentionPlan);
-    require(attentionReport.active && attentionReport.averageActivePartsAfter + 1.0 <
-                attentionReport.averageActivePartsBefore &&
-                attentionReport.peakActivePartsAfter <= 9 &&
-                attentionReport.overcrowdedBarsAfter < attentionReport.overcrowdedBarsBefore,
-            "Attention direction must reduce persistent tutti without flattening the energy budget");
+    require(attentionReport.active && attentionReport.densityNotesRemoved == 0 &&
+                attentionReport.authoredNotesPreserved >= authoredAttentionNotes -
+                    attentionReport.semanticNotesRemoved &&
+                attentionReport.averagePerceptualLoadBefore > 0.0 &&
+                attentionReport.averagePerceptualLoadAfter > 0.0,
+            "Perceptual attention must measure the fabric without deleting Terra material for a track-count ceiling");
     std::set<int> transitionBars;
     for (const auto& note : attentionPattern.notes)
         if (note.partId == 16)
@@ -2833,14 +2863,13 @@ void runGeneratorTests() {
     std::set_intersection(retainedLeadBars.begin(), retainedLeadBars.end(),
                           retainedAnswerBars.begin(), retainedAnswerBars.end(),
                           std::back_inserter(retainedDialogueOverlap));
-    require(retainedAnswerNotes <= 39 && retainedDialogueOverlap.size() <= 5,
-            "A response voice must remain subordinate in both note count and simultaneous speaking bars");
-    require(attentionReport.structuralBreathBars >= 1 &&
-                attentionReport.phraseBreathsCreated > 0,
-            "Attention direction must create both phrase and structural breath");
-    require(std::none_of(attentionPattern.notes.begin(), attentionPattern.notes.end(), [](const auto& note) {
+    require(retainedAnswerNotes == 64 && retainedDialogueOverlap.size() == 32,
+            "Authored dialogue must survive even when it overlaps the protagonist");
+    require(attentionReport.phraseBreathsCreated == 0,
+            "Perceptual direction must recognize authored breath rather than manufacture it by deleting notes");
+    require(std::any_of(attentionPattern.notes.begin(), attentionPattern.notes.end(), [](const auto& note) {
                 return note.voice == VoiceId::SubBass && note.startBeat < 64.0 && note.endBeat() > 60.0;
-            }), "A persistent low-end anchor must withdraw at a sixteen-bar phrase boundary");
+            }), "A Terra-authored low-end anchor must not be removed at a procedural phrase boundary");
     require(attentionReport.harmonicFloorCoverageBefore < .10 &&
                 attentionReport.harmonicFloorCoverageAfter >= .90 &&
                 attentionReport.floorNotesCreated > 0,
@@ -2852,4 +2881,141 @@ void runGeneratorTests() {
                            nearestPitchInScale(note.pitch, 2, ScaleKind::Minor) == note.pitch;
                 }),
             "Attention direction may transform AI intent but must not introduce procedural or off-key material");
+
+    SongPlan deepFloorPlan = attentionPlan;
+    deepFloorPlan.totalBars = 8;
+    deepFloorPlan.sections.resize(1);
+    deepFloorPlan.sections.front().bars = 8;
+    deepFloorPlan.sections.front().energy = .82;
+    deepFloorPlan.sections.front().density = .78;
+    Pattern deepFloorPattern;
+    deepFloorPattern.lengthBeats = 32.0;
+    for (std::uint16_t id = 1; id <= 4; ++id) {
+        InstrumentPart part;
+        part.id = id;
+        part.catalogId = "deep_floor_" + std::to_string(id);
+        part.name = part.catalogId;
+        part.sourceVoice = VoiceId::HarmonicFoundation;
+        part.department = ScoreDepartment::Harmony;
+        part.role = id == 1 ? "foundation" : "body";
+        part.orchestralFunction = part.role;
+        part.minimumPitch = 42 + id * 3;
+        part.maximumPitch = 82;
+        part.prominence = .82 - id * .05;
+        deepFloorPattern.parts.push_back(std::move(part));
+    }
+    for (auto bar = 0; bar < 8; ++bar)
+        deepFloorPattern.notes.push_back({bar * 4.0, 3.9, 50, 58, 3,
+            VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
+    const auto deepFloorReport = AttentionDirector::shape(deepFloorPattern, deepFloorPlan);
+    for (auto bar = 0; bar < 8; ++bar) {
+        std::set<std::uint16_t> floorParts;
+        for (const auto& note : deepFloorPattern.notes)
+            if (note.startBeat < (bar + 1) * 4.0 && note.endBeat() > bar * 4.0)
+                floorParts.insert(note.partId);
+        require(floorParts.size() == 4,
+                "A high-density electronic section must support four complementary harmonic floor layers");
+    }
+    require(deepFloorReport.densityNotesRemoved == 0 && deepFloorReport.floorNotesCreated == 24,
+            "Deep-floor completion must add harmonic depth without deleting authored notes");
+
+    SongPlan largeCast;
+    largeCast.totalBars = 96;
+    largeCast.beatsPerBar = 4.0;
+    largeCast.instrumentCastAuthored = true;
+    largeCast.productionLanguage.domain = ProductionDomain::ClubElectronic;
+    largeCast.productionLanguage.electronicIntent = .95;
+    largeCast.sections.push_back({"Journey", "development", "minor pedal", "evolve",
+                                  0, 96, .62, .58, .55});
+    for (auto index = 0; index < 30; ++index) {
+        InstrumentAssignment part;
+        part.id = "cast_" + std::to_string(index);
+        const auto essential = index < 20;
+        part.instrumentId = essential && index % 3 == 0 ? "analog_pad" : "poly_synth";
+        part.name = "Cast " + std::to_string(index);
+        part.sourceVoice = essential
+            ? (index % 3 == 0 ? VoiceId::HarmonicFoundation : VoiceId::HarmonicUpper)
+            : VoiceId::Atmosphere;
+        part.role = essential ? (index % 3 == 0 ? "harmonic floor" : "inner harmonic body")
+                              : "ornamental atmospheric colour";
+        part.minimumPitch = 48;
+        part.maximumPitch = 88;
+        part.prominence = essential ? .90 - index * .01 : .28;
+        part.orchestralFunction = essential ? (index % 3 == 0 ? "foundation" : "body") : "color";
+        part.contentLaneId = part.id;
+        part.lineRelationship = "independent";
+        largeCast.instruments.push_back(std::move(part));
+    }
+    largeCast.narrativeSpine.protagonistInstrumentId = largeCast.instruments.front().id;
+    ElectronicCompositionFabric::normalizePlan(largeCast);
+    std::set<std::string> pitchedLanes;
+    for (const auto& part : largeCast.instruments)
+        pitchedLanes.insert(part.contentLaneId);
+    require(pitchedLanes.size() == 20 &&
+                std::all_of(largeCast.instruments.begin(), largeCast.instruments.begin() + 20,
+                    [](const auto& part) { return part.lineRelationship == "independent"; }) &&
+                std::all_of(largeCast.instruments.begin() + 20, largeCast.instruments.end(),
+                    [](const auto& part) { return part.lineRelationship == "timbral_handoff"; }),
+            "A large cast must preserve real harmonic owners and relay only ornamental colour");
+    std::vector<std::pair<std::string, std::string>> frozenArchitecture;
+    for (const auto& part : largeCast.instruments)
+        frozenArchitecture.emplace_back(part.contentLaneId, part.lineRelationship);
+    PerformanceCell frozenCell;
+    frozenCell.id = "frozen_owner_cell";
+    frozenCell.ownedVoices = {largeCast.instruments.front().sourceVoice};
+    AuthoredNote frozenNote;
+    frozenNote.instrumentId = largeCast.instruments.front().id;
+    frozenNote.voice = largeCast.instruments.front().sourceVoice;
+    frozenCell.notes.push_back(std::move(frozenNote));
+    largeCast.performanceScore.cells.push_back(std::move(frozenCell));
+    PerformancePlacement frozenPlacement;
+    frozenPlacement.cellId = "frozen_owner_cell";
+    largeCast.performanceScore.placements.push_back(std::move(frozenPlacement));
+    ElectronicCompositionFabric::normalizePlan(largeCast);
+    require(std::equal(largeCast.instruments.begin(), largeCast.instruments.end(),
+                       frozenArchitecture.begin(), [](const auto& part, const auto& frozen) {
+                           return part.contentLaneId == frozen.first &&
+                                  part.lineRelationship == frozen.second;
+                       }),
+            "Final normalization must not re-elect content owners after AI performance writing");
+    largeCast.instruments[20].contentLaneId = "orphan_renderer_lane";
+    ElectronicCompositionFabric::normalizePlan(largeCast);
+    require(largeCast.instruments[20].contentLaneId != "orphan_renderer_lane" &&
+                ElectronicCompositionFabric::rendererOwnedDestination(
+                    largeCast, largeCast.instruments[20]),
+            "An orphan renderer destination must be attached locally to a canonical independent owner");
+    const auto deferredDestinationDeficits = SelectiveRepair::performanceDeficits(
+        largeCast, largeCast.performanceScore, {20});
+    require(deferredDestinationDeficits.empty(),
+            "AI-score validation must defer a canonical renderer-owned destination until handoff realization");
+    Pattern handoffPattern;
+    handoffPattern.lengthBeats = largeCast.totalBars * largeCast.beatsPerBar;
+    for (std::size_t index = 0; index < largeCast.instruments.size(); ++index) {
+        const auto& source = largeCast.instruments[index];
+        handoffPattern.parts.push_back({static_cast<std::uint16_t>(index + 1), source.instrumentId,
+            source.name, source.sourceVoice, ScoreDepartment::Harmony, source.role,
+            source.minimumPitch, source.maximumPitch, source.prominence,
+            instrumentSoundModel(source.instrumentId), source.orchestralFunction,
+            source.articulation, source.divisiVoices, source.liveDevice,
+            source.livePresetIntent, source.timbre, source.contentLaneId,
+            source.lineRelationship});
+    }
+    std::set<std::string> authoredLanes;
+    for (std::size_t index = 0; index < largeCast.instruments.size(); ++index) {
+        const auto& owner = largeCast.instruments[index];
+        if (!authoredLanes.insert(owner.contentLaneId).second) continue;
+        for (auto phrase = 0; phrase < 24; ++phrase)
+            handoffPattern.notes.push_back({phrase * 16.0, 3.5, 55 + static_cast<int>(index % 12),
+                64, voiceDefinition(owner.sourceVoice).midiChannel, owner.sourceVoice,
+                static_cast<std::uint16_t>(index + 1), true, NoteOrigin::AiAuthored,
+                static_cast<std::uint32_t>(1000 + index)});
+    }
+    const auto notesBeforeHandoff = handoffPattern.notes.size();
+    const auto handoffReport = ElectronicCompositionFabric::realizeTimbralHandoffs(
+        handoffPattern, largeCast);
+    require(handoffReport.active && handoffReport.exactCast &&
+                handoffReport.populatedDestinations == largeCast.instruments.size() &&
+                handoffPattern.notes.size() == notesBeforeHandoff &&
+                handoffReport.notesReassigned > 0,
+            "Timbral handoffs must publish every requested track without cloning or inventing notes");
 }

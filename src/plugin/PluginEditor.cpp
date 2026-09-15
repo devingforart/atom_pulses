@@ -86,7 +86,8 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
         processor.setLayerLocked(layer, false);
 
     deployLiveButton.onClick = [this] {
-        processor.deployCurrentSongToLive(false);
+        const auto midiOnly = juce::ModifierKeys::getCurrentModifiersRealtime().isShiftDown();
+        processor.deployCurrentSongToLive(false, midiOnly);
     };
 
     languageSelector.setComponentID("language-selector");
@@ -134,8 +135,8 @@ void PulsoAudioProcessorEditor::applyTranslations() {
     status.setTooltip(tr(language, TextId::StatusTip));
     languageSelector.setTooltip(tr(language, TextId::LanguageTip));
     deployLiveButton.setTooltip(language == UiLanguage::Spanish
-        ? juce::String::fromUTF8("Crea la orquestaci\xC3\xB3n completa en Arrangement, escribe los clips MIDI y carga instrumentos nativos compatibles.")
-        : "Creates or updates Arrangement tracks, writes MIDI clips and sequentially loads compatible native devices or Racks.");
+        ? juce::String::fromUTF8("Crea todas las pistas MIDI con una paleta neutral y predecible de Live. Mant\xC3\xA9n Shift al hacer clic para crear solamente el MIDI, sin instrumentos.")
+        : "Creates every MIDI track with a neutral, predictable Live palette. Hold Shift while clicking to create MIDI only, without instruments.");
     patternView.languageChanged();
     compositionProgress.setLanguage(language);
 
@@ -194,7 +195,7 @@ void PulsoAudioProcessorEditor::timerCallback() {
                        juce::String(processor.currentCompositionSeed()) + "." +
                        juce::String(processor.currentVariationIndex()),
                    juce::dontSendNotification);
-    deployLiveButton.setEnabled(processor.liveNativeInventoryReady() && !composing && processor.currentPattern() != nullptr &&
+    deployLiveButton.setEnabled(processor.liveBridgeAvailable() && !composing && processor.currentPattern() != nullptr &&
                                 !processor.currentPattern()->notes.empty());
     if (processor.currentLiveDeployStatus().isNotEmpty())
         deployLiveButton.setTooltip(tr(language, TextId::DeployLiveTip) + "\n" +

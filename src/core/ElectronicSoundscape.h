@@ -39,7 +39,7 @@ struct ElectronicSoundscapePlan {
     bool percussionFree{};
     std::string scene;
     std::string spatialNarrative;
-    double targetMedianActiveLayers{3.0};
+    double targetMedianActiveLayers{7.0};
     std::vector<SoundscapeLayerPlan> layers;
 };
 

@@ -1,5 +1,6 @@
 #include "SelectiveRepair.h"
 
+#include "ElectronicCompositionFabric.h"
 #include "ElectronicRoleContract.h"
 #include "PerformanceScore.h"
 #include "TrackViability.h"
@@ -460,6 +461,14 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
         const auto protagonist = instrument.id == plan.narrativeSpine.protagonistInstrumentId;
         const auto answer = instrument.lineRelationship == "call_response";
         const auto motion = ElectronicRoleContract::motionOwner(instrument);
+        // A shared timbral destination is realized from its content owner after the
+        // complete score has been assembled. Asking GPT for the full phrase again
+        // wastes tokens on a clone. The content lane itself must still be authored;
+        // only its additional orchestration destinations are exempt in this phase.
+        // The owner itself remains in candidates and therefore carries any missing-
+        // material failure. Testing the destination before its render pass is a false
+        // direct-identity failure and used to discard complete AI scores.
+        if (ElectronicCompositionFabric::rendererOwnedDestination(plan, instrument)) continue;
         const auto minimumNotes = rareEvent ? std::size_t{1} : protagonist || motion
             ? std::size_t{6} : answer ? std::size_t{4} : std::size_t{3};
         const auto minimumSections = rareEvent || plan.sections.size() < 4

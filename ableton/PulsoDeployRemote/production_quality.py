@@ -37,6 +37,9 @@ def evaluate_creative_quality(request):
     retained_tracks = int(_number(request, "retained_viability_tracks", 0.0))
     viable_tracks = int(_number(request, "viable_instrument_tracks", 0.0))
     token_tracks = int(_number(request, "token_instrument_tracks", 0.0))
+    exact_cast_declared = "exact_instrument_cast_published" in request
+    exact_cast = bool(request.get("exact_instrument_cast_published", True))
+    density_notes_removed = int(_number(request, "density_notes_removed", 0.0))
 
     codes = []
     if foreground_notes >= 8 and foreground < 0.85:
@@ -75,6 +78,10 @@ def evaluate_creative_quality(request):
             codes.append("token_instrument_tracks_present")
         if not viability_ready or viability_score < 0.90:
             codes.append("instrument_cast_exceeds_authored_material")
+    if exact_cast_declared and not exact_cast:
+        codes.append("requested_instrument_cast_not_fully_published")
+    if density_notes_removed > 0:
+        codes.append("authored_material_removed_by_density")
     if score < 0.76:
         codes.append("creative_score_below_gate")
     if request.get("creative_ready") is False and "creative_score_below_gate" not in codes:
@@ -101,4 +108,9 @@ def evaluate_creative_quality(request):
         "retained_viability_tracks": retained_tracks,
         "viable_instrument_tracks": viable_tracks,
         "token_instrument_tracks": token_tracks,
+        "exact_instrument_cast_published": exact_cast,
+        "density_notes_removed": density_notes_removed,
+        "semantic_notes_removed": int(_number(request, "semantic_notes_removed", 0.0)),
+        "authored_notes_preserved": int(_number(request, "authored_notes_preserved", 0.0)),
+        "average_perceptual_load_after": _number(request, "average_perceptual_load_after", 0.0),
     }

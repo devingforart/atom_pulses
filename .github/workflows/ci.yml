@@ -25,11 +25,11 @@ jobs:
         with:
           submodules: recursive
       - name: Configure plugin
-        run: cmake --preset windows-release
+        run: cmake -S . -B build/plugin -DPULSO_BUILD_PLUGIN=ON
       - name: Build plugin
-        run: cmake --build --preset windows-release --parallel
-      - name: Test
-        run: ctest --preset windows-release
+        run: cmake --build build/plugin --config Release --parallel
+      - name: Test plugin
+        run: ctest --test-dir build/plugin -C Release --output-on-failure
         
       # CD: Guardar el artefacto final para poder descargarlo
       - name: Upload VST3 Plugin

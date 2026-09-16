@@ -9,6 +9,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Configure core
         run: cmake -S . -B build/core -DPULSO_BUILD_PLUGIN=OFF
       - name: Build core
@@ -20,10 +22,19 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Configure plugin
         run: cmake --preset windows-release
       - name: Build plugin
         run: cmake --build --preset windows-release --parallel
       - name: Test
         run: ctest --preset windows-release
-
+        
+      # CD: Guardar el artefacto final para poder descargarlo
+      - name: Upload VST3 Plugin
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: AtomPulses-Windows-VST3
+          path: "**/*.vst3"

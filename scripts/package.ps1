@@ -45,7 +45,24 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-P
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE.md') -Destination (Join-Path $stage 'LICENSE.md')
 Copy-Item -Path (Join-Path $projectRoot 'docs\*.md') -Destination (Join-Path $stage 'Documentation')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'ableton\PulsoDeployRemote') -Destination (Join-Path $stage 'AbletonBridge\PulsoDeployRemote') -Recurse
-Copy-Item -LiteralPath (Join-Path $projectRoot 'scripts\install-ableton-bridge.ps1') -Destination (Join-Path $stage 'AbletonBridge\install-ableton-bridge.ps1')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'scripts\install-package.ps1') -Destination (Join-Path $stage 'Install-PULSO.ps1')
+Copy-Item -LiteralPath (Join-Path $projectRoot 'scripts\configure-openai.ps1') -Destination (Join-Path $stage 'Configure-OpenAI.ps1')
+
+$installText = @"
+PULSO $version - Windows x64
+
+1. Cierre Ableton Live y cualquier host que tenga PULSO cargado.
+2. Abra PowerShell como administrador en esta carpeta.
+3. Ejecute: powershell -ExecutionPolicy Bypass -File .\Install-PULSO.ps1
+4. Reinicie Ableton Live.
+5. En Preferencias > Link, Tempo y MIDI, seleccione PulsoDeployRemote como superficie de control.
+6. Abra PULSO, pulse CONFIGURAR IA, pegue la clave y use PROBAR y GUARDAR.
+
+La clave de OpenAI no se incluye en este paquete. Tambien puede usar Configure-OpenAI.ps1
+como alternativa automatizable; PULSO detecta ambos metodos.
+"@
+[System.IO.File]::WriteAllText((Join-Path $stage 'INSTALL.txt'), $installText,
+    [System.Text.UTF8Encoding]::new($false))
 
 Compress-Archive -LiteralPath $stage -DestinationPath $archive -CompressionLevel Optimal
 $hash = Get-FileHash -LiteralPath $archive -Algorithm SHA256

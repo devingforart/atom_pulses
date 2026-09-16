@@ -1655,7 +1655,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                                 (context.scale == ScaleKind::Major ? "major" : "minor");
                 metadata->description = aiError.isNotEmpty()
                     ? "GPT unavailable: " + aiError + ". Generated safely with the local composition engine."
-                    : "Coherent deterministic composition generated locally. Add OPENAI_API_KEY and restart the host for GPT.";
+                    : "Coherent deterministic composition generated locally. Open SET UP AI to connect GPT.";
                 metadata->status = aiError.isNotEmpty() ? "LOCAL FALLBACK · GPT UNAVAILABLE" : "LOCAL ENGINE";
             }
             PerformanceExpression::applyIdeaDefaults(generated, currentTempo(), newest.beatsPerBar);

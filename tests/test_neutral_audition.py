@@ -1,7 +1,8 @@
 import unittest
 
 from ableton.PulsoDeployRemote.neutral_audition import (
-    apply_neutral_contract, audition_profile, neutral_patch, select_neutral_sound)
+    apply_neutral_contract, audition_profile, is_audition_fallback, neutral_patch,
+    select_neutral_sound)
 
 
 class NeutralAuditionTests(unittest.TestCase):
@@ -43,6 +44,21 @@ class NeutralAuditionTests(unittest.TestCase):
     def test_release_limits_are_short_and_versioned_by_role(self):
         self.assertLessEqual(neutral_patch("arp")["release"], 0.12)
         self.assertLessEqual(neutral_patch("pad")["release"], 0.60)
+
+    def test_poetic_upper_air_and_cello_pedal_keep_their_sustained_function(self):
+        self.assertEqual(audition_profile({
+            "department": "harmony", "catalog_id": "shimmer_tail",
+            "name": "Spectral Upper Air", "role": "upper air",
+        }), "texture")
+        self.assertEqual(audition_profile({
+            "department": "harmony", "catalog_id": "cello",
+            "name": "Cello Pedal", "role": "harmonic pedal",
+        }), "pad")
+
+    def test_neutral_audition_is_not_reported_as_a_missing_sound(self):
+        self.assertFalse(is_audition_fallback("identity"))
+        self.assertFalse(is_audition_fallback("neutral_audition"))
+        self.assertTrue(is_audition_fallback("device_fallback"))
 
 
 if __name__ == "__main__":

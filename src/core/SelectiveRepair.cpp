@@ -300,6 +300,13 @@ std::vector<PerformanceConstraint> SelectiveRepair::classifyPerformanceDeficits(
     bool explicitCastCommitment) {
     std::vector<PerformanceConstraint> result;
     for (auto& deficit : deficits) {
+        if (plan.percussionFreeIntent && deficit.instrumentIndex < plan.instruments.size()) {
+            const auto& instrument = plan.instruments[deficit.instrumentIndex];
+            const auto* definition = instrumentDefinition(instrument.instrumentId);
+            if ((definition != nullptr && definition->department == ScoreDepartment::Rhythm) ||
+                isVoiceInFamily(instrument.sourceVoice, VoiceFamily::Rhythm))
+                continue;
+        }
         PerformanceConstraint constraint;
         constraint.evidence = std::move(deficit);
         const auto essential = constraint.evidence.instrumentId ==

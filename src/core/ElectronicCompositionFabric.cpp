@@ -1,6 +1,7 @@
 #include "ElectronicCompositionFabric.h"
 
 #include "ElectronicRoleContract.h"
+#include "HarmonicFloorContext.h"
 #include "OrchestrationScore.h"
 #include "Scale.h"
 #include "SongComposer.h"
@@ -1379,8 +1380,12 @@ ElectronicFabricReport ElectronicCompositionFabric::audit(const Pattern& pattern
         floorLayers.push_back(active.size());
     }
     if (!floorLayers.empty()) {
-        report.harmonicFloorCoverage = static_cast<double>(std::count_if(floorLayers.begin(), floorLayers.end(),
-            [](auto layers) { return layers >= 2; })) / static_cast<double>(floorLayers.size());
+        auto covered = std::size_t{};
+        for (std::size_t bar = 0; bar < floorLayers.size(); ++bar)
+            if (floorLayers[bar] >= HarmonicFloorContext::requiredLayers(
+                    plan, static_cast<double>(bar) * plan.beatsPerBar)) ++covered;
+        report.harmonicFloorCoverage = static_cast<double>(covered) /
+            static_cast<double>(floorLayers.size());
         auto copy = floorLayers;
         const auto middle = copy.begin() + static_cast<std::ptrdiff_t>(copy.size() / 2);
         std::nth_element(copy.begin(), middle, copy.end());

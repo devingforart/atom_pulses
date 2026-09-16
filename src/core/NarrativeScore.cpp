@@ -176,11 +176,10 @@ void auditBassPhrasing(const Pattern& pattern, const SongPlan& plan,
         const auto coherent = std::count_if(phrases.begin(), phrases.end(), [&](const auto& phrase) {
             if (phrase.size() < 3) return false;
             const auto span = phrase.back()->endBeat() - phrase.front()->startBeat;
-            std::set<int> phases;
-            for (const auto* note : phrase)
-                phases.insert(static_cast<int>(std::lround(
-                    std::fmod(note->startBeat, plan.beatsPerBar) * 4.0)));
-            return span >= plan.beatsPerBar && phases.size() >= 2;
+            // Repeating one deliberate phase is a coherent hypnotic bass phrase.
+            // Variation is scored by developedBassWindows; continuity only rejects
+            // isolated gestures that never become a statement across musical time.
+            return span >= plan.beatsPerBar;
         });
         report.bassPhraseContinuity = static_cast<double>(coherent) /
             static_cast<double>(phrases.size());

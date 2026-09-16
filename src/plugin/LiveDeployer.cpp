@@ -39,20 +39,28 @@ juce::String neutralAuditionProfile(ScoreDepartment department, const juce::Stri
     const auto identity = catalogId.toLowerCase();
     const auto words = (identity.replaceCharacter('_', ' ') + " " + intent).toLowerCase();
     if (department == ScoreDepartment::Rhythm) return "drum";
-    if (identity == "sub_synth" || words.containsWholeWord("sub")) return "sub";
-    if (words.contains("bass") || words.contains("reese") || words.contains("low end")) return "bass";
+    if (identity == "sub_synth") return "sub";
+    if (identity == "ambient_texture" || identity == "granular_pad" ||
+        identity == "spectral_drone" || identity == "noise_riser" ||
+        identity == "shimmer_tail" || identity == "vocal_chop_texture") return "texture";
+    if (identity == "analog_pad" || identity == "string_ensemble" ||
+        identity == "chamber_strings" || identity == "choir") return "pad";
+    if (words.contains("texture") || words.contains("noise") || words.contains("riser") ||
+        words.contains("shimmer") || words.contains("spectral") || words.contains("transition") ||
+        words.contains("atmos") || words.contains("ambient") || words.contains("upper air")) return "texture";
+    if (words.contains("pad") || words.contains("drone") || words.contains("sustain") ||
+        words.contains("foundation") || words.contains("pedal") || words.contains("floor") ||
+        words.contains("continuum") || words.contains("harmonic field")) return "pad";
+    if (identity == "electric_bass" || identity == "rolling_mid_bass" ||
+        identity == "reese_layer" || identity == "contrabass" ||
+        identity == "contrabassoon" || words.contains("bass line") ||
+        words.contains("low end")) return "bass";
     if (words.contains("arpegg") || words.contains("ostinato") || words.contains("sequence") ||
         words.containsWholeWord("pulse")) return "arp";
     if (words.contains("pluck") || words.contains("staccato") || words.contains("stab") ||
         words.contains("detached") || identity == "piano" || identity == "harp" ||
         identity == "guitar" || identity == "mallets" || identity == "marimba" ||
         identity == "vibraphone") return "pluck";
-    if (words.contains("texture") || words.contains("noise") || words.contains("riser") ||
-        words.contains("shimmer") || words.contains("spectral") || words.contains("transition") ||
-        words.contains("atmos") || words.contains("ambient")) return "texture";
-    if (words.contains("pad") || words.contains("drone") || words.contains("sustain") ||
-        words.contains("foundation") || words.contains("pedal") || words.contains("floor") ||
-        words.contains("choir") || words.contains("ensemble")) return "pad";
     if (department == ScoreDepartment::Melody || words.contains("lead") ||
         words.contains("protagonist") || words.contains("foreground") ||
         words.contains("countermelody")) return "lead";

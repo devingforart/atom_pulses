@@ -1,5 +1,26 @@
 # PULSO
 
+### 0.58.7 — exclusiones instrumentales coherentes de extremo a extremo
+
+- Una dirección explícita sin batería o percusión prevalece sobre el dominio musical inferido.
+- El manifiesto elimina instrumentos y voces rítmicas contradictorias antes de escribir las notas y completa el reparto únicamente con identidades compatibles.
+- La normalización ya no añade automáticamente kick, snare ni hats a un reparto adaptativo sin percusión.
+- La validación final ignora defensivamente cualquier identidad rítmica prohibida que pudiera sobrevivir en un plan antiguo, evitando rechazos falsos al terminar una composición costosa.
+
+### 0.58.6 — configuración segura de IA dentro de PULSO
+
+- `CONFIGURAR IA` permite pegar, guardar, probar y eliminar la clave sin salir del VST.
+- En Windows la credencial se conserva mediante Credential Manager y nunca se serializa en Ableton, presets o logs.
+- `OPENAI_API_KEY` continúa disponible como fallback para instalaciones automatizadas.
+- La prueba de conexión valida autenticación sin lanzar ni facturar una composición.
+
+### 0.58.5 — narrativa instrumental íntegra y respiración contextual
+
+- El bajo hipnótico de fase estable se reconoce como una frase coherente; su variación se evalúa por separado.
+- Las pistas testimoniales se desarrollan desde material GPT o se integran en un dueño compatible conservando notas, CC y expresión.
+- El piso armónico exige dos capas en secciones activas y una en breakdowns, intros y retiradas intencionales.
+- La audición neutral distingue correctamente pads, pedales y texturas, y ya no se informa como sonido faltante.
+
 ### 0.58.4 — audición neutral y MIDI limpio en Live
 
 `CREAR EN LIVE` ya no busca presets expresivos a partir de descripciones poéticas. Cada

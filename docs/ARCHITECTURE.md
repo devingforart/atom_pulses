@@ -1,5 +1,23 @@
 # Arquitectura
 
+## Precedencia de exclusiones explícitas (0.58.7)
+
+Las exclusiones del músico son restricciones de ejecución, no sugerencias estilísticas. Antes de dividir el reparto en bloques, `AiComposer` fuerza el estado `percussion_free`, retira cualquier instrumento o voz rítmica incompatible y deja que la reconciliación complete el número solicitado sólo con funciones compatibles.
+
+`SongComposer` conserva esa invariante durante todas las pasadas de densidad y cobertura: no crea los propietarios `auto_kick_drum`, `auto_snare_clap` ni `auto_hi_hats` cuando la percusión está prohibida, y vuelve a comprobar el reparto al cerrar la normalización. `SelectiveRepair` aplica una última defensa para impedir que una identidad prohibida se convierta en un compromiso bloqueante de publicación.
+
+## Frontera segura de credenciales (0.58.6)
+
+La clave de OpenAI no pertenece al estado musical. `ApiCredentialStore` resuelve primero una credencial genérica del usuario actual en Windows Credential Manager y utiliza `OPENAI_API_KEY` solamente como compatibilidad. El editor mantiene la entrada en un campo oculto, la borra tras guardarla y nunca la entrega al `AudioProcessorValueTreeState`, al XML del host ni al registro operativo.
+
+La comprobación de conexión ocurre fuera del hilo de audio y consulta autenticación sin iniciar una composición. El callback vuelve al message thread mediante una referencia segura al panel, por lo que cerrar el editor durante la prueba no deja accesos pendientes a la interfaz.
+
+## Cierre narrativo y compactación musical (0.58.5)
+
+La publicación aplica una última auditoría después de los relevos tímbricos. Una pista GPT con desarrollo suficiente permanece independiente; una pista testimonial transfiere íntegramente sus notas y eventos expresivos a un dueño funcional compatible. Esta compactación puede reducir el reparto nominal, pero sólo se acepta si no quedan pistas token, la viabilidad es completa y se conserva al menos el 75 % del ensamble propuesto.
+
+La profundidad armónica es contextual: las secciones activas requieren dos capas sostenidas y las secciones de respiración formal requieren una. Así, el sistema no confunde un breakdown deliberado con una orquestación incompleta.
+
 ## Frontera composición–audición (0.58.4)
 
 La partitura y su instrumentación semántica continúan siendo autoría del compositor AI. Al

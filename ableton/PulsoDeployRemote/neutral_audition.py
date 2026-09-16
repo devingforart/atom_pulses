@@ -50,9 +50,21 @@ def audition_profile(spec):
     words = " ".join((catalog.replace("_", " "), function, role, intent))
     if department == "rhythm":
         return "drum"
-    if catalog == "sub_synth" or "sub bass" in words or " sub " in " " + words + " ":
+    if catalog == "sub_synth":
         return "sub"
-    if any(value in words for value in ("bass", "reese", "low end")):
+    if catalog in {"ambient_texture", "granular_pad", "spectral_drone", "noise_riser",
+                   "shimmer_tail", "vocal_chop_texture"}:
+        return "texture"
+    if catalog in {"analog_pad", "string_ensemble", "chamber_strings", "choir"}:
+        return "pad"
+    if any(value in words for value in ("texture", "noise", "riser", "shimmer", "spectral",
+                                        "transition", "atmosphere", "ambient", "upper air")):
+        return "texture"
+    if any(value in words for value in ("pad", "drone", "sustained", "foundation", "pedal",
+                                        "floor", "continuum", "harmonic field")):
+        return "pad"
+    if catalog in {"electric_bass", "rolling_mid_bass", "reese_layer", "contrabass",
+                   "contrabassoon"} or any(value in words for value in ("bass line", "low end")):
         return "bass"
     if any(value in words for value in ("arpeggio", "arpeggiated", " arp", "ostinato",
                                         "sequence", "pulse")):
@@ -60,16 +72,15 @@ def audition_profile(spec):
     if any(value in words for value in ("pluck", "staccato", "stab", "detached", "mallet",
                                         "piano", "harp", "guitar")):
         return "pluck"
-    if any(value in words for value in ("texture", "noise", "riser", "shimmer", "spectral",
-                                        "transition", "atmosphere", "ambient")):
-        return "texture"
-    if any(value in words for value in ("pad", "drone", "sustained", "foundation", "pedal",
-                                        "floor", "choir", "ensemble")):
-        return "pad"
     if department == "melody" or any(value in words for value in
                                       ("lead", "protagonist", "foreground", "countermelody")):
         return "lead"
     return "chord"
+
+
+def is_audition_fallback(quality):
+    """True only when Live could not load the intended or neutral audition sound."""
+    return str(quality or "").casefold() not in {"identity", "neutral_audition"}
 
 
 def apply_neutral_contract(source):

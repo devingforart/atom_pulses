@@ -144,7 +144,26 @@ bool viable(const Evidence& value, const TrackViabilityContract& contract,
 bool protectedIndependentAuthorship(const InstrumentPart& part, const SongPlan& plan,
                                     const Evidence& value) noexcept {
     return plan.instrumentCastAuthored && !plan.performanceScore.empty() &&
-        part.lineRelationship == "independent" && value.authoredSeeds > 0;
+        part.lineRelationship == "independent" && value.authoredSeeds > 0 &&
+        value.notes >= 8 && value.activeBars >= 4 && value.phrases >= 2;
+}
+
+std::uint16_t primaryBassPartId(const Pattern& pattern, const SongPlan& plan) {
+    auto result = std::uint16_t{};
+    auto best = -1.0;
+    for (const auto& part : pattern.parts) {
+        if (functionFor(part, plan) != TrackFunction::Bass) continue;
+        const auto current = evidence(pattern, part.id, plan.beatsPerBar);
+        if (current.notes == 0) continue;
+        // A single narrative owner wins over nominal sub layers. Authored substance
+        // breaks ties, so a five-note label can never become the conductor by name.
+        const auto score = (part.sourceVoice == VoiceId::MovementBass ? 10000.0 : 0.0) +
+            static_cast<double>(current.authoredSeeds) * 12.0 +
+            static_cast<double>(current.activeBars) * 4.0 +
+            static_cast<double>(current.notes) + part.prominence;
+        if (score > best) { best = score; result = part.id; }
+    }
+    return result;
 }
 
 const SongSection* sectionAt(const SongPlan& plan, int bar) noexcept {
@@ -205,8 +224,10 @@ std::size_t develop(Pattern& pattern, const SongPlan& plan, const InstrumentPart
     auto before = evidence(pattern, part.id, plan.beatsPerBar);
     const auto authoredAiScore = plan.instrumentCastAuthored && !plan.performanceScore.empty();
     if (authoredAiScore && contract.function != TrackFunction::HarmonicFloor &&
-        contract.function != TrackFunction::Environment)
-        return 0;
+        contract.function != TrackFunction::Environment &&
+        contract.function != TrackFunction::Pulse &&
+        !(contract.function == TrackFunction::Bass &&
+          part.id == primaryBassPartId(pattern, plan))) return 0;
     // Only GPT-authored notes may seed new composition. A lone local placeholder is
     // evidence that the instrument was named but never actually written.
     if (before.authoredSeeds < 2 || contract.eventException) return 0;
@@ -365,6 +386,22 @@ void removePerformanceFor(Pattern& pattern, std::uint16_t partId) {
         [&](const auto& event) { return event.partId == partId; }), pattern.controls.end());
     pattern.expressions.erase(std::remove_if(pattern.expressions.begin(), pattern.expressions.end(),
         [&](const auto& event) { return event.partId == partId; }), pattern.expressions.end());
+}
+
+void transferPerformanceFor(Pattern& pattern, std::uint16_t sourceId,
+                            const InstrumentPart& target) {
+    for (auto& event : pattern.controls) {
+        if (event.partId != sourceId) continue;
+        event.partId = target.id;
+        event.voice = target.sourceVoice;
+        event.channel = voiceDefinition(target.sourceVoice).midiChannel;
+    }
+    for (auto& event : pattern.expressions) {
+        if (event.partId != sourceId) continue;
+        event.partId = target.id;
+        event.voice = target.sourceVoice;
+        event.channel = voiceDefinition(target.sourceVoice).midiChannel;
+    }
 }
 
 } // namespace
@@ -555,12 +592,16 @@ TrackViabilityReport TrackViability::enforce(Pattern& pattern, SongPlan& plan) {
             // evidence so the AI contract can repair it; only relays/doublings may merge.
             if (protectedIndependentAuthorship(source, plan, sourceEvidence)) continue;
             const InstrumentPart* target = nullptr;
+            const auto primaryBass = sourceContract.function == TrackFunction::Bass
+                ? primaryBassPartId(pattern, plan) : std::uint16_t{};
             for (const auto& candidate : pattern.parts) {
                 if (!viableParts.contains(candidate.id) || candidate.id == source.id) continue;
                 if (compatible(sourceContract.function, contractFor(candidate, plan).function,
                                source.department, candidate.department)) {
                     target = &candidate;
-                    if (sourceContract.function == contractFor(candidate, plan).function) break;
+                    if (primaryBass != 0) {
+                        if (candidate.id == primaryBass) break;
+                    } else if (sourceContract.function == contractFor(candidate, plan).function) break;
                 }
             }
             const auto preserveAuthoredEvent = sourceEvidence.authoredSeeds > 0 && target != nullptr;
@@ -572,13 +613,14 @@ TrackViabilityReport TrackViability::enforce(Pattern& pattern, SongPlan& plan) {
                     note.channel = voiceDefinition(target->sourceVoice).midiChannel;
                     note.pitch = nearestPitch(positiveModulo(note.pitch, 12), note.pitch, *target);
                 }
+                transferPerformanceFor(pattern, source.id, *target);
                 ++report.mergedTracks;
             } else {
                 pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(),
                     [&](const auto& note) { return note.partId == source.id; }), pattern.notes.end());
                 ++report.prunedTracks;
             }
-            removePerformanceFor(pattern, source.id);
+            if (!preserveAuthoredEvent) removePerformanceFor(pattern, source.id);
             if (const auto* assignment = assignmentFor(source, plan))
                 removedAssignments.insert(assignment->id);
             changed = true;
@@ -655,12 +697,16 @@ TrackViabilityReport TrackViability::compactIncomplete(Pattern& pattern, SongPla
                      note.origin == NoteOrigin::PlanDerived);
             });
         const InstrumentPart* target = nullptr;
+        const auto primaryBass = sourceFunction == TrackFunction::Bass
+            ? primaryBassPartId(pattern, plan) : std::uint16_t{};
         for (const auto& candidate : pattern.parts) {
             if (candidate.id == part.id || !viableParts.contains(candidate.id)) continue;
             if (!compatible(sourceFunction, contractFor(candidate, plan).function,
                             part.department, candidate.department)) continue;
             target = &candidate;
-            if (sourceFunction == contractFor(candidate, plan).function) break;
+            if (primaryBass != 0) {
+                if (candidate.id == primaryBass) break;
+            } else if (sourceFunction == contractFor(candidate, plan).function) break;
         }
         // At the terminal boundary authorship is more valuable than a nominal timbre
         // lane. If exact role compatibility is unavailable, relay the gesture to the
@@ -684,13 +730,14 @@ TrackViabilityReport TrackViability::compactIncomplete(Pattern& pattern, SongPla
                 note.channel = voiceDefinition(target->sourceVoice).midiChannel;
                 note.pitch = nearestPitch(positiveModulo(note.pitch, 12), note.pitch, *target);
             }
+            transferPerformanceFor(pattern, part.id, *target);
             ++report.mergedTracks;
         } else {
             pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(),
                 [&](const auto& note) { return note.partId == part.id; }), pattern.notes.end());
             ++report.prunedTracks;
         }
-        removePerformanceFor(pattern, part.id);
+        if (target == nullptr || !hasStructuralAuthorship) removePerformanceFor(pattern, part.id);
         if (const auto* assignment = assignmentFor(part, plan))
             removedAssignments.insert(assignment->id);
     }

@@ -105,6 +105,14 @@ estática. Las transiciones ocupan como máximo un octavo del arreglo y el prota
 en la tónica dentro de los últimos dos compases. Las pistas independientes incompletas permanecen
 identificables durante la recuperación y nunca se ocultan fusionándolas con otra pista al exportar.
 
+## Configuración IA 0.58.6
+
+Pulsa `CONFIGURAR IA` en la cabecera de PULSO, pega una clave de OpenAI y usa `PROBAR`. `GUARDAR` la almacena para el usuario actual mediante el Administrador de credenciales de Windows. La clave no forma parte del Live Set: mover o compartir un `.als` no comparte la credencial. `ELIMINAR` borra únicamente la credencial guardada por PULSO; si existe `OPENAI_API_KEY`, se muestra como fallback activo.
+
+## Contrato 0.58.5: publicación musical compacta
+
+Antes de exportar, PULSO vuelve a auditar el reparto después de todos los relevos tímbricos. Las líneas demasiado pequeñas se integran sin perder MIDI ni expresión; Live recibe únicamente pistas musicalmente utilizables. La audición neutral de Operator, Drift y Wavetable se considera una carga correcta y no un fallback.
+
 ## Contrato 0.58.4: audición separada del diseño sonoro
 
 El request `schema_version: 11` admite dos motores de despliegue:

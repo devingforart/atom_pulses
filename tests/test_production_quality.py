@@ -141,6 +141,26 @@ class ProductionQualityTests(unittest.TestCase):
         self.assertFalse(report["passed"])
         self.assertIn("requested_instrument_cast_not_fully_published", report["codes"])
 
+    def test_meaningful_terminal_compaction_is_not_a_creative_failure(self):
+        report = evaluate_creative_quality({
+            "narrative_audited": True,
+            "creative_ready": True,
+            "creative_score": 0.95,
+            "track_viability_audited": True,
+            "track_viability_ready": True,
+            "track_viability_score": 1.0,
+            "declared_viability_tracks": 40,
+            "retained_viability_tracks": 37,
+            "viable_instrument_tracks": 37,
+            "token_instrument_tracks": 0,
+            "merged_instrument_tracks": 3,
+            "pruned_instrument_tracks": 0,
+            "exact_instrument_cast_published": False,
+        })
+        self.assertTrue(report["passed"])
+        self.assertTrue(report["compacted_instrument_cast_valid"])
+        self.assertNotIn("requested_instrument_cast_not_fully_published", report["codes"])
+
     def test_density_director_may_not_delete_authored_material(self):
         report = evaluate_creative_quality({
             "narrative_audited": True,

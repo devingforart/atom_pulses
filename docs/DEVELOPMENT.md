@@ -59,7 +59,7 @@ Además de las pruebas unitarias:
 
 ## Diagnóstico de OpenAI
 
-La credencial debe existir como `OPENAI_API_KEY` en el entorno de usuario de Windows; una
+La credencial puede guardarse desde `CONFIGURAR IA` en el VST mediante Windows Credential Manager. Para automatización y pruebas también puede existir como `OPENAI_API_KEY` en el entorno de usuario de Windows; una
 variable disponible solamente en la consola de desarrollo no llega a Ableton. Configúrala con
 `scripts/configure-openai.ps1` y reinicia el DAW. Las pruebas opcionales de integración real son:
 

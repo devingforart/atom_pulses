@@ -1,6 +1,7 @@
 #include "AttentionDirector.h"
 
 #include "ElectronicRoleContract.h"
+#include "HarmonicFloorContext.h"
 #include "HarmonyPlan.h"
 #include "Scale.h"
 #include "SongComposer.h"
@@ -323,7 +324,8 @@ double floorCoverage(const Pattern& pattern, const SongPlan& plan) {
     auto covered = 0;
     for (auto bar = 0; bar < bars; ++bar) {
         const auto start = bar * plan.beatsPerBar;
-        if (activeFloorLayers(pattern, plan, start, start + plan.beatsPerBar) >= 2) ++covered;
+        if (activeFloorLayers(pattern, plan, start, start + plan.beatsPerBar) >=
+            HarmonicFloorContext::requiredLayers(plan, start)) ++covered;
     }
     return static_cast<double>(covered) / static_cast<double>(bars);
 }
@@ -488,9 +490,10 @@ AttentionDirectionReport AttentionDirector::shape(Pattern& pattern, const SongPl
             const auto energy = section == nullptr ? .5 : section->energy;
             const auto percussionFree = std::none_of(plan.instruments.begin(), plan.instruments.end(),
                 [](const auto& part) { return isVoiceInFamily(part.sourceVoice, VoiceFamily::Rhythm); });
-            auto desired = std::size_t{2};
-            if (density >= .40 || percussionFree) desired = 3;
-            if (density * .62 + energy * .38 >= .68) desired = 4;
+            const auto required = HarmonicFloorContext::requiredLayers(plan, start);
+            auto desired = required;
+            if (required >= 2 && (density >= .40 || percussionFree)) desired = 3;
+            if (required >= 2 && density * .62 + energy * .38 >= .68) desired = 4;
             desired = std::min(desired, floors.size());
 
             std::set<std::uint16_t> sounding;
@@ -508,7 +511,7 @@ AttentionDirectionReport AttentionDirector::shape(Pattern& pattern, const SongPl
                  attempt < floors.size() * 2 && sounding.size() < desired; ++attempt) {
                 // Two layers are the minimum harmonic floor. Third/fourth layers are
                 // optional and only enter while perceptual room remains.
-                if (sounding.size() >= 2 && perceptualLoad(pattern, start, end) >= budget.target) break;
+                if (sounding.size() >= required && perceptualLoad(pattern, start, end) >= budget.target) break;
                 const auto ordinal = (static_cast<std::size_t>(bar / 4) + attempt) % floors.size();
                 const auto* part = floors[ordinal];
                 if (sounding.contains(part->id)) continue;

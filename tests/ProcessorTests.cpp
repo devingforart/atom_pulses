@@ -3,6 +3,7 @@
 #include "plugin/PluginProcessor.h"
 #include "plugin/MidiExporter.h"
 #include "plugin/AiComposer.h"
+#include "plugin/ApiCredentialStore.h"
 #include "plugin/PreviewSynth.h"
 
 #include <juce_events/juce_events.h>
@@ -118,6 +119,12 @@ std::vector<float> renderPreviewWithBlockSize(int blockSize) {
 int main(int argc, char** argv) {
     try {
     juce::ScopedJuceInitialiser_GUI initialiseJuce;
+   #if JUCE_WINDOWS
+    _putenv_s("PULSO_DISABLE_SECURE_CREDENTIALS", "1");
+   #else
+    setenv("PULSO_DISABLE_SECURE_CREDENTIALS", "1", 1);
+   #endif
+    pulso::plugin::ApiCredentialStore::refresh();
     const auto preview64 = renderPreviewWithBlockSize(64);
     const auto preview511 = renderPreviewWithBlockSize(511);
     require(preview64.size() == preview511.size(), "Preview block-size test produced inconsistent output sizes");
@@ -311,6 +318,13 @@ int main(int argc, char** argv) {
    #else
     unsetenv("OPENAI_API_KEY");
    #endif
+    pulso::plugin::ApiCredentialStore::refresh();
+    require(pulso::plugin::ApiCredentialStore::isPlausibleKey(
+                "sk-proj-example_key_material_1234567890") &&
+                !pulso::plugin::ApiCredentialStore::isPlausibleKey("not-a-key") &&
+                !pulso::plugin::ApiCredentialStore::isPlausibleKey(
+                    "sk-proj-key with whitespace"),
+            "The in-plugin credential editor must reject malformed or whitespace-bearing secrets");
     constexpr auto sampleRate = 48000.0;
     constexpr auto blockSize = 256;
 
@@ -860,6 +874,39 @@ int main(int argc, char** argv) {
     require(!pulso::plugin::AiComposer::reconcileCastManifest(
                 acceptedManifest, duplicateSupplement, 3, reconciledManifest, reconciliationError),
             "Cast reconciliation must reject duplicate identities instead of corrupting the ensemble");
+    const auto contradictoryPercussionFreeManifest = juce::String(R"json({
+      "protagonist_instrument_id":"lead",
+      "electronic_soundscape":{"percussion_free":false},
+      "voices":[{"id":"lead"},{"id":"atmosphere"},{"id":"core_drums"},{"id":"snare_clap"}],
+      "instruments":[
+        {"id":"lead","instrument":"lead_synth","source_voice":"lead"},
+        {"id":"pad","instrument":"analog_pad","source_voice":"atmosphere"},
+        {"id":"kick","instrument":"kick_drum","source_voice":"core_drums"},
+        {"id":"snare","instrument":"snare_clap","source_voice":"snare_clap"}
+      ]
+    })json");
+    juce::String exclusionSafeManifest;
+    juce::String exclusionError;
+    std::size_t excludedInstruments{};
+    require(pulso::plugin::AiComposer::enforceExplicitCastExclusions(
+                contradictoryPercussionFreeManifest,
+                "NO hace falta percusiones ni baterias. Solo armonias y melodias.",
+                exclusionSafeManifest, excludedInstruments, exclusionError) &&
+                excludedInstruments == 2,
+            "An explicit no-percussion direction must sanitize a contradictory AI cast before writing begins");
+    const auto exclusionJson = juce::JSON::parse(exclusionSafeManifest);
+    const auto* exclusionObject = exclusionJson.getDynamicObject();
+    const auto* exclusionInstruments = exclusionObject == nullptr
+        ? nullptr : exclusionObject->getProperty("instruments").getArray();
+    const auto* exclusionVoices = exclusionObject == nullptr
+        ? nullptr : exclusionObject->getProperty("voices").getArray();
+    const auto* exclusionSoundscape = exclusionObject == nullptr
+        ? nullptr : exclusionObject->getProperty("electronic_soundscape").getDynamicObject();
+    require(exclusionInstruments != nullptr && exclusionInstruments->size() == 2 &&
+                exclusionVoices != nullptr && exclusionVoices->size() == 2 &&
+                exclusionSoundscape != nullptr &&
+                static_cast<bool>(exclusionSoundscape->getProperty("percussion_free")),
+            "Cast sanitization must remove rhythm instruments and voices while preserving melodic identities");
     const auto protagonistMacro = juce::String(R"json({
       "narrative_spine":{"protagonist_instrument_id":"obsolete_macro_placeholder","acts":[
         {"stage":"premise","section_name":"Intro"},
@@ -1427,9 +1474,37 @@ int main(int argc, char** argv) {
                 editor->findChildWithID("prompt-input") != nullptr &&
                 editor->findChildWithID("duration-input") != nullptr &&
                 editor->findChildWithID("compose-song") != nullptr &&
+                editor->findChildWithID("api-settings") != nullptr &&
+                editor->findChildWithID("api-settings-panel") != nullptr &&
                 editor->findChildWithID("midi-vision") != nullptr &&
                 editor->findChildWithID("create-in-live") != nullptr,
-            "The editor must expose the complete six-step composition workflow");
+            "The editor must expose composition and secure AI configuration workflows");
+    auto* apiSettingsButton = dynamic_cast<juce::Button*>(
+        editor->findChildWithID("api-settings"));
+    auto* apiSettingsPanel = editor->findChildWithID("api-settings-panel");
+    require(apiSettingsButton != nullptr && apiSettingsPanel != nullptr &&
+                !apiSettingsPanel->isVisible(),
+            "AI credentials must live in an explicit closed-by-default settings panel");
+    require(static_cast<bool>(apiSettingsButton->onClick),
+            "The AI settings button must have an immediate pointer action");
+    apiSettingsButton->onClick();
+    auto* apiKeyInput = dynamic_cast<juce::TextEditor*>(
+        apiSettingsPanel->findChildWithID("api-key-input"));
+    require(apiSettingsPanel->isVisible() && apiKeyInput != nullptr &&
+                apiKeyInput->getPasswordCharacter() != 0 &&
+                apiSettingsPanel->findChildWithID("api-key-save") != nullptr &&
+                apiSettingsPanel->findChildWithID("api-key-test") != nullptr &&
+                apiSettingsPanel->findChildWithID("api-key-remove") != nullptr,
+            "The AI panel must mask, save, test and remove credentials without exposing them");
+    const std::string sentinelSecret = "sk-proj-ui_state_must_never_serialize_1234567890";
+    apiKeyInput->setText(sentinelSecret, false);
+    juce::MemoryBlock credentialState;
+    processor.getStateInformation(credentialState);
+    const auto* stateBegin = static_cast<const char*>(credentialState.getData());
+    const auto* stateEnd = stateBegin + credentialState.getSize();
+    require(std::search(stateBegin, stateEnd, sentinelSecret.begin(), sentinelSecret.end()) == stateEnd,
+            "The API key editor must never serialize its contents into the Ableton project");
+    apiKeyInput->clear();
     editor.reset();
 
     processor.parameters.getParameter("previewWorld")->setValueNotifyingHost(1.0f);

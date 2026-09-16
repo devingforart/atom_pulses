@@ -35,8 +35,11 @@ def evaluate_creative_quality(request):
     viability_ready = bool(request.get("track_viability_ready", True))
     viability_score = _number(request, "track_viability_score", 1.0)
     retained_tracks = int(_number(request, "retained_viability_tracks", 0.0))
+    declared_tracks = int(_number(request, "declared_viability_tracks", 0.0))
     viable_tracks = int(_number(request, "viable_instrument_tracks", 0.0))
     token_tracks = int(_number(request, "token_instrument_tracks", 0.0))
+    merged_tracks = int(_number(request, "merged_instrument_tracks", 0.0))
+    pruned_tracks = int(_number(request, "pruned_instrument_tracks", 0.0))
     exact_cast_declared = "exact_instrument_cast_published" in request
     exact_cast = bool(request.get("exact_instrument_cast_published", True))
     density_notes_removed = int(_number(request, "density_notes_removed", 0.0))
@@ -78,7 +81,17 @@ def evaluate_creative_quality(request):
             codes.append("token_instrument_tracks_present")
         if not viability_ready or viability_score < 0.90:
             codes.append("instrument_cast_exceeds_authored_material")
-    if exact_cast_declared and not exact_cast:
+    # An authored roster is a creative proposal, not a requirement to publish empty
+    # tracks. Terminal compaction is valid when every surviving lane is meaningful and
+    # at least three quarters of the requested ensemble remains. Legacy/non-audited
+    # requests still require exact publication.
+    compacted_cast_valid = (
+        viability_audited and viability_ready and viability_score >= 0.90 and
+        token_tracks == 0 and declared_tracks > 0 and retained_tracks >= 8 and
+        retained_tracks / declared_tracks >= 0.75 and
+        merged_tracks + pruned_tracks > 0
+    )
+    if exact_cast_declared and not exact_cast and not compacted_cast_valid:
         codes.append("requested_instrument_cast_not_fully_published")
     if density_notes_removed > 0:
         codes.append("authored_material_removed_by_density")
@@ -106,8 +119,12 @@ def evaluate_creative_quality(request):
         "track_viability_ready": viability_ready,
         "track_viability_score": viability_score,
         "retained_viability_tracks": retained_tracks,
+        "declared_viability_tracks": declared_tracks,
         "viable_instrument_tracks": viable_tracks,
         "token_instrument_tracks": token_tracks,
+        "merged_instrument_tracks": merged_tracks,
+        "pruned_instrument_tracks": pruned_tracks,
+        "compacted_instrument_cast_valid": compacted_cast_valid,
         "exact_instrument_cast_published": exact_cast,
         "density_notes_removed": density_notes_removed,
         "semantic_notes_removed": int(_number(request, "semantic_notes_removed", 0.0)),

@@ -20,7 +20,7 @@ from .sound_matcher import catalog_capabilities, intent_fidelity, spec_intent_co
 from .audible_contract import (aggregate_meter_snapshots, apply_release_contract,
                                meter_snapshot)
 from .deployment_planner import resolve_deployment
-from .neutral_audition import neutral_patch
+from .neutral_audition import is_audition_fallback, neutral_patch
 from .production_quality import evaluate_creative_quality
 
 
@@ -493,7 +493,7 @@ class PulsoDeployRemote(ControlSurface):
             self._loaded_devices += 1
             self._verified_tracks.append(track)
             self._meter_probe_tracks.append((track, dict(spec)))
-            if quality != "identity":
+            if is_audition_fallback(quality):
                 self._fallback_devices += 1
             track.name = (str(spec.get("name", track.name)) + " | " + matched_name)[:120]
             self._apply_mixer_defaults(track, spec)

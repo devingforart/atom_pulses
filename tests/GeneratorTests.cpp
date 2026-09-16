@@ -4,6 +4,7 @@
 #include "core/ElectronicRoleContract.h"
 #include "core/Generator.h"
 #include "core/HarmonyEngine.h"
+#include "core/HarmonicFloorContext.h"
 #include "core/MusicalCritic.h"
 #include "core/MusicalIdentityGate.h"
 #include "core/NarrativeScore.h"
@@ -472,6 +473,24 @@ void runGeneratorTests() {
                         return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
                     }),
             "Fallback must preserve natural-language percussion exclusion and an explicit F# minor key");
+    auto adaptiveAiNoPercussion = explicitFallbackIntent;
+    adaptiveAiNoPercussion.productionLanguage.domain = ProductionDomain::Adaptive;
+    adaptiveAiNoPercussion.productionLanguage.electronicIntent = 0.2;
+    adaptiveAiNoPercussion.instrumentCastAuthored = true;
+    adaptiveAiNoPercussion.instruments.erase(std::remove_if(
+        adaptiveAiNoPercussion.instruments.begin(), adaptiveAiNoPercussion.instruments.end(),
+        [](const auto& part) {
+            const auto* definition = instrumentDefinition(part.instrumentId);
+            return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
+        }), adaptiveAiNoPercussion.instruments.end());
+    SongComposer::normalizePlan(adaptiveAiNoPercussion);
+    require(adaptiveAiNoPercussion.instruments.size() <= 40 &&
+                std::none_of(adaptiveAiNoPercussion.instruments.begin(),
+                    adaptiveAiNoPercussion.instruments.end(), [](const auto& part) {
+                        const auto* definition = instrumentDefinition(part.instrumentId);
+                        return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
+                    }),
+            "A percussion-free AI plan must not gain auto kick, snare or hats when its production domain is adaptive");
     CompositionRenderReport textureReport;
     const auto renderedTexture = SongComposer{}.render(texturePlan, phraseContext(), {}, &textureReport);
     require(std::none_of(renderedTexture.notes.begin(), renderedTexture.notes.end(), [](const auto& note) {
@@ -2182,14 +2201,30 @@ void runGeneratorTests() {
     independentMidi.notes.push_back({32.0, 1.0, 67, 55, 4, VoiceId::HarmonicUpper, 2,
         true, NoteOrigin::AiAuthored, 7002});
     const auto independentReport = TrackViability::enforce(independentMidi, independentPlan);
-    require(independentReport.tokenTracks == 1 && independentReport.mergedTracks == 0 &&
+    require(independentReport.tokenTracks == 0 && independentReport.mergedTracks == 1 &&
                 independentReport.prunedTracks == 0 &&
+                std::none_of(independentMidi.notes.begin(), independentMidi.notes.end(),
+                    [](const auto& note) { return note.partId == 2; }) &&
                 std::any_of(independentMidi.notes.begin(), independentMidi.notes.end(),
-                    [](const auto& note) { return note.partId == 2; }),
-            "An independently authored AI line must remain visible for targeted repair, never be merged away: token=" +
+                    [](const auto& note) {
+                        return note.partId == 1 && note.origin == NoteOrigin::AiAuthored;
+                    }),
+            "A testimonial independent AI line must be relayed intact instead of publishing an empty-looking track: token=" +
                 std::to_string(independentReport.tokenTracks) + ", merged=" +
                 std::to_string(independentReport.mergedTracks) + ", pruned=" +
                 std::to_string(independentReport.prunedTracks));
+
+    SongPlan floorContextPlan;
+    floorContextPlan.beatsPerBar = 4.0;
+    floorContextPlan.sections = {
+        {"Main", "development", "rise", "develop", 0, 16, .68, .55, .62, 0},
+        {"Breakdown", "breakdown", "suspend", "withdraw", 16, 8, .34, .42, .28, 0},
+        {"Return", "climax", "resolve", "return", 24, 16, .82, .72, .78, 0},
+    };
+    require(HarmonicFloorContext::requiredLayers(floorContextPlan, 8.0) == 2 &&
+                HarmonicFloorContext::requiredLayers(floorContextPlan, 68.0) == 1 &&
+                HarmonicFloorContext::requiredLayers(floorContextPlan, 100.0) == 2,
+            "The harmonic floor must remain deep in active sections without filling an intentional breakdown");
 
     auto weakNarrativePlan = narrativePlan;
     weakNarrativePlan.performanceScore = {};
@@ -2263,6 +2298,17 @@ void runGeneratorTests() {
                 sparsePocketAudit.singleNoteBassPhrases == 0 &&
                 sparsePocketAudit.bassPhraseContinuity > 0.99,
             "Short bass gates with one answer per bar must remain one coherent eight-bar phrase");
+
+    Pattern hypnoticBass;
+    hypnoticBass.lengthBeats = 32.0;
+    for (auto bar = 0; bar < 8; ++bar)
+        hypnoticBass.notes.push_back({bar * 4.0, .5, bar == 7 ? 41 : 38, 78,
+            6, VoiceId::MovementBass, 0, true, NoteOrigin::AiAuthored, 7272});
+    const auto hypnoticBassAudit = NarrativeScoreGate::audit(hypnoticBass, narrativePlan);
+    require(hypnoticBassAudit.bassPhrases == 1 &&
+                hypnoticBassAudit.singleNoteBassPhrases == 0 &&
+                hypnoticBassAudit.bassPhraseContinuity > .99,
+            "A stable repeated bass phase is a coherent hypnotic sentence, not fragmented writing");
 
     auto soulPlan = SongComposer::createLocalPlan(
         "deep hypnotic progressive club", 128, 120.0, 4.0, 919, 2, ScaleKind::Minor);
@@ -2629,6 +2675,16 @@ void runGeneratorTests() {
                 SelectiveRepair::blockingTargets(classifiedConstraints) ==
                     std::vector<std::size_t>{0},
             "An explicitly requested identity with no MIDI must remain a universal hard commitment");
+    auto forbiddenRhythmPlan = universalConstraintPlan;
+    forbiddenRhythmPlan.percussionFreeIntent = true;
+    forbiddenRhythmPlan.instruments.front().id = "auto_kick_drum";
+    forbiddenRhythmPlan.instruments.front().instrumentId = "kick_drum";
+    forbiddenRhythmPlan.instruments.front().sourceVoice = VoiceId::CoreDrums;
+    auto forbiddenRhythmDeficit = absentExplicitIdentity;
+    forbiddenRhythmDeficit.instrumentId = "auto_kick_drum";
+    require(SelectiveRepair::classifyPerformanceDeficits(
+                forbiddenRhythmPlan, {forbiddenRhythmDeficit}, true).empty(),
+            "A forbidden auto rhythm identity must never become a blocking explicit-cast commitment");
     PerformanceCoverageDeficit unresolvedMusicalEnding = absentExplicitIdentity;
     unresolvedMusicalEnding.notes = 49;
     unresolvedMusicalEnding.activeBars = 20;

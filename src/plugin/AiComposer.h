@@ -37,6 +37,9 @@ using AiSongProgress = std::function<void(const AiSongProgressUpdate&)>;
 class AiComposer final {
 public:
     [[nodiscard]] static bool hasApiKey();
+    [[nodiscard]] static bool testApiConnection(const juce::String& candidate,
+                                                std::stop_token,
+                                                juce::String& error);
     [[nodiscard]] static juce::String defaultModel();
     [[nodiscard]] static juce::String defaultReasoningEffort();
     [[nodiscard]] static bool structuredOutputSchemaIsValid();
@@ -53,6 +56,10 @@ public:
                                                     std::size_t requestedCount,
                                                     juce::String& reconciledManifest,
                                                     juce::String& error);
+    [[nodiscard]] static bool enforceExplicitCastExclusions(
+        const juce::String& castManifest, const juce::String& creativeDirection,
+        juce::String& sanitizedManifest, std::size_t& removedInstruments,
+        juce::String& error);
     [[nodiscard]] static bool bindCastProtagonist(const juce::String& macroBlueprint,
                                                   const juce::String& castManifest,
                                                   juce::String& mergedBlueprint,

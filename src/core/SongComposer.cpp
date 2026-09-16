@@ -313,6 +313,14 @@ void removePercussionArchitecture(SongPlan& plan) {
         plan.performanceScore.cells.end(), [](const auto& cell) {
             return cell.ownedVoices.empty() && cell.notes.empty();
         }), plan.performanceScore.cells.end());
+    plan.performanceScore.placements.erase(std::remove_if(
+        plan.performanceScore.placements.begin(), plan.performanceScore.placements.end(),
+        [&](const auto& placement) {
+            return std::none_of(plan.performanceScore.cells.begin(),
+                plan.performanceScore.cells.end(), [&](const auto& cell) {
+                    return cell.id == placement.cellId;
+                });
+        }), plan.performanceScore.placements.end());
     for (auto& placement : plan.performanceScore.placements)
         placement.voiceMap.erase(std::remove_if(placement.voiceMap.begin(), placement.voiceMap.end(),
             [](const auto& mapping) {
@@ -1675,7 +1683,7 @@ void SongComposer::normalizePlan(SongPlan& plan) {
         (plan.productionLanguage.domain == ProductionDomain::ClubElectronic ||
          plan.productionLanguage.domain == ProductionDomain::Hybrid);
     if (!electronicCast) {
-        ensureDepartment(ScoreDepartment::Rhythm, 3);
+        if (!noPercussionIntent) ensureDepartment(ScoreDepartment::Rhythm, 3);
         ensureDepartment(ScoreDepartment::Harmony, plan.orchestrationLanguage.harmonicDepth >= 0.62 ? 9 : 6);
         ensureDepartment(ScoreDepartment::Melody, plan.orchestrationLanguage.familyDialogue >= 0.62 ? 4 : 3);
     }
@@ -2132,6 +2140,9 @@ void SongComposer::normalizePlan(SongPlan& plan) {
         }
     }
     ElectronicSoundscapeDirector::normalize(plan);
+    // This explicit exclusion is the final authority. Enrichment passes may deepen
+    // the cast, but none may reopen a department that the musician prohibited.
+    if (noPercussionIntent) removePercussionArchitecture(plan);
 }
 
 Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext& foundation,
@@ -2584,6 +2595,22 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     // exact destination tracks that will be exported.
     PerformanceExpression::apply(song, plan, false);
     OrchestrationScore::applyPartExpression(song, plan, &orchestrationReport);
+    // Timbral hand-offs are the final operation capable of repopulating a nominal lane.
+    // Close viability once more so a handful of relayed notes cannot survive as an
+    // otherwise empty Live track. Notes and expression are transferred to a compatible
+    // developed owner; no new composition is introduced here.
+    const auto postHandoffCompaction = TrackViability::compactIncomplete(song, plan);
+    viabilityMerged += postHandoffCompaction.mergedTracks;
+    viabilityPruned += postHandoffCompaction.prunedTracks;
+    if (postHandoffCompaction.mergedTracks > 0 || postHandoffCompaction.prunedTracks > 0) {
+        publishedTonalReport = repairTonalContract(
+            song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
+            plan.harmonicLanguage.tonalPolicy);
+        orchestrationReport.registerRepairs += OrchestrationScore::enforcePublishedRegisters(song);
+        [[maybe_unused]] const auto compactedOverlap = repairSamePitchOverlaps(song);
+        PerformanceExpression::apply(song, plan, false);
+        OrchestrationScore::applyPartExpression(song, plan, &orchestrationReport);
+    }
     auto publishedTrackViability = TrackViability::audit(song, plan);
     publishedTrackViability.populatedBefore = trackViability.populatedBefore;
     publishedTrackViability.meaningfulBefore = trackViability.meaningfulBefore;

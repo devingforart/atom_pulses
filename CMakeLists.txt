@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.58.4 LANGUAGES C CXX)
+project(Pulso VERSION 0.58.7 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,6 +35,8 @@ add_library(pulso_core STATIC
     src/core/HarmonyEngine.h
     src/core/HarmonyPlan.cpp
     src/core/HarmonyPlan.h
+    src/core/HarmonicFloorContext.cpp
+    src/core/HarmonicFloorContext.h
     src/core/MusicTypes.h
     src/core/MusicalCritic.cpp
     src/core/MusicalCritic.h
@@ -141,6 +143,8 @@ if(PULSO_BUILD_PLUGIN)
     endif()
 
     target_sources(Pulso PRIVATE
+        src/plugin/ApiCredentialStore.cpp
+        src/plugin/ApiCredentialStore.h
         src/plugin/AiComposer.cpp
         src/plugin/AiComposer.h
         src/plugin/AiModelConfig.h
@@ -176,7 +180,7 @@ if(PULSO_BUILD_PLUGIN)
         juce::juce_recommended_warning_flags
     )
     if(WIN32)
-        target_link_libraries(Pulso PRIVATE winhttp)
+        target_link_libraries(Pulso PRIVATE winhttp advapi32)
     endif()
 
     target_compile_definitions(Pulso PUBLIC

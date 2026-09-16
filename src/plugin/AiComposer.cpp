@@ -7,6 +7,7 @@
 #include "core/TonalContract.h"
 #include "core/TrackViability.h"
 #include "AiModelConfig.h"
+#include "ApiCredentialStore.h"
 #include "OperationalJournal.h"
 
 #include <algorithm>
@@ -79,6 +80,84 @@ VoiceId rhythmVoiceForPitch(int pitch) noexcept {
     if (pitch == 46 || pitch >= 69) return VoiceId::OpenHatsShaker;
     if (pitch >= 41 && pitch <= 50) return VoiceId::LowPercussion;
     return VoiceId::HighPercussion;
+}
+
+bool explicitlyPercussionFreeDirection(const juce::String& direction) {
+    const auto lower = direction.toLowerCase();
+    constexpr std::array phrases{"no percussion", "without percussion", "sin percusion",
+        "sin percusi", "no drums", "without drums", "sin bateria", "sin bater",
+        "sin ritmica", "no rhythm", "no hace falta percusi", "no hacen falta percusi",
+        "no hace falta bater", "no hacen falta bater", "no necesito percusi",
+        "no necesito bater", "no quiero bateria", "no quiero bater",
+        "no quiero percusion", "nicamente armon", "solo armon", "only harmony",
+        "harmonies and melodies only", "harmony and melody only"};
+    return std::any_of(phrases.begin(), phrases.end(), [&](const char* phrase) {
+        return lower.contains(phrase);
+    });
+}
+
+bool enforceExplicitCastExclusionsImpl(const juce::String& source,
+                                       const juce::String& direction,
+                                       juce::String& sanitized,
+                                       std::size_t& removed,
+                                       juce::String& error) {
+    removed = 0;
+    sanitized = source;
+    if (!explicitlyPercussionFreeDirection(direction)) return true;
+
+    auto document = juce::JSON::parse(source);
+    auto* root = document.getDynamicObject();
+    auto* instruments = root == nullptr ? nullptr : root->getProperty("instruments").getArray();
+    if (root == nullptr || instruments == nullptr) {
+        error = "Cannot enforce explicit percussion exclusion on an invalid cast manifest";
+        return false;
+    }
+    if (auto* soundscape = root->getProperty("electronic_soundscape").getDynamicObject())
+        soundscape->setProperty("percussion_free", true);
+
+    const auto protagonist = root->getProperty("protagonist_instrument_id").toString();
+    auto protagonistRemoved = false;
+    for (auto index = instruments->size(); --index >= 0;) {
+        const auto* object = instruments->getReference(index).getDynamicObject();
+        if (object == nullptr) continue;
+        const auto* definition = instrumentDefinition(
+            object->getProperty("instrument").toString().toStdString());
+        const auto voice = voiceIdFromKey(
+            object->getProperty("source_voice").toString().toStdString());
+        const auto rhythm = (definition != nullptr &&
+                definition->department == ScoreDepartment::Rhythm) ||
+            (voice && isVoiceInFamily(*voice, VoiceFamily::Rhythm));
+        if (!rhythm) continue;
+        protagonistRemoved = protagonistRemoved ||
+            object->getProperty("id").toString() == protagonist;
+        instruments->remove(index);
+        ++removed;
+    }
+    if (auto* voices = root->getProperty("voices").getArray()) {
+        for (auto index = voices->size(); --index >= 0;) {
+            const auto* object = voices->getReference(index).getDynamicObject();
+            const auto voice = object == nullptr ? std::optional<VoiceId>{} :
+                voiceIdFromKey(object->getProperty("id").toString().toStdString());
+            if (voice && isVoiceInFamily(*voice, VoiceFamily::Rhythm)) voices->remove(index);
+        }
+    }
+    if (protagonistRemoved) {
+        const juce::DynamicObject* replacement = nullptr;
+        for (const auto& item : *instruments) {
+            const auto* object = item.getDynamicObject();
+            if (object != nullptr && object->getProperty("source_voice").toString() == "lead") {
+                replacement = object;
+                break;
+            }
+        }
+        if (replacement == nullptr) {
+            error = "Explicit percussion exclusion removed an invalid rhythm protagonist and no melodic protagonist remains";
+            return false;
+        }
+        root->setProperty("protagonist_instrument_id", replacement->getProperty("id"));
+    }
+    sanitized = juce::JSON::toString(document);
+    return true;
 }
 
 void applyExplicitRhythmRequest(SongPlan& plan, const juce::String& direction) {
@@ -646,7 +725,9 @@ bool reconcileMotionManifest(const juce::String& macroText,
     const auto explicitlyStatic = text.contains("drone-only") || text.contains("drone only") ||
         text.contains("without pulse") || text.contains("without motion") ||
         text.contains("sin pulso") || text.contains("sin movimiento");
-    const auto required = electronic && static_cast<bool>(soundscape->getProperty("percussion_free")) &&
+    const auto required = electronic &&
+        (static_cast<bool>(soundscape->getProperty("percussion_free")) ||
+         explicitlyPercussionFreeDirection(direction)) &&
         !explicitlyStatic;
     if (!required) return true;
 
@@ -714,7 +795,9 @@ bool validateMotionManifest(const juce::String& macroText,
     const auto explicitlyStatic = text.contains("drone-only") || text.contains("drone only") ||
         text.contains("without pulse") || text.contains("without motion") ||
         text.contains("sin pulso") || text.contains("sin movimiento");
-    const auto required = electronic && static_cast<bool>(soundscape->getProperty("percussion_free")) &&
+    const auto required = electronic &&
+        (static_cast<bool>(soundscape->getProperty("percussion_free")) ||
+         explicitlyPercussionFreeDirection(direction)) &&
         !explicitlyStatic;
     if (!required) return true;
 
@@ -1452,7 +1535,44 @@ void normalizePattern(Pattern& pattern) {
 } // namespace
 
 bool AiComposer::hasApiKey() {
-    return juce::SystemStats::getEnvironmentVariable("OPENAI_API_KEY", {}).trim().isNotEmpty();
+    return ApiCredentialStore::hasKey();
+}
+
+bool AiComposer::testApiConnection(const juce::String& candidate, std::stop_token token,
+                                   juce::String& error) {
+    auto apiKey = candidate.trim();
+    if (apiKey.isEmpty()) apiKey = ApiCredentialStore::apiKey();
+    if (!ApiCredentialStore::isPlausibleKey(apiKey)) {
+        error = "The API key format is invalid";
+        return false;
+    }
+#if JUCE_WINDOWS
+    const auto response = performSingleRequest(L"GET", L"/v1/models", {}, apiKey, token,
+                                               std::chrono::seconds(20));
+#else
+    const auto response = performSingleRequest("GET", "/v1/models", {}, apiKey, token,
+                                               std::chrono::seconds(20));
+#endif
+    if (token.stop_requested() || response.cancelled) {
+        error = "Connection test cancelled";
+        return false;
+    }
+    if (!response.connected) {
+        error = response.timedOut ? "OpenAI connection test timed out"
+                                  : "Could not connect to OpenAI";
+        return false;
+    }
+    if (response.status >= 200 && response.status < 300) {
+        error.clear();
+        return true;
+    }
+    if (response.status == 401) error = "OpenAI rejected the API key";
+    else if (response.status == 403) error = "This API key lacks the required project permission";
+    else if (response.status == 429) {
+        error = "API key authenticated, but the project is currently rate limited";
+        return true;
+    } else error = "OpenAI connection test returned HTTP " + juce::String(response.status);
+    return false;
 }
 
 juce::String instrumentBlockBrief(const SongPlan& plan,
@@ -2168,6 +2288,14 @@ bool AiComposer::reconcileCastManifest(const juce::String& acceptedManifest,
                                        reconciledManifest, error);
 }
 
+bool AiComposer::enforceExplicitCastExclusions(
+    const juce::String& castManifest, const juce::String& creativeDirection,
+    juce::String& sanitizedManifest, std::size_t& removedInstruments,
+    juce::String& error) {
+    return enforceExplicitCastExclusionsImpl(castManifest, creativeDirection,
+                                             sanitizedManifest, removedInstruments, error);
+}
+
 bool AiComposer::bindCastProtagonist(const juce::String& macroBlueprint,
                                     const juce::String& castManifest,
                                     juce::String& mergedBlueprint,
@@ -2199,9 +2327,9 @@ AiComposition AiComposer::compose(const juce::String& creativeDirection, int bar
                                   const Pattern* reference, std::uint8_t lockedLayers,
                                   std::stop_token token, juce::String& error) {
     AiComposition result;
-    const auto apiKey = juce::SystemStats::getEnvironmentVariable("OPENAI_API_KEY", {}).trim();
+    const auto apiKey = ApiCredentialStore::apiKey();
     if (apiKey.isEmpty()) {
-        error = "OPENAI_API_KEY is not configured";
+        error = "OpenAI API key is not configured";
         return result;
     }
     if (!structuredOutputSchemaIsValid()) {
@@ -2350,9 +2478,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                               juce::String& error, const AiSongProgress& progress) {
     SongPlan result;
     result.sections.clear();
-    const auto apiKey = juce::SystemStats::getEnvironmentVariable("OPENAI_API_KEY", {}).trim();
+    const auto apiKey = ApiCredentialStore::apiKey();
     if (apiKey.isEmpty()) {
-        error = "OPENAI_API_KEY is not configured";
+        error = "OpenAI API key is not configured";
         return result;
     }
     if (!songPlanSchemaIsValid()) {
@@ -2766,6 +2894,16 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     auto manifestHttp = performRequest(manifestBody, apiKey, token, std::chrono::minutes(2));
     auto manifestText = extractOutputText(juce::JSON::parse(manifestHttp.body));
     juce::String manifestError;
+    std::size_t excludedCastMembers{};
+    juce::String sanitizedManifest;
+    if (enforceExplicitCastExclusionsImpl(manifestText, direction, sanitizedManifest,
+                                          excludedCastMembers, manifestError)) {
+        manifestText = std::move(sanitizedManifest);
+        if (excludedCastMembers != 0)
+            OperationalJournal::write("WARN", "CAST",
+                "removed " + juce::String(static_cast<int>(excludedCastMembers)) +
+                " rhythm identities that contradicted the explicit percussion-free direction; replacements will preserve the requested cast size");
+    }
     auto castIds = manifestInstrumentIds(manifestText, manifestError);
     juce::String motionReport;
     auto manifestContractsReady = !castIds.empty() &&
@@ -2782,6 +2920,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         manifestHttp = performRequest(manifestBody, apiKey, token, std::chrono::seconds(90));
         manifestText = extractOutputText(juce::JSON::parse(manifestHttp.body));
         manifestError.clear();
+        excludedCastMembers = 0;
+        sanitizedManifest.clear();
+        if (enforceExplicitCastExclusionsImpl(manifestText, direction, sanitizedManifest,
+                                              excludedCastMembers, manifestError))
+            manifestText = std::move(sanitizedManifest);
         castIds = manifestInstrumentIds(manifestText, manifestError);
         motionReport.clear();
         manifestContractsReady = !castIds.empty() &&
@@ -2838,6 +2981,17 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             supplementHttp.status < 300 && !supplementHttp.cancelled && !supplementHttp.timedOut &&
             mergeCastManifestSupplement(manifestText, supplementText, requestedCastCount,
                                         reconciledText, reconciliationError);
+        if (reconciledByAi) {
+            std::size_t removedFromReconciliation{};
+            juce::String exclusionSafeText;
+            reconciledByAi = enforceExplicitCastExclusionsImpl(
+                reconciledText, direction, exclusionSafeText,
+                removedFromReconciliation, reconciliationError) &&
+                removedFromReconciliation == 0;
+            if (reconciledByAi) reconciledText = std::move(exclusionSafeText);
+            else if (reconciliationError.isEmpty())
+                reconciliationError = "AI cast supplement contradicted the explicit percussion exclusion";
+        }
         juce::String reconciliationMotionReport;
         reconciledByAi = reconciledByAi &&
             validateProtagonistManifest(macroText, reconciledText, reconciliationError) &&

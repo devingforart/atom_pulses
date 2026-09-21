@@ -1653,6 +1653,12 @@ juce::String performanceBlockPrompt(const juce::String& direction,
         "16-to-32 bars through contour, rhythm, register, harmony or orchestration, and leave at least one intentional "
         "phrase-level breath before each major return. A repeated ostinato counts as one phrase until it is genuinely "
         "varied. Pads may sustain, but their entrances, inversions and releases must evolve. "
+        "The climax/hook section must sound categorically larger than its setup: add at least two independent authored "
+        "foreground or harmonic lines, lift one important voice by register, introduce a new rhythmic/arpeggio grammar, "
+        "and make the protagonist's hook arrive with a changed contour or cadence. Do not satisfy this by duplicating one "
+        "cell across timbral destinations. In the breakdown, remove at least two active responsibilities and leave a "
+        "sparse hook fragment plus harmonic memory; on the return, restore the hook with a changed timbre, register or "
+        "voicing so the listener can hear the form's consequence. "
         "For relay, timbral_handoff, doubling and octave_reinforcement members, write the shared content owner only; "
         "do not spend output reproducing the same phrase for every destination. PULSO distributes complete phrase "
         "segments across every declared timbral destination after the global performance is assembled. The normalized "
@@ -2515,6 +2521,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         ? "Create a memorable instrumental song with a clear emotional narrative."
         : creativeDirection.trim();
     const auto requestedCastCount = requestedInstrumentCountFromDirection(direction);
+    result.requestedCastCount = requestedCastCount;
     OperationalJournal::write("INFO", "GENERATION", "request started | seed=" +
         juce::String(static_cast<juce::int64>(seed)) + " | target_seconds=" +
         juce::String(targetSeconds) + " | bars=" + juce::String(totalBars) +
@@ -2707,7 +2714,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "the user explicitly requests constant quarter-note kick or when a section deliberately mutes it. "
         "The section bars MUST sum exactly to ") + juce::String(totalBars) + ". Use between 5 and 14 sections. Energy, tension "
         "and density are values from 0 to 1. Motif intervals are semitones relative to the "
-        "tonic and form the immutable thematic DNA. Establish one compact primary statement, then make at least "
+        "tonic and form the immutable thematic DNA. The macro form must contain an audible arc: a restrained premise, "
+        "a rising development, a low-density breakdown or withdrawal, an earned climax/hook and a transformed return or "
+        "resolution. The climax is not a label: it must introduce at least two independent foreground or harmonic lines, "
+        "a register lift, a materially different rhythmic or arpeggiated grammar, and a stronger harmonic arrival than the "
+        "preceding section. The breakdown must remove at least two responsibilities while leaving harmonic memory and a "
+        "fragment of the hook. The return must recall the hook with changed register, contour, timbre or harmony. Never let "
+        "all sections share the same energy, density, register and role occupancy. Establish one compact primary statement, then make at least "
         "one of every two to four later foreground appearances preserve its recognisable onset rhythm and contour; "
         "transform register, harmony, instrumentation, dynamics or fragments around that memory instead of replacing "
         "it with unrelated material. Author the actual performance in performance_score. "
@@ -2725,7 +2738,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "the same leitmotif: those are cells and placements owned by the protagonist, not new instruments. Other melodic "
         "parts must introduce genuinely independent counterpoint rather than another contour transformation. Add an "
         "arpeggio only when the creative direction or this song's specific production argument calls for one. Target "
-        "14-40 populated instrument parts "
+        "18-24 populated independent instrument parts in a long-form arrangement unless the user explicitly requests "
+        "minimal or sparse writing; "
         "across the complete arrangement. Target roughly 7-10 perceptually complementary responsibilities in normal "
         "sections and 10-14 at earned peaks; do not obey a raw simultaneous-track ceiling because a short hat, a narrow "
         "texture and a wide sustained pad consume very different perceptual space. "
@@ -2881,7 +2895,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     const auto castCountContract = requestedCastCount == 0 ? juce::String{} :
         "NON-NEGOTIABLE CAST SIZE: return exactly " + juce::String(static_cast<int>(requestedCastCount)) +
         " instruments. Subset counts in the direction belong inside this total. ";
-    const auto manifestPrompt = castCountContract + juce::String(
+    const auto defaultCastContract = requestedCastCount == 0 && totalBars >= 96
+        ? juce::String("DEFAULT LONG-FORM ENSEMBLE: return 18-24 independent authored MIDI owners "
+                       "unless the user explicitly says minimal, sparse, drone-only or sketch. "
+                       "Count only independent content owners, never relay or timbral destinations. ")
+        : juce::String{};
+    const auto manifestPrompt = castCountContract + defaultCastContract + juce::String(
         "You are PULSO's global orchestration director. Decide the complete ensemble once, before any detail is written. "
         "Return the compact cast manifest only. Every member needs a unique stable id, a distinct musical responsibility "
         "or an explicit complementary relationship, and an intentional section trajectory. The IDs, instrument types, "
@@ -3168,6 +3187,25 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     if (!parseSongPlanJson(outputText, targetSeconds, totalBars, bpm, beatsPerBar,
                            seed, result, error,
                            tonalPolicyForDirection(direction.toStdString()))) return {};
+    // A percussion-free request can still be explicitly electronic. Promote that
+    // intent before normalization so the production planner supplies synth pads,
+    // arps, sequences and independent electronic layers instead of falling back to
+    // a small orchestral cast merely because drums were excluded.
+    const auto electronicDirection = directionLower.contains("synth") ||
+        directionLower.contains("sintet") || directionLower.contains("electronic") ||
+        directionLower.contains("electronica") || directionLower.contains("techno") ||
+        directionLower.contains("progressive") || directionLower.contains("house") ||
+        directionLower.contains("arpeggio") || directionLower.contains("arp") ||
+        directionLower.contains("sequencer");
+    if (electronicDirection) {
+        result.productionLanguage.electronicIntent =
+            std::max(result.productionLanguage.electronicIntent, 0.82);
+        if (result.productionLanguage.domain == ProductionDomain::Adaptive ||
+            result.productionLanguage.domain == ProductionDomain::Orchestral)
+            result.productionLanguage.domain = ProductionDomain::Hybrid;
+        result.orchestrationLanguage.hybridProduction =
+            std::max(result.orchestrationLanguage.hybridProduction, 0.82);
+    }
     applyExplicitRhythmRequest(result, direction);
     SongComposer::normalizePlan(result);
     OperationalJournal::write("OK", "CHECKPOINT",
@@ -3643,6 +3681,58 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             }), assembledScore.placements.end());
     }
     result.performanceScore = std::move(assembledScore);
+    // Guarantee an audible protagonist return even when GPT supplied a valid lead
+    // but omitted its final resolution placement. This reuses the authored cell in
+    // a short transformed coda; it never invents notes or changes the blueprint.
+    if (!result.narrativeSpine.protagonistInstrumentId.empty() && !result.sections.empty()) {
+        const auto& protagonistId = result.narrativeSpine.protagonistInstrumentId;
+        const auto finalSection = static_cast<int>(result.sections.size() - 1);
+        const auto hasFinalProtagonist = std::any_of(
+            result.performanceScore.placements.begin(), result.performanceScore.placements.end(),
+            [&](const auto& placement) {
+                if (placement.sectionIndex != finalSection) return false;
+                const auto cell = std::find_if(result.performanceScore.cells.begin(),
+                    result.performanceScore.cells.end(), [&](const auto& candidate) {
+                        return candidate.id == placement.cellId;
+                    });
+                return cell != result.performanceScore.cells.end() &&
+                    std::any_of(cell->notes.begin(), cell->notes.end(), [&](const auto& note) {
+                        return note.instrumentId == protagonistId;
+                    });
+            });
+        if (!hasFinalProtagonist) {
+            const PerformanceCell* source = nullptr;
+            for (const auto& cell : result.performanceScore.cells) {
+                const auto protagonistNotes = std::count_if(cell.notes.begin(), cell.notes.end(),
+                    [&](const auto& note) { return note.instrumentId == protagonistId; });
+                if (protagonistNotes == 0) continue;
+                if (source == nullptr || protagonistNotes > static_cast<int>(std::count_if(
+                        source->notes.begin(), source->notes.end(), [&](const auto& note) {
+                            return note.instrumentId == protagonistId;
+                        }))) source = &cell;
+            }
+            if (source != nullptr) {
+                const auto sectionLength = result.sections.back().bars * result.beatsPerBar;
+                auto sourcePlacement = std::find_if(result.performanceScore.placements.rbegin(),
+                    result.performanceScore.placements.rend(), [&](const auto& placement) {
+                        return placement.cellId == source->id;
+                    });
+                if (sourcePlacement != result.performanceScore.placements.rend()) {
+                    auto coda = *sourcePlacement;
+                    coda.sectionIndex = finalSection;
+                    coda.startBeat = std::max(0.0, sectionLength -
+                        std::min(source->lengthBeats, result.beatsPerBar * 8.0));
+                    coda.repeats = 1;
+                    coda.timeScale = std::min(coda.timeScale, .85);
+                    coda.velocityScale = std::min(coda.velocityScale, .88);
+                    coda.purpose = "transformed protagonist coda";
+                    result.performanceScore.placements.push_back(std::move(coda));
+                    OperationalJournal::write("WARN", "RECOVERY",
+                        "protagonist coda placement supplied from authored cell; notes unchanged");
+                }
+            }
+        }
+    }
     if (progress) progress({AiSongStage::Validation, completedBlocks, blocks.size(), 1,
                             "assembling and validating all authored blocks"});
     applyExplicitRhythmRequest(result, direction);

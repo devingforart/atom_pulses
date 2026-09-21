@@ -225,7 +225,7 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     setResizeLimits(1040, 650, 1500, 1020);
     setSize(1120, 760);
 
-    title.setText("PULSO", juce::dontSendNotification);
+    title.setText("PULSO v" PULSO_VERSION_STRING, juce::dontSendNotification);
     title.setFont(juce::FontOptions(30.0f, juce::Font::bold));
     title.setColour(juce::Label::textColourId, colours::accent);
     status.setJustificationType(juce::Justification::centredRight);

@@ -1684,8 +1684,11 @@ void SongComposer::normalizePlan(SongPlan& plan) {
          plan.productionLanguage.domain == ProductionDomain::Hybrid);
     if (!electronicCast) {
         if (!noPercussionIntent) ensureDepartment(ScoreDepartment::Rhythm, 3);
-        ensureDepartment(ScoreDepartment::Harmony, plan.orchestrationLanguage.harmonicDepth >= 0.62 ? 9 : 6);
-        ensureDepartment(ScoreDepartment::Melody, plan.orchestrationLanguage.familyDialogue >= 0.62 ? 4 : 3);
+        const auto longForm = plan.totalBars >= 96 && plan.requestedCastCount == 0;
+        ensureDepartment(ScoreDepartment::Harmony,
+            longForm ? 12 : (plan.orchestrationLanguage.harmonicDepth >= 0.62 ? 9 : 6));
+        ensureDepartment(ScoreDepartment::Melody,
+            longForm ? 6 : (plan.orchestrationLanguage.familyDialogue >= 0.62 ? 4 : 3));
     }
     const auto voiceDefaultsForInstruments = defaultVoicePlan();
     const auto closedAuthoredCast = electronicCast && plan.instrumentCastAuthored;
@@ -2140,6 +2143,22 @@ void SongComposer::normalizePlan(SongPlan& plan) {
         }
     }
     ElectronicSoundscapeDirector::normalize(plan);
+    // Local club plans use one foreground owner per section.  Countermelody remains
+    // available as a call/response lane, but it must not be advertised as a second
+    // simultaneous foreground voice in the section contract.  Closed GPT casts keep
+    // their authored section ownership untouched and are evaluated from their actual
+    // performance cells instead.
+    if (plan.productionModeSource == "local_inference" && !plan.percussionFreeIntent &&
+        (plan.productionLanguage.domain == ProductionDomain::ClubElectronic ||
+         plan.productionLanguage.domain == ProductionDomain::Hybrid)) {
+        for (auto& section : plan.sections) {
+            const auto hasLead = std::find(section.activeVoices.begin(), section.activeVoices.end(),
+                                           VoiceId::Lead) != section.activeVoices.end();
+            if (hasLead)
+                section.activeVoices.erase(std::remove(section.activeVoices.begin(),
+                    section.activeVoices.end(), VoiceId::Countermelody), section.activeVoices.end());
+        }
+    }
     // This explicit exclusion is the final authority. Enrichment passes may deepen
     // the cast, but none may reopen a department that the musician prohibited.
     if (noPercussionIntent) removePercussionArchitecture(plan);
@@ -2563,6 +2582,10 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     enforceElectronicReleaseCeilings(song, plan);
     PerformanceExpression::apply(song, plan, false);
     OrchestrationScore::applyPartExpression(song, plan, &orchestrationReport);
+    // Expression/articulation can lengthen releases. Re-assert the electronic
+    // boundary after the final expression pass so Live never receives a hanging
+    // harmonic body even when a preset adds release tail.
+    enforceElectronicReleaseCeilings(song, plan);
     const auto attentionCompaction = TrackViability::compactIncomplete(song, plan);
     viabilityMerged += attentionCompaction.mergedTracks;
     viabilityPruned += attentionCompaction.prunedTracks;
@@ -2611,6 +2634,9 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
         PerformanceExpression::apply(song, plan, false);
         OrchestrationScore::applyPartExpression(song, plan, &orchestrationReport);
     }
+    // The optional post-handoff expression rebuild is also allowed to change note
+    // tails; this is the last release boundary before metrics and MIDI export.
+    enforceElectronicReleaseCeilings(song, plan);
     auto publishedTrackViability = TrackViability::audit(song, plan);
     publishedTrackViability.populatedBefore = trackViability.populatedBefore;
     publishedTrackViability.meaningfulBefore = trackViability.meaningfulBefore;

@@ -994,6 +994,51 @@ void runGeneratorTests() {
                 }) && closedElectronicCast.implicitVoicesPruned >= 2,
             "An AI-authored electronic cast must prune each unowned voice instead of reopening the whole orchestra");
 
+    auto arcPlan = clubPlan;
+    arcPlan.sections.clear();
+    const std::array<std::string, 6> arcNames{"Intro", "Development", "Breakdown", "Build", "Climax", "Return"};
+    for (std::size_t i = 0; i < arcNames.size(); ++i) {
+        SongSection section;
+        section.name = arcNames[i];
+        section.startBar = static_cast<int>(i * 16);
+        section.bars = 16;
+        section.energy = .50;
+        section.tension = .50;
+        section.density = .50;
+        arcPlan.sections.push_back(std::move(section));
+    }
+    ElectronicProductionDirector::normalizePlan(arcPlan);
+    const auto peak = std::find_if(arcPlan.sections.begin(), arcPlan.sections.end(),
+        [](const auto& section) { return section.function == "climax_hook"; });
+    const auto breakSection = std::find_if(arcPlan.sections.begin(), arcPlan.sections.end(),
+        [](const auto& section) { return section.function == "breakdown_memory"; });
+    require(peak != arcPlan.sections.end() && breakSection != arcPlan.sections.end() &&
+                peak->energy > breakSection->energy + .35 &&
+                peak->density > breakSection->density + .35 &&
+                std::find(peak->activeVoices.begin(), peak->activeVoices.end(), VoiceId::Lead) !=
+                    peak->activeVoices.end() &&
+                std::find(peak->activeVoices.begin(), peak->activeVoices.end(), VoiceId::Countermelody) !=
+                    peak->activeVoices.end(),
+            "Electronic normalization must create an audible breakdown-to-climax arc with independent hook voices");
+
+    auto longCastPlan = clubPlan;
+    longCastPlan.totalBars = 192;
+    longCastPlan.requestedCastCount = 0;
+    longCastPlan.instrumentCastAuthored = true;
+    const auto initialLongCastSize = longCastPlan.instruments.size();
+    SongComposer::normalizePlan(longCastPlan);
+    require(longCastPlan.instruments.size() >= 18 &&
+                longCastPlan.instruments.size() > initialLongCastSize,
+            "Long-form authored songs must expand to a real independent ensemble when no exact cast size was requested");
+    auto exactCastPlan = clubPlan;
+    exactCastPlan.totalBars = 192;
+    exactCastPlan.requestedCastCount = 8;
+    exactCastPlan.instrumentCastAuthored = true;
+    const auto exactCastSize = exactCastPlan.instruments.size();
+    SongComposer::normalizePlan(exactCastPlan);
+    require(exactCastPlan.instruments.size() == exactCastSize,
+            "An explicit cast size must prevent automatic ensemble expansion");
+
     auto macroPulsePlan = clubPlan;
     macroPulsePlan.totalBars = 48;
     macroPulsePlan.sections.resize(1);

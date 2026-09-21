@@ -190,7 +190,10 @@ ArrangementDensityTargets ArrangementDensityPlanner::targetsFor(const SongPlan& 
         [](const auto& item) { return rhythmVoice(item.sourceVoice); });
     result.percussionFree = !plan.instruments.empty() && rhythmParts == 0;
     if (!result.electronic) {
-        result.proposedParts = std::clamp<std::size_t>(plan.instruments.size(), 8, 28);
+        const auto longForm = plan.totalBars >= 96;
+        result.proposedParts = longForm
+            ? std::clamp<std::size_t>(std::max<std::size_t>(plan.instruments.size(), 18), 18, 28)
+            : std::clamp<std::size_t>(plan.instruments.size(), 8, 28);
         result.minimumPopulatedParts = std::max<std::size_t>(6, result.proposedParts * 3 / 4);
         result.minimumHarmonyParts = 4;
         result.minimumMelodyParts = 2;
@@ -230,7 +233,9 @@ void ArrangementDensityPlanner::apply(SongPlan& plan) {
     const auto targets = targetsFor(plan);
     // A GPT-authored cast is compositional authority. Missing depth is returned to the
     // critic; silently adding generic parts produces impressive track counts but token MIDI.
-    if (!targets.electronic || plan.instrumentCastAuthored ||
+    if (!targets.electronic ||
+        (plan.instrumentCastAuthored &&
+         (plan.requestedCastCount != 0 || plan.totalBars < 96)) ||
         plan.instruments.size() >= targets.proposedParts) return;
     auto ordinal = std::size_t{};
     for (const auto& spec : electronicCast) {

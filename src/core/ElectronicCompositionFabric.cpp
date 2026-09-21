@@ -470,7 +470,7 @@ void ElectronicCompositionFabric::normalizePlan(SongPlan& plan) {
     // A closed GPT cast is compositional authority. The local fabric may complete
     // notes inside roles GPT explicitly declared, but it must not invent a generic
     // pad/arp/lead/reply roster behind the model's back.
-    if (plan.instrumentCastAuthored) return;
+    if (aiAuthoredScore(plan) && plan.productionModeSource != "local_inference") return;
 
     ensureVoice(plan, VoiceId::HarmonicFoundation, "Continuous multi-layer harmonic floor", .78);
     ensureVoice(plan, VoiceId::Lead, "Primary narrative speaker", .42);
@@ -693,7 +693,7 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
                                                   chord.pitchClasses.size()];
             const auto pitch = nearestPitch(tone, previousPitch[floorOrdinal], assignment);
             const auto held = slot == 0 || phraseBar % 4 != 2;
-            const auto duration = held ? plan.beatsPerBar - 1.0 / 32.0 :
+            const auto duration = held ? plan.beatsPerBar - 1.0 / 16.0 :
                 plan.beatsPerBar * .5 - 1.0 / 32.0;
             addNote(pattern, assignment, partId(index), beat, duration,
                 pitch, 44 + static_cast<int>(slot) * 6 + (arrival ? 8 : 0),
@@ -936,7 +936,11 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
         for (auto bar = static_cast<int>(index % 7) + 4; bar < plan.totalBars; bar += spacingBars) {
             const auto beat = bar * plan.beatsPerBar;
             const auto* section = sectionAt(plan, beat);
-            if (section != nullptr && !activeIn(assignment, *section)) continue;
+            // A local cast may declare a sectional colour but never receive an
+            // authored placement in that colour.  Give it one seed gesture in the
+            // nearest compatible section so the published track is not nominal;
+            // once seeded, its declared active-section rotation remains strict.
+            if (section != nullptr && !activeIn(assignment, *section) && !existing.empty()) continue;
             if (overlapsPart(pattern, partId(index), beat, beat + plan.beatsPerBar)) continue;
             const auto& chord = chordAt(plan, beat);
             if (chord.pitchClasses.empty()) continue;
@@ -950,6 +954,41 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
                 38 + static_cast<int>(assignment.prominence * 32),
                 0x53555050u + static_cast<std::uint32_t>(index), report,
                 report.supportNotesCreated, densityBudget(plan, beat));
+        }
+    }
+
+    // Local electronic plans can contain a named colour (dub chord, shimmer,
+    // response, acid voice) whose specialised generator intentionally rests for
+    // the whole first pass.  Do not publish a nominal MIDI lane: seed a compact
+    // eight-event gesture from the existing chord palette.  This is disabled for a
+    // closed GPT cast, where an empty authored lane is an intentional AI decision.
+    if (plan.productionModeSource == "local_inference" || !aiAuthoredScore(plan)) {
+        for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+            const auto& assignment = plan.instruments[index];
+            if (isVoiceInFamily(assignment.sourceVoice, VoiceFamily::Rhythm) ||
+                assignment.sourceVoice == VoiceId::Transitions) continue;
+            const auto ownerId = partId(index);
+            if (std::any_of(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+                    return note.partId == ownerId;
+                })) continue;
+            const auto* section = plan.sections.empty() ? nullptr : &plan.sections[index % plan.sections.size()];
+            if (section == nullptr) continue;
+            const auto start = section->startBar * plan.beatsPerBar + plan.beatsPerBar * .25;
+            const auto& chord = chordAt(plan, start);
+            if (chord.pitchClasses.empty()) continue;
+            auto written = std::size_t{};
+            for (std::size_t note = 0; note < 8; ++note) {
+                const auto beat = start + note * plan.beatsPerBar;
+                if (beat >= pattern.lengthBeats) break;
+                const auto pitch = nearestPitch(chord.pitchClasses[note % chord.pitchClasses.size()],
+                    (assignment.minimumPitch + assignment.maximumPitch) / 2, assignment);
+                if (addNote(pattern, assignment, ownerId, beat,
+                            assignment.articulation == "staccato" ? .35 : .75,
+                            pitch, 46 + static_cast<int>(note) * 4,
+                            0x53454544u + static_cast<std::uint32_t>(index), report,
+                            report.supportNotesCreated, 24)) ++written;
+            }
+            if (written > 0) ++report.meaningfulLines;
         }
     }
 
@@ -1117,7 +1156,10 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                 const auto pitch = nearestPitch(tone,
                     (assignment.minimumPitch + assignment.maximumPitch) / 2, assignment);
                 if (addNote(pattern, assignment, partId(index), beat,
-                            plan.beatsPerBar - 1.0 / 32.0, pitch,
+                            // Leave a real release gap before the next bar.  A
+                            // nominal 1/32 gap is quantised away by several Live
+                            // instruments and sounds like a hanging chord.
+                            plan.beatsPerBar - 1.0 / 16.0, pitch,
                             40 + static_cast<int>(ordinal) * 5,
                             0x46434c4fu + static_cast<std::uint32_t>(bar), report,
                             report.publicationClosureNotesCreated, densityBudget(plan, beat) + 2))
@@ -1141,10 +1183,65 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
         return plan.instruments[left].prominence > plan.instruments[right].prominence;
     });
 
+    // A low-end floor is not a quota of tracks: it is a continuous musical
+    // relationship between the tonal floor and the harmony.  GPT often gives a
+    // beautiful sub/bass idea in only a handful of windows; extend that authored
+    // idea (never invent a new rhythm) through the middle of the form so the
+    // listener hears a journey rather than isolated MIDI islands.
+    if (aiAuthoredScore(plan)) {
+        std::vector<std::size_t> lowEnd;
+        for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+            const auto voice = plan.instruments[index].sourceVoice;
+            if ((voice == VoiceId::SubBass || voice == VoiceId::MovementBass) && retained(index))
+                lowEnd.push_back(index);
+        }
+        for (const auto index : lowEnd) {
+            const auto ownerId = partId(index);
+            std::vector<NoteEvent> source;
+            for (const auto& note : pattern.notes)
+                if (note.partId == ownerId && note.startBeat < pattern.lengthBeats &&
+                    (note.origin == NoteOrigin::AiAuthored || note.origin == NoteOrigin::AiTransformed ||
+                     note.origin == NoteOrigin::PlanDerived))
+                    source.push_back(note);
+            if (source.empty()) continue;
+            const auto windowBeats = plan.beatsPerBar * 4.0;
+            const auto targetWindows = static_cast<std::size_t>(std::ceil(
+                (static_cast<double>(plan.totalBars) / 4.0) * .70));
+            auto populated = std::size_t{};
+            std::vector<int> missing;
+            for (auto window = 0; window * windowBeats < pattern.lengthBeats; ++window) {
+                const auto start = window * windowBeats;
+                const auto end = std::min(pattern.lengthBeats, start + windowBeats);
+                const auto notes = std::count_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
+                    return note.partId == ownerId && note.startBeat >= start && note.startBeat < end;
+                });
+                if (notes > 0) ++populated;
+                else if (window % 4 != 3) missing.push_back(window); // preserve phrase breaths
+            }
+            for (const auto window : missing) {
+                if (populated >= targetWindows) break;
+                const auto& templateNote = source[static_cast<std::size_t>(window) % source.size()];
+                const auto start = window * windowBeats;
+                const auto& owner = plan.instruments[index];
+                const auto& chord = chordAt(plan, start);
+                auto pitch = templateNote.pitch;
+                if (!chord.pitchClasses.empty())
+                    pitch = nearestPitch(chord.pitchClasses.front(), pitch, owner);
+                const auto duration = std::min(windowBeats - 1.0 / 32.0,
+                    std::max(1.0, templateNote.durationBeats));
+                if (addNote(pattern, owner, ownerId, start, duration, pitch,
+                            std::max(38, templateNote.velocity - 4),
+                            0x4c4f5746u + static_cast<std::uint32_t>(window), report,
+                            report.publicationClosureNotesCreated, 7))
+                    ++populated;
+            }
+        }
+    }
+
     // Presence is measured in eight-bar phrase windows, not raw sounding duration.
     // This preserves silence inside a sentence while ensuring the narrator returns
     // often enough to carry a long-form story.
-    if (!leads.empty() && !aiAuthoredScore(plan)) {
+    if (!leads.empty()) {
         std::vector<int> eligible;
         std::vector<int> missing;
         auto present = std::size_t{};
@@ -1166,13 +1263,65 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
             else missing.push_back(bar);
         }
         const auto target = static_cast<std::size_t>(std::ceil(eligible.size() * .65));
+        // For an AI score, source the repair from an already authored protagonist
+        // phrase.  This keeps GPT's contour and rhythm authoritative while making
+        // the protagonist return often enough to carry the narrative.  Local
+        // synthesis is used only when no authored phrase exists at all.
+        std::vector<NoteEvent> authoredSource;
+        if (aiAuthoredScore(plan)) {
+            const auto primary = leads.front();
+            const auto primaryId = partId(primary);
+            for (const auto& note : pattern.notes)
+                if (note.partId == primaryId && note.voice == VoiceId::Lead &&
+                    (note.origin == NoteOrigin::AiAuthored || note.origin == NoteOrigin::AiTransformed ||
+                     note.origin == NoteOrigin::PlanDerived))
+                    authoredSource.push_back(note);
+        }
         for (const auto bar : missing) {
             if (present >= target) break;
             const auto* section = sectionAt(plan, bar * plan.beatsPerBar);
-            const auto index = speakerFor(plan, leads, section);
+            auto index = speakerFor(plan, leads, section);
+            // A GPT-authored protagonist owns the narrative lane.  Do not move a
+            // continuity repair onto a second Lead merely because the primary is
+            // taking a declared handoff in this section; that would turn one story
+            // into several competing foreground owners.
+            if (!authoredSource.empty()) {
+                const auto primary = std::find_if(leads.begin(), leads.end(), [&](auto candidate) {
+                    return plan.instruments[candidate].id == plan.narrativeSpine.protagonistInstrumentId &&
+                        (section == nullptr || activeIn(plan.instruments[candidate], *section));
+                });
+                if (primary != leads.end()) index = *primary;
+            }
             if (index == std::numeric_limits<std::size_t>::max()) continue;
             const auto& assignment = plan.instruments[index];
             const auto start = bar * plan.beatsPerBar + plan.beatsPerBar * .5;
+            if (!authoredSource.empty()) {
+                const auto sourceStart = authoredSource.front().startBeat;
+                auto written = std::size_t{};
+                for (const auto& source : authoredSource) {
+                    const auto relative = std::fmod(std::max(0.0, source.startBeat - sourceStart),
+                                                    plan.beatsPerBar * 8.0);
+                    const auto beat = start + relative;
+                    if (beat >= start + plan.beatsPerBar * 8.0 ||
+                        overlapsPart(pattern, partId(index), beat, beat + source.durationBeats)) continue;
+                    const auto& chord = chordAt(plan, beat);
+                    auto pitch = source.pitch;
+                    if (!chord.pitchClasses.empty())
+                        pitch = nearestPitch(chord.pitchClasses.front(), pitch, assignment);
+                    if (addNote(pattern, assignment, partId(index), beat,
+                                std::min(source.durationBeats, plan.beatsPerBar * 1.5),
+                                pitch, std::max(42, source.velocity - 3),
+                                0x4c505352u + static_cast<std::uint32_t>(bar / 8), report,
+                                report.publicationClosureNotesCreated, 8)) {
+                        if (++written >= 8) break;
+                    }
+                }
+                if (written >= 3) {
+                    ++present;
+                    ++report.protagonistWindowsRepaired;
+                }
+                continue;
+            }
             const auto variant = static_cast<int>(mixed(plan.seed ^ static_cast<std::uint64_t>(bar)) % 4U);
             constexpr std::array<double, 5> onsets{0.0, .75, 1.75, 3.0, 5.5};
             auto written = std::size_t{};
@@ -1306,7 +1455,7 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                 const auto pitchClass = layer == 0 ? plan.rootPitchClass :
                     positiveModulo(plan.rootPitchClass + 7, 12);
                 if (addNote(pattern, assignment, partId(index), finalBar,
-                            plan.beatsPerBar - 1.0 / 32.0,
+                            plan.beatsPerBar - 1.0 / 16.0,
                             nearestPitch(pitchClass,
                                 (assignment.minimumPitch + assignment.maximumPitch) / 2, assignment),
                             42 + static_cast<int>(layer) * 4,

@@ -329,6 +329,21 @@ std::vector<PerformanceConstraint> SelectiveRepair::classifyPerformanceDeficits(
     const SongPlan& plan, std::vector<PerformanceCoverageDeficit> deficits,
     bool explicitCastCommitment) {
     std::vector<PerformanceConstraint> result;
+    // A cast may declare several pulse/sequence identities.  Only the motion
+    // owner that actually carries notes is structurally essential; an empty
+    // secondary pulse is a replaceable colour lane, not a reason to discard the
+    // whole composition. This is especially important for unrequested casts,
+    // where GPT can over-specify a soundscape and underwrite one identity.
+    const auto populatedMotionOwner = [&](std::size_t excluded) {
+        const auto alternatives = std::count_if(plan.instruments.begin(), plan.instruments.end(),
+            [](const auto& instrument) { return ElectronicRoleContract::motionOwner(instrument); });
+        if (alternatives > 1) return true;
+        return std::any_of(deficits.begin(), deficits.end(), [&](const auto& candidate) {
+            return candidate.instrumentIndex != excluded && candidate.notes > 0 &&
+                candidate.instrumentIndex < plan.instruments.size() &&
+                ElectronicRoleContract::motionOwner(plan.instruments[candidate.instrumentIndex]);
+        });
+    };
     for (auto& deficit : deficits) {
         if (plan.percussionFreeIntent && deficit.instrumentIndex < plan.instruments.size()) {
             const auto& instrument = plan.instruments[deficit.instrumentIndex];
@@ -339,11 +354,12 @@ std::vector<PerformanceConstraint> SelectiveRepair::classifyPerformanceDeficits(
         }
         PerformanceConstraint constraint;
         constraint.evidence = std::move(deficit);
+        const auto motionEssential = constraint.evidence.instrumentIndex < plan.instruments.size() &&
+            ElectronicRoleContract::motionOwner(plan.instruments[constraint.evidence.instrumentIndex]) &&
+            !populatedMotionOwner(constraint.evidence.instrumentIndex);
         const auto essential = constraint.evidence.instrumentId ==
                 plan.narrativeSpine.protagonistInstrumentId ||
-            (constraint.evidence.instrumentIndex < plan.instruments.size() &&
-             ElectronicRoleContract::motionOwner(
-                 plan.instruments[constraint.evidence.instrumentIndex]));
+            motionEssential;
         const auto missingIdentity = constraint.evidence.notes == 0;
         constraint.authority = missingIdentity && explicitCastCommitment
             ? ConstraintAuthority::ExplicitPromptCommitment

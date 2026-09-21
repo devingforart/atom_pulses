@@ -29,6 +29,54 @@ bool containsAny(const std::string& text, std::initializer_list<std::string_view
 
 double clamp01(double value) { return std::clamp(std::isfinite(value) ? value : 0.5, 0.0, 1.0); }
 
+std::size_t arcPeakIndex(const SongPlan& plan) {
+    if (plan.sections.empty()) return 0;
+    for (std::size_t i = 0; i < plan.sections.size(); ++i)
+        if (containsAny(lower(plan.sections[i].name), {"climax", "peak", "drop", "summit", "arrival"}))
+            return i;
+    // Keep the peak late enough to feel earned, while leaving room for a return.
+    return std::min(plan.sections.size() - 1,
+                    std::max<std::size_t>(1, (plan.sections.size() * 3) / 5));
+}
+
+std::size_t arcBreakdownIndex(const SongPlan& plan, std::size_t peak) {
+    if (plan.sections.empty()) return 0;
+    for (std::size_t i = 0; i < plan.sections.size(); ++i)
+        if (containsAny(lower(plan.sections[i].name), {"breakdown", "break", "bajada", "suspend"}))
+            return i;
+    if (peak > 1) return peak - 1;
+    return std::min(plan.sections.size() - 1, peak + 1);
+}
+
+void enforceElectronicArc(SongPlan& plan, std::size_t peak, std::size_t breakdown) {
+    if (plan.sections.size() < 5) return;
+    for (std::size_t i = 0; i < plan.sections.size(); ++i) {
+        auto& section = plan.sections[i];
+        const auto position = static_cast<double>(i) /
+            static_cast<double>(std::max<std::size_t>(1, plan.sections.size() - 1));
+        const auto rising = std::clamp(position / .62, 0.0, 1.0);
+        const auto falling = std::clamp((position - .72) / .28, 0.0, 1.0);
+        const auto targetEnergy = i == peak ? .94 : i == breakdown ? .24 :
+            std::clamp(.28 + rising * .44 - falling * .26, .20, .78);
+        const auto targetTension = i == peak ? .92 : i == breakdown ? .30 :
+            std::clamp(.34 + rising * .42 - falling * .30, .22, .82);
+        const auto targetDensity = i == peak ? .90 : i == breakdown ? .20 :
+            std::clamp(.30 + rising * .40 - falling * .24, .18, .80);
+        // Preserve GPT's macro decision, but prevent a flat line from erasing the
+        // audible rise, withdrawal and transformed return expected from a song.
+        section.energy = clamp01(section.energy * .35 + targetEnergy * .65);
+        section.tension = clamp01(section.tension * .35 + targetTension * .65);
+        section.density = clamp01(section.density * .35 + targetDensity * .65);
+        if (i == peak) {
+            section.function = "climax_hook";
+            section.motifTreatment = "transformed_hook_with_counterline_and_register_lift";
+        } else if (i == breakdown) {
+            section.function = "breakdown_memory";
+            section.motifTreatment = "fragmented_recall_in_negative_space";
+        }
+    }
+}
+
 InstrumentAssignment electronicPart(std::string id, std::string instrument, std::string name,
                                     VoiceId voice, std::string role, double activity,
                                     double prominence, std::string function,
@@ -799,11 +847,13 @@ std::pair<std::size_t, std::size_t> reinforceThematicMemory(Pattern& pattern,
     const auto scale = scalePitchClasses(plan);
     const auto& definition = voiceDefinition(VoiceId::Lead);
     std::set<int> replaceWindows;
-    auto eligibleOrdinal = 0;
     for (auto window = sourceWindow + 1; window < windows; ++window) {
         if (material[static_cast<std::size_t>(window)].size() < 3) continue;
-        ++eligibleOrdinal;
-        if (eligibleOrdinal % 2 == 1) replaceWindows.insert(window);
+        // Every eligible return participates in the thematic lineage.  The
+        // contour is still transformed on alternating recalls, but leaving half
+        // of the windows outside the lineage made a long-form track sound like
+        // unrelated procedural fragments.
+        replaceWindows.insert(window);
     }
     if (replaceWindows.empty()) return {};
     pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
@@ -840,6 +890,11 @@ std::pair<std::size_t, std::size_t> reinforceThematicMemory(Pattern& pattern,
                 recalled.origin = NoteOrigin::AiTransformed;
             }
             recalled.partId = 0;
+            // Keep every authored recall in one explicit lineage even when the
+            // source generator did not stamp a narrative id.  The audit can then
+            // recognise transformed returns by contour, not by incidental track id.
+            if (recalled.narrativeId == 0)
+                recalled.narrativeId = 0x5448454Du;
             pattern.notes.push_back(recalled);
             ++notesCreated;
         }
@@ -1000,11 +1055,18 @@ void ElectronicProductionDirector::normalizePlan(SongPlan& plan) {
     mergeElectronicInfrastructure(plan);
     sanitizeClubTimbres(plan);
 
-    for (auto& section : plan.sections) {
-        const auto intro = sectionNamed(section, {"intro", "prologue", "entrada", "opening"});
-        const auto breakdown = sectionNamed(section, {"break", "breakdown", "bajada", "suspend"});
+    const auto peakIndex = arcPeakIndex(plan);
+    const auto breakdownIndex = arcBreakdownIndex(plan, peakIndex);
+    enforceElectronicArc(plan, peakIndex, breakdownIndex);
+    for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+        auto& section = plan.sections[sectionIndex];
+        const auto intro = sectionNamed(section, {"intro", "prologue", "entrada", "opening"}) ||
+            sectionIndex == 0;
+        const auto breakdown = sectionNamed(section, {"break", "breakdown", "bajada", "suspend"}) ||
+            sectionIndex == breakdownIndex;
         const auto outro = sectionNamed(section, {"outro", "coda", "exit", "salida"});
-        const auto arrival = sectionNamed(section, {"arrival", "drop", "peak", "climax", "return", "summit"});
+        const auto arrival = sectionNamed(section, {"arrival", "drop", "peak", "climax", "return", "summit"}) ||
+            sectionIndex == peakIndex;
         std::vector<VoiceId> active;
         // A club arrangement is an attention hierarchy, not a checklist. Keep the
         // foundation legible and rotate colour roles instead of enabling thirteen
@@ -1032,11 +1094,13 @@ void ElectronicProductionDirector::normalizePlan(SongPlan& plan) {
                               : supportOwner == 1 ? VoiceId::LowPercussion
                                                   : VoiceId::HighPercussion);
         }
-        if (breakdown || (section.energy > 0.80 && section.density < 0.78))
+        if (breakdown || sectionIndex == peakIndex || (section.energy > 0.80 && section.density < 0.78))
             addUnique(active, VoiceId::HarmonicUpper);
         const auto phraseOwner = positiveModulo(section.motifVariant, 3);
         if (arrival || breakdown || phraseOwner != 0) addUnique(active, VoiceId::Lead);
-        if (!breakdown && section.energy > 0.62 && phraseOwner == 0) addUnique(active, VoiceId::Countermelody);
+        if (!breakdown && (sectionIndex == peakIndex ||
+                           (section.energy > 0.62 && phraseOwner == 0)))
+            addUnique(active, VoiceId::Countermelody);
         for (const auto& mutation : section.rhythm.mutations) {
             const auto voice = mutation.lane == RhythmLane::Kick ? VoiceId::CoreDrums
                 : mutation.lane == RhythmLane::SnareClap ? VoiceId::SnareClap
@@ -1056,8 +1120,9 @@ void ElectronicProductionDirector::normalizePlan(SongPlan& plan) {
                 return voice != VoiceId::Transitions;
             });
         };
+        const auto sectionVoiceBudget = sectionIndex == peakIndex ? 14 : 9;
         for (const auto auxiliary : auxiliaryOrder) {
-            if (soundingCount() <= 9) break;
+            if (soundingCount() <= sectionVoiceBudget) break;
             active.erase(std::remove(active.begin(), active.end(), auxiliary), active.end());
         }
         section.activeVoices = std::move(active);

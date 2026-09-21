@@ -434,10 +434,16 @@ void runGeneratorTests() {
     const auto textureTargets = ArrangementDensityPlanner::targetsFor(texturePlan);
     require(texturePlan.instruments.size() >= 16 &&
                 texturePlan.instruments.size() >= textureTargets.proposedParts && textureHarmonyParts >= 9,
-            "A requested harmonic texture architecture must create a production-scale instrument cast: cast=" +
+                "A requested harmonic texture architecture must create a production-scale instrument cast: cast=" +
                 std::to_string(texturePlan.instruments.size()) + ", target=" +
                 std::to_string(textureTargets.proposedParts) + ", harmony=" +
                 std::to_string(textureHarmonyParts));
+    const auto floorOwner = std::find_if(texturePlan.instruments.begin(), texturePlan.instruments.end(),
+        [](const auto& part) { return part.sourceVoice == VoiceId::HarmonicFoundation; });
+    require(floorOwner != texturePlan.instruments.end() &&
+                TrackViability::contractFor(*floorOwner, texturePlan).minimumActiveBars >=
+                    static_cast<std::size_t>(std::max(16, texturePlan.totalBars / 3)),
+            "Harmonic floor contracts must require continuous sectional coverage rather than token pads");
     std::string textureCast;
     for (const auto& part : texturePlan.instruments) textureCast += part.instrumentId + ":" + std::to_string(static_cast<int>(part.sourceVoice)) + ",";
     require(std::none_of(texturePlan.instruments.begin(), texturePlan.instruments.end(), [](const auto& part) {
@@ -2675,6 +2681,18 @@ void runGeneratorTests() {
                 SelectiveRepair::blockingTargets(classifiedConstraints) ==
                     std::vector<std::size_t>{0},
             "An explicitly requested identity with no MIDI must remain a universal hard commitment");
+    auto productionScaleConstraintPlan = universalConstraintPlan;
+    productionScaleConstraintPlan.instruments.resize(32, universalProtagonist);
+    productionScaleConstraintPlan.instruments.front().id = "optional_cast_colour";
+    auto productionScaleDeficit = absentExplicitIdentity;
+    productionScaleDeficit.instrumentId = productionScaleConstraintPlan.instruments.front().id;
+    const auto productionScaleConstraints = SelectiveRepair::classifyPerformanceDeficits(
+        productionScaleConstraintPlan, {productionScaleDeficit}, true);
+    require(productionScaleConstraints.size() == 1 &&
+                !productionScaleConstraints.front().blocksPublication &&
+                productionScaleConstraints.front().authority ==
+                    ConstraintAuthority::ExplicitPromptCommitment,
+            "A large cast must not reject an otherwise complete score because an optional colour lane is empty");
     auto forbiddenRhythmPlan = universalConstraintPlan;
     forbiddenRhythmPlan.percussionFreeIntent = true;
     forbiddenRhythmPlan.instruments.front().id = "auto_kick_drum";

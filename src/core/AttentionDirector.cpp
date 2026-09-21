@@ -860,7 +860,9 @@ AttentionDirectionReport AttentionDirector::shape(Pattern& pattern, const SongPl
     breathed.reserve(pattern.notes.size());
     for (const auto& note : pattern.notes) {
         const auto* part = partFor(pattern, note.partId);
-        if (!persistentCongestion || part == nullptr || !phraseVoice(*part) ||
+        const auto longPhraseLane = part != nullptr && phraseVoice(*part) &&
+            totalNotes[note.partId] >= 48;
+        if ((!persistentCongestion && !longPhraseLane) || part == nullptr || !phraseVoice(*part) ||
             part->sourceVoice == VoiceId::Lead || protagonist(*part) ||
             totalNotes[note.partId] < 12) {
             breathed.push_back(note);

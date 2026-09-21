@@ -1187,3 +1187,33 @@ Terminal harmony supplies the stable pitch-class set for narrative closure. Root
 enforced when the AI blueprint explicitly commits to tonic resolution; otherwise chord root, bass and
 declared chord tones are valid. This preserves open, modal and suspended endings without weakening
 timing, range, ownership, note-off or cast-cardinality invariants.
+
+### Musical density director (0.58.8)
+
+Track count and musical density are now audited independently. `TrackViability` derives role-aware
+coverage contracts from the song horizon: harmonic floors and sub foundations recur through most of
+the form, bass and pulse lanes receive phrase-level coverage, protagonists and replies remain more
+selective, and textures stay episodic but audible. The contract is included in the performance-block
+brief sent to the model, so GPT remains responsible for the notes, rests and transformations.
+
+`ArrangementDensityPlanner::auditAndStamp` additionally measures active voices per macro section and
+coverage per role, excluding renderer-only timbral destinations. Intro, development, climax, breakdown
+and resolution therefore have observable density targets without imposing a genre pattern. These
+metrics are advisory telemetry and only become a readiness finding when a score is genuinely sparse.
+
+Independent AI lines are no longer collapsed merely because they share a narrative lineage. Only
+explicit relay, timbral handoff, doubling or octave-reinforcement relationships may be consolidated;
+this preserves orchestration and substantially reduces accidental note reassignment.
+
+### Phrase diversity and bounded timbral handoffs (0.58.8)
+
+Coverage validation now fingerprints eight-bar windows. Repeating a cell with more notes does not
+increase its phrase count; long lanes need genuinely different contour, rhythm, register, harmony or
+orchestration. For horizons of 96 bars or more, foundation, bass, pulse and protagonist lanes require
+four distinct statements, while dialogue and environmental lanes require three. The local repair pass
+may extend an authored harmonic/bass lane from its own seeds, but it never invents an unrelated theme.
+
+The attention pass also inserts phrase-level releases on long pulse/arpeggio lanes, even when global
+perceptual congestion is below its ceiling. Shared timbral lanes keep their canonical owner for two
+out of every three phrase windows; only the remaining windows rotate through declared destinations.
+This preserves the musical identity of a line while retaining audible timbral colour.

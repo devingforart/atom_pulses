@@ -573,18 +573,6 @@ ThematicOwnershipReport ElectronicCompositionFabric::concentrateThematicOwnershi
         if (answerer == nullptr || part.prominence > answerer->prominence) answerer = &part;
     }
 
-    const auto lineage = [&](std::uint16_t id) {
-        std::set<std::uint32_t> result;
-        for (const auto& note : pattern.notes)
-            if (note.partId == id && note.narrativeId != 0) result.insert(note.narrativeId);
-        return result;
-    };
-    const auto primaryLineage = lineage(primary->id);
-    const auto sharesLineage = [&](const InstrumentPart& part) {
-        const auto candidate = lineage(part.id);
-        return std::any_of(candidate.begin(), candidate.end(),
-            [&](auto id) { return primaryLineage.contains(id); });
-    };
     const auto assignment = [&](const InstrumentPart& part) -> const InstrumentAssignment* {
         return part.id > 0 && part.id <= plan.instruments.size()
             ? &plan.instruments[part.id - 1] : nullptr;
@@ -629,9 +617,7 @@ ThematicOwnershipReport ElectronicCompositionFabric::concentrateThematicOwnershi
         const auto sharedPrimary = part.lineRelationship == "relay" ||
             part.lineRelationship == "timbral_handoff" ||
             part.lineRelationship == "doubling" ||
-            part.lineRelationship == "octave_reinforcement" ||
-            (part.sourceVoice == VoiceId::Lead &&
-             part.lineRelationship == "independent" && sharesLineage(part));
+            part.lineRelationship == "octave_reinforcement";
         if (sharedPrimary) {
             remap(part, *primary);
         }
@@ -1005,6 +991,14 @@ TimbralHandoffReport ElectronicCompositionFabric::realizeTimbralHandoffs(
         (void) lane;
         if (members.size() < 2) continue;
         report.timbralDestinations += members.size() - 1;
+        // Preserve a canonical musical owner for most phrase windows.  Destinations
+        // are colours, not alternate authors: only every third phrase may move to a
+        // renderer-owned member.  This keeps the line identifiable and bounds the
+        // amount of MIDI reassignment while still auditioning each declared timbre.
+        const auto canonical = std::find_if(members.begin(), members.end(), [&](auto index) {
+            return index < plan.instruments.size() &&
+                !rendererOwnedDestination(plan, plan.instruments[index]);
+        });
         std::map<int, std::vector<std::size_t>> notesByWindow;
         for (std::size_t noteIndex = 0; noteIndex < pattern.notes.size(); ++noteIndex) {
             const auto& note = pattern.notes[noteIndex];
@@ -1019,9 +1013,16 @@ TimbralHandoffReport ElectronicCompositionFabric::realizeTimbralHandoffs(
             const auto beat = window * phraseBeats;
             const auto* section = sectionAt(plan, beat);
             std::vector<std::size_t> eligible;
-            for (const auto index : members)
-                if (section == nullptr || activeIn(plan.instruments[index], *section))
-                    eligible.push_back(index);
+            const auto preserveCanonical = canonical != members.end() &&
+                (std::abs(window) % 3 != 0);
+            if (preserveCanonical) {
+                if (section == nullptr || activeIn(plan.instruments[*canonical], *section))
+                    eligible.push_back(*canonical);
+            } else {
+                for (const auto index : members)
+                    if (section == nullptr || activeIn(plan.instruments[index], *section))
+                        eligible.push_back(index);
+            }
             if (eligible.empty()) eligible = members;
             // Give every compatible timbral destination a phrase before returning to
             // an already-used colour. A plain modulo over a changing eligible set can

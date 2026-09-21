@@ -65,6 +65,15 @@ constexpr std::array generative{role, scale, root, follow, risk, space, repetiti
                                 energy, phraseBars, mode};
 constexpr std::array phraseLengths{1, 2, 4, 8, 16};
 
+bool isInternalDiagnosticDirection(const juce::String& direction) {
+    const auto text = direction.toLowerCase();
+    return text.contains("winhttp:") ||
+           text.contains("openai request reached its time budget") ||
+           text.contains("pulso ai publication gate") ||
+           text.contains("gpt failed -") ||
+           text.contains("incremental gpt score violated");
+}
+
 int previewWorldFromDirection(juce::String direction) {
     direction = direction.toLowerCase();
     const auto has = [&direction](std::initializer_list<const char*> words) {
@@ -499,6 +508,9 @@ void PulsoAudioProcessor::parameterChanged(const juce::String&, float) {
 }
 
 void PulsoAudioProcessor::setCreativeDirection(const juce::String& direction) {
+    // Network/validation diagnostics are never musical input. This guard prevents a
+    // copied error message from becoming the next song prompt after a failed request.
+    if (ids::isInternalDiagnosticDirection(direction)) return;
     const std::scoped_lock lock(creativeDirectionMutex);
     creativeDirection = direction.substring(0, 600);
     automaticPreviewWorld.store(ids::previewWorldFromDirection(creativeDirection), std::memory_order_relaxed);
@@ -1387,6 +1399,11 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             // Genre/domain inference must only read the musician's words. Live inventory
             // and execution feedback are useful context for GPT, but contain terms such as
             // "orchestral", "strings" or "Drum Rack" that must never reclassify techno.
+            if (ids::isInternalDiagnosticDirection(songDirection)) {
+                songDirection.clear();
+                OperationalJournal::write("WARN", "GENERATION",
+                    "ignored an internal diagnostic accidentally supplied as the creative direction");
+            }
             const auto userSongDirection = songDirection;
             if (const auto capabilities = readLiveNativeCapabilitiesSummary(); capabilities.isNotEmpty())
                 songDirection += "\n" + capabilities;
@@ -2496,7 +2513,9 @@ void PulsoAudioProcessor::setStateInformation(const void* data, int size) {
                                             std::memory_order_release);
             {
                 const std::scoped_lock lock(creativeDirectionMutex);
-                creativeDirection = state.getProperty("creativeDirection", {}).toString().substring(0, 600);
+                const auto restoredDirection = state.getProperty("creativeDirection", {}).toString().substring(0, 600);
+                creativeDirection = ids::isInternalDiagnosticDirection(restoredDirection)
+                    ? juce::String{} : restoredDirection;
                 automaticPreviewWorld.store(ids::previewWorldFromDirection(creativeDirection),
                                             std::memory_order_relaxed);
             }

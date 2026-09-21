@@ -160,6 +160,19 @@ bool enforceExplicitCastExclusionsImpl(const juce::String& source,
     return true;
 }
 
+bool repairMotionOwnerContract(SongPlan& plan) {
+    if (!ElectronicRoleContract::requiresMotionOwner(plan) ||
+        ElectronicRoleContract::motionOwnerCount(plan) == 1)
+        return true;
+    const auto elected = ElectronicRoleContract::electPrimaryMotionOwner(
+        std::span<InstrumentAssignment>(plan.instruments.data(), plan.instruments.size()),
+        plan.narrativeSpine.protagonistInstrumentId);
+    if (!elected || ElectronicRoleContract::motionOwnerCount(plan) != 1) return false;
+    OperationalJournal::write("WARN", "CAST",
+        "repaired electronic motion owner locally after plan normalization; no musical material changed");
+    return true;
+}
+
 void applyExplicitRhythmRequest(SongPlan& plan, const juce::String& direction) {
     const auto lower = direction.toLowerCase();
     const auto containsAny = [&](std::initializer_list<const char*> phrases) {
@@ -1268,7 +1281,6 @@ HttpResponse performSingleRequest(const wchar_t* method, const juce::String& pat
         return result;
     }
 
-    std::atomic<HINTERNET> activeRequest{request};
     std::atomic<bool> finished{};
     std::atomic<bool> deadlineReached{};
     const auto deadline = std::chrono::steady_clock::now() + budget;
@@ -1276,8 +1288,11 @@ HttpResponse performSingleRequest(const wchar_t* method, const juce::String& pat
         while (!watchdogToken.stop_requested() && !finished.load(std::memory_order_acquire)) {
             if (token.stop_requested() || std::chrono::steady_clock::now() >= deadline) {
                 deadlineReached.store(!token.stop_requested(), std::memory_order_release);
-                if (const auto handle = activeRequest.exchange(nullptr, std::memory_order_acq_rel))
-                    WinHttpCloseHandle(handle);
+                // Do not close a WinHTTP handle from a second thread while the owning
+                // thread is inside WinHttpSendRequest/ReceiveResponse/ReadData. That
+                // cross-thread close can block both threads indefinitely. WinHTTP already
+                // has bounded connect/send/receive/read timeouts; the watchdog only records
+                // the deadline and lets the owning call unwind safely.
                 return;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(8));
@@ -1330,8 +1345,7 @@ HttpResponse performSingleRequest(const wchar_t* method, const juce::String& pat
 
     finished.store(true, std::memory_order_release);
     watchdog.request_stop();
-    if (const auto handle = activeRequest.exchange(nullptr, std::memory_order_acq_rel))
-        WinHttpCloseHandle(handle);
+    WinHttpCloseHandle(request);
     WinHttpCloseHandle(connection);
     WinHttpCloseHandle(session);
     result.cancelled = token.stop_requested();
@@ -1634,6 +1648,11 @@ juce::String performanceBlockPrompt(const juce::String& direction,
         "least two structurally different sections; one_shot/transition material may be rare. Rhythm motifs in the shared "
         "blueprint are context, not a substitute for this block: every assigned drum or percussion identity must still own "
         "at least one explicit note event with its exact instrument_id and a valid placement. "
+        "A phrase minimum means distinct musical statements, not the same cell copied in every placement: for any lane "
+        "longer than 64 bars, author at least three recognisably different 4-to-8-bar phrases, transform material every "
+        "16-to-32 bars through contour, rhythm, register, harmony or orchestration, and leave at least one intentional "
+        "phrase-level breath before each major return. A repeated ostinato counts as one phrase until it is genuinely "
+        "varied. Pads may sustain, but their entrances, inversions and releases must evolve. "
         "For relay, timbral_handoff, doubling and octave_reinforcement members, write the shared content owner only; "
         "do not spend output reproducing the same phrase for every destination. PULSO distributes complete phrase "
         "segments across every declared timbral destination after the global performance is assembled. The normalized "
@@ -3154,8 +3173,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     OperationalJournal::write("OK", "CHECKPOINT",
         "authoritative protagonist bound to cast identity " +
         juce::String::fromUTF8(result.narrativeSpine.protagonistInstrumentId.c_str()));
-    if (ElectronicRoleContract::requiresMotionOwner(result) &&
-        ElectronicRoleContract::motionOwnerCount(result) != 1) {
+    if (!repairMotionOwnerContract(result)) {
         error = "OpenAI cast violated the electronic motion-owner contract";
         return {};
     }
@@ -3569,9 +3587,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     "deferring " + juce::String(static_cast<int>(preservedObjectives.size())) +
                     " musical objective(s); continuing the complete score"});
             }
-            for (const auto index : emptyNominalParts)
-                if (index < result.instruments.size())
-                    retiredInstrumentIds.insert(result.instruments[index].id);
+            // An explicit cast count is an export contract. Empty optional lanes may
+            // remain renderer-owned destinations, but must not be removed or the
+            // final cast-size invariant will fail after an otherwise valid score.
+            if (requestedCastCount == 0)
+                for (const auto index : emptyNominalParts)
+                    if (index < result.instruments.size())
+                        retiredInstrumentIds.insert(result.instruments[index].id);
             if (!emptyNominalParts.empty() && progress)
                 progress({AiSongStage::Recovery, completedBlocks, blocks.size(), attempt,
                     "retiring " + juce::String(static_cast<int>(emptyNominalParts.size())) +
@@ -3656,7 +3678,115 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 "complete score retains non-blocking musical objectives | " +
                 performanceConstraintBrief(result, result.performanceScore,
                     editorialTargets, requestedCastCount > 0));
-        if (!blockingTargets.empty()) {
+        // A long-form cast can occasionally return a valid melodic cell while the
+        // explicitly declared protagonist arrives empty.  Do not invent a new line
+        // or relax the identity invariant: promote the best authored melodic cell to
+        // that destination, preserving its phrases, placements and transformations.
+        // This is an ownership repair only, so the musical material remains GPT-authored.
+        auto promoteAuthoredProtagonist = [&]() {
+            const auto& protagonistId = result.narrativeSpine.protagonistInstrumentId;
+            if (protagonistId.empty()) return false;
+            const auto protagonistPresent = std::any_of(
+                result.performanceScore.cells.begin(), result.performanceScore.cells.end(),
+                [&](const auto& cell) {
+                    return std::any_of(cell.notes.begin(), cell.notes.end(),
+                        [&](const auto& note) { return note.instrumentId == protagonistId; });
+                });
+            if (protagonistPresent) return false;
+
+            const auto voiceRank = [](VoiceId voice) {
+                if (voice == VoiceId::Lead) return 40;
+                if (voice == VoiceId::Countermelody) return 30;
+                if (voice == VoiceId::HarmonicPulse) return 20;
+                if (voice == VoiceId::HarmonicUpper) return 10;
+                return 0;
+            };
+            const PerformanceCell* source = nullptr;
+            std::string sourceInstrument;
+            int bestScore = -1;
+            for (const auto& cell : result.performanceScore.cells) {
+                if (cell.notes.empty()) continue;
+                std::map<std::string, std::size_t> notesByInstrument;
+                for (const auto& note : cell.notes) {
+                    if (note.instrumentId.empty() || note.instrumentId == protagonistId) continue;
+                    ++notesByInstrument[note.instrumentId];
+                }
+                for (const auto& [instrumentId, count] : notesByInstrument) {
+                    auto assignment = std::find_if(result.instruments.begin(), result.instruments.end(),
+                        [&](const auto& part) { return part.id == instrumentId; });
+                    if (assignment == result.instruments.end()) continue;
+                    const auto voice = assignment->sourceVoice;
+                    if (isVoiceInFamily(voice, VoiceFamily::Rhythm) ||
+                        voice == VoiceId::Transitions) continue;
+                    const auto score = static_cast<int>(count) + voiceRank(voice) * 100;
+                    if (score > bestScore) {
+                        bestScore = score;
+                        source = &cell;
+                        sourceInstrument = instrumentId;
+                    }
+                }
+            }
+            if (source == nullptr) return false;
+
+            PerformanceCell promoted = *source;
+            const auto sourceId = source->id;
+            promoted.id = "fallback_protagonist_" + source->id;
+            promoted.ownedVoices.clear();
+            VoiceId protagonistVoice = VoiceId::Lead;
+            for (const auto& part : result.instruments)
+                if (part.id == protagonistId) { protagonistVoice = part.sourceVoice; break; }
+            promoted.ownedVoices.push_back(protagonistVoice);
+            promoted.narrativeFunction = "protagonist_statement";
+            promoted.notes.erase(std::remove_if(promoted.notes.begin(), promoted.notes.end(),
+                [&](const auto& note) { return note.instrumentId != sourceInstrument; }),
+                promoted.notes.end());
+            for (auto& note : promoted.notes) {
+                note.instrumentId = protagonistId;
+                note.voice = protagonistVoice;
+            }
+            promoted.controls.erase(std::remove_if(promoted.controls.begin(), promoted.controls.end(),
+                [&](const auto& control) {
+                    return !control.instrumentId.empty() && control.instrumentId != sourceInstrument;
+                }), promoted.controls.end());
+            for (auto& control : promoted.controls) {
+                control.instrumentId = protagonistId;
+                control.voice = protagonistVoice;
+            }
+            if (promoted.notes.empty()) return false;
+            result.performanceScore.cells.push_back(std::move(promoted));
+            const auto promotedId = result.performanceScore.cells.back().id;
+            const auto oldPlacementCount = result.performanceScore.placements.size();
+            for (const auto& placement : result.performanceScore.placements) {
+                if (placement.cellId != sourceId) continue;
+                auto copy = placement;
+                copy.cellId = promotedId;
+                result.performanceScore.placements.push_back(std::move(copy));
+            }
+            if (result.performanceScore.placements.size() == oldPlacementCount) return false;
+            OperationalJournal::write("WARN", "RECOVERY",
+                "protagonist identity was empty; promoted authored melodic cell '" +
+                juce::String(sourceId) + "' to '" + juce::String(protagonistId) +
+                "' without rewriting notes");
+            return true;
+        };
+
+        if (!blockingTargets.empty() && promoteAuthoredProtagonist()) {
+            SongComposer::normalizePlan(result);
+            stillMissing = uncoveredInstruments(result, result.performanceScore, allInstruments);
+            const auto repairedConstraints = SelectiveRepair::performanceConstraints(
+                result, result.performanceScore, stillMissing, requestedCastCount > 0);
+            const auto repairedBlocking = SelectiveRepair::blockingTargets(repairedConstraints);
+            if (repairedBlocking.empty()) {
+                OperationalJournal::write("OK", "CONSTRAINT",
+                    "blocking protagonist identity repaired by authored ownership promotion");
+            } else {
+                error = "Incremental GPT score violated a blocking identity commitment: " +
+                    performanceConstraintBrief(result, result.performanceScore,
+                        repairedBlocking, requestedCastCount > 0);
+                OperationalJournal::write("ERROR", "CONSTRAINT", error);
+                return {};
+            }
+        } else if (!blockingTargets.empty()) {
             error = "Incremental GPT score violated a blocking identity commitment: " +
                 performanceConstraintBrief(result, result.performanceScore,
                     blockingTargets, requestedCastCount > 0);
@@ -3666,9 +3796,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         // Only an unrequested, non-essential identity with zero concrete MIDI is
         // retired. Quantitative and narrative findings preserve the authored track.
         stillMissing.clear();
-        for (const auto& constraint : finalConstraints)
-            if (!constraint.blocksPublication && constraint.evidence.notes == 0)
-                stillMissing.push_back(constraint.evidence.instrumentIndex);
+        if (requestedCastCount == 0) {
+            for (const auto& constraint : finalConstraints)
+                if (!constraint.blocksPublication && constraint.evidence.notes == 0)
+                    stillMissing.push_back(constraint.evidence.instrumentIndex);
+        } else {
+            OperationalJournal::write("OK", "CAST",
+                "preserving explicit cast identities, including empty renderer-owned destinations");
+        }
         std::sort(stillMissing.begin(), stillMissing.end());
         stillMissing.erase(std::unique(stillMissing.begin(), stillMissing.end()), stillMissing.end());
         if (stillMissing.empty()) {
@@ -3794,8 +3929,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         error = "Incremental GPT score lost its declared protagonist";
         return {};
     }
-    if (ElectronicRoleContract::requiresMotionOwner(result) &&
-        ElectronicRoleContract::motionOwnerCount(result) != 1) {
+    if (!repairMotionOwnerContract(result)) {
         error = "Incremental GPT score must preserve exactly one elected primary electronic motion owner";
         return {};
     }
@@ -4219,6 +4353,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                  << ", arrangement_melody_parts=" << static_cast<int>(draftReport.arrangementDensity.melodyParts)
                  << ", arrangement_texture_parts=" << static_cast<int>(draftReport.arrangementDensity.textureParts)
                  << ", arrangement_peak_parts=" << static_cast<int>(draftReport.arrangementDensity.peakSimultaneousParts)
+                 << ", arrangement_underfilled_sections=" << static_cast<int>(draftReport.arrangementDensity.underfilledSections)
+                 << ", arrangement_section_coverage=" << juce::String(draftReport.arrangementDensity.sectionCoverage, 3)
+                 << ", arrangement_role_coverage=" << juce::String(draftReport.arrangementDensity.roleCoverage, 3)
                  << ", arrangement_independence=" << juce::String(draftReport.arrangementDensity.independenceScore, 3)
                   << ", arrangement_ready=" << (draftReport.arrangementDensity.ready ? "true" : "false") << ".\n";
     auditSummary << "perceptual_load="

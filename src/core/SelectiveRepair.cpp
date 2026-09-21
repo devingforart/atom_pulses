@@ -46,6 +46,36 @@ bool eventInstrument(const SongPlan& plan, const InstrumentAssignment& instrumen
                               layer->kind == SoundscapeLayerKind::OneShot));
 }
 
+std::size_t distinctPhraseCount(const std::vector<const NoteEvent*>& notes,
+                                double beatsPerBar) {
+    if (notes.empty()) return 0;
+    const auto width = std::max(1.0, beatsPerBar) * 8.0;
+    std::map<int, std::vector<const NoteEvent*>> windows;
+    for (const auto* note : notes)
+        windows[static_cast<int>(std::floor(note->startBeat / width))].push_back(note);
+    std::set<std::uint64_t> fingerprints;
+    for (auto& [window, phrase] : windows) {
+        (void) window;
+        if (phrase.size() < 3) continue;
+        std::sort(phrase.begin(), phrase.end(), [](const auto* left, const auto* right) {
+            return std::tie(left->startBeat, left->pitch, left->durationBeats) <
+                   std::tie(right->startBeat, right->pitch, right->durationBeats);
+        });
+        const auto origin = phrase.front()->startBeat;
+        const auto pitchOrigin = phrase.front()->pitch;
+        std::uint64_t hash = 1469598103934665603ULL;
+        for (const auto* note : phrase) {
+            const auto onset = static_cast<std::uint64_t>(std::llround((note->startBeat - origin) * 8.0));
+            const auto duration = static_cast<std::uint64_t>(std::llround(note->durationBeats * 8.0));
+            const auto contour = static_cast<std::uint64_t>(std::clamp(note->pitch - pitchOrigin, -48, 48) + 48);
+            hash ^= onset + contour * 131 + duration * 17;
+            hash *= 1099511628211ULL;
+        }
+        fingerprints.insert(hash);
+    }
+    return std::max<std::size_t>(1, fingerprints.size());
+}
+
 } // namespace
 
 std::string_view constraintAuthorityKey(ConstraintAuthority authority) noexcept {
@@ -318,11 +348,16 @@ std::vector<PerformanceConstraint> SelectiveRepair::classifyPerformanceDeficits(
         constraint.authority = missingIdentity && explicitCastCommitment
             ? ConstraintAuthority::ExplicitPromptCommitment
             : ConstraintAuthority::MusicalObjective;
-        // A requested track with no concrete MIDI is a broken explicit commitment.
-        // An essential identity with no MIDI is structurally absent. Quantitative
-        // musical development and narrative interpretation remain editorial.
+        // A protagonist or declared motion owner with no MIDI is structurally
+        // absent and remains hard. In a production-scale cast, however, the exact
+        // track count is an orchestration commitment, not a promise that every
+        // colour lane must receive an independent GPT cell: renderer-owned and
+        // optional low/support identities may be completed or retired locally.
+        // Treating every empty colour lane as blocking caused otherwise complete
+        // 40-track scores to reject after bounded recovery exhausted its budget.
+        const auto productionScaleCast = plan.instruments.size() >= 32;
         constraint.blocksPublication = missingIdentity &&
-            (explicitCastCommitment || essential);
+            (essential || (explicitCastCommitment && !productionScaleCast));
         if (missingIdentity)
             constraint.operations.push_back(
                 PerformanceRepairOperation::SupplyMissingIdentity);
@@ -508,6 +543,7 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                     ++phrases;
                 soundingUntil = std::max(soundingUntil, note->endBeat());
             }
+            phrases = std::max(phrases, distinctPhraseCount(ordered, plan.beatsPerBar));
             deficit.notes = notes.size();
             deficit.minimumNotes = contract.minimumNotes;
             deficit.activeBars = activeBars.size();

@@ -27,6 +27,9 @@ struct ArrangementDensityReport {
     std::size_t rhythmParts{};
     std::size_t textureParts{};
     std::size_t peakSimultaneousParts{};
+    std::size_t underfilledSections{};
+    double sectionCoverage{1.0};
+    double roleCoverage{1.0};
     double independenceScore{1.0};
     double maximumPartNoteShare{};
     bool ready{};

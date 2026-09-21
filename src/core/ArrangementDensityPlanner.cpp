@@ -1,10 +1,12 @@
 #include "ArrangementDensityPlanner.h"
 
 #include "OrchestrationScore.h"
+#include "ElectronicCompositionFabric.h"
 #include "SongComposer.h"
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <iterator>
 #include <map>
@@ -66,6 +68,44 @@ bool containsInstrument(const SongPlan& plan, std::string_view catalogId) {
     return std::any_of(plan.instruments.begin(), plan.instruments.end(), [&](const auto& item) {
         return item.instrumentId == catalogId;
     });
+}
+
+std::string lower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+double roleTarget(const InstrumentPart& part) noexcept {
+    if (part.sourceVoice == VoiceId::HarmonicFoundation) return .58;
+    if (part.sourceVoice == VoiceId::SubBass) return .44;
+    if (part.sourceVoice == VoiceId::MovementBass) return .36;
+    if (part.sourceVoice == VoiceId::HarmonicPulse) return .24;
+    if (part.sourceVoice == VoiceId::Lead) return .22;
+    if (part.sourceVoice == VoiceId::Countermelody) return .14;
+    if (part.sourceVoice == VoiceId::Atmosphere) return .16;
+    if (part.sourceVoice == VoiceId::Transitions) return .06;
+    return .18;
+}
+
+std::size_t sectionTarget(const SongSection& section, bool electronic,
+                          bool percussionFree, std::size_t population) noexcept {
+    if (!electronic) return std::min<std::size_t>(population, 4);
+    const auto name = lower(section.name);
+    std::size_t base = 5;
+    if (name.find("intro") != std::string::npos || name.find("entrada") != std::string::npos)
+        base = 4;
+    else if (name.find("break") != std::string::npos || name.find("puente") != std::string::npos)
+        base = 3;
+    else if (name.find("climax") != std::string::npos || name.find("drop") != std::string::npos ||
+             name.find("peak") != std::string::npos)
+        base = percussionFree ? 10 : 12;
+    else if (section.energy >= .72)
+        base = percussionFree ? 9 : 11;
+    else if (section.energy <= .28)
+        base = 3;
+    return std::min<std::size_t>(population, base);
 }
 
 void ensureVoice(SongPlan& plan, VoiceId voice) {
@@ -338,11 +378,58 @@ ArrangementDensityReport ArrangementDensityPlanner::auditAndStamp(Pattern& patte
                 active.insert(note.partId);
         report.peakSimultaneousParts = std::max(report.peakSimultaneousParts, active.size());
     }
+    // A cast is useful only when it breathes through the form.  Measure each
+    // section independently so a high track count cannot hide an empty middle or
+    // a climax with no additional voices.  These are advisory metrics; they never
+    // overwrite an AI phrase or force a genre template.
+    std::size_t coveredSections = 0;
+    for (const auto& section : plan.sections) {
+        std::set<std::uint16_t> active;
+        const auto start = section.startBar * plan.beatsPerBar;
+        const auto end = (section.startBar + section.bars) * plan.beatsPerBar;
+        for (const auto& note : pattern.notes)
+            if (note.partId != 0 && note.startBeat < end && note.endBeat() > start)
+                active.insert(note.partId);
+        const auto target = sectionTarget(section, report.targets.electronic,
+                                          report.targets.percussionFree, report.populatedParts);
+        if (active.size() >= target) ++coveredSections;
+        else ++report.underfilledSections;
+    }
+    report.sectionCoverage = plan.sections.empty() ? 1.0 :
+        static_cast<double>(coveredSections) / static_cast<double>(plan.sections.size());
+
+    double roleScore = 0.0;
+    std::size_t roleCount = 0;
+    for (const auto& part : pattern.parts) {
+        if (part.id == 0 || part.id > plan.instruments.size()) continue;
+        const auto& assignment = plan.instruments[part.id - 1];
+        if (ElectronicCompositionFabric::rendererOwnedDestination(plan, assignment)) continue;
+        if (assignment.sourceVoice == VoiceId::Transitions ||
+            isVoiceInFamily(assignment.sourceVoice, VoiceFamily::Rhythm)) continue;
+        std::set<int> activeBars;
+        for (const auto& note : pattern.notes) {
+            if (note.partId != part.id) continue;
+            const auto first = static_cast<int>(std::floor(note.startBeat / plan.beatsPerBar));
+            const auto last = static_cast<int>(std::floor(
+                std::max(note.startBeat, note.endBeat() - .001) / plan.beatsPerBar));
+            for (auto bar = first; bar <= last; ++bar) activeBars.insert(bar);
+        }
+        std::size_t available = 0;
+        if (assignment.activeSections.empty()) available = static_cast<std::size_t>(std::max(1, plan.totalBars));
+        else for (const auto& candidate : plan.sections)
+            if (std::find(assignment.activeSections.begin(), assignment.activeSections.end(), candidate.name) !=
+                assignment.activeSections.end()) available += static_cast<std::size_t>(candidate.bars);
+        const auto target = std::max(1.0, static_cast<double>(available) * roleTarget(part));
+        roleScore += std::clamp(static_cast<double>(activeBars.size()) / target, 0.0, 1.0);
+        ++roleCount;
+    }
+    report.roleCoverage = roleCount == 0 ? 1.0 : roleScore / static_cast<double>(roleCount);
     report.ready = report.populatedParts >= report.targets.minimumPopulatedParts &&
         report.harmonyParts >= report.targets.minimumHarmonyParts &&
         report.melodyParts >= report.targets.minimumMelodyParts &&
         report.textureParts >= report.targets.minimumTextureParts &&
-        report.independenceScore >= .80;
+        report.independenceScore >= .80 && report.sectionCoverage >= .70 &&
+        report.roleCoverage >= .65;
 
     pattern.arrangementTargetParts = report.targets.proposedParts;
     pattern.populatedInstrumentParts = report.populatedParts;

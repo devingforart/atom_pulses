@@ -24,6 +24,39 @@ struct Evidence {
     std::size_t authoredSeeds{};
 };
 
+// A phrase is not made distinct by being repeated in another placement.  Count
+// fingerprints over eight-bar windows so a 192-bar ostinato with thousands of
+// notes still reports one musical idea instead of passing as a developed line.
+std::size_t distinctPhraseCount(const std::vector<const NoteEvent*>& notes,
+                                double beatsPerBar) {
+    if (notes.empty()) return 0;
+    const auto width = std::max(1.0, beatsPerBar) * 8.0;
+    std::map<int, std::vector<const NoteEvent*>> windows;
+    for (const auto* note : notes)
+        windows[static_cast<int>(std::floor(note->startBeat / width))].push_back(note);
+    std::set<std::uint64_t> fingerprints;
+    for (auto& [window, phrase] : windows) {
+        (void) window;
+        if (phrase.size() < 3) continue;
+        std::sort(phrase.begin(), phrase.end(), [](const auto* left, const auto* right) {
+            return std::tie(left->startBeat, left->pitch, left->durationBeats) <
+                   std::tie(right->startBeat, right->pitch, right->durationBeats);
+        });
+        const auto origin = phrase.front()->startBeat;
+        const auto pitchOrigin = phrase.front()->pitch;
+        std::uint64_t hash = 1469598103934665603ULL;
+        for (const auto* note : phrase) {
+            const auto onset = static_cast<std::uint64_t>(std::llround((note->startBeat - origin) * 8.0));
+            const auto duration = static_cast<std::uint64_t>(std::llround(note->durationBeats * 8.0));
+            const auto contour = static_cast<std::uint64_t>(std::clamp(note->pitch - pitchOrigin, -48, 48) + 48);
+            hash ^= onset + contour * 131 + duration * 17;
+            hash *= 1099511628211ULL;
+        }
+        fingerprints.insert(hash);
+    }
+    return std::max<std::size_t>(notes.empty() ? 0 : 1, fingerprints.size());
+}
+
 std::string lower(std::string text) {
     std::transform(text.begin(), text.end(), text.begin(), [](unsigned char value) {
         return static_cast<char>(std::tolower(value));
@@ -127,6 +160,10 @@ Evidence evidence(const Pattern& pattern, std::uint16_t partId, double beatsPerB
             if (notes[index]->startBeat - soundingUntil >= beatsPerBar * .75) ++result.phrases;
             soundingUntil = std::max(soundingUntil, notes[index]->endBeat());
         }
+        // Prefer distinct musical statements over raw silence-separated chunks.
+        // This catches the common failure mode where one cell is copied for the
+        // whole arrangement while still allowing a genuinely sparse one-shot lane.
+        result.phrases = std::max(result.phrases, distinctPhraseCount(notes, beatsPerBar));
     }
     return result;
 }
@@ -226,8 +263,10 @@ std::size_t develop(Pattern& pattern, const SongPlan& plan, const InstrumentPart
     if (authoredAiScore && contract.function != TrackFunction::HarmonicFloor &&
         contract.function != TrackFunction::Environment &&
         contract.function != TrackFunction::Pulse &&
-        !(contract.function == TrackFunction::Bass &&
-          part.id == primaryBassPartId(pattern, plan))) return 0;
+        contract.function != TrackFunction::Bass &&
+        !(contract.function == TrackFunction::HarmonicVoice &&
+          (part.sourceVoice == VoiceId::HarmonicFoundation ||
+           part.sourceVoice == VoiceId::HarmonicUpper))) return 0;
     // Only GPT-authored notes may seed new composition. A lone local placeholder is
     // evidence that the instrument was named but never actually written.
     if (before.authoredSeeds < 2 || contract.eventException) return 0;
@@ -460,44 +499,60 @@ TrackViabilityContract TrackViability::contractFor(const InstrumentPart& part,
                     part.sourceVoice == VoiceId::ClosedHats ? 2U : 1U;
                 result.minimumNotes = std::max<std::size_t>(6,
                     result.minimumActiveBars * attacksPerBar);
-                result.minimumPhrases = result.minimumActiveBars >= 12 ? 3 : 2;
+                result.minimumPhrases = result.minimumActiveBars >= 96 ? 4 :
+                    result.minimumActiveBars >= 12 ? 3 : 2;
             }
             break;
         case TrackFunction::Bass:
+            // A bass lane is a phrase-level foundation, not a four-bar token.  Keep
+            // intentional rests in the score, but require roughly 35--45% of the
+            // available horizon so a large cast does not turn into an empty grid.
             result.minimumActiveBars = capped(std::max<std::size_t>(12,
-                part.sourceVoice == VoiceId::SubBass ? horizon / 5 : horizon / 10));
-            result.minimumNotes = std::max<std::size_t>(16, result.minimumActiveBars);
-            result.minimumPhrases = 3;
+                static_cast<std::size_t>(std::lround(horizon *
+                    (part.sourceVoice == VoiceId::SubBass ? .44 : .36)))));
+            result.minimumNotes = std::max<std::size_t>(20, result.minimumActiveBars);
+            result.minimumPhrases = horizon >= 96 ? 4 : 3;
             break;
         case TrackFunction::HarmonicFloor:
-            result.minimumActiveBars = capped(std::max<std::size_t>(12, horizon / 6));
-            result.minimumNotes = std::max<std::size_t>(12, result.minimumActiveBars);
-            result.minimumPhrases = 3;
+            // Pads/floor layers provide the continuous harmonic floor.  Their
+            // coverage is intentionally high while the attention director still
+            // inserts phrase breaths and sectional subtraction.
+            result.minimumActiveBars = capped(std::max<std::size_t>(16,
+                static_cast<std::size_t>(std::lround(horizon * .58))));
+            result.minimumNotes = std::max<std::size_t>(16, result.minimumActiveBars);
+            result.minimumPhrases = horizon >= 96 ? 4 : 3;
             break;
         case TrackFunction::HarmonicVoice:
-            result.minimumActiveBars = capped(std::max<std::size_t>(8, horizon / 16));
-            result.minimumNotes = std::max<std::size_t>(9, result.minimumActiveBars);
-            result.minimumPhrases = 2;
+            result.minimumActiveBars = capped(std::max<std::size_t>(10,
+                static_cast<std::size_t>(std::lround(horizon * .28))));
+            result.minimumNotes = std::max<std::size_t>(12, result.minimumActiveBars);
+            result.minimumPhrases = horizon >= 96 ? 3 : 2;
             break;
         case TrackFunction::Pulse:
-            result.minimumActiveBars = capped(std::max<std::size_t>(8, horizon / 14));
-            result.minimumNotes = std::max<std::size_t>(16, result.minimumActiveBars * 2);
-            result.minimumPhrases = 3;
+            result.minimumActiveBars = capped(std::max<std::size_t>(10,
+                static_cast<std::size_t>(std::lround(horizon * .24))));
+            result.minimumNotes = std::max<std::size_t>(24, result.minimumActiveBars * 2);
+            result.minimumPhrases = horizon >= 96 ? 4 : 3;
             break;
         case TrackFunction::Protagonist:
-            result.minimumActiveBars = capped(std::max<std::size_t>(8, horizon / 16));
-            result.minimumNotes = 18;
-            result.minimumPhrases = 3;
+            result.minimumActiveBars = capped(std::max<std::size_t>(10,
+                static_cast<std::size_t>(std::lround(horizon * .22))));
+            result.minimumNotes = std::max<std::size_t>(18, result.minimumActiveBars);
+            result.minimumPhrases = horizon >= 96 ? 4 : 3;
             break;
         case TrackFunction::Dialogue:
-            result.minimumActiveBars = capped(std::max<std::size_t>(6, horizon / 24));
-            result.minimumNotes = 12;
-            result.minimumPhrases = 2;
+            result.minimumActiveBars = capped(std::max<std::size_t>(8,
+                static_cast<std::size_t>(std::lround(horizon * .14))));
+            result.minimumNotes = std::max<std::size_t>(12, result.minimumActiveBars);
+            result.minimumPhrases = horizon >= 96 ? 3 : 2;
             break;
         case TrackFunction::Environment:
-            result.minimumActiveBars = capped(std::max<std::size_t>(8, horizon / 14));
-            result.minimumNotes = 4;
-            result.minimumPhrases = 2;
+            // Textures remain episodic, but must recur often enough to be heard as
+            // an evolving soundscape rather than a named-but-empty destination.
+            result.minimumActiveBars = capped(std::max<std::size_t>(8,
+                static_cast<std::size_t>(std::lround(horizon * .16))));
+            result.minimumNotes = std::max<std::size_t>(6, result.minimumActiveBars / 2);
+            result.minimumPhrases = horizon >= 96 ? 3 : 2;
             break;
         case TrackFunction::Transition:
             result.minimumActiveBars = 1;

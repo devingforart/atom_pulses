@@ -354,7 +354,8 @@ std::vector<PerformanceConstraint> SelectiveRepair::classifyPerformanceDeficits(
         }
         PerformanceConstraint constraint;
         constraint.evidence = std::move(deficit);
-        const auto motionEssential = constraint.evidence.instrumentIndex < plan.instruments.size() &&
+        const auto motionEssential = explicitCastCommitment &&
+            constraint.evidence.instrumentIndex < plan.instruments.size() &&
             ElectronicRoleContract::motionOwner(plan.instruments[constraint.evidence.instrumentIndex]) &&
             !populatedMotionOwner(constraint.evidence.instrumentIndex);
         const auto essential = constraint.evidence.instrumentId ==

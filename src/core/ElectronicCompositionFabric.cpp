@@ -1206,7 +1206,7 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
             if (source.empty()) continue;
             const auto windowBeats = plan.beatsPerBar * 4.0;
             const auto targetWindows = static_cast<std::size_t>(std::ceil(
-                (static_cast<double>(plan.totalBars) / 4.0) * .70));
+                (static_cast<double>(plan.totalBars) / 4.0) * .85));
             auto populated = std::size_t{};
             std::vector<int> missing;
             for (auto window = 0; window * windowBeats < pattern.lengthBeats; ++window) {
@@ -1216,7 +1216,7 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                     return note.partId == ownerId && note.startBeat >= start && note.startBeat < end;
                 });
                 if (notes > 0) ++populated;
-                else if (window % 4 != 3) missing.push_back(window); // preserve phrase breaths
+                else missing.push_back(window);
             }
             for (const auto window : missing) {
                 if (populated >= targetWindows) break;
@@ -1431,7 +1431,32 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                                 report.publicationClosureNotesCreated, 8))
                         ++report.resolutionCodaNotesCreated;
                 }
-            } else if (!aiAuthoredScore(plan)) {
+            } else if (aiAuthoredScore(plan)) {
+                // GPT can author a complete protagonist but omit its final-section
+                // placement. Reuse its latest authored statement as a quiet tonic
+                // coda instead of accepting a narrative that simply stops.
+                auto source = pattern.notes.end();
+                for (auto it = pattern.notes.begin(); it != pattern.notes.end(); ++it) {
+                    if (it->voice == VoiceId::Lead && it->partId > 0 &&
+                        it->partId <= plan.instruments.size() &&
+                        (it->origin == NoteOrigin::AiAuthored || it->origin == NoteOrigin::AiTransformed ||
+                         it->origin == NoteOrigin::PlanDerived) &&
+                        (source == pattern.notes.end() || it->startBeat > source->startBeat))
+                        source = it;
+                }
+                if (source != pattern.notes.end()) {
+                    auto coda = *source;
+                    const auto owner = plan.instruments[coda.partId - 1];
+                    coda.startBeat = std::max(codaStart, finalBar - plan.beatsPerBar * .5);
+                    coda.durationBeats = std::min(1.5, end - coda.startBeat - 1.0 / 32.0);
+                    coda.pitch = nearestPitch(plan.rootPitchClass, coda.pitch, owner);
+                    coda.velocity = std::max(42, coda.velocity - 8);
+                    coda.origin = NoteOrigin::PlanDerived;
+                    coda.narrativeId = 0x434f4441u;
+                    pattern.notes.push_back(coda);
+                    ++report.resolutionCodaNotesCreated;
+                }
+            } else {
                 const auto leadIndex = leads.front();
                 const auto& lead = plan.instruments[leadIndex];
                 constexpr std::array<double, 4> codaOnsets{0.0, 1.0, 2.5, 4.0};

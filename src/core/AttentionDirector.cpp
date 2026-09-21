@@ -862,15 +862,27 @@ AttentionDirectionReport AttentionDirector::shape(Pattern& pattern, const SongPl
         const auto* part = partFor(pattern, note.partId);
         const auto longPhraseLane = part != nullptr && phraseVoice(*part) &&
             totalNotes[note.partId] >= 48;
-        if ((!persistentCongestion && !longPhraseLane) || part == nullptr || !phraseVoice(*part) ||
-            part->sourceVoice == VoiceId::Lead || protagonist(*part) ||
+        const auto authoredNarrative = plan.instrumentCastAuthored && !plan.performanceScore.empty();
+        // An authored protagonist must still articulate phrases even when the
+        // global arrangement is not congested.  Previously phrase shaping was
+        // gated entirely by persistent congestion, which left otherwise valid
+        // GPT leads with no phrase-level breaths at all.  Keep the threshold
+        // conservative so sparse leads and short motifs remain untouched.
+        const auto narrativeSpeaker = authoredNarrative && part != nullptr && protagonist(*part) &&
+            totalNotes[note.partId] >= 24;
+        if ((!persistentCongestion && !longPhraseLane && !narrativeSpeaker) || part == nullptr || !phraseVoice(*part) ||
+            (part->sourceVoice == VoiceId::Lead && !authoredNarrative) ||
+            (protagonist(*part) && !authoredNarrative) ||
             totalNotes[note.partId] < 12) {
             breathed.push_back(note);
             continue;
         }
         const auto bar = std::clamp(static_cast<int>(std::floor(note.startBeat / beatsPerBar)), 0, bars - 1);
         const auto phraseIndex = bar / 4;
-        if (phraseOnsets[{note.partId, phraseIndex}] < 6) {
+        // The protagonist can carry a deliberately sparse three-onset phrase;
+        // accompaniment still requires the denser six-onset threshold.
+        const auto minimumPhraseOnsets = narrativeSpeaker ? std::size_t{3} : std::size_t{6};
+        if (phraseOnsets[{note.partId, phraseIndex}] < minimumPhraseOnsets) {
             breathed.push_back(note);
             continue;
         }

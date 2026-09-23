@@ -1217,3 +1217,56 @@ The attention pass also inserts phrase-level releases on long pulse/arpeggio lan
 perceptual congestion is below its ceiling. Shared timbral lanes keep their canonical owner for two
 out of every three phrase windows; only the remaining windows rotate through declared destinations.
 This preserves the musical identity of a line while retaining audible timbral colour.
+
+### Redundant clone consolidation (0.58.25)
+
+Literal duplicate evidence remains a focused AI rewrite request. If that single bounded
+rewrite cannot provide independent material and the user did not request an explicit cast
+size, publication keeps the counterpart performance and removes only the redundant lane.
+The protagonist, the sole bass owner, and the sole required motion owner are protected.
+This is lossless with respect to unique MIDI and never authors replacement notes locally.
+
+### Authoritative resolution linkage (0.58.24)
+
+The macro form owns section identity. If the cast declares one valid Lead protagonist
+but omits the macro's resolution section from that instrument's `active_sections`, the
+manifest is reconciled locally before contract validation. This edits only a foreign-key
+style reference and avoids spending another model call on deterministic metadata. Missing,
+duplicate, or non-Lead protagonists remain hard failures.
+
+### Post-promotion narrative closure (0.58.23)
+
+An empty declared protagonist may be repaired by transferring ownership of an
+existing AI-authored melodic cell. Because this happens after initial score assembly,
+the coda guarantee is run again against the promoted identity. The repair adds only a
+placement of that authored cell at the resolution boundary and the shortest tonal
+transposition required for a stable ending. No notes, rhythms, durations, or dynamics
+are generated locally. Publication validation then measures the repaired rendered MIDI.
+
+### Evidence-based orchestral independence (0.58.21–0.58.22)
+
+The performance validator renders the complete accepted score before publication and compares
+independently owned lanes by quantized onset and exact MIDI pitch. Explicit doubling, relay,
+timbral handoff and octave reinforcement are excluded. When at least twelve events exist and literal
+overlap reaches 82 percent of the shorter lane, only the currently inspected owner—or the less
+structurally important owner during a global inspection—is marked for transactional replacement.
+Duration may differ because a timbral double can change articulation while retaining the same audible
+line; duration and contour are still measured in the phrase-state fingerprint. Shared pitch classes,
+cadential attacks and complementary voicings do not count as duplication. The
+protagonist and primary motion owner receive preservation priority; accepted unrelated MIDI remains
+immutable.
+
+Persistent pulse, upper-harmony, movement-bass, inner-motion, suspension, counterpoint and chord-body
+lanes are fingerprinted in eight-bar phrase windows after normalizing temporal and tonal origin. A lane
+active through at least three sections and one third of a long form must expose 3–6 distinct sectional
+states according to its responsibility. Hypnotic repetition inside one state is valid. Foundations,
+roots, pedals, drones and harmonic floors remain exempt because stability is their musical function.
+
+These failures map to `separate_independent_line` and `develop_sectional_evolution`; both require
+surgical replacement because additive notes cannot remove a clone or make a static pattern evolve.
+Only a confirmed literal clone remains blocking; sectional stasis is editorial and cannot erase a
+complete score. Every independence/evolution/coda conflict receives one evidence-rich remote repair,
+and independence prompts include a bounded excerpt of the accepted counterpart MIDI. A missing coda
+remains blocking for the declared protagonist. Its repair remains free to choose an open, modal or
+tonic ending, but the last attack must occur at the audible boundary and belong to the blueprint's
+terminal harmony. No local composer fabricates counterpoint or closure.

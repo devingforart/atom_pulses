@@ -944,9 +944,28 @@ int main(int argc, char** argv) {
     const auto absentResolutionProtagonist = protagonistManifest.replace(
         "\"active_sections\":[\"Intro\",\"Resolve\"]}",
         "\"active_sections\":[\"Intro\"]}");
-    require(!pulso::plugin::AiComposer::bindCastProtagonist(
+    require(pulso::plugin::AiComposer::bindCastProtagonist(
                 protagonistMacro, absentResolutionProtagonist, boundBlueprint, protagonistError),
-            "The definitive protagonist must be active in the macro resolution section");
+            "The definitive protagonist must inherit the authoritative macro resolution section");
+    const auto reconciledBlueprint = juce::JSON::parse(boundBlueprint);
+    const auto* protagonistReconciledObject = reconciledBlueprint.getDynamicObject();
+    const auto* protagonistReconciledInstruments = protagonistReconciledObject == nullptr ? nullptr :
+        protagonistReconciledObject->getProperty("instruments").getArray();
+    auto protagonistLinkedToResolution = false;
+    if (protagonistReconciledInstruments != nullptr) {
+        for (const auto& item : *protagonistReconciledInstruments) {
+            const auto* instrument = item.getDynamicObject();
+            if (instrument == nullptr ||
+                instrument->getProperty("id").toString() != "ld_protagonist_identity") continue;
+            if (const auto* active = instrument->getProperty("active_sections").getArray())
+                protagonistLinkedToResolution = std::any_of(
+                    active->begin(), active->end(), [](const auto& section) {
+                        return section.toString() == "Resolve";
+                    });
+        }
+    }
+    require(protagonistLinkedToResolution,
+            "Cast reconciliation must persist the resolution section without changing identity");
     pulso::SongPlan routingPlan;
     routingPlan.beatsPerBar = 4.0;
     routingPlan.totalBars = 4;

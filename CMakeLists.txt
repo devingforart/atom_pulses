@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.58.19 LANGUAGES C CXX)
+project(Pulso VERSION 0.58.25 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -99,6 +99,7 @@ if(PULSO_BUILD_TESTS)
         tests/TestMain.cpp
         tests/GeneratorTests.cpp
         tests/ScaleTests.cpp
+        tests/SelectiveRepairTests.cpp
     )
     target_link_libraries(pulso_tests PRIVATE pulso_core)
     add_test(NAME pulso_core_tests COMMAND pulso_tests)

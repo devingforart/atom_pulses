@@ -33,8 +33,14 @@ struct PerformanceCoverageDeficit {
     std::size_t minimumPhrases{};
     std::size_t sections{};
     std::size_t minimumSections{};
+    std::size_t sectionalStates{};
+    std::size_t minimumSectionalStates{};
+    double duplicateEventOverlap{};
+    std::string duplicatedWithInstrumentId;
     bool missingCodaResolution{};
     bool missingThematicRelationship{};
+    bool duplicatedIndependentLine{};
+    bool missingSectionalEvolution{};
 };
 
 enum class ConstraintAuthority {
@@ -47,6 +53,8 @@ enum class PerformanceRepairOperation {
     SupplyMissingIdentity,
     ExtendCoverage,
     DevelopPhrase,
+    DevelopSectionalEvolution,
+    SeparateIndependentLine,
     ResolveNarrative,
     EstablishThematicRelationship
 };
@@ -95,11 +103,21 @@ public:
         const std::vector<PerformanceConstraint>&);
     [[nodiscard]] static std::vector<std::size_t> editorialTargets(
         const std::vector<PerformanceConstraint>&);
+    // After one bounded AI rewrite, an unrequested literal clone can be removed
+    // without losing unique music. Explicit casts and essential identities remain.
+    [[nodiscard]] static std::vector<std::size_t> consolidatableDuplicateTargets(
+        const SongPlan&, const std::vector<PerformanceConstraint>&,
+        bool explicitCastCommitment);
     [[nodiscard]] static bool requiresReplacement(
         const PerformanceCoverageDeficit&) noexcept;
     [[nodiscard]] static std::vector<std::size_t> incompleteTargets(
         const SongPlan&, const PerformanceScore&,
         const std::vector<std::size_t>& candidates);
+    // Reuses an already-authored protagonist cell at the audible resolution
+    // boundary. Only placement transforms are added; no MIDI notes are invented.
+    [[nodiscard]] static bool ensureAuthoredProtagonistCoda(
+        const SongPlan&, PerformanceScore&,
+        std::string_view preferredCellId = {});
 
 private:
     [[nodiscard]] static std::vector<PerformanceCoverageDeficit> performanceDeficitsImpl(

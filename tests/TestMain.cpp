@@ -6,10 +6,12 @@
 
 void runScaleTests();
 void runGeneratorTests();
+void runSelectiveRepairTests();
 
 int main() {
     const std::vector<std::pair<std::string_view, void (*)()>> suites{
-        {"Scale", runScaleTests}, {"Generator", runGeneratorTests}};
+        {"Scale", runScaleTests}, {"Selective repair", runSelectiveRepairTests},
+        {"Generator", runGeneratorTests}};
     auto failures = 0;
     for (const auto& [name, suite] : suites) {
         try {
@@ -24,4 +26,3 @@ int main() {
               << " suites passed\n";
     return failures == 0 ? 0 : 1;
 }
-

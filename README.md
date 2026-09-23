@@ -1,5 +1,39 @@
 # PULSO
 
+### 0.58.25 — consolidación segura de clones redundantes
+
+- Tras una recuperación acotada fallida, un clon MIDI literal de un reparto no solicitado deja de provocar el descarte de toda la obra: se conserva la interpretación original y se retira únicamente la pista redundante.
+- La consolidación no se aplica a cantidades explícitas de pistas ni puede retirar la protagonista, el único bajo o el único conductor de movimiento.
+- No se generan notas locales, no se fusionan líneas distintas y toda información MIDI única permanece intacta.
+
+### 0.58.24 — reconciliación estructural del reparto
+
+- La sección de resolución definida por la macroforma se enlaza automáticamente a la protagonista cuando Terra omite únicamente esa referencia en `active_sections`.
+- La reconciliación ocurre antes de reintentar el manifiesto, evita una llamada remota innecesaria y no modifica identidades, notas, armonía, forma ni decisiones tímbricas.
+- Las contradicciones reales continúan bloqueadas: protagonista ausente, duplicada o asignada a una voz distinta de `lead`.
+
+### 0.58.23 — recuperación narrativa sin falsos rechazos
+
+- Si Terra omite la identidad protagonista pero entrega una línea melódica válida, PULSO conserva esa interpretación, reasigna su propiedad y vuelve a ejecutar la garantía de coda después de la promoción.
+- El cierre reutiliza exclusivamente notas escritas por la IA: agrega un placement terminal y una transposición tonal mínima, sin sintetizar notas procedurales.
+- La validación vuelve a medir el MIDI ya reparado, por lo que una obra completa no se descarta por conservar la evidencia narrativa de la identidad vacía anterior.
+
+### 0.58.22 — independencia musical sin falsos rechazos armónicos
+
+- La detección bloqueante de clones exige coincidencia casi literal de ataque y altura MIDI exacta en más del 82 % de la línea menor. La duración y el contorno se evalúan dentro de los estados de frase; compartir clases tonales, cadencias o ritmo armónico ya no convierte pads, coro, piano y contrapunto en duplicados falsos.
+- La evolución se mide mediante estados de frase de ocho compases normalizados por origen tonal y temporal. Una obra extensa requiere entre 3 y 6 estados según la función; la repetición hipnótica dentro de cada estado es válida.
+- La estasis seccional es una observación reparable y no puede borrar una composición completa. Solo una copia MIDI severa o una coda protagonista ausente conservan autoridad bloqueante.
+- Cada conflicto musical recibe una única reparación focalizada. Las reparaciones de independencia incluyen hasta 64 eventos reales de la pista contraparte para que la IA pueda escribir alrededor de ellos sin adivinar.
+- Los índices de comparación se calculan una sola vez por pista y se reutilizan en repartos grandes.
+
+### 0.58.21 — contrapunto independiente y resolución narrativa verificables
+
+- Las pistas declaradas como independientes se comparan por ataques y clases de altura. Si más de dos tercios de la línea menor coincide con otra, PULSO conserva la propietaria estructural y solicita un reemplazo transaccional únicamente para la copia.
+- Las capas persistentes de movimiento, voces interiores y cuerpo armónico deben desarrollar una cantidad proporcional de gramáticas de compás. Transponer literalmente el mismo patrón ya no cuenta como evolución.
+- Una protagonista poblada que no complete su retorno dentro de los últimos ocho compases y no cierre en la armonía terminal queda como reparación bloqueante, no como observación editorial publicable.
+- Las recuperaciones reciben evidencia cuantitativa y operaciones genéricas (`separate_independent_line`, `develop_sectional_evolution`, `resolve_narrative`); nunca se añaden pistas ni notas procedurales para ocultar el defecto.
+- Las pruebas focalizadas cubren clonación, estasis seccional, reemplazo quirúrgico y coda obligatoria.
+
 ### 0.58.7 — exclusiones instrumentales coherentes de extremo a extremo
 
 - Una dirección explícita sin batería o percusión prevalece sobre el dominio musical inferido.

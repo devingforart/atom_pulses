@@ -76,6 +76,118 @@ std::size_t distinctPhraseCount(const std::vector<const NoteEvent*>& notes,
     return std::max<std::size_t>(1, fingerprints.size());
 }
 
+bool independentlyAuthored(const SongPlan& plan, const InstrumentAssignment& instrument) {
+    if (ElectronicCompositionFabric::rendererOwnedDestination(plan, instrument)) return false;
+    const auto relationship = lower(instrument.lineRelationship);
+    return relationship.find("doubling") == std::string::npos &&
+        relationship.find("handoff") == std::string::npos &&
+        relationship.find("relay") == std::string::npos &&
+        relationship.find("reinforcement") == std::string::npos;
+}
+
+using AttackSignature = std::pair<std::int64_t, int>;
+
+std::set<AttackSignature> attackSignatures(const std::vector<const NoteEvent*>& notes) {
+    std::set<AttackSignature> result;
+    for (const auto* note : notes)
+        result.emplace(static_cast<std::int64_t>(std::llround(note->startBeat * 96.0)),
+                       note->pitch);
+    return result;
+}
+
+double eventOverlap(const std::set<AttackSignature>& a,
+                    const std::set<AttackSignature>& b) {
+    if (std::min(a.size(), b.size()) < 12) return 0.0;
+    std::size_t intersection{};
+    const auto& smaller = a.size() <= b.size() ? a : b;
+    const auto& larger = a.size() <= b.size() ? b : a;
+    for (const auto& event : smaller)
+        if (larger.contains(event)) ++intersection;
+    return static_cast<double>(intersection) /
+        static_cast<double>(std::max<std::size_t>(1, smaller.size()));
+}
+
+double preservationPriority(const SongPlan& plan, std::size_t index) {
+    if (index >= plan.instruments.size()) return 0.0;
+    const auto& instrument = plan.instruments[index];
+    auto result = instrument.prominence;
+    if (instrument.id == plan.narrativeSpine.protagonistInstrumentId) result += 4.0;
+    if (ElectronicRoleContract::motionOwner(instrument)) result += 2.0;
+    if (containsAny(instrument, {"primary_motion_owner", "principal", "protagonist"}))
+        result += 1.0;
+    return result;
+}
+
+std::map<std::size_t, std::pair<std::size_t, double>> duplicatedIndependentTargets(
+    const SongPlan& plan,
+    const std::map<std::string, std::vector<const NoteEvent*>>& notesByInstrument,
+    const std::set<std::size_t>& candidates) {
+    std::map<std::size_t, std::pair<std::size_t, double>> result;
+    std::map<std::string, std::set<AttackSignature>> signatures;
+    for (const auto& [instrumentId, notes] : notesByInstrument)
+        signatures.emplace(instrumentId, attackSignatures(notes));
+    for (std::size_t left = 0; left < plan.instruments.size(); ++left) {
+        const auto& a = plan.instruments[left];
+        if (!independentlyAuthored(plan, a)) continue;
+        const auto aNotes = signatures.find(a.id);
+        if (aNotes == signatures.end()) continue;
+        for (auto right = left + 1; right < plan.instruments.size(); ++right) {
+            const auto& b = plan.instruments[right];
+            if (!independentlyAuthored(plan, b) ||
+                (!a.contentLaneId.empty() && a.contentLaneId == b.contentLaneId)) continue;
+            const auto bNotes = signatures.find(b.id);
+            if (bNotes == signatures.end()) continue;
+            const auto overlap = eventOverlap(aNotes->second, bNotes->second);
+            // A harmonic arrangement is expected to share chord tones and attacks.
+            // Only near-literal melodic identity is blocking: exact pitch and onset
+            // across more than four fifths of the shorter performance. Duration is
+            // intentionally not part of this signature: orchestral doubling often
+            // changes articulation while preserving the same audible line. Duration
+            // and contour remain part of the sectional-state fingerprint below.
+            if (overlap < 0.82) continue;
+
+            const auto leftCandidate = candidates.contains(left);
+            const auto rightCandidate = candidates.contains(right);
+            if (!leftCandidate && !rightCandidate) continue;
+            // During incremental writing, rewrite the newly inspected owner even if
+            // an older block has lower prominence: accepted blocks remain immutable.
+            // A global inspection may choose the less structurally important owner.
+            auto target = leftCandidate != rightCandidate
+                ? (leftCandidate ? left : right)
+                : (preservationPriority(plan, left) <= preservationPriority(plan, right)
+                       ? left : right);
+            const auto counterpart = target == left ? right : left;
+            const auto existing = result.find(target);
+            if (existing == result.end() || overlap > existing->second.second)
+                result[target] = {counterpart, overlap};
+        }
+    }
+    return result;
+}
+
+bool requiresSectionalEvolution(const InstrumentAssignment& instrument) {
+    if (containsAny(instrument, {"sub", "root", "pedal", "drone", "floor",
+                                 "foundation", "gravity"})) return false;
+    return instrument.sourceVoice == VoiceId::HarmonicPulse ||
+        instrument.sourceVoice == VoiceId::HarmonicUpper ||
+        instrument.sourceVoice == VoiceId::MovementBass ||
+        containsAny(instrument, {"arp", "sequence", "pulse", "ostinato", "inner",
+                                 "suspension", "counterpoint", "chord body"});
+}
+
+std::size_t minimumSectionalStates(const SongPlan& plan,
+                                   const InstrumentAssignment& instrument) {
+    const auto protagonist = instrument.id == plan.narrativeSpine.protagonistInstrumentId;
+    const auto principalMotion = ElectronicRoleContract::motionOwner(instrument) &&
+        containsAny(instrument, {"primary_motion_owner", "principal"});
+    const auto activeAcrossLongForm = plan.totalBars >= 160;
+    if (protagonist || principalMotion) return activeAcrossLongForm ? 6 : 5;
+    if (instrument.sourceVoice == VoiceId::HarmonicPulse ||
+        containsAny(instrument, {"arp", "sequence", "ostinato"}))
+        return activeAcrossLongForm ? 5 : 4;
+    return activeAcrossLongForm ? 4 : 3;
+}
+
 } // namespace
 
 std::string_view constraintAuthorityKey(ConstraintAuthority authority) noexcept {
@@ -93,6 +205,10 @@ std::string_view performanceRepairOperationKey(
         case PerformanceRepairOperation::SupplyMissingIdentity: return "supply_missing_identity";
         case PerformanceRepairOperation::ExtendCoverage: return "extend_coverage";
         case PerformanceRepairOperation::DevelopPhrase: return "develop_phrase";
+        case PerformanceRepairOperation::DevelopSectionalEvolution:
+            return "develop_sectional_evolution";
+        case PerformanceRepairOperation::SeparateIndependentLine:
+            return "separate_independent_line";
         case PerformanceRepairOperation::ResolveNarrative: return "resolve_narrative";
         case PerformanceRepairOperation::EstablishThematicRelationship:
             return "establish_thematic_relationship";
@@ -170,7 +286,17 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
     const SongPlan& plan, const Pattern& pattern, const CompositionRenderReport& report,
     std::size_t maximumTargets) {
     SelectiveRepairPlan result;
-    result.needed = !publicationReady(report);
+    std::vector<std::size_t> allInstruments(plan.instruments.size());
+    for (std::size_t index = 0; index < allInstruments.size(); ++index)
+        allInstruments[index] = index;
+    const auto performanceFindings = performanceDeficits(
+        plan, plan.performanceScore, allInstruments);
+    const auto hasBlockingMusicalEvidence = std::any_of(
+        performanceFindings.begin(), performanceFindings.end(), [](const auto& finding) {
+            return finding.missingCodaResolution || finding.duplicatedIndependentLine ||
+                finding.missingSectionalEvolution;
+        });
+    result.needed = !publicationReady(report) || hasBlockingMusicalEvidence;
     result.deficit = deficit(report);
     if (!result.needed || plan.instruments.empty() || maximumTargets == 0) return result;
 
@@ -198,6 +324,18 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
         if (std::find(result.issues.begin(), result.issues.end(), issue) == result.issues.end())
             result.issues.push_back(std::move(issue));
     };
+
+    for (const auto& finding : performanceFindings) {
+        if (finding.duplicatedIndependentLine)
+            add(finding.instrumentIndex, 14.0 + finding.duplicateEventOverlap * 4.0,
+                "rewrite a cloned independent line with complementary onset grammar and contour");
+        if (finding.missingSectionalEvolution)
+            add(finding.instrumentIndex, 12.0,
+                "replace literal long-form repetition with sectional motif development");
+        if (finding.missingCodaResolution)
+            add(finding.instrumentIndex, 16.0,
+                "complete the protagonist coda at the audible final boundary");
+    }
 
     // Token and underwritten tracks are the cheapest, most deterministic repairs.
     for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
@@ -311,6 +449,8 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::marginalBarAcceptances(
         contract.minimumActiveBars = finding.minimumActiveBars;
         contract.minimumPhrases = finding.minimumPhrases;
         return finding.missingCodaResolution || finding.missingThematicRelationship ||
+            finding.duplicatedIndependentLine || finding.missingSectionalEvolution ||
+            (finding.minimumSections > 0 && finding.sections < finding.minimumSections) ||
             !TrackViability::marginalActiveBarAcceptance(
                 finding.notes, finding.activeBars, finding.phrases, contract);
     }), findings.end());
@@ -373,18 +513,27 @@ std::vector<PerformanceConstraint> SelectiveRepair::classifyPerformanceDeficits(
         // Treating every empty colour lane as blocking caused otherwise complete
         // 40-track scores to reject after bounded recovery exhausted its budget.
         const auto productionScaleCast = plan.instruments.size() >= 32;
-        constraint.blocksPublication = missingIdentity &&
-            (essential || (explicitCastCommitment && !productionScaleCast));
+        constraint.blocksPublication =
+            (missingIdentity && (essential || (explicitCastCommitment && !productionScaleCast))) ||
+            constraint.evidence.missingCodaResolution ||
+            constraint.evidence.duplicatedIndependentLine;
         if (missingIdentity)
             constraint.operations.push_back(
                 PerformanceRepairOperation::SupplyMissingIdentity);
-        if (constraint.evidence.activeBars < constraint.evidence.minimumActiveBars)
+        if (constraint.evidence.activeBars < constraint.evidence.minimumActiveBars ||
+            constraint.evidence.sections < constraint.evidence.minimumSections)
             constraint.operations.push_back(
                 PerformanceRepairOperation::ExtendCoverage);
         if (constraint.evidence.notes < constraint.evidence.minimumNotes ||
             constraint.evidence.phrases < constraint.evidence.minimumPhrases)
             constraint.operations.push_back(
                 PerformanceRepairOperation::DevelopPhrase);
+        if (constraint.evidence.missingSectionalEvolution)
+            constraint.operations.push_back(
+                PerformanceRepairOperation::DevelopSectionalEvolution);
+        if (constraint.evidence.duplicatedIndependentLine)
+            constraint.operations.push_back(
+                PerformanceRepairOperation::SeparateIndependentLine);
         if (constraint.evidence.missingCodaResolution)
             constraint.operations.push_back(
                 PerformanceRepairOperation::ResolveNarrative);
@@ -416,6 +565,45 @@ std::vector<std::size_t> SelectiveRepair::editorialTargets(
     std::sort(result.begin(), result.end());
     result.erase(std::unique(result.begin(), result.end()), result.end());
     return result;
+}
+
+std::vector<std::size_t> SelectiveRepair::consolidatableDuplicateTargets(
+    const SongPlan& plan, const std::vector<PerformanceConstraint>& constraints,
+    bool explicitCastCommitment) {
+    if (explicitCastCommitment) return {};
+
+    const auto motionOwners = static_cast<std::size_t>(std::count_if(
+        plan.instruments.begin(), plan.instruments.end(),
+        [](const auto& instrument) { return ElectronicRoleContract::motionOwner(instrument); }));
+    const auto bassOwners = static_cast<std::size_t>(std::count_if(
+        plan.instruments.begin(), plan.instruments.end(), [](const auto& instrument) {
+            return isVoiceInFamily(instrument.sourceVoice, VoiceFamily::Bass);
+        }));
+
+    std::set<std::string> selectedIds;
+    std::vector<std::size_t> selected;
+    for (const auto& constraint : constraints) {
+        const auto& evidence = constraint.evidence;
+        if (!evidence.duplicatedIndependentLine || evidence.notes == 0 ||
+            evidence.instrumentIndex >= plan.instruments.size() ||
+            evidence.duplicatedWithInstrumentId.empty()) continue;
+        const auto& instrument = plan.instruments[evidence.instrumentIndex];
+        const auto counterpart = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+            [&](const auto& candidate) {
+                return candidate.id == evidence.duplicatedWithInstrumentId;
+            });
+        if (counterpart == plan.instruments.end() ||
+            selectedIds.contains(counterpart->id) ||
+            instrument.id == plan.narrativeSpine.protagonistInstrumentId) continue;
+        const auto soleMotionOwner = ElectronicRoleContract::motionOwner(instrument) &&
+            ElectronicRoleContract::requiresMotionOwner(plan) && motionOwners <= 1;
+        const auto soleBassOwner = isVoiceInFamily(instrument.sourceVoice, VoiceFamily::Bass) &&
+            bassOwners <= 1;
+        if (soleMotionOwner || soleBassOwner) continue;
+        selectedIds.insert(instrument.id);
+        selected.push_back(evidence.instrumentIndex);
+    }
+    return selected;
 }
 
 std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl(
@@ -454,6 +642,9 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
     for (const auto& note : renderedScore.notes)
         if (note.partId > 0 && note.partId <= plan.instruments.size())
             renderedByInstrument[plan.instruments[note.partId - 1].id].push_back(&note);
+    const std::set<std::size_t> candidateSet(candidates.begin(), candidates.end());
+    const auto duplicatedTargets = duplicatedIndependentTargets(
+        plan, renderedByInstrument, candidateSet);
     auto resolutionSection = plan.sections.empty() ? -1 : static_cast<int>(plan.sections.size() - 1);
     for (const auto& act : plan.narrativeSpine.acts) {
         if (act.stage != NarrativeStage::Resolution) continue;
@@ -539,6 +730,14 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
         deficit.minimumNotes = minimumNotes;
         deficit.sections = sections[instrument.id].size();
         deficit.minimumSections = minimumSections;
+        if (const auto duplicate = duplicatedTargets.find(index);
+            duplicate != duplicatedTargets.end()) {
+            deficit.duplicatedIndependentLine = true;
+            deficit.duplicateEventOverlap = duplicate->second.second;
+            if (duplicate->second.first < plan.instruments.size())
+                deficit.duplicatedWithInstrumentId =
+                    plan.instruments[duplicate->second.first].id;
+        }
         auto incomplete = false;
         if (plan.instrumentCastAuthored) {
             const auto contract = TrackViability::contractFor(instrument, plan);
@@ -567,21 +766,51 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
             deficit.minimumActiveBars = contract.minimumActiveBars;
             deficit.phrases = phrases;
             deficit.minimumPhrases = contract.minimumPhrases;
-            // An AI-authored cast uses the same function-aware contract advertised to
-            // the model and used at publication. In particular, rhythm articulations
-            // are judged by their dedicated rhythm pipeline, so the older generic
-            // three-note/two-section heuristic must not override that contract.
-            deficit.minimumSections = 0;
+            // Long-form orchestration is sectional, not a global note quota. An
+            // instrument assigned to several scenes must develop its responsibility
+            // in more than one of them; otherwise twenty declared tracks can collapse
+            // into six audible lanes while still passing raw note/bar minimums.
+            auto intendedSections = instrument.activeSections.empty()
+                ? plan.sections.size() : std::size_t{};
+            if (!instrument.activeSections.empty()) {
+                for (const auto& section : plan.sections)
+                    if (std::find(instrument.activeSections.begin(), instrument.activeSections.end(),
+                                  section.name) != instrument.activeSections.end())
+                        ++intendedSections;
+            }
+            deficit.minimumSections = rareEvent ? std::size_t{1} :
+                std::min(intendedSections,
+                    plan.totalBars >= 96 ? std::size_t{3} : std::size_t{2});
             incomplete = allowMarginalBarAcceptance
                 ? !TrackViability::acceptsCoverage(
                     deficit.notes, deficit.activeBars, deficit.phrases, contract)
                 : deficit.notes < deficit.minimumNotes ||
                     deficit.activeBars < deficit.minimumActiveBars ||
                     deficit.phrases < deficit.minimumPhrases;
+            incomplete = incomplete || deficit.sections < deficit.minimumSections;
+
+            // Persistent motion, inner voices and chordal bodies must change their
+            // onset/interval/duration grammar across the form. Harmonic transposition
+            // alone is deliberately normalized away by distinctBarPatternCount.
+            if (!rareEvent && requiresSectionalEvolution(instrument) &&
+                activeBars.size() >= std::max<std::size_t>(32, plan.totalBars / 3) &&
+                deficit.sections >= 3) {
+                // Eight-bar phrase fingerprints normalize onset origin and pitch
+                // origin, so literal transposition does not masquerade as development.
+                // The requirement remains musical and bounded: 3-6 states across
+                // the whole form, never a linear quota per active bar.
+                deficit.sectionalStates = distinctPhraseCount(ordered, plan.beatsPerBar);
+                deficit.minimumSectionalStates = minimumSectionalStates(plan, instrument);
+                if (deficit.sectionalStates < deficit.minimumSectionalStates) {
+                    deficit.missingSectionalEvolution = true;
+                    incomplete = true;
+                }
+            }
         } else {
             incomplete = deficit.notes < deficit.minimumNotes ||
                 deficit.sections < deficit.minimumSections;
         }
+        if (deficit.duplicatedIndependentLine) incomplete = true;
         // The model—not the renderer—must complete the protagonist's transformed
         // answer at the audible boundary. A phrase merely somewhere in the final act
         // still leaves several bars of narrative vacuum.
@@ -636,11 +865,80 @@ std::vector<std::size_t> SelectiveRepair::incompleteTargets(
     return missing;
 }
 
+bool SelectiveRepair::ensureAuthoredProtagonistCoda(
+    const SongPlan& plan, PerformanceScore& score, std::string_view preferredCellId) {
+    const auto& protagonistId = plan.narrativeSpine.protagonistInstrumentId;
+    if (protagonistId.empty() || plan.sections.empty()) return false;
+
+    auto resolutionSection = static_cast<int>(plan.sections.size() - 1);
+    for (const auto& act : plan.narrativeSpine.acts) {
+        if (act.stage != NarrativeStage::Resolution) continue;
+        const auto found = std::find_if(plan.sections.begin(), plan.sections.end(),
+            [&](const auto& section) { return section.name == act.sectionName; });
+        if (found != plan.sections.end())
+            resolutionSection = static_cast<int>(std::distance(plan.sections.begin(), found));
+    }
+    const auto& resolution = plan.sections[static_cast<std::size_t>(resolutionSection)];
+    const auto sectionLength = resolution.bars * plan.beatsPerBar;
+    if (sectionLength <= 0.0) return false;
+
+    const PerformanceCell* source = nullptr;
+    std::size_t bestNotes = 0;
+    for (const auto& cell : score.cells) {
+        const auto count = static_cast<std::size_t>(std::count_if(
+            cell.notes.begin(), cell.notes.end(), [&](const auto& note) {
+                return note.instrumentId == protagonistId;
+            }));
+        if (count < 3) continue;
+        const auto preferred = !preferredCellId.empty() && cell.id == preferredCellId;
+        const auto currentPreferred = source != nullptr &&
+            !preferredCellId.empty() && source->id == preferredCellId;
+        if (source == nullptr || (preferred && !currentPreferred) ||
+            (preferred == currentPreferred && count > bestNotes)) {
+            source = &cell;
+            bestNotes = count;
+        }
+    }
+    if (source == nullptr) return false;
+
+    std::vector<const AuthoredNote*> authored;
+    for (const auto& note : source->notes)
+        if (note.instrumentId == protagonistId) authored.push_back(&note);
+    std::sort(authored.begin(), authored.end(), [](const auto* left, const auto* right) {
+        return std::tie(left->beat, left->pitch) < std::tie(right->beat, right->pitch);
+    });
+    if (authored.size() < 3) return false;
+
+    // Put the final authored onset inside the last half bar and transpose the
+    // complete phrase by the shortest interval to the tonal centre. Contour,
+    // rhythm, duration and velocity stay exactly as the model wrote them.
+    const auto lastBeat = authored.back()->beat;
+    const auto terminalTarget = std::max(0.0, sectionLength -
+        std::max(0.5, plan.beatsPerBar * 0.5));
+    auto transpose = positiveModulo(plan.rootPitchClass - authored.back()->pitch, 12);
+    if (transpose > 6) transpose -= 12;
+
+    PerformancePlacement coda;
+    coda.cellId = source->id;
+    coda.sectionIndex = resolutionSection;
+    coda.startBeat = std::max(0.0, terminalTarget - lastBeat);
+    coda.repeats = 1;
+    coda.transpose = transpose;
+    coda.velocityScale = .88;
+    coda.timeScale = 1.0;
+    coda.purpose = "authored protagonist coda";
+    coda.fragmentStart = 0.0;
+    coda.fragmentEnd = source->lengthBeats;
+    score.placements.push_back(std::move(coda));
+    return true;
+}
+
 bool SelectiveRepair::requiresReplacement(
     const PerformanceCoverageDeficit& deficit) noexcept {
     // Notes can repair missing quantity and placements can extend active coverage.
     // They cannot create a phrase break inside material that already fills its
     // required horizon; that target must be replaced so silence can be authored.
+    if (deficit.duplicatedIndependentLine || deficit.missingSectionalEvolution) return true;
     return deficit.minimumPhrases > 0 && deficit.phrases < deficit.minimumPhrases &&
         deficit.notes >= deficit.minimumNotes &&
         deficit.activeBars >= deficit.minimumActiveBars;

@@ -527,6 +527,53 @@ AttentionDirectionReport AttentionDirector::shape(Pattern& pattern, const SongPl
             }
         }
 
+        // Phrase breathing belongs in the active perceptual path (the legacy
+        // scheduler below is unreachable for production AI scores). Shape only
+        // the declared GPT protagonist, alternating a short release before every
+        // second four-bar return while preserving its contour and onset grammar.
+        std::uint16_t protagonistId = 0;
+        if (!plan.narrativeSpine.protagonistInstrumentId.empty()) {
+            for (const auto& part : pattern.parts)
+                if (part.id <= plan.instruments.size() &&
+                    plan.instruments[part.id - 1].id == plan.narrativeSpine.protagonistInstrumentId)
+                    protagonistId = part.id;
+        }
+        if (protagonistId != 0) {
+            std::map<int, std::size_t> phraseOnsets;
+            std::size_t protagonistNotes = 0;
+            for (const auto& note : pattern.notes) {
+                if (note.partId != protagonistId) continue;
+                ++protagonistNotes;
+                ++phraseOnsets[static_cast<int>(std::floor(note.startBeat / (beatsPerBar * 4.0)))];
+            }
+            if (protagonistNotes >= 24) {
+                std::vector<NoteEvent> breathed;
+                breathed.reserve(pattern.notes.size());
+                for (const auto& note : pattern.notes) {
+                    if (note.partId != protagonistId) {
+                        breathed.push_back(note);
+                        continue;
+                    }
+                    const auto phrase = static_cast<int>(std::floor(note.startBeat / (beatsPerBar * 4.0)));
+                    const auto breathBar = phrase * 4 + 3;
+                    const auto bar = static_cast<int>(std::floor(note.startBeat / beatsPerBar));
+                    const auto breathEnd = std::min(pattern.lengthBeats, (breathBar + 1) * beatsPerBar);
+                    const auto breathStart = breathEnd - std::min(.5, beatsPerBar * .125);
+                    if (phrase % 2 == 1 && phraseOnsets[phrase] >= 3 && bar == breathBar &&
+                        note.endBeat() > breathStart + .001) {
+                        if (note.startBeat < breathStart - .03125)
+                            retainInterval(note, note.startBeat, breathStart - .03125, breathed, report);
+                        else
+                            ++report.notesRemoved;
+                        ++report.phraseBreathsCreated;
+                    } else {
+                        breathed.push_back(note);
+                    }
+                }
+                pattern.notes = std::move(breathed);
+            }
+        }
+
         std::sort(pattern.notes.begin(), pattern.notes.end(), [](const auto& left, const auto& right) {
             if (left.startBeat != right.startBeat) return left.startBeat < right.startBeat;
             if (left.partId != right.partId) return left.partId < right.partId;

@@ -28,7 +28,15 @@ if (Test-Path -LiteralPath $vstTarget) {
                 [System.IO.FileShare]::None)
             $handle.Dispose()
         } catch {
-            throw 'PULSO is loaded by Ableton or another host. Close it and run this installer again.'
+            $cause = $_.Exception
+            while ($null -ne $cause.InnerException) { $cause = $cause.InnerException }
+            if ($cause -is [System.UnauthorizedAccessException]) {
+                throw "The installer cannot modify the current PULSO DLL. Run it with permission to write to: $vstTarget"
+            }
+            if ($cause -is [System.IO.IOException]) {
+                throw 'PULSO is loaded by Ableton or another host. Close it and run this installer again.'
+            }
+            throw "Unable to verify the current PULSO DLL: $($cause.Message)"
         }
     }
     Remove-Item -LiteralPath $vstTarget -Recurse -Force

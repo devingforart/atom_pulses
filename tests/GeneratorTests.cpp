@@ -2696,6 +2696,16 @@ void runGeneratorTests() {
                 SelectiveRepair::incompleteTargets(
                     marginalCoveragePlan, marginalCoverageScore, {0}).empty(),
             "Incremental coverage must preserve a musically developed 18/19-bar AI bass part");
+    auto sectionalCoveragePlan = marginalCoveragePlan;
+    sectionalCoveragePlan.instruments.front().activeSections.clear();
+    for (const auto& section : sectionalCoveragePlan.sections)
+        sectionalCoveragePlan.instruments.front().activeSections.push_back(section.name);
+    const auto sectionalDeficits = SelectiveRepair::performanceDeficits(
+        sectionalCoveragePlan, marginalCoverageScore, {0});
+    require(sectionalDeficits.size() == 1 &&
+                sectionalDeficits.front().sections == 1 &&
+                sectionalDeficits.front().minimumSections == 3,
+            "A long-form AI lane assigned across the form must not satisfy orchestration with one isolated section");
     marginalCoverageScore.cells.front().notes.pop_back();
     require(!SelectiveRepair::performanceDeficits(
                 marginalCoveragePlan, marginalCoverageScore, {0}).empty(),
@@ -2756,16 +2766,96 @@ void runGeneratorTests() {
     classifiedConstraints = SelectiveRepair::classifyPerformanceDeficits(
         universalConstraintPlan, {unresolvedMusicalEnding}, true);
     require(classifiedConstraints.size() == 1 &&
-                !classifiedConstraints.front().blocksPublication &&
+                classifiedConstraints.front().blocksPublication &&
                 classifiedConstraints.front().authority == ConstraintAuthority::MusicalObjective &&
                 std::find(classifiedConstraints.front().operations.begin(),
                           classifiedConstraints.front().operations.end(),
                           PerformanceRepairOperation::ResolveNarrative) !=
                     classifiedConstraints.front().operations.end() &&
-                SelectiveRepair::blockingTargets(classifiedConstraints).empty() &&
-                SelectiveRepair::editorialTargets(classifiedConstraints) ==
-                    std::vector<std::size_t>{0},
-            "A populated unresolved ending must be repaired generically but never erase the full score");
+                SelectiveRepair::blockingTargets(classifiedConstraints) ==
+                    std::vector<std::size_t>{0} &&
+                SelectiveRepair::editorialTargets(classifiedConstraints).empty(),
+            "A populated protagonist without audible coda resolution must remain a bounded blocking repair");
+
+    SongPlan independencePlan;
+    independencePlan.totalBars = 128;
+    independencePlan.beatsPerBar = 4.0;
+    independencePlan.instrumentCastAuthored = true;
+    for (auto section = 0; section < 4; ++section) {
+        SongSection item;
+        item.name = "Act " + std::to_string(section + 1);
+        item.startBar = section * 32;
+        item.bars = 32;
+        independencePlan.sections.push_back(std::move(item));
+    }
+    InstrumentAssignment motionOwner;
+    motionOwner.id = "motion_owner";
+    motionOwner.instrumentId = "poly_synth";
+    motionOwner.sourceVoice = VoiceId::HarmonicPulse;
+    motionOwner.role = "primary_motion_owner";
+    motionOwner.orchestralFunction = "pulse";
+    motionOwner.contentLaneId = motionOwner.id;
+    motionOwner.lineRelationship = "independent";
+    motionOwner.prominence = .9;
+    InstrumentAssignment supposedCounterpoint = motionOwner;
+    supposedCounterpoint.id = "supposed_counterpoint";
+    supposedCounterpoint.role = "independent suspension counterpoint";
+    supposedCounterpoint.orchestralFunction = "counterpoint";
+    supposedCounterpoint.contentLaneId = supposedCounterpoint.id;
+    supposedCounterpoint.prominence = .4;
+    for (const auto& section : independencePlan.sections) {
+        motionOwner.activeSections.push_back(section.name);
+        supposedCounterpoint.activeSections.push_back(section.name);
+    }
+    independencePlan.instruments = {motionOwner, supposedCounterpoint};
+    PerformanceScore clonedScore;
+    for (const auto& instrument : independencePlan.instruments) {
+        PerformanceCell cell;
+        cell.id = instrument.id + "_literal_loop";
+        cell.lengthBeats = 4.0;
+        cell.ownedVoices = {instrument.sourceVoice};
+        for (auto beat = 0; beat < 4; ++beat)
+            cell.notes.push_back({static_cast<double>(beat), .5, 62 + beat % 2, 76,
+                                  instrument.sourceVoice, MetricIntent::StrictGrid,
+                                  instrument.id});
+        clonedScore.cells.push_back(std::move(cell));
+        for (auto section = 0; section < 4; ++section) {
+            PerformancePlacement placement;
+            placement.cellId = instrument.id + "_literal_loop";
+            placement.sectionIndex = section;
+            placement.repeats = 32;
+            placement.fragmentEnd = 4.0;
+            clonedScore.placements.push_back(std::move(placement));
+        }
+    }
+    const auto independenceDeficits = SelectiveRepair::performanceDeficits(
+        independencePlan, clonedScore, {0, 1});
+    const auto clonedFinding = std::find_if(independenceDeficits.begin(),
+        independenceDeficits.end(), [](const auto& finding) {
+            return finding.instrumentId == "supposed_counterpoint";
+        });
+    require(clonedFinding != independenceDeficits.end() &&
+                clonedFinding->duplicatedIndependentLine &&
+                clonedFinding->duplicatedWithInstrumentId == "motion_owner" &&
+                clonedFinding->duplicateEventOverlap > .99 &&
+                clonedFinding->missingSectionalEvolution &&
+                clonedFinding->sectionalStates == 1 &&
+                clonedFinding->minimumSectionalStates == 4 &&
+                SelectiveRepair::requiresReplacement(*clonedFinding),
+            "Independent owners must not pass by cloning one loop across the complete form");
+    const auto independenceConstraints = SelectiveRepair::classifyPerformanceDeficits(
+        independencePlan, {*clonedFinding}, false);
+    require(independenceConstraints.size() == 1 &&
+                independenceConstraints.front().blocksPublication &&
+                std::find(independenceConstraints.front().operations.begin(),
+                          independenceConstraints.front().operations.end(),
+                          PerformanceRepairOperation::SeparateIndependentLine) !=
+                    independenceConstraints.front().operations.end() &&
+                std::find(independenceConstraints.front().operations.begin(),
+                          independenceConstraints.front().operations.end(),
+                          PerformanceRepairOperation::DevelopSectionalEvolution) !=
+                    independenceConstraints.front().operations.end(),
+            "Clone and sectional-stasis evidence must route to transactional targeted repairs");
 
     PerformanceCoverageDeficit continuousBassDeficit;
     continuousBassDeficit.instrumentId = "sub_anchor";

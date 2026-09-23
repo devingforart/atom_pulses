@@ -132,9 +132,9 @@ struct SongPlan {
     // Explicit user constraint propagated independently of genre classification. A
     // percussion-free electronic piece must not be graded as a failed club track.
     bool percussionFreeIntent{};
-    // Non-zero only when the user explicitly requested an exact cast size. A zero
-    // value lets the production planner expand long-form songs to a healthy authored
-    // ensemble instead of mistaking a small AI draft for the finished arrangement.
+    // Non-zero when the user requested a cast-size target. It governs planning and
+    // recovery, but does not make every AI-invented instrument name an explicit user
+    // commitment; empty optional identities may be retired after bounded recovery.
     std::size_t requestedCastCount{};
     // True when the instrument list came from the structured AI score. In that case the
     // cast is authoritative per voice: missing ownership is critic feedback, not permission

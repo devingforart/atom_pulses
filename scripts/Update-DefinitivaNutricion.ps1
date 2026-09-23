@@ -201,6 +201,7 @@ try {
     # completan los objetivos elementales de cada semana.
     Set-CellText $sheet1 $ns1 'F11' 'Nitrato K 99% (g) - 13,7% N / 46,1% K2O' '10'
     Set-CellText $sheet1 $ns1 'H11' 'Sulfato K 99% (g) - 44,4% K / 18,2% S' '10'
+    Set-CellText $sheet1 $ns1 'I11' 'MKP 0-52-34 (g)' '10'
     Set-CellText $sheet1 $ns1 'W11' 'Perfil elemental calculado (ppm)' '10'
     Set-CellText $sheet1 $ns1 'AG11' 'Silicato de potasio Kraff (g)' '10'
     Set-CellText $sheet1 $ns1 'AH11' 'Si aportado (ppm)' '10'
@@ -238,9 +239,9 @@ try {
         Set-CellFormula $sheet1 $ns1 "AC$row" "(((D$row*0.20+I$row*0.34+F$row*'Aditivos'!`$K`$4/100)*0.8301+H$row*'Aditivos'!`$H`$3/100)+AG$row*('Aditivos'!`$K`$7/100)*0.8301)*1000/`$B`$3"
         Set-CellFormula $sheet1 $ns1 "W$row" "ROUND(Y$row,0)&`" N / `"&ROUND(AB$row,0)&`" P / `"&ROUND(AC$row,0)&`" K / `"&ROUND(AD$row,0)&`" Ca / `"&ROUND(AE$row,0)&`" Mg / `"&ROUND(AF$row,0)&`" S / `"&ROUND(AH$row,1)&`" Si ppm | Silicato: `"&ROUND(AG$row,2)&`" g`""
     }
-    Set-CellText $sheet1 $ns1 'B27' 'Orden: agua 70-80% > silicato de potasio Kraff prediluido 1:100 > 20-20-20 > Micro C > Calcinit prediluido > KNO3 > Epsom > K2SO4 > Bloom/MKP > completar > EC > pH.'
+    Set-CellText $sheet1 $ns1 'B27' 'Orden: agua 70-80% > silicato de potasio Kraff prediluido 1:100 > 20-20-20 > Micro C > Calcinit prediluido > KNO3 > Epsom > K2SO4 > MKP 0-52-34 > completar > EC > pH.'
     Set-CellText $sheet1 $ns1 'B28' 'Silicato Kraff: objetivo 7 ppm Si en semanas 1-8; semana 9 sin silicio. Calculo basado en etiqueta: 19,5% SiO2 y 8,2% K2O. Dosificar por peso.'
-    Set-CellText $sheet1 $ns1 'B30' 'La receta usa una dosis baja de 20-20-20 para trazas; Calcinit, KNO3, Epsom, K2SO4 y Bloom/MKP completan los macros. Micro C completa los micros.'
+    Set-CellText $sheet1 $ns1 'B30' 'La receta usa una dosis baja de 20-20-20 para trazas; Calcinit, KNO3, Epsom, K2SO4 y MKP completan los macros. Micro C completa los micros.'
 
     Reorder-Sheet1PlanColumns $sheet1 $ns1
 
@@ -351,7 +352,7 @@ try {
         'Completar con agua destilada hasta un volumen final exacto de 2,00 L.',
         'Envasar opaco, rotular composicion, fecha y dosis 20 ml/40 L; guardar fresco y oscuro.',
         'Agitar antes de cada uso. Descartar si aparecen precipitados persistentes, olor o contaminacion.',
-        'No agregar al stock: Calcinit, KNO3, Epsom, sulfato de potasio, 20-20-20 ni Bloom/MKP.'
+        'No agregar al stock: Calcinit, KNO3, Epsom, sulfato de potasio, 20-20-20 ni MKP.'
     )
     for ($i = 0; $i -lt $stockSteps.Count; $i++) {
         $row = 75 + $i
@@ -369,7 +370,7 @@ try {
         'Agitar Micro C, medir los ml indicados en Sheet1 y agregar con circulacion.',
         'Prediluir Calcinit y agregar lentamente. Nunca tocar sulfatos o fosfatos concentrados.',
         'Disolver y agregar por separado KNO3, Epsom y sulfato de potasio, en ese orden.',
-        'Disolver y agregar Bloom/MKP al final de las sales.',
+        'Disolver y agregar MKP 0-52-34 al final de las sales.',
         'Completar el volumen, recircular 10-15 min y medir EC. Ajustar sales solo segun plan y respuesta.',
         'Ajustar pH al final; registrar EC/pH de entrada, volumen aplicado y runoff.'
     )
@@ -468,7 +469,7 @@ try {
         'Disolver y agregar por separado nitrato de potasio.',
         'Disolver y agregar por separado Epsom.',
         'Disolver y agregar por separado sulfato de potasio.',
-        'Disolver y agregar Bloom/MKP.',
+        'Disolver y agregar MKP 0-52-34.',
         'Completar el volumen y recircular 10-15 minutos.',
         'Medir EC y ajustar solamente con el plan; ajustar pH al final.'
     )
@@ -482,7 +483,7 @@ try {
     Set-CellText $additives $ns2 'A44' '1'
     Set-CellText $additives $ns2 'B44' 'Nunca mezclar sales concentradas entre si; cada una se disuelve por separado.'
     Set-CellText $additives $ns2 'A45' '2'
-    Set-CellText $additives $ns2 'B45' 'Micro C no contiene Calcinit, KNO3, Epsom, sulfato de potasio, 20-20-20 ni Bloom.'
+    Set-CellText $additives $ns2 'B45' 'Micro C no contiene Calcinit, KNO3, Epsom, sulfato de potasio, 20-20-20 ni MKP.'
     Set-CellText $additives $ns2 'A46' '3'
     Set-CellText $additives $ns2 'B46' 'Si la EC final no coincide, no compensar agregando Micro C.'
     Set-CellText $additives $ns2 'A47' '4'
@@ -498,8 +499,8 @@ try {
     Set-CellText $additives $ns2 'E51' 'De donde viene en tu plan' '9'
     $elementGuide = @(
         @('Macro primario','N','Nitrogeno','Crecimiento, proteinas y clorofila','20-20-20, Calcinit y nitrato de potasio'),
-        @('Macro primario','P','Fosforo','Energia, raices y desarrollo floral','20-20-20 y Bloom/MKP'),
-        @('Macro primario','K','Potasio','Regulacion del agua, enzimas y floracion','20-20-20, nitrato y sulfato de potasio, Bloom'),
+        @('Macro primario','P','Fosforo','Energia, raices y desarrollo floral','20-20-20 y MKP'),
+        @('Macro primario','K','Potasio','Regulacion del agua, enzimas y floracion','20-20-20, nitrato y sulfato de potasio, MKP'),
         @('Macro secundario','Ca','Calcio','Paredes celulares, brotes y raices nuevas','Calcinit'),
         @('Macro secundario','Mg','Magnesio','Atomo central de la clorofila','Epsom'),
         @('Macro secundario','S','Azufre','Aminoacidos, proteinas y enzimas','Epsom y sulfato de potasio'),
@@ -531,7 +532,7 @@ try {
     Set-CellText $additives $ns2 'E70' 'Enlace' '9'
     $purchaseLinks = @(
         @('Tanque','Base 20-20-20','Fertilizante soluble 20-20-20','Ya lo tienes','https://www.sanisidro422.com.ar/shop/products/1709_DSC_sales-minerales-base-20-20-20-125gr-gps-horticultura'),
-        @('Tanque','Bloom / MKP','Potenciador de flora compatible con la receta','Ya lo tienes','https://www.sanisidro422.com.ar/shop/products/1710_DSC_big-bloom-poteciador-de-flora125-gr-gps-horticultura'),
+        @('Tanque','MKP 0-52-34','KH2PO4; P2O5 52%, K2O 34%; totalmente soluble','Comprar 3 kg; reemplaza Bloom 00-52-34','https://www.mercadolibre.com.ar/fertilizante-fosfato-monopotasico-x-3-kg-soluble/up/MLAU3574211432'),
         @('Tanque','Calcinit','Nitrato de calcio totalmente soluble','Ya lo tienes','https://www.mercadolibre.com.ar/fert-nitrato-de-calcio-soluble-25k-fertirriego-calcinit-bio/up/MLAU196171698'),
         @('Tanque','Epsom','Sulfato de magnesio','Ya lo tienes','https://www.mercadolibre.com.ar/sales-de-epson-sulfato-de-magnesio-x-1kg-icasa/p/MLA54435900'),
         @('Tanque','Nitrato de potasio','KNO3 soluble; confirmar composicion de tu envase','Ya lo tienes','https://www.mercadolibre.com.ar/nitrato-de-potasio--99--maxima-pureza--1kg-farmashop/up/MLAU3374009278'),

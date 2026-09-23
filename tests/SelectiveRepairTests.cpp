@@ -101,8 +101,11 @@ void runSelectiveRepairTests() {
     require(SelectiveRepair::consolidatableDuplicateTargets(plan, constraints, false) ==
                 std::vector<std::size_t>{1},
             "An unresolved unrequested clone must be consolidatable after bounded recovery");
-    require(SelectiveRepair::consolidatableDuplicateTargets(plan, constraints, true).empty(),
-            "An explicit cast must never lose a requested identity during clone consolidation");
+    auto explicitClonePlan = plan;
+    explicitClonePlan.instruments[1].explicitPromptIdentity = true;
+    require(SelectiveRepair::consolidatableDuplicateTargets(
+                explicitClonePlan, constraints, true).empty(),
+            "A user-named identity must never be lost during clone consolidation");
     auto protagonistClonePlan = plan;
     protagonistClonePlan.narrativeSpine.protagonistInstrumentId = "supposed_counterpoint";
     require(SelectiveRepair::consolidatableDuplicateTargets(
@@ -226,4 +229,240 @@ void runSelectiveRepairTests() {
     require(promotedDeficit == promotedFindings.end() ||
                 !promotedDeficit->missingCodaResolution,
             "The promoted authored phrase must resolve at the audible final boundary");
+
+    PerformanceScore oversizedSourceScore;
+    auto oversizedSource = promoted;
+    oversizedSource.id = "oversized_authored_phrase";
+    oversizedSource.lengthBeats = 128.0;
+    oversizedSource.notes = {
+        {80.0, .5, 61, 84, VoiceId::Lead, MetricIntent::StrictGrid, protagonist.id},
+        {96.0, .5, 63, 88, VoiceId::Lead, MetricIntent::StrictGrid, protagonist.id},
+        {112.0, 1.0, 65, 78, VoiceId::Lead, MetricIntent::StrictGrid, protagonist.id},
+    };
+    oversizedSourceScore.cells.push_back(oversizedSource);
+    auto oversizedPlacement = premise;
+    oversizedPlacement.cellId = oversizedSource.id;
+    oversizedPlacement.fragmentEnd = oversizedSource.lengthBeats;
+    oversizedSourceScore.placements.push_back(oversizedPlacement);
+    require(SelectiveRepair::ensureAuthoredProtagonistCoda(
+                narrativePlan, oversizedSourceScore, oversizedSource.id),
+            "A source cell longer than the resolution must produce a bounded verified authored coda fragment");
+    const auto oversizedFindings = SelectiveRepair::performanceDeficits(
+        narrativePlan, oversizedSourceScore, {0});
+    const auto oversizedDeficit = std::find_if(oversizedFindings.begin(), oversizedFindings.end(),
+        [](const auto& finding) { return finding.instrumentId == "protagonist"; });
+    require(oversizedDeficit == oversizedFindings.end() ||
+                !oversizedDeficit->missingCodaResolution,
+            "A repaired oversized source must pass the independent terminal-boundary audit");
+
+    SongPlan longNarrative;
+    longNarrative.totalBars = 128;
+    longNarrative.beatsPerBar = 4.0;
+    longNarrative.rootPitchClass = 0;
+    longNarrative.instrumentCastAuthored = true;
+    InstrumentAssignment longLead;
+    longLead.id = "long_form_protagonist";
+    longLead.sourceVoice = VoiceId::Lead;
+    longLead.minimumPitch = 48;
+    longLead.maximumPitch = 84;
+    longLead.contentLaneId = longLead.id;
+    longLead.lineRelationship = "independent";
+    for (auto sectionIndex = 0; sectionIndex < 4; ++sectionIndex) {
+        SongSection section;
+        section.name = "Story " + std::to_string(sectionIndex + 1);
+        section.startBar = sectionIndex * 32;
+        section.bars = 32;
+        longLead.activeSections.push_back(section.name);
+        longNarrative.sections.push_back(section);
+    }
+    longNarrative.instruments = {longLead};
+    longNarrative.narrativeSpine.protagonistInstrumentId = longLead.id;
+    PerformanceScore literalLead;
+    PerformanceCell literalCell;
+    literalCell.id = "literal_lead";
+    literalCell.themeId = "story_theme";
+    literalCell.lengthBeats = 8.0;
+    literalCell.ownedVoices = {VoiceId::Lead};
+    literalCell.notes = {
+        {0.0, .5, 60, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {1.0, .5, 67, 82, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {2.0, .5, 62, 78, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {3.0, 1.0, 69, 76, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+    };
+    literalLead.cells.push_back(literalCell);
+    for (auto sectionIndex = 0; sectionIndex < 4; ++sectionIndex) {
+        for (auto phrase = 0; phrase < 2; ++phrase) {
+            PerformancePlacement placement;
+            placement.cellId = literalCell.id;
+            placement.sectionIndex = sectionIndex;
+            placement.startBeat = phrase * 32.0;
+            placement.repeats = 1;
+            placement.fragmentEnd = literalCell.lengthBeats;
+            literalLead.placements.push_back(placement);
+        }
+    }
+    const auto literalLeadFindings = SelectiveRepair::performanceDeficits(
+        longNarrative, literalLead, {0});
+    require(literalLeadFindings.size() == 1 &&
+                !literalLeadFindings.front().missingNarrativePresence &&
+                literalLeadFindings.front().narrativePhraseWindows == 8 &&
+                literalLeadFindings.front().minimumNarrativePhraseWindows == 7 &&
+                literalLeadFindings.front().missingThematicDevelopment &&
+                literalLeadFindings.front().literalPlacementRatio > .99 &&
+                literalLeadFindings.front().missingMelodicSpeech,
+            "A ubiquitous literal leap-cell must not masquerade as a developed AI protagonist");
+    auto editorialLeadFinding = literalLeadFindings.front();
+    editorialLeadFinding.missingCodaResolution = false; // Resolution is tested independently above.
+    const auto literalLeadConstraints = SelectiveRepair::classifyPerformanceDeficits(
+        longNarrative, {editorialLeadFinding}, false);
+    require(literalLeadConstraints.size() == 1 &&
+                !literalLeadConstraints.front().blocksPublication &&
+                std::find(literalLeadConstraints.front().operations.begin(),
+                          literalLeadConstraints.front().operations.end(),
+                          PerformanceRepairOperation::TransformThematicReturns) !=
+                    literalLeadConstraints.front().operations.end() &&
+                std::find(literalLeadConstraints.front().operations.begin(),
+                          literalLeadConstraints.front().operations.end(),
+                          PerformanceRepairOperation::ShapeMelodicSpeech) !=
+                    literalLeadConstraints.front().operations.end(),
+            "A populated protagonist must route literal repetition and disconnected leaps to focused editorial rewriting without erasing the song");
+
+    auto nearlyCompleteLead = literalLeadFindings.front();
+    nearlyCompleteLead.missingNarrativePresence = true;
+    nearlyCompleteLead.missingThematicDevelopment = false;
+    nearlyCompleteLead.missingMelodicSpeech = false;
+    nearlyCompleteLead.missingCodaResolution = false;
+    nearlyCompleteLead.duplicatedIndependentLine = false;
+    const auto nearlyCompleteConstraints = SelectiveRepair::classifyPerformanceDeficits(
+        longNarrative, {nearlyCompleteLead}, false);
+    require(nearlyCompleteConstraints.size() == 1 &&
+                !nearlyCompleteConstraints.front().blocksPublication &&
+                std::find(nearlyCompleteConstraints.front().operations.begin(),
+                          nearlyCompleteConstraints.front().operations.end(),
+                          PerformanceRepairOperation::DevelopNarrativePresence) !=
+                    nearlyCompleteConstraints.front().operations.end(),
+            "A populated resolved protagonist just below its narrative target must remain an editorial objective");
+
+    SongPlan continuityPlan;
+    continuityPlan.totalBars = 16;
+    continuityPlan.beatsPerBar = 4.0;
+    continuityPlan.percussionFreeIntent = true;
+    continuityPlan.productionLanguage.domain = ProductionDomain::Hybrid;
+    continuityPlan.productionLanguage.electronicIntent = .9;
+    for (auto sectionIndex = 0; sectionIndex < 2; ++sectionIndex) {
+        SongSection section;
+        section.name = "Continuity " + std::to_string(sectionIndex + 1);
+        section.startBar = sectionIndex * 8;
+        section.bars = 8;
+        section.density = .58;
+        continuityPlan.sections.push_back(section);
+    }
+    InstrumentAssignment floorA;
+    floorA.id = "floor_a";
+    floorA.sourceVoice = VoiceId::HarmonicFoundation;
+    InstrumentAssignment floorB;
+    floorB.id = "floor_b";
+    floorB.sourceVoice = VoiceId::HarmonicUpper;
+    InstrumentAssignment breathingLead;
+    breathingLead.id = "breathing_lead";
+    breathingLead.sourceVoice = VoiceId::Lead;
+    continuityPlan.instruments = {floorA, floorB, breathingLead};
+    PerformanceScore continuousEnsemble;
+    for (const auto instrumentIndex : {0, 1}) {
+        PerformanceCell floorCell;
+        floorCell.id = "floor_cell_" + std::to_string(instrumentIndex);
+        floorCell.lengthBeats = 16.0;
+        floorCell.ownedVoices = {continuityPlan.instruments[instrumentIndex].sourceVoice};
+        floorCell.notes.push_back({0.0, 16.0, 48 + instrumentIndex * 7, 62,
+            continuityPlan.instruments[instrumentIndex].sourceVoice,
+            MetricIntent::StrictGrid, continuityPlan.instruments[instrumentIndex].id});
+        continuousEnsemble.cells.push_back(floorCell);
+        for (auto sectionIndex = 0; sectionIndex < 2; ++sectionIndex) {
+            PerformancePlacement placement;
+            placement.cellId = floorCell.id;
+            placement.sectionIndex = sectionIndex;
+            placement.repeats = 2;
+            placement.fragmentEnd = floorCell.lengthBeats;
+            continuousEnsemble.placements.push_back(placement);
+        }
+    }
+    PerformanceCell leadCell;
+    leadCell.id = "breathing_phrase";
+    leadCell.lengthBeats = 4.0;
+    leadCell.ownedVoices = {VoiceId::Lead};
+    leadCell.notes = {{0.0, .75, 67, 78, VoiceId::Lead,
+                       MetricIntent::StrictGrid, breathingLead.id}};
+    continuousEnsemble.cells.push_back(leadCell);
+    for (auto sectionIndex = 0; sectionIndex < 2; ++sectionIndex) {
+        PerformancePlacement placement;
+        placement.cellId = leadCell.id;
+        placement.sectionIndex = sectionIndex;
+        placement.startBeat = 12.0;
+        placement.fragmentEnd = leadCell.lengthBeats;
+        continuousEnsemble.placements.push_back(placement);
+    }
+    const auto continuity = SelectiveRepair::ensembleContinuity(
+        continuityPlan, continuousEnsemble);
+    require(continuity.ready && continuity.silentWindows == 0 &&
+                continuity.audibleCoverage >= .99 &&
+                continuity.harmonicFloorCoverage >= .99,
+            "A breathing protagonist must be publishable when two authored harmonic layers sustain the ensemble");
+    auto hollowEnsemble = continuousEnsemble;
+    hollowEnsemble.placements.erase(std::remove_if(
+        hollowEnsemble.placements.begin(), hollowEnsemble.placements.end(),
+        [](const auto& placement) { return placement.cellId == "floor_cell_1"; }),
+        hollowEnsemble.placements.end());
+    const auto hollowContinuity = SelectiveRepair::ensembleContinuity(
+        continuityPlan, hollowEnsemble);
+    require(!hollowContinuity.ready && hollowContinuity.harmonicFloorCoverage < .01,
+            "Sparse accompaniment must fail the ensemble gate even when a protagonist still speaks");
+    auto intentionalBreathPlan = continuityPlan;
+    intentionalBreathPlan.sections[1].function = "complete silence";
+    auto intentionalBreathScore = continuousEnsemble;
+    intentionalBreathScore.placements.erase(std::remove_if(
+        intentionalBreathScore.placements.begin(), intentionalBreathScore.placements.end(),
+        [](const auto& placement) { return placement.sectionIndex == 1; }),
+        intentionalBreathScore.placements.end());
+    const auto intentionalBreath = SelectiveRepair::ensembleContinuity(
+        intentionalBreathPlan, intentionalBreathScore);
+    require(intentionalBreath.ready && intentionalBreath.intentionalBreathWindows == 2 &&
+                intentionalBreath.longestGlobalSilenceBeats < .01,
+            "A section explicitly authored as complete silence must not be misclassified as an accidental hole");
+
+    auto longBreathPlan = continuityPlan;
+    longBreathPlan.totalBars = 24;
+    auto thirdSection = longBreathPlan.sections.back();
+    thirdSection.name = "Continuity 3";
+    thirdSection.startBar = 16;
+    longBreathPlan.sections.push_back(thirdSection);
+    PerformanceScore isolatedBreathScore;
+    isolatedBreathScore.cells = {continuousEnsemble.cells[0], continuousEnsemble.cells[1]};
+    for (auto instrumentIndex = 0; instrumentIndex < 2; ++instrumentIndex) {
+        for (auto sectionIndex = 0; sectionIndex < 3; ++sectionIndex) {
+            for (auto half = 0; half < 2; ++half) {
+                if (sectionIndex == 1 && half == 0) continue;
+                PerformancePlacement placement;
+                placement.cellId = "floor_cell_" + std::to_string(instrumentIndex);
+                placement.sectionIndex = sectionIndex;
+                placement.startBeat = half * 16.0;
+                placement.fragmentEnd = 16.0;
+                isolatedBreathScore.placements.push_back(placement);
+            }
+        }
+    }
+    const auto isolatedBreath = SelectiveRepair::ensembleContinuity(
+        longBreathPlan, isolatedBreathScore);
+    require(isolatedBreath.ready && isolatedBreath.silentWindows == 1 &&
+                isolatedBreath.maximumConsecutiveSilentWindows == 1,
+            "One isolated four-bar breath in a long dense form must remain publishable");
+    auto consecutiveSilenceScore = isolatedBreathScore;
+    consecutiveSilenceScore.placements.erase(std::remove_if(
+        consecutiveSilenceScore.placements.begin(), consecutiveSilenceScore.placements.end(),
+        [](const auto& placement) { return placement.sectionIndex == 1; }),
+        consecutiveSilenceScore.placements.end());
+    const auto consecutiveSilence = SelectiveRepair::ensembleContinuity(
+        longBreathPlan, consecutiveSilenceScore);
+    require(!consecutiveSilence.ready &&
+                consecutiveSilence.maximumConsecutiveSilentWindows == 2,
+            "Adjacent four-bar holes must still fail the ensemble continuity gate");
 }

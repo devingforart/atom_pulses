@@ -1,5 +1,63 @@
 # PULSO
 
+### 0.58.33 — cierre verificable para toda protagonista poblada
+
+- La reparación transaccional de coda se ejecuta ahora también cuando Terra escribió una protagonista completa pero omitió únicamente su cierre terminal.
+- Después de agotar la recuperación remota, PULSO reutiliza el mejor fragmento protagonista ya escrito por la IA, verifica la resolución y vuelve a clasificar el score completo antes de decidir la publicación.
+- El flujo ya no limita esta garantía al caso excepcional de una protagonista originalmente vacía y promovida desde otra voz.
+- Si la reparación no supera la auditoría independiente, se conserva íntegramente el score anterior y el registro informa el fallo real.
+
+### 0.58.32 — coda protagonista transaccional y verificable
+
+- La recuperación de una protagonista vacía extrae un fragmento acotado de tres ataques escritos por la IA, conserva su ritmo y contorno, y lo transforma como retorno terminal sin inventar notas.
+- Las celdas fuente más largas que la sección de resolución ya no quedan truncadas antes del ataque final: el fragmento se rebasa y escala dentro de la ventana de coda.
+- Una reparación de coda solo informa éxito después de pasar la misma auditoría independiente utilizada por el gate de publicación.
+- Si el ataque final, la armonía estable o la ventana terminal no quedan satisfechos, la operación revierte íntegramente el score en lugar de dejar una reparación parcial o engañosa.
+
+### 0.58.31 — respiración estructural sin vacíos accidentales
+
+- El auditor de continuidad permite una ventana aislada de cuatro compases como breakdown, umbral o respiración de frase en una obra larga.
+- Siguen rechazándose ventanas silenciosas consecutivas, silencios que ocupen una proporción material de la forma, pisos armónicos insuficientes y huecos individuales mayores al margen musical permitido.
+- La densidad, el piso armónico, el porcentaje de cobertura y la duración real del silencio continúan midiéndose exclusivamente sobre las notas escritas por la IA.
+- El registro informa ahora también la racha máxima de ventanas silenciosas para distinguir una pausa deliberada de una composición abandonada.
+
+### 0.58.30 — la crítica musical no descarta una obra completa
+
+- Una protagonista poblada, resuelta y musicalmente válida ya no bloquea la publicación por quedar apenas debajo de una meta de presencia, desarrollo o fraseo.
+- La repetición temática literal y el desarrollo melódico insuficiente continúan generando reparaciones focalizadas y diagnósticos editoriales, pero no borran una composición completa cuando esas reparaciones no convergen.
+- Permanecen bloqueantes las invariantes reales: identidad esencial ausente, instrumento concreto solicitado y vacío, coda protagonista ausente, duplicación MIDI independiente grave, discontinuidad global e integridad MIDI inválida.
+
+### 0.58.29 — compromisos explícitos y promoción sin clones
+
+- El inventario técnico de reproducción de Ableton queda separado del prompt humano: una identidad instalada ya no se interpreta como un instrumento solicitado por el usuario.
+- Solamente los instrumentos concretos escritos antes del contexto de ejecución se convierten en compromisos duros de publicación.
+- Cuando la protagonista declarada llega vacía, una interpretación melódica AI existente se transfiere a esa identidad; la pista de origen deja de conservar una copia MIDI redundante.
+- La transferencia preserva notas, fraseo, placements y autoría de la IA, y evita que la propia recuperación active después el detector de duplicación independiente.
+
+### 0.58.28 — continuidad orquestal sin una protagonista permanente
+
+- La protagonista puede respirar entre frases: su presencia narrativa se separa de la continuidad del conjunto y conserva exigencias independientes de desarrollo, diálogo y resolución.
+- Un nuevo control audita exclusivamente el MIDI escrito por la IA en ventanas de cuatro compases. Rechaza silencios accidentales, falta de piso armónico o densidad insuficiente sin ocultarlos mediante relleno procedural.
+- Las secciones declaradas explícitamente como silencio total se respetan como decisiones dramáticas y quedan fuera de la medición de huecos accidentales.
+- Solicitar una cantidad de pistas guía el reparto y la recuperación, pero ya no convierte cada nombre inventado por la IA en una obligación absoluta. Las identidades opcionales vacías se retiran tras recuperación acotada, sin duplicar MIDI ni fabricar notas.
+- Los instrumentos concretos nombrados por el usuario continúan siendo compromisos duros y nunca se eliminan silenciosamente.
+
+### 0.58.27 — reconciliación estable de la matriz orquestal
+
+- Los alias, abreviaturas, ordinales y diferencias de acentuación en `active_sections` se vinculan con los nombres autoritativos de la macroforma antes de solicitar otra respuesta remota.
+- Si una sección queda por debajo de su densidad declarada, PULSO completa únicamente los enlaces de actividad con integrantes existentes y funciones complementarias; no crea instrumentos, roles ni notas.
+- La reconciliación garantiza al menos dos responsabilidades armónicas o atmosféricas por sección, distribuye la continuidad favoreciendo secciones adyacentes y conserva la rotación del elenco.
+- La operación es idempotente, queda registrada con cantidades normalizadas y evita rechazar o volver a pagar una composición por metadatos reparables.
+
+### 0.58.26 — narrativa AI-first y desarrollo audible
+
+- La protagonista, su respuesta, el bajo de movimiento y el conductor hipnótico se escriben juntos en un bloque narrativo prioritario, sin aumentar normalmente la cantidad de solicitudes remotas.
+- Una protagonista debe estar escrita por IA en al menos el 65 % de sus ventanas narrativas, desarrollar sus retornos y cerrar la obra. El render local ya no copia frases para rellenar huecos ni fabrica una coda.
+- Los retornos literales dominantes, las melodías formadas por saltos desconectados y las caminatas escalares se convierten en reparaciones focalizadas sobre la única identidad responsable.
+- La música electrónica sin percusión conserva movimiento tonal mediante un bajo melódico independiente, salvo que el usuario excluya explícitamente el bajo.
+- Las capas mantienen un piso armónico continuo, pero rotan responsabilidades, entradas, retiradas y respiraciones para evitar una meseta de tutti permanente.
+- Las pruebas verifican presencia narrativa, transformación temática, fraseo melódico y protección del material ya aceptado.
+
 ### 0.58.25 — consolidación segura de clones redundantes
 
 - Tras una recuperación acotada fallida, un clon MIDI literal de un reparto no solicitado deja de provocar el descarte de toda la obra: se conserva la interpretación original y se retira únicamente la pista redundante.

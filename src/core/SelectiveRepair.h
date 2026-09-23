@@ -35,12 +35,20 @@ struct PerformanceCoverageDeficit {
     std::size_t minimumSections{};
     std::size_t sectionalStates{};
     std::size_t minimumSectionalStates{};
+    std::size_t narrativePhraseWindows{};
+    std::size_t minimumNarrativePhraseWindows{};
+    double literalPlacementRatio{};
+    double melodicStepRatio{};
+    std::size_t melodicIntervals{};
     double duplicateEventOverlap{};
     std::string duplicatedWithInstrumentId;
     bool missingCodaResolution{};
     bool missingThematicRelationship{};
     bool duplicatedIndependentLine{};
     bool missingSectionalEvolution{};
+    bool missingNarrativePresence{};
+    bool missingThematicDevelopment{};
+    bool missingMelodicSpeech{};
 };
 
 enum class ConstraintAuthority {
@@ -54,6 +62,9 @@ enum class PerformanceRepairOperation {
     ExtendCoverage,
     DevelopPhrase,
     DevelopSectionalEvolution,
+    DevelopNarrativePresence,
+    TransformThematicReturns,
+    ShapeMelodicSpeech,
     SeparateIndependentLine,
     ResolveNarrative,
     EstablishThematicRelationship
@@ -64,6 +75,19 @@ struct PerformanceConstraint {
     ConstraintAuthority authority{ConstraintAuthority::MusicalObjective};
     std::vector<PerformanceRepairOperation> operations;
     bool blocksPublication{};
+};
+
+struct EnsembleContinuityReport {
+    bool ready{};
+    std::size_t evaluatedWindows{};
+    std::size_t intentionalBreathWindows{};
+    std::size_t silentWindows{};
+    std::size_t maximumConsecutiveSilentWindows{};
+    std::size_t underfilledWindows{};
+    std::size_t twoLayerHarmonicWindows{};
+    double audibleCoverage{};
+    double harmonicFloorCoverage{};
+    double longestGlobalSilenceBeats{};
 };
 
 [[nodiscard]] std::string_view constraintAuthorityKey(ConstraintAuthority) noexcept;
@@ -113,6 +137,8 @@ public:
     [[nodiscard]] static std::vector<std::size_t> incompleteTargets(
         const SongPlan&, const PerformanceScore&,
         const std::vector<std::size_t>& candidates);
+    [[nodiscard]] static EnsembleContinuityReport ensembleContinuity(
+        const SongPlan&, const PerformanceScore&);
     // Reuses an already-authored protagonist cell at the audible resolution
     // boundary. Only placement transforms are added; no MIDI notes are invented.
     [[nodiscard]] static bool ensureAuthoredProtagonistCoda(

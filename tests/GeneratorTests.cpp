@@ -2715,6 +2715,7 @@ void runGeneratorTests() {
     InstrumentAssignment universalProtagonist;
     universalProtagonist.id = "universal_protagonist";
     universalProtagonist.sourceVoice = VoiceId::Lead;
+    universalProtagonist.explicitPromptIdentity = true;
     universalConstraintPlan.instruments = {universalProtagonist};
     universalConstraintPlan.narrativeSpine.protagonistInstrumentId = universalProtagonist.id;
     PerformanceCoverageDeficit absentExplicitIdentity;
@@ -2739,6 +2740,7 @@ void runGeneratorTests() {
     auto productionScaleConstraintPlan = universalConstraintPlan;
     productionScaleConstraintPlan.instruments.resize(32, universalProtagonist);
     productionScaleConstraintPlan.instruments.front().id = "optional_cast_colour";
+    productionScaleConstraintPlan.instruments.front().explicitPromptIdentity = false;
     auto productionScaleDeficit = absentExplicitIdentity;
     productionScaleDeficit.instrumentId = productionScaleConstraintPlan.instruments.front().id;
     const auto productionScaleConstraints = SelectiveRepair::classifyPerformanceDeficits(
@@ -2746,7 +2748,7 @@ void runGeneratorTests() {
     require(productionScaleConstraints.size() == 1 &&
                 !productionScaleConstraints.front().blocksPublication &&
                 productionScaleConstraints.front().authority ==
-                    ConstraintAuthority::ExplicitPromptCommitment,
+                    ConstraintAuthority::MusicalObjective,
             "A large cast must not reject an otherwise complete score because an optional colour lane is empty");
     auto forbiddenRhythmPlan = universalConstraintPlan;
     forbiddenRhythmPlan.percussionFreeIntent = true;

@@ -1277,6 +1277,12 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                      note.origin == NoteOrigin::PlanDerived))
                     authoredSource.push_back(note);
         }
+        // An AI score must arrive with its own protagonist coverage. Copying an
+        // authored phrase into missing windows here produced technically complete
+        // but narratively flat PlanDerived leads. SelectiveRepair now measures the
+        // same 65% window contract before publication and asks the model to write
+        // only the missing protagonist material.
+        if (aiAuthoredScore(plan)) missing.clear();
         for (const auto bar : missing) {
             if (present >= target) break;
             const auto* section = sectionAt(plan, bar * plan.beatsPerBar);
@@ -1432,30 +1438,9 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                         ++report.resolutionCodaNotesCreated;
                 }
             } else if (aiAuthoredScore(plan)) {
-                // GPT can author a complete protagonist but omit its final-section
-                // placement. Reuse its latest authored statement as a quiet tonic
-                // coda instead of accepting a narrative that simply stops.
-                auto source = pattern.notes.end();
-                for (auto it = pattern.notes.begin(); it != pattern.notes.end(); ++it) {
-                    if (it->voice == VoiceId::Lead && it->partId > 0 &&
-                        it->partId <= plan.instruments.size() &&
-                        (it->origin == NoteOrigin::AiAuthored || it->origin == NoteOrigin::AiTransformed ||
-                         it->origin == NoteOrigin::PlanDerived) &&
-                        (source == pattern.notes.end() || it->startBeat > source->startBeat))
-                        source = it;
-                }
-                if (source != pattern.notes.end()) {
-                    auto coda = *source;
-                    const auto owner = plan.instruments[coda.partId - 1];
-                    coda.startBeat = std::max(codaStart, finalBar - plan.beatsPerBar * .5);
-                    coda.durationBeats = std::min(1.5, end - coda.startBeat - 1.0 / 32.0);
-                    coda.pitch = nearestPitch(plan.rootPitchClass, coda.pitch, owner);
-                    coda.velocity = std::max(42, coda.velocity - 8);
-                    coda.origin = NoteOrigin::PlanDerived;
-                    coda.narrativeId = 0x434f4441u;
-                    pattern.notes.push_back(coda);
-                    ++report.resolutionCodaNotesCreated;
-                }
+                // Deliberately do nothing. A missing AI coda is a bounded blocking
+                // performance deficit and must be repaired from an authored cell
+                // before rendering; the local engine may not manufacture its ending.
             } else {
                 const auto leadIndex = leads.front();
                 const auto& lead = plan.instruments[leadIndex];

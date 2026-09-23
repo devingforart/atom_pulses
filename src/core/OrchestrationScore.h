@@ -44,6 +44,10 @@ struct InstrumentAssignment {
     TimbreSignature timbre;
     std::string contentLaneId;
     std::string lineRelationship{"independent"};
+    // True only when the user's direction names this concrete instrument family.
+    // A requested track count alone never turns AI-invented cast labels into hard
+    // prompt commitments.
+    bool explicitPromptIdentity{};
 };
 
 struct OrchestrationLanguage {

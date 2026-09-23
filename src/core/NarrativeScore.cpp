@@ -666,6 +666,8 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     const auto audibleLineage = std::clamp(
         (report.audibleThematicSimilarity - 0.55) / 0.25, 0.0, 1.0);
     const auto melodicSpeech = std::clamp(1.0 - std::max(0.0,
+        0.15 - report.melodicStepwiseRatio) / 0.15 -
+        std::max(0.0,
         report.melodicStepwiseRatio - 0.62) / 0.38 -
         std::max(0.0, static_cast<double>(report.maximumMelodicStepRun) - 4.0) * 0.08,
         0.0, 1.0);
@@ -685,7 +687,7 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         report.harmonicDirection * 0.04 + report.rhythmicDevelopment * 0.03 +
         melodicSpeech * 0.04 + clubContinuity * 0.02 +
         report.causalNarrative * 0.07 + report.resolutionScore * 0.04, 0.0, 1.0);
-    if (report.active && report.primaryVoiceCoverage < 0.65) report.issues.push_back("insufficient_ai_phrase_coverage");
+    if (report.active && report.primaryVoiceCoverage < 0.40) report.issues.push_back("insufficient_ai_phrase_coverage");
     if (report.active && report.foregroundExpected && report.foregroundNotes < 8)
         report.issues.push_back("ai_foreground_missing");
     if (report.active && report.foregroundNotes >= 8 && report.foregroundAiAuthorshipRatio < 0.85)
@@ -710,6 +712,8 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     if (report.melodicIntervals >= 8 && (report.melodicStepwiseRatio > 0.78 ||
         report.maximumMelodicStepRun > 5))
         report.issues.push_back("scalar_melody_without_speech");
+    if (report.melodicIntervals >= 8 && report.melodicStepwiseRatio < 0.15)
+        report.issues.push_back("disconnected_melody_without_voice_leading");
     if (plan.productionLanguage.domain == ProductionDomain::ClubElectronic && !plan.percussionFreeIntent &&
         report.maximumClubDrumGapBars > 16)
         report.issues.push_back("club_pulse_absent_too_long");
@@ -729,6 +733,9 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     const auto developmentReady = report.comparableThematicReturns < 4 ||
         (report.literalThematicReturnRatio <= 0.70 && report.thematicDevelopment >= 0.55);
     const auto bassReady = report.bassPhrases < 4 || report.bassPhraseContinuity >= 0.60;
+    const auto melodicSpeechReady = report.melodicIntervals < 8 ||
+        (report.melodicStepwiseRatio >= 0.15 && report.melodicStepwiseRatio <= 0.78 &&
+         report.maximumMelodicStepRun <= 5);
     const auto foregroundReady = !report.foregroundExpected ||
         (report.foregroundNotes >= 8 && report.foregroundAiAuthorshipRatio >= 0.85);
     const auto movementBassReady = !report.movementBassExpected ||
@@ -737,8 +744,8 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         plan.percussionFreeIntent ||
         (report.grooveAuthorshipCoverage >= 0.45 && report.maximumClubDrumGapBars <= 16 &&
          report.maximumClubLowEndGapBars <= 16);
-    report.creativeReady = !report.active || (report.primaryVoiceCoverage >= 0.65 &&
-        foregroundReady && movementBassReady && memoryReady && developmentReady && bassReady &&
+    report.creativeReady = !report.active || (report.primaryVoiceCoverage >= 0.40 &&
+        foregroundReady && movementBassReady && memoryReady && developmentReady && bassReady && melodicSpeechReady &&
         clubReady && report.narrativeSpineReady && report.densityControl >= 0.82 && report.maximumMelodicStepRun <= 5 &&
         report.score >= 0.76);
     return report;

@@ -51,6 +51,8 @@ public:
     [[nodiscard]] static std::size_t performanceBlockCount(std::size_t instruments) noexcept;
     [[nodiscard]] static bool castManifestUsesExactCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t requestedInstrumentCount(const juce::String& direction) noexcept;
+    static void applyExplicitInstrumentCommitments(SongPlan&,
+                                                   const juce::String& creativeDirection);
     [[nodiscard]] static bool reconcileCastManifest(const juce::String& acceptedManifest,
                                                     const juce::String& supplement,
                                                     std::size_t requestedCount,
@@ -64,6 +66,10 @@ public:
                                                   const juce::String& castManifest,
                                                   juce::String& mergedBlueprint,
                                                   juce::String& error);
+    [[nodiscard]] static bool reconcileOrchestrationMatrix(
+        const juce::String& macroBlueprint, const juce::String& castManifest,
+        juce::String& reconciledManifest, juce::String& report,
+        juce::String& error);
     [[nodiscard]] static AiComposition compose(const juce::String& creativeDirection,
                                                int bars, double bpm,
                                                const Pattern* reference,

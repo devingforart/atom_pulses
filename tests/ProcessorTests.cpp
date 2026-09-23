@@ -849,6 +849,30 @@ int main(int argc, char** argv) {
     require(pulso::plugin::AiComposer::defaultModel() == "gpt-5.6-terra" &&
                 pulso::plugin::AiComposer::defaultReasoningEffort() == "medium",
             "PULSO composition must default to GPT-5.6 Terra at medium reasoning effort");
+    pulso::SongPlan identityContractPlan;
+    pulso::InstrumentAssignment inventoryViolin;
+    inventoryViolin.id = "violin_1_protagonist";
+    inventoryViolin.instrumentId = "solo_violin";
+    inventoryViolin.name = "Solo Violin";
+    pulso::InstrumentAssignment inventoryHarp;
+    inventoryHarp.id = "harp_harmonic_orbit";
+    inventoryHarp.instrumentId = "harp";
+    inventoryHarp.name = "Harp";
+    identityContractPlan.instruments = {inventoryViolin, inventoryHarp};
+    pulso::plugin::AiComposer::applyExplicitInstrumentCommitments(
+        identityContractPlan,
+        "Oscura, progresiva y sin percusion.\n"
+        "Ableton playback inventory. Prefer exact installed identities: violin, harp.");
+    require(!identityContractPlan.instruments[0].explicitPromptIdentity &&
+                !identityContractPlan.instruments[1].explicitPromptIdentity,
+            "Ableton inventory context must never become a user instrument commitment");
+    pulso::plugin::AiComposer::applyExplicitInstrumentCommitments(
+        identityContractPlan,
+        "Quiero un violin protagonista.\n"
+        "Ableton playback inventory. Prefer exact installed identities: violin, harp.");
+    require(identityContractPlan.instruments[0].explicitPromptIdentity &&
+                !identityContractPlan.instruments[1].explicitPromptIdentity,
+            "Only concrete instruments named before execution context may become hard commitments");
     const auto acceptedManifest = juce::String(R"json({"instruments":[
       {"id":"pad","instrument":"analog_pad","name":"Pad","source_voice":"atmosphere","role":"floor","content_lane_id":"pad_lane","line_relationship":"independent","orchestral_function":"body","active_sections":["A"]},
       {"id":"lead","instrument":"lead_synth","name":"Lead","source_voice":"lead","role":"speaker","content_lane_id":"lead_lane","line_relationship":"independent","orchestral_function":"counterpoint","active_sections":["B"]}
@@ -966,6 +990,73 @@ int main(int argc, char** argv) {
     }
     require(protagonistLinkedToResolution,
             "Cast reconciliation must persist the resolution section without changing identity");
+    const auto orchestrationMacro = juce::String::fromUTF8(R"json({
+      "sections":[
+        {"name":"I. Umbral / Premisa","density":0.4,"energy":0.3},
+        {"name":"II. Desarrollo","density":0.65,"energy":0.55},
+        {"name":"III. Resolución","density":0.35,"energy":0.25}
+      ]
+    })json");
+    const auto divergentMatrixManifest = juce::String::fromUTF8(R"json({"instruments":[
+      {"id":"floor_a","source_voice":"harmonic_foundation","orchestral_function":"foundation","active_sections":["Umbral"]},
+      {"id":"floor_b","source_voice":"harmonic_pulse","orchestral_function":"body","active_sections":["I. Umbral"]},
+      {"id":"upper","source_voice":"harmonic_upper","orchestral_function":"extension","active_sections":["Desarrollo"]},
+      {"id":"air","source_voice":"atmosphere","orchestral_function":"color","active_sections":["Resolucion"]},
+      {"id":"lead","source_voice":"lead","orchestral_function":"counterpoint","active_sections":["Section 2"]},
+      {"id":"answer","source_voice":"countermelody","orchestral_function":"counterpoint","active_sections":["II. Desarrollo"]},
+      {"id":"bass","source_voice":"movement_bass","orchestral_function":"foundation","active_sections":["III"]},
+      {"id":"veil","source_voice":"transitions","orchestral_function":"transition","active_sections":["unmatched poetic alias"]}
+    ]})json");
+    juce::String matrixManifest;
+    juce::String matrixReport;
+    juce::String matrixError;
+    require(pulso::plugin::AiComposer::reconcileOrchestrationMatrix(
+                orchestrationMacro, divergentMatrixManifest, matrixManifest,
+                matrixReport, matrixError),
+            "Section aliases and an underfilled orchestration matrix must be repaired without regenerating the cast");
+    const auto matrixJson = juce::JSON::parse(matrixManifest);
+    const auto* matrixObject = matrixJson.getDynamicObject();
+    const auto* matrixInstruments = matrixObject == nullptr ? nullptr :
+        matrixObject->getProperty("instruments").getArray();
+    require(matrixInstruments != nullptr && matrixInstruments->size() == 8 &&
+                matrixReport.contains("coverage links added=") &&
+                matrixReport.contains("cast identities preserved=8"),
+            "Matrix reconciliation must retain every cast identity and publish an auditable repair report");
+    const std::array<juce::String, 3> authoritativeSections{
+        juce::String::fromUTF8("I. Umbral / Premisa"), "II. Desarrollo",
+        juce::String::fromUTF8("III. Resolución")};
+    const std::array<int, 3> minimumOwners{6, 8, 6};
+    for (auto sectionIndex = 0; sectionIndex < 3; ++sectionIndex) {
+        auto owners = 0;
+        auto harmonicOwners = 0;
+        for (const auto& item : *matrixInstruments) {
+            const auto* instrument = item.getDynamicObject();
+            const auto* active = instrument == nullptr ? nullptr :
+                instrument->getProperty("active_sections").getArray();
+            require(active != nullptr && std::all_of(active->begin(), active->end(),
+                        [&](const auto& name) {
+                            return std::find(authoritativeSections.begin(), authoritativeSections.end(),
+                                             name.toString()) != authoritativeSections.end();
+                        }),
+                    "Every reconciled matrix reference must use an authoritative macro section name");
+            if (active == nullptr || std::none_of(active->begin(), active->end(),
+                    [&](const auto& name) { return name.toString() == authoritativeSections[sectionIndex]; }))
+                continue;
+            ++owners;
+            const auto voice = instrument->getProperty("source_voice").toString();
+            if (voice == "harmonic_foundation" || voice == "harmonic_pulse" ||
+                voice == "harmonic_upper" || voice == "atmosphere") ++harmonicOwners;
+        }
+        require(owners >= minimumOwners[sectionIndex] && harmonicOwners >= 2,
+                "Reconciliation must meet section density using complementary existing owners");
+    }
+    juce::String idempotentMatrix;
+    juce::String idempotentReport;
+    require(pulso::plugin::AiComposer::reconcileOrchestrationMatrix(
+                orchestrationMacro, matrixManifest, idempotentMatrix,
+                idempotentReport, matrixError) && idempotentMatrix == matrixManifest &&
+                idempotentReport.contains("coverage links added=0"),
+            "A reconciled orchestration matrix must remain stable on repeated validation");
     pulso::SongPlan routingPlan;
     routingPlan.beatsPerBar = 4.0;
     routingPlan.totalBars = 4;

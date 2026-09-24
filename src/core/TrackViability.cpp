@@ -1,6 +1,7 @@
 #include "TrackViability.h"
 
 #include "ArrangementDensityPlanner.h"
+#include "ElectronicRoleContract.h"
 #include "ElectronicSoundscape.h"
 #include "OrchestrationScore.h"
 #include "Scale.h"
@@ -185,6 +186,15 @@ bool protectedIndependentAuthorship(const InstrumentPart& part, const SongPlan& 
         value.notes >= 8 && value.activeBars >= 4 && value.phrases >= 2;
 }
 
+bool essentialAuthoredIdentity(const InstrumentPart& part, const SongPlan& plan) noexcept {
+    const auto* assignment = assignmentFor(part, plan);
+    return assignment != nullptr &&
+        (assignment->explicitPromptIdentity ||
+         assignment->id == plan.narrativeSpine.protagonistInstrumentId ||
+         ElectronicRoleContract::motionOwner(*assignment) ||
+         contains(lower(assignment->role), "primary_chord_bed"));
+}
+
 std::uint16_t primaryBassPartId(const Pattern& pattern, const SongPlan& plan) {
     auto result = std::uint16_t{};
     auto best = -1.0;
@@ -260,6 +270,21 @@ std::size_t develop(Pattern& pattern, const SongPlan& plan, const InstrumentPart
                     const TrackViabilityContract& contract) {
     auto before = evidence(pattern, part.id, plan.beatsPerBar);
     const auto authoredAiScore = plan.instrumentCastAuthored && !plan.performanceScore.empty();
+    const auto* assignment = assignmentFor(part, plan);
+    const auto protectedAiLine = assignment != nullptr &&
+        (assignment->id == plan.narrativeSpine.protagonistInstrumentId ||
+         ElectronicRoleContract::motionOwner(*assignment) ||
+         lower(assignment->role).find("primary_chord_bed") != std::string::npos);
+    // These three responsibilities define the song's identity, propulsion and
+    // explicit harmony. If GPT underwrites one of them, the bounded AI editor must
+    // repair it; local pattern synthesis would silently replace authorship and was
+    // the source of procedural basses and monophonic pseudo-chord beds.
+    if (authoredAiScore && protectedAiLine) return 0;
+    // A handful of isolated notes does not justify an exported instrument lane.
+    // Preserve that authored gesture during terminal relay, but do not inflate it
+    // procedurally until a label looks like a composed part.
+    if (authoredAiScore && before.notes <= 5 &&
+        !essentialAuthoredIdentity(part, plan)) return 0;
     if (authoredAiScore && contract.function != TrackFunction::HarmonicFloor &&
         contract.function != TrackFunction::Environment &&
         contract.function != TrackFunction::Pulse &&

@@ -3,9 +3,12 @@
 #include "SongComposer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 #include <initializer_list>
 #include <limits>
+#include <set>
+#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -157,6 +160,77 @@ std::optional<std::size_t> ElectronicRoleContract::electPrimaryMotionOwner(
             setMotionMarker(instruments[index], supportingMotionMarker);
     }
     return primary;
+}
+
+AuthoredMotionOwnerReconciliation
+ElectronicRoleContract::reconcileAuthoredPrimaryMotionOwner(SongPlan& plan) {
+    AuthoredMotionOwnerReconciliation result;
+    if (!requiresMotionOwner(plan) || plan.performanceScore.empty()) return result;
+
+    std::map<std::string, std::size_t> placedNotes;
+    std::map<std::string, std::set<int>> activeSections;
+    for (const auto& placement : plan.performanceScore.placements) {
+        const auto cell = std::find_if(plan.performanceScore.cells.begin(),
+            plan.performanceScore.cells.end(), [&](const auto& candidate) {
+                return candidate.id == placement.cellId;
+        });
+        if (cell == plan.performanceScore.cells.end()) continue;
+        const auto repeats = static_cast<std::size_t>(std::max(1, placement.repeats));
+        const auto fragmentStart = std::clamp(
+            placement.fragmentStart, 0.0, cell->lengthBeats);
+        const auto fragmentEnd = placement.fragmentEnd < 0.0
+            ? cell->lengthBeats
+            : std::clamp(placement.fragmentEnd, fragmentStart, cell->lengthBeats);
+        for (const auto& note : cell->notes) {
+            if (note.instrumentId.empty() || note.beat >= fragmentEnd ||
+                note.beat + note.durationBeats <= fragmentStart) continue;
+            placedNotes[note.instrumentId] += repeats;
+            activeSections[note.instrumentId].insert(placement.sectionIndex);
+        }
+    }
+
+    std::optional<std::size_t> currentOwner;
+    for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+        if (!motionOwner(plan.instruments[index])) continue;
+        if (!currentOwner ||
+            placedNotes[plan.instruments[index].id] >
+                placedNotes[plan.instruments[*currentOwner].id])
+            currentOwner = index;
+    }
+    if (!currentOwner) return result;
+    const auto& provisional = plan.instruments[*currentOwner];
+    if (placedNotes[provisional.id] > 0 || provisional.explicitPromptIdentity)
+        return result;
+
+    std::optional<std::size_t> elected;
+    auto best = -std::numeric_limits<double>::infinity();
+    for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+        const auto& candidate = plan.instruments[index];
+        const auto notes = placedNotes[candidate.id];
+        if (notes == 0 || !motionCandidate(candidate)) continue;
+        auto score = std::log1p(static_cast<double>(notes)) * 20.0;
+        score += static_cast<double>(activeSections[candidate.id].size()) * 8.0;
+        if (candidate.sourceVoice == VoiceId::HarmonicPulse) score += 12.0;
+        if (candidate.sourceVoice == VoiceId::MovementBass) score += 7.0;
+        if (candidate.id == plan.narrativeSpine.protagonistInstrumentId) score -= 15.0;
+        score += std::clamp(candidate.prominence, 0.0, 1.0) * 4.0;
+        if (!elected || score > best) {
+            elected = index;
+            best = score;
+        }
+    }
+    if (!elected || *elected == *currentOwner) return result;
+
+    result.previousOwnerId = provisional.id;
+    result.electedOwnerId = plan.instruments[*elected].id;
+    result.electedAuthoredNotes = placedNotes[result.electedOwnerId];
+    for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+        if (!motionCandidate(plan.instruments[index])) continue;
+        setMotionMarker(plan.instruments[index],
+            index == *elected ? primaryMotionMarker : supportingMotionMarker);
+    }
+    result.changed = true;
+    return result;
 }
 
 bool ElectronicRoleContract::requiresMotionOwner(const SongPlan& plan) {

@@ -830,7 +830,7 @@ int main(int argc, char** argv) {
                 pulso::plugin::AiComposer::castDetailShardCount(64) == 7 &&
                 pulso::plugin::AiComposer::selectiveRepairShardCount(0) == 0 &&
                 pulso::plugin::AiComposer::selectiveRepairShardCount(1) == 1 &&
-                pulso::plugin::AiComposer::selectiveRepairShardCount(6) == 3 &&
+                pulso::plugin::AiComposer::selectiveRepairShardCount(6) == 6 &&
                 pulso::plugin::AiComposer::performanceBlockCount(0) == 0 &&
                 pulso::plugin::AiComposer::performanceBlockCount(10) == 1 &&
                 pulso::plugin::AiComposer::performanceBlockCount(50) == 5 &&

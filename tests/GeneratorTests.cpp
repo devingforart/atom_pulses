@@ -1027,9 +1027,8 @@ void runGeneratorTests() {
     longCastPlan.instrumentCastAuthored = true;
     const auto initialLongCastSize = longCastPlan.instruments.size();
     SongComposer::normalizePlan(longCastPlan);
-    require(longCastPlan.instruments.size() >= 18 &&
-                longCastPlan.instruments.size() > initialLongCastSize,
-            "Long-form authored songs must expand to a real independent ensemble when no exact cast size was requested");
+    require(longCastPlan.instruments.size() == initialLongCastSize,
+            "A long-form GPT cast must remain closed instead of receiving generic density instruments");
     auto exactCastPlan = clubPlan;
     exactCastPlan.totalBars = 192;
     exactCastPlan.requestedCastCount = 8;

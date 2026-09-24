@@ -5,12 +5,20 @@
 #include <cstddef>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace pulso {
 
 struct InstrumentAssignment;
 struct SongPlan;
+
+struct AuthoredMotionOwnerReconciliation {
+    bool changed{};
+    std::string previousOwnerId;
+    std::string electedOwnerId;
+    std::size_t electedAuthoredNotes{};
+};
 
 // Shared semantic vocabulary for electronic roles. Composition, validation and
 // publication must agree on these predicates; otherwise a transition can silently
@@ -29,6 +37,13 @@ public:
     [[nodiscard]] static std::optional<std::size_t> electPrimaryMotionOwner(
         std::span<InstrumentAssignment> instruments,
         std::string_view protagonistInstrumentId = {});
+    // Once all GPT blocks have been assembled, the MIDI is authoritative about
+    // which compatible lane actually performs the recurrence function. If the
+    // provisional owner is empty and was not explicitly requested by the user,
+    // transfer only the role marker to the strongest populated candidate. No MIDI
+    // is copied, generated or removed here.
+    [[nodiscard]] static AuthoredMotionOwnerReconciliation
+        reconcileAuthoredPrimaryMotionOwner(SongPlan&);
     [[nodiscard]] static bool requiresMotionOwner(const SongPlan&);
     [[nodiscard]] static std::size_t motionOwnerCount(const SongPlan&) noexcept;
 };

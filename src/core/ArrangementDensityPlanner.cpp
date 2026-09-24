@@ -233,9 +233,7 @@ void ArrangementDensityPlanner::apply(SongPlan& plan) {
     const auto targets = targetsFor(plan);
     // A GPT-authored cast is compositional authority. Missing depth is returned to the
     // critic; silently adding generic parts produces impressive track counts but token MIDI.
-    if (!targets.electronic ||
-        (plan.instrumentCastAuthored &&
-         (plan.requestedCastCount != 0 || plan.totalBars < 96)) ||
+    if (!targets.electronic || plan.instrumentCastAuthored ||
         plan.instruments.size() >= targets.proposedParts) return;
     auto ordinal = std::size_t{};
     for (const auto& spec : electronicCast) {

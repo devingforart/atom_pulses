@@ -1098,5 +1098,37 @@ realmente audible y se reducen a puntos significativos por frase. Una `TimbrePal
 global coordina material, espacio, brillo, calidez y balance acústico/electrónico antes de
 resolver los sonidos individuales instalados en Live.
 
+### 0.58.36 — autoría cerrada y resolución armónica
+
+- Las reparaciones editoriales se solicitan por instrumento, con un resumen compacto de forma y armonía. Esto evita respuestas truncadas por `max_output_tokens` y permite que el protagonista sea reescrito como una voz narrativa propia.
+- Un reparto creado por GPT ya no recibe pistas genéricas `density_*` por tratarse de una obra larga. Las pistas exportadas deben corresponder a responsabilidades musicales realmente escritas.
+- El director de atención preserva los silencios deliberados del `primary_chord_bed`; otros colchones pueden sostener el contexto sin rellenar proceduralmente su respiración.
+- El cierre armónico exige llegada a la tónica o un final abierto/modal explícito, estable y de baja tensión. Un acorde de loop no tónico ya no cuenta automáticamente como resolución.
+- Las pistas testimoniales de pocas notas no se expanden artificialmente: sus gestos se conservan mediante relay o se compactan antes de publicación.
+
+### 0.58.35 — reconciliación del motor musical escrito
+
+- La elección provisional de `primary_motion_owner` ahora se contrasta con el MIDI realmente escrito por GPT después de ensamblar todos los bloques.
+- Si el dueño provisional está vacío y otra pista compatible ya contiene el movimiento, PULSO transfiere solamente la responsabilidad semántica, sin copiar, duplicar ni generar notas.
+- Una pista concreta solicitada explícitamente por el usuario nunca se sustituye mediante esta reconciliación.
+- La pista nominal vacía queda disponible para el retiro seguro existente, evitando rechazar una composición completa por una etiqueta de arquitectura desactualizada.
+
+### 0.58.34 — narrativa selectiva y colchón armónico central
+
+- La protagonista, el bajo conductor y el `primary_chord_bed` son responsabilidades
+  exclusivamente AI cuando existe una partitura GPT. El renderer local puede validar,
+  cuantizar y corregir seguridad MIDI, pero ya no compone relleno para esas voces.
+- Una sola pista `harmonic_foundation` es elegida como colchón central. Debe contener
+  acordes polifónicos completos de tres a cinco notas, inversiones y conducción de voces;
+  repartir una nota del acorde entre varias pistas ya no satisface el contrato.
+- El colchón central debe respirar y regresar. La arquitectura global conserva memoria
+  tonal mediante capas complementarias, pero la densidad debe mostrar reducción,
+  acumulación, clímax y liberación en vez de un tutti constante.
+- El auditor puede reescribir únicamente las voces deficientes en hasta dos pasadas
+  transaccionales. Sólo se acepta un reemplazo que reduzca deuda musical o aumente el
+  contraste; cualquier fallo conserva intacto el último checkpoint completo.
+- Las pistas testimoniales se desarrollan como frases reales o permanecen como objetivos
+  editoriales explícitos. Una revisión fallida nunca rechaza la canción completa.
+
 Lee [docs/ROADMAP.md](docs/ROADMAP.md) para las siguientes etapas y
 [docs/LICENSING.md](docs/LICENSING.md) antes de distribuir binarios.

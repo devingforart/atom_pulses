@@ -66,6 +66,12 @@ bool contractedFloor(const InstrumentPart& part, const SongPlan& plan) {
         contains(role, "chord body");
 }
 
+bool authoredPrimaryChordBed(const InstrumentPart& part, const SongPlan& plan) {
+    if (!plan.instrumentCastAuthored || plan.performanceScore.empty() || part.id == 0 ||
+        part.id > plan.instruments.size()) return false;
+    return contains(lower(plan.instruments[part.id - 1].role), "primary_chord_bed");
+}
+
 bool foreground(const InstrumentPart& part) noexcept {
     return part.department == ScoreDepartment::Melody || part.sourceVoice == VoiceId::Lead ||
            part.sourceVoice == VoiceId::Countermelody;
@@ -515,6 +521,10 @@ AttentionDirectionReport AttentionDirector::shape(Pattern& pattern, const SongPl
                 const auto ordinal = (static_cast<std::size_t>(bar / 4) + attempt) % floors.size();
                 const auto* part = floors[ordinal];
                 if (sounding.contains(part->id)) continue;
+                // Silence written by GPT into the explicit chord lane is phrasing,
+                // not a hole. Other floor owners may maintain context, but the local
+                // director must never overwrite the bed's breaths or terminal cadence.
+                if (authoredPrimaryChordBed(*part, plan)) continue;
                 const auto tone = tones[(ordinal + static_cast<std::size_t>(bar / 4)) % tones.size()];
                 const auto pitch = nearestPitch(tone, previousPitch[part->id], *part);
                 pattern.notes.push_back({start, std::max(.0625, end - start - .03125), pitch,

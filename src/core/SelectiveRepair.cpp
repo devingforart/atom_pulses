@@ -10,6 +10,7 @@
 #include <cmath>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <set>
 #include <tuple>
 
@@ -189,6 +190,26 @@ std::size_t minimumSectionalStates(const SongPlan& plan,
     return activeAcrossLongForm ? 4 : 3;
 }
 
+std::optional<std::size_t> centralChordBedIndex(const SongPlan& plan) {
+    std::optional<std::size_t> selected;
+    auto best = -1.0;
+    for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+        const auto& instrument = plan.instruments[index];
+        if (instrument.sourceVoice != VoiceId::HarmonicFoundation) continue;
+        auto score = instrument.prominence * 2.0 + instrument.activity;
+        if (containsAny(instrument, {"primary_chord_bed"})) score += 100.0;
+        if (containsAny(instrument, {"chord", "acorde", "pad", "colchon", "bed", "body"}))
+            score += 8.0;
+        const auto* definition = instrumentDefinition(instrument.instrumentId);
+        if (definition != nullptr && definition->polyphonic) score += 4.0;
+        if (!selected || score > best) {
+            selected = index;
+            best = score;
+        }
+    }
+    return selected;
+}
+
 } // namespace
 
 std::string_view constraintAuthorityKey(ConstraintAuthority authority) noexcept {
@@ -214,6 +235,10 @@ std::string_view performanceRepairOperationKey(
             return "transform_thematic_returns";
         case PerformanceRepairOperation::ShapeMelodicSpeech:
             return "shape_melodic_speech";
+        case PerformanceRepairOperation::AuthorCentralChordBed:
+            return "author_central_chord_bed";
+        case PerformanceRepairOperation::ShapeHarmonicBreath:
+            return "shape_harmonic_breath";
         case PerformanceRepairOperation::SeparateIndependentLine:
             return "separate_independent_line";
         case PerformanceRepairOperation::ResolveNarrative: return "resolve_narrative";
@@ -293,6 +318,29 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
     const SongPlan& plan, const Pattern& pattern, const CompositionRenderReport& report,
     std::size_t maximumTargets) {
     SelectiveRepairPlan result;
+    std::vector<double> densityWindows;
+    if (plan.beatsPerBar > 0.0 && pattern.lengthBeats > 0.0) {
+        const auto window = plan.beatsPerBar * 4.0;
+        for (auto start = 0.0; start < pattern.lengthBeats; start += window) {
+            auto sampledTotal = 0.0;
+            auto samples = 0;
+            for (auto beat = start + plan.beatsPerBar * .5;
+                 beat < std::min(pattern.lengthBeats, start + window);
+                 beat += plan.beatsPerBar) {
+                std::set<std::uint16_t> owners;
+                for (const auto& note : pattern.notes)
+                    if (note.partId != 0 && note.startBeat <= beat && note.endBeat() > beat)
+                        owners.insert(note.partId);
+                sampledTotal += static_cast<double>(owners.size());
+                ++samples;
+            }
+            if (samples > 0) densityWindows.push_back(sampledTotal / samples);
+        }
+    }
+    const auto densityRange = densityWindows.empty() ? 0.0 :
+        *std::max_element(densityWindows.begin(), densityWindows.end()) -
+        *std::min_element(densityWindows.begin(), densityWindows.end());
+    const auto flatLongFormDensity = densityWindows.size() >= 8 && densityRange < 1.75;
     std::vector<std::size_t> allInstruments(plan.instruments.size());
     for (std::size_t index = 0; index < allInstruments.size(); ++index)
         allInstruments[index] = index;
@@ -302,9 +350,11 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
         performanceFindings.begin(), performanceFindings.end(), [](const auto& finding) {
             return finding.missingCodaResolution || finding.duplicatedIndependentLine ||
                 finding.missingSectionalEvolution || finding.missingNarrativePresence ||
-                finding.missingThematicDevelopment || finding.missingMelodicSpeech;
+                finding.missingThematicDevelopment || finding.missingMelodicSpeech ||
+                finding.missingCentralChordBed || finding.missingChordBedBreath;
         });
-    result.needed = !publicationReady(report) || hasBlockingMusicalEvidence;
+    result.needed = !publicationReady(report) || hasBlockingMusicalEvidence ||
+        flatLongFormDensity;
     result.deficit = deficit(report);
     if (!result.needed || plan.instruments.empty() || maximumTargets == 0) return result;
 
@@ -352,6 +402,12 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
         if (finding.missingMelodicSpeech)
             add(finding.instrumentIndex, 13.0,
                 "rewrite disconnected leaps or scalar filler as singable phrase contour");
+        if (finding.missingCentralChordBed)
+            add(finding.instrumentIndex, 18.0,
+                "author one unmistakable polyphonic central chord bed on this single MIDI lane");
+        if (finding.missingChordBedBreath)
+            add(finding.instrumentIndex, 11.0,
+                "shape sectional withdrawal and re-entry in the central chord bed without removing harmonic continuity");
     }
 
     // Token and underwritten tracks are the cheapest, most deterministic repairs.
@@ -372,8 +428,12 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
 
     // One pulse lane may be hypnotic, but it must not become the entire composition.
     std::map<std::uint16_t, std::size_t> renderedByPart;
+    std::map<std::uint16_t, double> soundingDurationByPart;
     for (const auto& note : pattern.notes)
-        if (note.partId != 0) ++renderedByPart[note.partId];
+        if (note.partId != 0) {
+            ++renderedByPart[note.partId];
+            soundingDurationByPart[note.partId] += note.durationBeats;
+        }
     const auto totalNotes = std::max<std::size_t>(1, pattern.notes.size());
     for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
         const auto& instrument = plan.instruments[index];
@@ -420,6 +480,23 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
                 add(index, 3.0 + share * 8.0 + (1.0 - instrument.prominence),
                     "restore breath and evolving orchestration in overcrowded or static regions");
         }
+    }
+    if (flatLongFormDensity) {
+        std::vector<std::pair<std::size_t, double>> sustainedHarmony;
+        for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+            const auto& instrument = plan.instruments[index];
+            if (eventInstrument(plan, instrument) ||
+                !(isVoiceInFamily(instrument.sourceVoice, VoiceFamily::Harmony) ||
+                  instrument.sourceVoice == VoiceId::Atmosphere)) continue;
+            sustainedHarmony.emplace_back(index,
+                soundingDurationByPart[static_cast<std::uint16_t>(index + 1)]);
+        }
+        std::stable_sort(sustainedHarmony.begin(), sustainedHarmony.end(),
+            [](const auto& left, const auto& right) { return left.second > right.second; });
+        for (std::size_t ordinal = 0;
+             ordinal < std::min<std::size_t>(2, sustainedHarmony.size()); ++ordinal)
+            add(sustainedHarmony[ordinal].first, 10.0 - ordinal,
+                "create a perceptible AI-authored density curve through withdrawal, accumulation and consequential return");
     }
 
     std::vector<std::pair<std::size_t, double>> ranked(priority.begin(), priority.end());
@@ -468,7 +545,8 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::marginalBarAcceptances(
         return finding.missingCodaResolution || finding.missingThematicRelationship ||
             finding.duplicatedIndependentLine || finding.missingSectionalEvolution ||
             finding.missingNarrativePresence || finding.missingThematicDevelopment ||
-            finding.missingMelodicSpeech ||
+            finding.missingMelodicSpeech || finding.missingCentralChordBed ||
+            finding.missingChordBedBreath ||
             (finding.minimumSections > 0 && finding.sections < finding.minimumSections) ||
             !TrackViability::marginalActiveBarAcceptance(
                 finding.notes, finding.activeBars, finding.phrases, contract);
@@ -690,6 +768,12 @@ std::vector<PerformanceConstraint> SelectiveRepair::classifyPerformanceDeficits(
         if (constraint.evidence.missingMelodicSpeech)
             constraint.operations.push_back(
                 PerformanceRepairOperation::ShapeMelodicSpeech);
+        if (constraint.evidence.missingCentralChordBed)
+            constraint.operations.push_back(
+                PerformanceRepairOperation::AuthorCentralChordBed);
+        if (constraint.evidence.missingChordBedBreath)
+            constraint.operations.push_back(
+                PerformanceRepairOperation::ShapeHarmonicBreath);
         if (constraint.evidence.duplicatedIndependentLine)
             constraint.operations.push_back(
                 PerformanceRepairOperation::SeparateIndependentLine);
@@ -816,11 +900,17 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
     }
     std::set<int> resolutionStablePitchClasses{positiveModulo(plan.rootPitchClass, 12)};
     auto explicitTonicEnding = false;
+    auto intentionalOpenEnding = false;
     const auto resolutionWords = lower(plan.narrativeSpine.resolution);
     explicitTonicEnding = resolutionWords.find("tonic") != std::string::npos ||
         resolutionWords.find("root") != std::string::npos ||
         resolutionWords.find("home note") != std::string::npos ||
         resolutionWords.find("tonica") != std::string::npos;
+    intentionalOpenEnding = resolutionWords.find("open") != std::string::npos ||
+        resolutionWords.find("suspend") != std::string::npos ||
+        resolutionWords.find("modal") != std::string::npos ||
+        resolutionWords.find("abiert") != std::string::npos ||
+        resolutionWords.find("suspendid") != std::string::npos;
     for (const auto& act : plan.narrativeSpine.acts) {
         if (act.stage != NarrativeStage::Resolution) continue;
         const auto target = lower(act.resolutionTarget);
@@ -829,7 +919,14 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
             target.find("home note") != std::string::npos ||
             target.find("tonica") != std::string::npos)
             explicitTonicEnding = true;
+        if (target.find("open") != std::string::npos ||
+            target.find("suspend") != std::string::npos ||
+            target.find("modal") != std::string::npos ||
+            target.find("abiert") != std::string::npos ||
+            target.find("suspendid") != std::string::npos)
+            intentionalOpenEnding = true;
     }
+    const HarmonicChord* terminalResolutionChord = nullptr;
     if (resolutionSection >= 0 &&
         static_cast<std::size_t>(resolutionSection) < plan.sections.size()) {
         const auto& section = plan.sections[static_cast<std::size_t>(resolutionSection)];
@@ -843,6 +940,7 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
             const auto chord = std::find_if(plan.chordPalette.begin(), plan.chordPalette.end(),
                 [&](const auto& candidate) { return candidate.id == terminalEvent->chordId; });
             if (chord != plan.chordPalette.end()) {
+                terminalResolutionChord = &*chord;
                 resolutionStablePitchClasses.insert(positiveModulo(chord->rootPitchClass, 12));
                 resolutionStablePitchClasses.insert(positiveModulo(chord->bassPitchClass, 12));
                 for (const auto pitchClass : chord->pitchClasses)
@@ -865,6 +963,7 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
     }
 
     const auto protagonistThemes = themesByInstrument[plan.narrativeSpine.protagonistInstrumentId];
+    const auto centralChordBed = centralChordBedIndex(plan);
 
     std::vector<PerformanceCoverageDeficit> deficits;
     for (const auto index : candidates) {
@@ -935,6 +1034,57 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
             deficit.minimumActiveBars = contract.minimumActiveBars;
             deficit.phrases = phrases;
             deficit.minimumPhrases = contract.minimumPhrases;
+            if (centralChordBed && *centralChordBed == index) {
+                std::map<std::int64_t, std::set<int>> pitchesByAttack;
+                for (const auto* note : ordered) {
+                    const auto attack = static_cast<std::int64_t>(
+                        std::llround(note->startBeat * 96.0));
+                    pitchesByAttack[attack].insert(note->pitch);
+                }
+                deficit.polyphonicChordAttacks = static_cast<std::size_t>(std::count_if(
+                    pitchesByAttack.begin(), pitchesByAttack.end(),
+                    [](const auto& item) { return item.second.size() >= 3; }));
+                deficit.minimumPolyphonicChordAttacks = std::clamp<std::size_t>(
+                    plan.sections.size() * 2, 4, 12);
+                if (deficit.polyphonicChordAttacks < deficit.minimumPolyphonicChordAttacks) {
+                    deficit.missingCentralChordBed = true;
+                    incomplete = true;
+                }
+
+                auto longestBreath = std::size_t{};
+                auto currentBreath = std::size_t{};
+                for (auto bar = 0; bar < std::max(1, plan.totalBars); ++bar) {
+                    if (activeBars.contains(bar)) {
+                        currentBreath = 0;
+                    } else {
+                        longestBreath = std::max(longestBreath, ++currentBreath);
+                    }
+                }
+                deficit.longestChordBedBreathBars = longestBreath;
+                const auto deliberatelyContinuous = containsAny(
+                    instrument, {"continuous", "continuo", "constant", "drone"});
+                if (plan.totalBars >= 64 && !deliberatelyContinuous && longestBreath < 2) {
+                    deficit.missingChordBedBreath = true;
+                    incomplete = true;
+                }
+                const auto tonicClosure = terminalResolutionChord != nullptr &&
+                    (terminalResolutionChord->function == HarmonicFunction::Tonic ||
+                     positiveModulo(terminalResolutionChord->rootPitchClass, 12) ==
+                         positiveModulo(plan.rootPitchClass, 12));
+                const auto stableOpenClosure = intentionalOpenEnding &&
+                    terminalResolutionChord != nullptr &&
+                    (terminalResolutionChord->function == HarmonicFunction::Modal ||
+                     terminalResolutionChord->function == HarmonicFunction::Pedal ||
+                     terminalResolutionChord->tension <= .45);
+                // A long-form central bed must carry the harmonic argument to a
+                // perceptible destination. Ending on an arbitrary loop chord is not
+                // resolution; an open ending must be declared and genuinely stable.
+                if (plan.totalBars >= 64 && terminalResolutionChord != nullptr &&
+                    !tonicClosure && !stableOpenClosure) {
+                    deficit.missingCodaResolution = true;
+                    incomplete = true;
+                }
+            }
             if (protagonist) {
                 for (const auto& section : plan.sections) {
                     const auto active = instrument.activeSections.empty() ||
@@ -1225,7 +1375,8 @@ bool SelectiveRepair::requiresReplacement(
     // They cannot create a phrase break inside material that already fills its
     // required horizon; that target must be replaced so silence can be authored.
     if (deficit.duplicatedIndependentLine || deficit.missingSectionalEvolution ||
-        deficit.missingThematicDevelopment || deficit.missingMelodicSpeech) return true;
+        deficit.missingThematicDevelopment || deficit.missingMelodicSpeech ||
+        deficit.missingCentralChordBed || deficit.missingChordBedBreath) return true;
     return deficit.minimumPhrases > 0 && deficit.phrases < deficit.minimumPhrases &&
         deficit.notes >= deficit.minimumNotes &&
         deficit.activeBars >= deficit.minimumActiveBars;

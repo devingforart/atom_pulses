@@ -270,10 +270,18 @@ bool declaredFullSilence(const SongSection& section) {
            text.find("silencio total") != std::string::npos;
 }
 
+bool requiresElectronicPulseAudit(const SongPlan& plan) {
+    if (plan.percussionFreeIntent || plan.productionLanguage.electronicIntent < .58 ||
+        (plan.productionLanguage.domain != ProductionDomain::ClubElectronic &&
+         plan.productionLanguage.domain != ProductionDomain::Hybrid)) return false;
+    return std::any_of(plan.instruments.begin(), plan.instruments.end(), [](const auto& part) {
+        return part.sourceVoice == VoiceId::CoreDrums || part.instrumentId == "kick_drum";
+    });
+}
+
 void auditClubContinuity(const Pattern& pattern, const SongPlan& plan,
                          NarrativeScoreReport& report) {
-    if (plan.productionLanguage.domain != ProductionDomain::ClubElectronic ||
-        plan.percussionFreeIntent) return;
+    if (!requiresElectronicPulseAudit(plan)) return;
     auto drumRun = std::size_t{};
     auto lowEndRun = std::size_t{};
     for (auto bar = 0; bar < plan.totalBars; ++bar) {
@@ -671,8 +679,8 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         report.melodicStepwiseRatio - 0.62) / 0.38 -
         std::max(0.0, static_cast<double>(report.maximumMelodicStepRun) - 4.0) * 0.08,
         0.0, 1.0);
-    const auto clubContinuity = plan.productionLanguage.domain != ProductionDomain::ClubElectronic ||
-        plan.percussionFreeIntent
+    const auto pulseAuditRequired = requiresElectronicPulseAudit(plan);
+    const auto clubContinuity = !pulseAuditRequired
         ? 1.0 : std::clamp(1.0 -
             std::max(0.0, static_cast<double>(report.maximumClubDrumGapBars) - 12.0) / 20.0 -
             std::max(0.0, static_cast<double>(report.maximumClubLowEndGapBars) - 12.0) / 24.0,
@@ -696,8 +704,7 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         report.issues.push_back("ai_movement_bass_missing");
     if (report.active && report.movementBassNotes >= 8 && report.movementBassAiAuthorshipRatio < 0.75)
         report.issues.push_back("movement_bass_not_ai_authored");
-    if (report.active && plan.productionLanguage.domain == ProductionDomain::ClubElectronic &&
-        !plan.percussionFreeIntent &&
+    if (report.active && pulseAuditRequired &&
         report.grooveAuthorshipCoverage < 0.45)
         report.issues.push_back("groove_structure_not_ai_authored");
     if (report.active && report.audibleThematicWindows >= 3 && report.thematicRecallRatio < 0.40)
@@ -714,10 +721,10 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         report.issues.push_back("scalar_melody_without_speech");
     if (report.melodicIntervals >= 8 && report.melodicStepwiseRatio < 0.15)
         report.issues.push_back("disconnected_melody_without_voice_leading");
-    if (plan.productionLanguage.domain == ProductionDomain::ClubElectronic && !plan.percussionFreeIntent &&
+    if (pulseAuditRequired &&
         report.maximumClubDrumGapBars > 16)
         report.issues.push_back("club_pulse_absent_too_long");
-    if (plan.productionLanguage.domain == ProductionDomain::ClubElectronic && !plan.percussionFreeIntent &&
+    if (pulseAuditRequired &&
         report.maximumClubLowEndGapBars > 16)
         report.issues.push_back("low_end_narrative_absent_too_long");
     if (report.densityControl < 0.82) report.issues.push_back("overcrowded_arrangement");
@@ -740,8 +747,7 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         (report.foregroundNotes >= 8 && report.foregroundAiAuthorshipRatio >= 0.85);
     const auto movementBassReady = !report.movementBassExpected ||
         (report.movementBassNotes >= 8 && report.movementBassAiAuthorshipRatio >= 0.75);
-    const auto clubReady = plan.productionLanguage.domain != ProductionDomain::ClubElectronic ||
-        plan.percussionFreeIntent ||
+    const auto clubReady = !pulseAuditRequired ||
         (report.grooveAuthorshipCoverage >= 0.45 && report.maximumClubDrumGapBars <= 16 &&
          report.maximumClubLowEndGapBars <= 16);
     report.creativeReady = !report.active || (report.primaryVoiceCoverage >= 0.40 &&

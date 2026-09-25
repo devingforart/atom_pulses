@@ -253,6 +253,12 @@ bool writeLiveDeploymentRequest(const Pattern& pattern, const LiveDeploymentOpti
     root->setProperty("expression_delivery", "native_editable_with_lossless_midi_source");
     root->setProperty("production_score", pattern.productionScore);
     root->setProperty("production_domain", juce::String::fromUTF8(pattern.productionDomain.c_str()));
+    const auto pulseBearingElectronic = !pattern.percussionFreeArrangement &&
+        (pattern.productionDomain == "club_electronic" || pattern.productionDomain == "hybrid") &&
+        std::any_of(pattern.parts.begin(), pattern.parts.end(), [](const auto& part) {
+            return part.sourceVoice == VoiceId::CoreDrums || part.catalogId == "kick_drum";
+        });
+    root->setProperty("electronic_pulse_required", pulseBearingElectronic);
     root->setProperty("production_mode_source", juce::String::fromUTF8(pattern.productionModeSource.c_str()));
     if (pattern.productionModeSource == "gpt_plan") {
         root->setProperty("ai_model", ai_config::model);

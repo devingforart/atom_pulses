@@ -2197,7 +2197,9 @@ juce::String performanceBlockPrompt(const juce::String& direction,
         "three notes; its last attack must occur inside the final two bars and land on a stable pitch of the terminal "
         "harmony. Use the home tonic only when the blueprint explicitly requires tonic closure; suspended, modal and "
         "open endings remain valid creative decisions. Across every section where it is active, the protagonist must "
-        "contain an AI-written phrase of at least three attacks in at least 40 percent of eligible eight-bar windows. "
+        "contain AI-written four-to-eight-bar sentences with at least four distinct connected attacks (no adjacent "
+        "attack gap above three quarters of a bar) in at least 40 percent of eligible eight-bar windows. Isolated marker "
+        "notes never count as a phrase. "
         "Silence inside and between those phrases is welcome: ensemble continuity belongs to independent harmonic, "
         "atmospheric and movement voices, never to a permanently talking lead. Across four "
         "or more appearances, no single literal cell/placement state may own more than 70 percent of returns: write at "
@@ -4678,10 +4680,34 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             " | no MIDI copied or generated");
     }
 
+    if (SelectiveRepair::ensurePrimaryChordBedClosure(result)) {
+        SongComposer::normalizePlan(result);
+        OperationalJournal::write("OK", "RECOVERY",
+            "repaired only the primary chord bed's final four bars from the AI-authored tonic palette; "
+            "all earlier placements and unrelated instruments preserved");
+    }
+
     std::vector<std::size_t> allInstruments;
     allInstruments.reserve(result.instruments.size());
     for (std::size_t index = 0; index < result.instruments.size(); ++index)
         allInstruments.push_back(index);
+    const auto writeEarlyRejectedAudit = [&](const juce::String& reason,
+                                              const juce::String& stage) {
+        GenerationContext foundation;
+        foundation.role = Role::Ensemble;
+        foundation.rootPitchClass = result.rootPitchClass;
+        foundation.scale = result.scale;
+        foundation.beatsPerBar = result.beatsPerBar;
+        foundation.seed = result.seed;
+        foundation.humanize = 0.0;
+        CompositionRenderReport report;
+        [[maybe_unused]] const auto rendered = SongComposer{}.render(
+            result, foundation, {}, &report);
+        const auto file = OperationalJournal::writeRejectedAudit(
+            result, report, reason, 0, stage);
+        OperationalJournal::write("ERROR", "AUDIT",
+            "rejected composition preserved at " + file.getFullPathName());
+    };
     reportMarginalBarAcceptances(
         result.performanceScore, allInstruments, "final assembled score");
     auto stillMissing = uncoveredInstruments(result, result.performanceScore, allInstruments);
@@ -4893,6 +4919,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     performanceConstraintBrief(result, result.performanceScore,
                         repairedBlocking, requestedCastCount > 0);
                 OperationalJournal::write("ERROR", "CONSTRAINT", error);
+                writeEarlyRejectedAudit(error, "final_constraint_after_protagonist_recovery");
                 return {};
             }
         } else if (!blockingTargets.empty()) {
@@ -4900,6 +4927,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 performanceConstraintBrief(result, result.performanceScore,
                     blockingTargets, requestedCastCount > 0);
             OperationalJournal::write("ERROR", "CONSTRAINT", error);
+            writeEarlyRejectedAudit(error, "final_constraint");
             return {};
         }
         // Only a non-essential, non-user-named identity with zero concrete MIDI is
@@ -4962,6 +4990,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             error = "Coverage convergence violated a blocking identity commitment: " +
                 performanceConstraintBrief(result, result.performanceScore,
                     convergedBlocking, requestedCastCount > 0);
+            OperationalJournal::write("ERROR", "CONSTRAINT", error);
+            writeEarlyRejectedAudit(error, "coverage_convergence");
             return {};
         }
         stillMissing.clear();
@@ -5015,6 +5045,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 error = "Coverage convergence violated a blocking identity commitment: " +
                     performanceConstraintBrief(result, result.performanceScore,
                         hardAfterConvergence, requestedCastCount > 0);
+                OperationalJournal::write("ERROR", "CONSTRAINT", error);
+                writeEarlyRejectedAudit(error, "coverage_cascade");
                 return {};
             }
             stillMissing.clear();
@@ -5024,6 +5056,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         }
         if (!stillMissing.empty() || result.performanceScore.empty() || result.instruments.empty()) {
             error = "Incremental GPT score retained an empty identity after bounded convergence";
+            OperationalJournal::write("ERROR", "CONSTRAINT", error);
+            writeEarlyRejectedAudit(error, "empty_identity_after_convergence");
             return {};
         }
     }
@@ -5033,10 +5067,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         });
     if (!protagonistPreserved) {
         error = "Incremental GPT score lost its declared protagonist";
+        OperationalJournal::write("ERROR", "CONSTRAINT", error);
+        writeEarlyRejectedAudit(error, "protagonist_preservation");
         return {};
     }
     if (!repairMotionOwnerContract(result)) {
         error = "Incremental GPT score must preserve exactly one elected primary electronic motion owner";
+        OperationalJournal::write("ERROR", "CONSTRAINT", error);
+        writeEarlyRejectedAudit(error, "motion_owner_contract");
         return {};
     }
     repairCentralChordBedContract(result);
@@ -5379,6 +5417,17 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             "safe composition accepted; remaining findings are editorial only"});
         error.clear();
         return bestPlan;
+    }
+
+    if (SelectiveRepair::criticalFailure(bestReport)) {
+        error = "AI composition remained critically incomplete after bounded repair: " +
+            terminalReason + " | " + audibleAuditSummary(bestReport);
+        const auto auditFile = OperationalJournal::writeRejectedAudit(
+            bestPlan, bestReport, error, completedRepairs, "terminal_audible_gate");
+        OperationalJournal::write("ERROR", "GATE",
+            "critical audible score rejected; current composition preserved | audit=" +
+            auditFile.getFullPathName());
+        return {};
     }
 
     OperationalJournal::write("WARN", "GATE",

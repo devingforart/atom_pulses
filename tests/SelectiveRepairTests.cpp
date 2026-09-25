@@ -1,6 +1,7 @@
 #include "TestSupport.h"
 
 #include "core/ElectronicRoleContract.h"
+#include "core/ElectronicCompositionFabric.h"
 #include "core/ArrangementDensityPlanner.h"
 #include "core/AttentionDirector.h"
 #include "core/SelectiveRepair.h"
@@ -315,6 +316,23 @@ void runSelectiveRepairTests() {
                 literalLeadFindings.front().literalPlacementRatio > .99 &&
                 literalLeadFindings.front().missingMelodicSpeech,
             "A ubiquitous literal leap-cell must not masquerade as a developed AI protagonist");
+
+    auto markerLead = literalLead;
+    markerLead.cells.front().id = "isolated_markers";
+    markerLead.cells.front().lengthBeats = 24.0;
+    markerLead.cells.front().notes = {
+        {0.0, .5, 60, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {8.0, .5, 62, 78, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {16.0, .5, 67, 76, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+    };
+    for (auto& placement : markerLead.placements)
+        placement.cellId = markerLead.cells.front().id;
+    const auto markerFindings = SelectiveRepair::performanceDeficits(
+        longNarrative, markerLead, {0});
+    require(markerFindings.size() == 1 &&
+                markerFindings.front().narrativePhraseWindows == 0 &&
+                markerFindings.front().missingNarrativePresence,
+            "Three isolated marker notes in an eight-bar window must never count as a protagonist phrase");
     auto editorialLeadFinding = literalLeadFindings.front();
     editorialLeadFinding.missingCodaResolution = false; // Resolution is tested independently above.
     const auto literalLeadConstraints = SelectiveRepair::classifyPerformanceDeficits(
@@ -575,6 +593,73 @@ void runSelectiveRepairTests() {
         unresolvedBedPlan, breathingChordScore, {0});
     require(unresolvedBed.size() == 1 && unresolvedBed.front().missingCodaResolution,
             "A primary chord bed ending on an arbitrary non-tonic loop chord must request harmonic closure");
+    const auto unresolvedBedConstraints = SelectiveRepair::classifyPerformanceDeficits(
+        unresolvedBedPlan, unresolvedBed, false);
+    require(unresolvedBedConstraints.size() == 1 &&
+                !unresolvedBedConstraints.front().blocksPublication,
+            "A populated chord bed with local terminal debt must route to transactional repair instead of rejecting the whole song");
+
+    auto transactionalPlan = unresolvedBedPlan;
+    InstrumentAssignment untouchedUpper = chordBed;
+    untouchedUpper.id = "untouched_upper";
+    untouchedUpper.instrumentId = "poly_synth";
+    untouchedUpper.name = "Untouched Upper";
+    untouchedUpper.sourceVoice = VoiceId::HarmonicUpper;
+    untouchedUpper.role = "independent upper memory";
+    transactionalPlan.instruments.push_back(untouchedUpper);
+    transactionalPlan.performanceScore = breathingChordScore;
+    transactionalPlan.performanceScore.cells.front().ownedVoices.push_back(
+        VoiceId::HarmonicUpper);
+    transactionalPlan.performanceScore.cells.front().notes.push_back(
+        {2.0, 1.0, 73, 51, VoiceId::HarmonicUpper,
+         MetricIntent::StrictGrid, untouchedUpper.id});
+    Pattern beforeClosure;
+    beforeClosure.lengthBeats = transactionalPlan.sections.back().bars *
+        transactionalPlan.beatsPerBar;
+    PerformanceScoreEngine::replaceChunk(beforeClosure,
+        transactionalPlan.performanceScore, 1, 0.0, beforeClosure.lengthBeats,
+        transactionalPlan.instruments);
+    std::vector<std::tuple<double, double, int>> untouchedBefore;
+    std::vector<std::tuple<double, double, int>> bedPrefixBefore;
+    for (const auto& note : beforeClosure.notes)
+        if (note.partId == 2)
+            untouchedBefore.emplace_back(note.startBeat, note.durationBeats, note.pitch);
+        else if (note.partId == 1 && note.startBeat < beforeClosure.lengthBeats - 16.0)
+            bedPrefixBefore.emplace_back(note.startBeat, note.durationBeats, note.pitch);
+    require(SelectiveRepair::ensurePrimaryChordBedClosure(transactionalPlan),
+            "A non-tonic chord-bed ending must receive a bounded local tonic closure");
+    require(!SelectiveRepair::ensurePrimaryChordBedClosure(transactionalPlan),
+            "A verified chord-bed closure must be idempotent");
+    const auto repairedBed = SelectiveRepair::performanceDeficits(
+        transactionalPlan, transactionalPlan.performanceScore, {0});
+    require(repairedBed.empty() || !repairedBed.front().missingCodaResolution,
+            "The independent publication audit must observe the repaired harmonic closure");
+    require(!transactionalPlan.sections.back().harmonicEvents.empty() &&
+                transactionalPlan.sections.back().harmonicEvents.back().chordId == "home" &&
+                transactionalPlan.sections.back().harmonicEvents.back().barOffset == 28,
+            "Only the final four bars must be rebound to the AI-authored tonic chord");
+    Pattern afterClosure;
+    afterClosure.lengthBeats = beforeClosure.lengthBeats;
+    PerformanceScoreEngine::replaceChunk(afterClosure,
+        transactionalPlan.performanceScore, 1, 0.0, afterClosure.lengthBeats,
+        transactionalPlan.instruments);
+    std::vector<std::tuple<double, double, int>> untouchedAfter;
+    std::vector<std::tuple<double, double, int>> bedPrefixAfter;
+    for (const auto& note : afterClosure.notes)
+        if (note.partId == 2)
+            untouchedAfter.emplace_back(note.startBeat, note.durationBeats, note.pitch);
+        else if (note.partId == 1 && note.startBeat < afterClosure.lengthBeats - 16.0)
+            bedPrefixAfter.emplace_back(note.startBeat, note.durationBeats, note.pitch);
+    require(untouchedAfter == untouchedBefore,
+            "Transactional chord closure must preserve every unrelated instrument event byte-for-byte");
+    require(bedPrefixAfter == bedPrefixBefore,
+            "Transactional chord closure must preserve the chord bed before its final four-bar window");
+    const auto closureStart = afterClosure.lengthBeats - 16.0;
+    require(std::any_of(afterClosure.notes.begin(), afterClosure.notes.end(), [&](const auto& note) {
+                return note.partId == 1 && note.startBeat >= closureStart &&
+                    positiveModulo(note.pitch, 12) == transactionalPlan.rootPitchClass;
+            }),
+            "The rendered final window must contain the tonic on the primary chord-bed lane");
 
     auto declaredOpenBedPlan = unresolvedBedPlan;
     declaredOpenBedPlan.narrativeSpine.resolution = "intentional open modal settlement";
@@ -704,6 +789,26 @@ void runSelectiveRepairTests() {
                 }),
             "The local attention director must preserve AI-authored chord-bed breaths");
 
+    auto fabricProtection = breathProtection;
+    fabricProtection.totalBars = 4;
+    fabricProtection.chordPalette = {
+        {"home", "F-sharp minor", 6, 6, {6, 9, 1}, HarmonicFunction::Tonic},
+    };
+    fabricProtection.sections.front().harmonicEvents = {{0, 0.0, "home", .2, "home"}};
+    auto fabricPattern = breathPattern;
+    std::vector<std::tuple<double, double, int, NoteOrigin>> bedBeforeFabric;
+    for (const auto& note : fabricPattern.notes)
+        if (note.partId == 1)
+            bedBeforeFabric.emplace_back(note.startBeat, note.durationBeats, note.pitch, note.origin);
+    (void) ElectronicCompositionFabric::materialize(fabricPattern, fabricProtection);
+    (void) ElectronicCompositionFabric::convergePublication(fabricPattern, fabricProtection);
+    std::vector<std::tuple<double, double, int, NoteOrigin>> bedAfterFabric;
+    for (const auto& note : fabricPattern.notes)
+        if (note.partId == 1)
+            bedAfterFabric.emplace_back(note.startBeat, note.durationBeats, note.pitch, note.origin);
+    require(bedAfterFabric == bedBeforeFabric,
+            "Every local fabric and publication-closure pass must preserve the primary chord bed byte-for-byte");
+
     SongPlan testimonialPlan;
     testimonialPlan.totalBars = 32;
     testimonialPlan.beatsPerBar = 4.0;
@@ -748,4 +853,22 @@ void runSelectiveRepairTests() {
                         return note.partId == 1 && note.narrativeId == 102;
                     }) == 3,
             "A testimonial lane must disappear before export while its authored gestures survive intact");
+
+    auto substantialTokenPlan = testimonialPlan;
+    substantialTokenPlan.instruments[1].lineRelationship = "independent";
+    Pattern substantialToken = testimonialPattern;
+    substantialToken.notes.erase(std::remove_if(substantialToken.notes.begin(),
+        substantialToken.notes.end(), [](const auto& note) { return note.partId == 2; }),
+        substantialToken.notes.end());
+    for (auto index = 0; index < 10; ++index) {
+        const auto start = index < 5 ? index * 4.0 : 80.0 + (index - 5) * 4.0;
+        substantialToken.notes.push_back({start, .5, 67 + index % 3, 58, 4,
+            VoiceId::HarmonicUpper, 2, true, NoteOrigin::AiAuthored, 103});
+    }
+    const auto substantialTokenReport = TrackViability::compactIncomplete(
+        substantialToken, substantialTokenPlan);
+    require(substantialTokenReport.mergedTracks == 1 &&
+                std::none_of(substantialToken.notes.begin(), substantialToken.notes.end(),
+                    [](const auto& note) { return note.partId == 2; }),
+            "A non-essential independent lane that remains token-sized at publication must relay into a viable owner");
 }

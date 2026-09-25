@@ -1098,6 +1098,22 @@ realmente audible y se reducen a puntos significativos por frase. Una `TimbrePal
 global coordina material, espacio, brillo, calidez y balance acústico/electrónico antes de
 resolver los sonidos individuales instalados en Live.
 
+### 0.58.38 — autoría audible y continuidad exacta
+
+- El colchón armónico principal queda bajo propiedad exclusiva de la partitura de IA: los pases locales ya no rellenan sus silencios, cambian sus inversiones ni reescriben su coda.
+- La voz protagonista sólo acredita una frase cuando encadena al menos cuatro ataques; marcadores aislados ya no pueden simular desarrollo melódico.
+- La recuperación terminal conserva hasta ocho ataques del material protagonista y rechaza un resultado críticamente incompleto en lugar de publicarlo como canción terminada.
+- La continuidad de bombo y grave se audita también en música electrónica híbrida cuando el reparto declara pulso; las métricas ahora describen el MIDI realmente exportado.
+- Las pistas independientes que continúan siendo meros fragmentos tras su oportunidad de reparación se integran en una voz compatible o se eliminan, salvo identidades esenciales del tema.
+
+### 0.58.37 — cierre armónico transaccional
+
+- Una deuda terminal localizada del `primary_chord_bed` ya no descarta una composición completa: se repara exclusivamente su ventana final de cuatro compases usando la tónica y la paleta que GPT ya había elegido.
+- La transacción aísla las celdas compartidas, conserva exactamente el MIDI anterior a la coda y no modifica ningún instrumento ajeno al colchón.
+- El evento armónico terminal queda ligado a la tónica y la misma auditoría independiente que detectó la deuda verifica el resultado; una segunda pasada es idempotente.
+- Si la microcirugía no resulta posible, el cierre queda como objetivo editorial y se conserva el checkpoint completo en vez de destruir veinte pistas válidas.
+- Los rechazos tempranos de contratos finales y convergencia escriben ahora un JSON de auditoría con etapa, métricas e inventario de instrumentos.
+
 ### 0.58.36 — autoría cerrada y resolución armónica
 
 - Las reparaciones editoriales se solicitan por instrumento, con un resumen compacto de forma y armonía. Esto evita respuestas truncadas por `max_output_tokens` y permite que el protagonista sea reescrito como una voz narrativa propia.

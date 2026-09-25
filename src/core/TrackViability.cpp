@@ -768,7 +768,12 @@ TrackViabilityReport TrackViability::compactIncomplete(Pattern& pattern, SongPla
     for (const auto& part : pattern.parts) {
         const auto current = evidence(pattern, part.id, plan.beatsPerBar);
         if (current.notes == 0 || viable(current, contractFor(part, plan), plan)) continue;
-        if (protectedIndependentAuthorship(part, plan, current)) continue;
+        // This is the terminal publication boundary. Independent authorship earned
+        // its opportunity to be repaired in enforce(), but a still-incomplete colour
+        // lane must not survive merely because it has an "independent" label. Preserve
+        // only identities that define the song; relay every other authored gesture to
+        // a compatible developed owner instead of exporting a token track.
+        if (essentialAuthoredIdentity(part, plan)) continue;
         const auto sourceFunction = contractFor(part, plan).function;
         const auto hasStructuralAuthorship = std::any_of(pattern.notes.begin(), pattern.notes.end(),
             [&](const auto& note) {

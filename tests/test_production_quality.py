@@ -114,6 +114,20 @@ class ProductionQualityTests(unittest.TestCase):
         self.assertTrue(report["passed"])
         self.assertNotIn("groove_not_ai_authored", report["codes"])
 
+    def test_pulse_bearing_hybrid_uses_exported_drum_gap(self):
+        report = evaluate_creative_quality({
+            "narrative_audited": True,
+            "creative_ready": True,
+            "creative_score": 0.90,
+            "production_domain": "hybrid",
+            "electronic_pulse_required": True,
+            "groove_authorship_coverage": 0.92,
+            "maximum_club_drum_gap_bars": 96,
+            "maximum_club_low_end_gap_bars": 0,
+        })
+        self.assertFalse(report["passed"])
+        self.assertIn("club_pulse_absent_too_long", report["codes"])
+
     def test_track_viability_rejects_token_tracks_and_underwritten_cast(self):
         report = evaluate_creative_quality({
             "narrative_audited": True,

@@ -41,7 +41,7 @@ void OperationalJournal::write(const juce::String& level, const juce::String& st
 
 juce::File OperationalJournal::writeRejectedAudit(
     const SongPlan& plan, const CompositionRenderReport& report, const juce::String& reason,
-    std::size_t repairPasses) {
+    std::size_t repairPasses, const juce::String& rejectionStage) {
     const std::scoped_lock lock(journalMutex);
     auto root = new juce::DynamicObject();
     root->setProperty("schema_version", 1);
@@ -56,6 +56,7 @@ juce::File OperationalJournal::writeRejectedAudit(
                       static_cast<int>(plan.performanceScore.placements.size()));
     root->setProperty("repair_passes", static_cast<int>(repairPasses));
     root->setProperty("terminal_reason", reason);
+    root->setProperty("rejection_stage", rejectionStage);
     root->setProperty("production_ready", report.production.ready);
     root->setProperty("production_score", report.production.score);
     root->setProperty("creative_ready", report.narrative.creativeReady);

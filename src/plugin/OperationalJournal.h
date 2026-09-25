@@ -13,7 +13,7 @@ public:
                       const juce::String& message);
     [[nodiscard]] static juce::File writeRejectedAudit(
         const SongPlan&, const CompositionRenderReport&, const juce::String& reason,
-        std::size_t repairPasses);
+        std::size_t repairPasses, const juce::String& rejectionStage = "audition");
 };
 
 } // namespace pulso::plugin

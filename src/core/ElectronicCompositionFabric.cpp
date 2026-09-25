@@ -53,6 +53,10 @@ bool dialoguePart(const InstrumentAssignment& part) noexcept {
            contains(part.role, "answer");
 }
 
+bool primaryChordBed(const InstrumentAssignment& part) noexcept {
+    return contains(part.role, "primary_chord_bed");
+}
+
 bool aiAuthoredScore(const SongPlan& plan) noexcept {
     return plan.instrumentCastAuthored && !plan.performanceScore.empty();
 }
@@ -271,6 +275,26 @@ std::size_t activeBarsFor(const std::vector<const NoteEvent*>& notes, double bea
         for (auto bar = first; bar <= last; ++bar) bars.insert(bar);
     }
     return bars.size();
+}
+
+std::size_t longestConnectedAttackRun(std::vector<const NoteEvent*> notes,
+                                      double maximumGapBeats) {
+    if (notes.empty()) return 0;
+    std::sort(notes.begin(), notes.end(), [](const auto* left, const auto* right) {
+        if (left->startBeat != right->startBeat) return left->startBeat < right->startBeat;
+        return left->pitch < right->pitch;
+    });
+    auto longest = std::size_t{1};
+    auto current = std::size_t{1};
+    auto previousAttack = notes.front()->startBeat;
+    for (std::size_t index = 1; index < notes.size(); ++index) {
+        const auto attack = notes[index]->startBeat;
+        if (std::abs(attack - previousAttack) < .01) continue;
+        current = attack - previousAttack <= maximumGapBeats + .001 ? current + 1 : 1;
+        longest = std::max(longest, current);
+        previousAttack = attack;
+    }
+    return longest;
 }
 
 } // namespace
@@ -689,6 +713,10 @@ ElectronicFabricReport ElectronicCompositionFabric::materialize(Pattern& pattern
             const auto slot = activeCount;
             const auto& assignment = plan.instruments[index];
             if (alreadyActive.contains(index)) continue;
+            // The explicit chord lane is AI-owned. Its rests, inversions and attack
+            // grammar are musical evidence, never an empty floor slot for the local
+            // continuity renderer. Supporting pads may carry context while it breathes.
+            if (aiAuthoredScore(plan) && primaryChordBed(assignment)) continue;
             const auto tone = chord.pitchClasses[(floorOrdinal + static_cast<std::size_t>(bar / 4)) %
                                                   chord.pitchClasses.size()];
             const auto pitch = nearestPitch(tone, previousPitch[floorOrdinal], assignment);
@@ -1151,6 +1179,7 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                 const auto index = floors[(static_cast<std::size_t>(bar) + ordinal) % floors.size()];
                 if (overlapsPart(pattern, partId(index), beat, beat + plan.beatsPerBar)) continue;
                 const auto& assignment = plan.instruments[index];
+                if (aiAuthoredScore(plan) && primaryChordBed(assignment)) continue;
                 const auto tone = chord.pitchClasses[(ordinal + static_cast<std::size_t>(bar / 4)) %
                                                       chord.pitchClasses.size()];
                 const auto pitch = nearestPitch(tone,
@@ -1374,19 +1403,21 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                 (resolution->startBar + resolution->bars) * plan.beatsPerBar);
             const auto codaStart = end - plan.beatsPerBar * 2.0;
             const auto finalBar = end - plan.beatsPerBar;
-            std::set<std::uint16_t> floorIds;
-            for (const auto index : floors) floorIds.insert(partId(index));
+            std::set<std::uint16_t> locallyEditableFloorIds;
+            for (const auto index : floors)
+                if (!aiAuthoredScore(plan) || !primaryChordBed(plan.instruments[index]))
+                    locallyEditableFloorIds.insert(partId(index));
             pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
                 return note.startBeat >= finalBar && note.startBeat < end &&
                     (note.voice == VoiceId::HarmonicPulse || note.voice == VoiceId::Atmosphere);
             }), pattern.notes.end());
             for (auto& note : pattern.notes) {
-                if (!floorIds.contains(note.partId) || note.startBeat >= finalBar ||
+                if (!locallyEditableFloorIds.contains(note.partId) || note.startBeat >= finalBar ||
                     note.endBeat() <= finalBar) continue;
                 note.durationBeats = std::max(.04, finalBar - note.startBeat - 1.0 / 32.0);
             }
             for (auto& note : pattern.notes) {
-                if (!floorIds.contains(note.partId) || note.startBeat < codaStart ||
+                if (!locallyEditableFloorIds.contains(note.partId) || note.startBeat < codaStart ||
                     note.startBeat >= finalBar || note.partId == 0 ||
                     note.partId > plan.instruments.size()) continue;
                 const auto& owner = plan.instruments[note.partId - 1];
@@ -1397,7 +1428,8 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                 note.narrativeId = 0x434f4441u;
             }
             pattern.notes.erase(std::remove_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
-                return floorIds.contains(note.partId) && note.startBeat >= finalBar && note.startBeat < end;
+                return locallyEditableFloorIds.contains(note.partId) &&
+                    note.startBeat >= finalBar && note.startBeat < end;
             }), pattern.notes.end());
 
             auto lastForeground = pattern.notes.end();
@@ -1459,18 +1491,22 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                         ++report.resolutionCodaNotesCreated;
                 }
             }
-            for (std::size_t layer = 0; layer < std::min<std::size_t>(2, floors.size()); ++layer) {
+            auto writtenFloorLayers = std::size_t{};
+            for (std::size_t layer = 0;
+                 layer < floors.size() && writtenFloorLayers < 2; ++layer) {
                 const auto index = floors[layer];
                 const auto& assignment = plan.instruments[index];
-                const auto pitchClass = layer == 0 ? plan.rootPitchClass :
+                if (aiAuthoredScore(plan) && primaryChordBed(assignment)) continue;
+                const auto pitchClass = writtenFloorLayers == 0 ? plan.rootPitchClass :
                     positiveModulo(plan.rootPitchClass + 7, 12);
                 if (addNote(pattern, assignment, partId(index), finalBar,
                             plan.beatsPerBar - 1.0 / 16.0,
                             nearestPitch(pitchClass,
                                 (assignment.minimumPitch + assignment.maximumPitch) / 2, assignment),
-                            42 + static_cast<int>(layer) * 4,
+                            42 + static_cast<int>(writtenFloorLayers) * 4,
                             0x434f4441u, report, report.publicationClosureNotesCreated, 8))
                     ++report.resolutionCodaNotesCreated;
+                ++writtenFloorLayers;
             }
         }
     }
@@ -1514,12 +1550,24 @@ ElectronicFabricReport ElectronicCompositionFabric::audit(const Pattern& pattern
         (void) lane;
         if (notes.size() >= 6 && activeBarsFor(notes, plan.beatsPerBar) >= 4) ++report.meaningfulLines;
     }
+    auto protagonistPartId = std::uint16_t{};
+    for (std::size_t index = 0; index < plan.instruments.size(); ++index)
+        if (plan.instruments[index].id == plan.narrativeSpine.protagonistInstrumentId) {
+            protagonistPartId = partId(index);
+            break;
+        }
     for (auto window = 0.0; window < pattern.lengthBeats; window += plan.beatsPerBar * 4.0) {
-        const auto count = std::count_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {
-            return note.voice == VoiceId::Lead && note.startBeat >= window &&
-                   note.startBeat < window + plan.beatsPerBar * 4.0;
-        });
-        if (count >= 3) ++report.protagonistPhraseWindows;
+        std::vector<const NoteEvent*> phrase;
+        for (const auto& note : pattern.notes)
+            if ((protagonistPartId != 0 ? note.partId == protagonistPartId
+                                       : note.voice == VoiceId::Lead) &&
+                note.startBeat >= window &&
+                note.startBeat < window + plan.beatsPerBar * 4.0)
+                phrase.push_back(&note);
+        // Four connected attacks are the minimum audible sentence. Three isolated
+        // markers spread through a window are orchestration cues, not a protagonist.
+        if (longestConnectedAttackRun(std::move(phrase), plan.beatsPerBar * .75) >= 4)
+            ++report.protagonistPhraseWindows;
     }
     for (const auto index : arps)
         report.arpeggioNoteCount += std::count_if(pattern.notes.begin(), pattern.notes.end(), [&](const auto& note) {

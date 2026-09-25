@@ -3,6 +3,7 @@
 #include "ElectronicCompositionFabric.h"
 #include "ElectronicRoleContract.h"
 #include "PerformanceScore.h"
+#include "Scale.h"
 #include "TrackViability.h"
 
 #include <algorithm>
@@ -208,6 +209,46 @@ std::optional<std::size_t> centralChordBedIndex(const SongPlan& plan) {
         }
     }
     return selected;
+}
+
+int pitchForClass(int pitchClass, int target, int minimum, int maximum) noexcept {
+    auto best = std::clamp(target, minimum, maximum);
+    auto distance = 1000;
+    for (auto pitch = minimum; pitch <= maximum; ++pitch) {
+        if (positiveModulo(pitch, 12) != positiveModulo(pitchClass, 12)) continue;
+        const auto candidate = std::abs(pitch - target);
+        if (candidate < distance) {
+            best = pitch;
+            distance = candidate;
+        }
+    }
+    return best;
+}
+
+void retainInstrument(PerformanceCell& cell, const std::string& instrumentId) {
+    cell.notes.erase(std::remove_if(cell.notes.begin(), cell.notes.end(), [&](const auto& note) {
+        return note.instrumentId != instrumentId;
+    }), cell.notes.end());
+    cell.controls.erase(std::remove_if(cell.controls.begin(), cell.controls.end(), [&](const auto& control) {
+        return control.instrumentId != instrumentId;
+    }), cell.controls.end());
+    std::set<VoiceId> voices;
+    for (const auto& note : cell.notes) voices.insert(note.voice);
+    for (const auto& control : cell.controls) voices.insert(control.voice);
+    cell.ownedVoices.assign(voices.begin(), voices.end());
+}
+
+void removeInstrument(PerformanceCell& cell, const std::string& instrumentId) {
+    cell.notes.erase(std::remove_if(cell.notes.begin(), cell.notes.end(), [&](const auto& note) {
+        return note.instrumentId == instrumentId;
+    }), cell.notes.end());
+    cell.controls.erase(std::remove_if(cell.controls.begin(), cell.controls.end(), [&](const auto& control) {
+        return control.instrumentId == instrumentId;
+    }), cell.controls.end());
+    std::set<VoiceId> voices;
+    for (const auto& note : cell.notes) voices.insert(note.voice);
+    for (const auto& control : cell.controls) voices.insert(control.voice);
+    cell.ownedVoices.assign(voices.begin(), voices.end());
 }
 
 } // namespace
@@ -741,9 +782,13 @@ std::vector<PerformanceConstraint> SelectiveRepair::classifyPerformanceDeficits(
         // Count targets govern the size of the requested architecture, not the names
         // GPT invents to satisfy it. Only a concrete user-named identity, the
         // protagonist, or the sole motion owner can make an empty lane block the song.
+        const auto chordBed = centralChordBedIndex(plan);
+        const auto localizedChordClosure = constraint.evidence.missingCodaResolution &&
+            chordBed && *chordBed == constraint.evidence.instrumentIndex &&
+            constraint.evidence.notes > 0;
         constraint.blocksPublication =
             (missingIdentity && (essential || identityExplicit)) ||
-            constraint.evidence.missingCodaResolution ||
+            (constraint.evidence.missingCodaResolution && !localizedChordClosure) ||
             constraint.evidence.duplicatedIndependentLine;
         if (missingIdentity)
             constraint.operations.push_back(
@@ -1097,11 +1142,30 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                         const auto end = std::min(
                             (section.startBar + section.bars) * plan.beatsPerBar,
                             start + plan.beatsPerBar * 8.0);
-                        const auto attacks = std::count_if(notes.begin(), notes.end(),
-                            [&](const auto* note) {
-                                return note->startBeat >= start && note->startBeat < end;
+                        std::vector<const NoteEvent*> windowNotes;
+                        for (const auto* note : notes)
+                            if (note->startBeat >= start && note->startBeat < end)
+                                windowNotes.push_back(note);
+                        std::sort(windowNotes.begin(), windowNotes.end(),
+                            [](const auto* left, const auto* right) {
+                                if (left->startBeat != right->startBeat)
+                                    return left->startBeat < right->startBeat;
+                                return left->pitch < right->pitch;
                             });
-                        if (attacks >= 3) ++deficit.narrativePhraseWindows;
+                        auto connected = windowNotes.empty() ? std::size_t{} : std::size_t{1};
+                        auto longestConnected = connected;
+                        auto previousAttack = windowNotes.empty() ? 0.0 :
+                            windowNotes.front()->startBeat;
+                        for (std::size_t noteIndex = 1;
+                             noteIndex < windowNotes.size(); ++noteIndex) {
+                            const auto attack = windowNotes[noteIndex]->startBeat;
+                            if (std::abs(attack - previousAttack) < .01) continue;
+                            connected = attack - previousAttack <= plan.beatsPerBar * .75 + .001
+                                ? connected + 1 : 1;
+                            longestConnected = std::max(longestConnected, connected);
+                            previousAttack = attack;
+                        }
+                        if (longestConnected >= 4) ++deficit.narrativePhraseWindows;
                     }
                 }
                 // A protagonist is a dramatic speaker, not an always-on density
@@ -1293,11 +1357,13 @@ bool SelectiveRepair::ensureAuthoredProtagonistCoda(
     });
     if (authored.size() < 3) return false;
 
-    // Build a bounded transformed return from the final three authored attacks.
+    // Build a bounded transformed return from up to eight authored attacks. Three
+    // attacks are enough for backwards-compatible recovery, but a populated source
+    // now retains a complete sentence instead of collapsing its coda to three markers.
     // Rebasing an existing fragment is necessary when its source cell is longer
     // than the resolution section; a placement of the full cell would be clipped
     // before its intended final attack and would falsely report success.
-    const auto fragmentCount = std::min<std::size_t>(3, authored.size());
+    const auto fragmentCount = std::min<std::size_t>(8, authored.size());
     const auto fragmentBegin = authored.size() - fragmentCount;
     const auto firstBeat = authored[fragmentBegin]->beat;
     const auto lastBeat = authored.back()->beat - firstBeat;
@@ -1306,7 +1372,9 @@ bool SelectiveRepair::ensureAuthoredProtagonistCoda(
     const auto codaWindowStart = std::max(0.0, sectionLength -
         std::min(8, resolution.bars) * plan.beatsPerBar);
     auto timeScale = 1.0;
-    if (lastBeat > terminalTarget - codaWindowStart) timeScale = .5;
+    const auto availableSpan = terminalTarget - codaWindowStart;
+    if (lastBeat > availableSpan && lastBeat > .001)
+        timeScale = std::max(.25, availableSpan / lastBeat);
     if (lastBeat * timeScale > terminalTarget - codaWindowStart + .001)
         return false;
     auto transpose = positiveModulo(plan.rootPitchClass - authored.back()->pitch, 12);
@@ -1364,6 +1432,233 @@ bool SelectiveRepair::ensureAuthoredProtagonistCoda(
         });
     if (unresolved != verification.end()) {
         score = originalScore;
+        return false;
+    }
+    return true;
+}
+
+bool SelectiveRepair::ensurePrimaryChordBedClosure(SongPlan& plan) {
+    const auto bedIndex = centralChordBedIndex(plan);
+    if (!bedIndex || *bedIndex >= plan.instruments.size() || plan.sections.empty())
+        return false;
+    const auto deficits = performanceDeficits(
+        plan, plan.performanceScore, {*bedIndex});
+    const auto needsClosure = std::any_of(deficits.begin(), deficits.end(),
+        [](const auto& finding) { return finding.missingCodaResolution; });
+    if (!needsClosure) return false;
+
+    auto tonic = std::find_if(plan.chordPalette.begin(), plan.chordPalette.end(),
+        [&](const auto& chord) {
+            return chord.function == HarmonicFunction::Tonic &&
+                positiveModulo(chord.rootPitchClass, 12) ==
+                    positiveModulo(plan.rootPitchClass, 12);
+        });
+    if (tonic == plan.chordPalette.end())
+        tonic = std::find_if(plan.chordPalette.begin(), plan.chordPalette.end(),
+            [](const auto& chord) { return chord.function == HarmonicFunction::Tonic; });
+    if (tonic == plan.chordPalette.end()) return false;
+
+    auto resolutionIndex = plan.sections.size() - 1;
+    for (const auto& act : plan.narrativeSpine.acts) {
+        if (act.stage != NarrativeStage::Resolution) continue;
+        const auto found = std::find_if(plan.sections.begin(), plan.sections.end(),
+            [&](const auto& section) { return section.name == act.sectionName; });
+        if (found != plan.sections.end())
+            resolutionIndex = static_cast<std::size_t>(
+                std::distance(plan.sections.begin(), found));
+    }
+    auto& resolution = plan.sections[resolutionIndex];
+    const auto closureBars = std::min(4, std::max(2, resolution.bars));
+    const auto sectionLength = resolution.bars * plan.beatsPerBar;
+    const auto closureLength = std::min(sectionLength,
+        closureBars * plan.beatsPerBar);
+    const auto closureStart = std::max(0.0, sectionLength - closureLength);
+    if (closureLength <= 0.0) return false;
+
+    const auto originalPlan = plan;
+    const auto& bed = plan.instruments[*bedIndex];
+    auto& score = plan.performanceScore;
+
+    // Isolate the bed from any multi-instrument cells. This lets the transaction
+    // trim only its terminal placements while all unrelated MIDI and placements
+    // remain exactly as authored.
+    std::set<std::string> existingIds;
+    for (const auto& cell : score.cells) existingIds.insert(cell.id);
+    std::set<std::string> bedCellIds;
+    std::vector<PerformanceCell> isolatedCells;
+    std::vector<PerformancePlacement> isolatedPlacements;
+    const auto initialCellCount = score.cells.size();
+    const auto placementSnapshot = score.placements;
+    for (std::size_t cellIndex = 0; cellIndex < initialCellCount; ++cellIndex) {
+        auto& cell = score.cells[cellIndex];
+        const auto hasBed = std::any_of(cell.notes.begin(), cell.notes.end(),
+            [&](const auto& note) { return note.instrumentId == bed.id; });
+        if (!hasBed) continue;
+        const auto hasOther = std::any_of(cell.notes.begin(), cell.notes.end(),
+            [&](const auto& note) {
+                return !note.instrumentId.empty() && note.instrumentId != bed.id;
+            });
+        if (!hasOther) {
+            bedCellIds.insert(cell.id);
+            continue;
+        }
+        auto isolated = cell;
+        auto suffix = std::string{"__terminal_bed"};
+        auto candidate = cell.id + suffix;
+        for (auto ordinal = 2; existingIds.contains(candidate); ++ordinal)
+            candidate = cell.id + suffix + std::to_string(ordinal);
+        isolated.id = candidate;
+        existingIds.insert(candidate);
+        retainInstrument(isolated, bed.id);
+        removeInstrument(cell, bed.id);
+        bedCellIds.insert(isolated.id);
+        for (const auto& placement : placementSnapshot) {
+            if (placement.cellId != cell.id) continue;
+            auto copy = placement;
+            copy.cellId = isolated.id;
+            isolatedPlacements.push_back(std::move(copy));
+        }
+        isolatedCells.push_back(std::move(isolated));
+    }
+    score.cells.insert(score.cells.end(), isolatedCells.begin(), isolatedCells.end());
+    score.placements.insert(score.placements.end(),
+        isolatedPlacements.begin(), isolatedPlacements.end());
+
+    std::map<std::string, double> lengths;
+    for (const auto& cell : score.cells) lengths[cell.id] = cell.lengthBeats;
+    std::vector<PerformancePlacement> preserved;
+    preserved.reserve(score.placements.size() + 1);
+    for (const auto& placement : score.placements) {
+        if (placement.sectionIndex != static_cast<int>(resolutionIndex) ||
+            !bedCellIds.contains(placement.cellId)) {
+            preserved.push_back(placement);
+            continue;
+        }
+        const auto cellLength = lengths[placement.cellId];
+        const auto scale = std::max(.01, placement.timeScale);
+        const auto fragmentEnd = placement.fragmentEnd < 0.0
+            ? cellLength : placement.fragmentEnd;
+        const auto iterationLength = cellLength * scale;
+        for (auto repeat = 0; repeat < std::max(1, placement.repeats); ++repeat) {
+            auto copy = placement;
+            copy.repeats = 1;
+            copy.startBeat = placement.startBeat + repeat * iterationLength;
+            copy.fragmentEnd = fragmentEnd;
+            const auto ownedStartInCell = placement.retrograde
+                ? cellLength - fragmentEnd : placement.fragmentStart;
+            const auto ownedEndInCell = placement.retrograde
+                ? cellLength - placement.fragmentStart : fragmentEnd;
+            const auto spanStart = copy.startBeat + ownedStartInCell * scale;
+            const auto spanEnd = copy.startBeat + ownedEndInCell * scale;
+            if (spanEnd <= closureStart + .0001) {
+                preserved.push_back(std::move(copy));
+                continue;
+            }
+            if (spanStart >= closureStart - .0001) continue;
+            const auto clippedCellBeat = std::clamp(
+                (closureStart - copy.startBeat) / scale, 0.0, cellLength);
+            if (!placement.retrograde)
+                copy.fragmentEnd = std::min(copy.fragmentEnd, clippedCellBeat);
+            else
+                copy.fragmentStart = std::max(copy.fragmentStart,
+                    cellLength - clippedCellBeat);
+            if (copy.fragmentEnd > copy.fragmentStart + .01)
+                preserved.push_back(std::move(copy));
+        }
+    }
+    score.placements = std::move(preserved);
+
+    std::vector<int> pitchClasses = tonic->pitchClasses;
+    pitchClasses.push_back(plan.rootPitchClass);
+    const auto intervals = intervalsFor(plan.scale);
+    if (intervals.size() >= 5) {
+        pitchClasses.push_back(plan.rootPitchClass + intervals[2]);
+        pitchClasses.push_back(plan.rootPitchClass + intervals[4]);
+    }
+    pitchClasses = normalizePitchClasses(pitchClasses);
+    if (pitchClasses.size() < 3) {
+        plan = originalPlan;
+        return false;
+    }
+    std::stable_sort(pitchClasses.begin(), pitchClasses.end(), [&](int left, int right) {
+        const auto leftRoot = positiveModulo(left, 12) ==
+            positiveModulo(plan.rootPitchClass, 12);
+        const auto rightRoot = positiveModulo(right, 12) ==
+            positiveModulo(plan.rootPitchClass, 12);
+        if (leftRoot != rightRoot) return leftRoot;
+        return left < right;
+    });
+    if (pitchClasses.size() > 4) pitchClasses.resize(4);
+
+    std::vector<int> voicing;
+    auto target = std::clamp(bed.minimumPitch + 12,
+        bed.minimumPitch, bed.maximumPitch);
+    for (const auto pitchClass : pitchClasses) {
+        auto pitch = pitchForClass(pitchClass, target,
+            bed.minimumPitch, bed.maximumPitch);
+        while (!voicing.empty() && pitch <= voicing.back() && pitch + 12 <= bed.maximumPitch)
+            pitch += 12;
+        if (!voicing.empty() && pitch <= voicing.back()) continue;
+        voicing.push_back(pitch);
+        target = pitch + 4;
+    }
+    if (voicing.size() < 3) {
+        plan = originalPlan;
+        return false;
+    }
+
+    auto closureId = std::string{"transactional_tonic_closure_"} + bed.id;
+    for (auto ordinal = 2; existingIds.contains(closureId); ++ordinal)
+        closureId = "transactional_tonic_closure_" + bed.id + std::to_string(ordinal);
+    PerformanceCell closure;
+    closure.id = closureId;
+    closure.lengthBeats = closureLength;
+    closure.ownedVoices = {bed.sourceVoice};
+    closure.themeId = plan.narrativeSpine.motifIdentity.empty()
+        ? "harmonic_resolution" : plan.narrativeSpine.motifIdentity;
+    closure.narrativeFunction = "transactional_harmonic_closure";
+    const auto secondAttack = closureLength * .5;
+    for (std::size_t index = 0; index < voicing.size(); ++index) {
+        closure.notes.push_back({0.0, std::max(.25, secondAttack - .0625),
+            voicing[index], std::max(42, 62 - static_cast<int>(index) * 4),
+            bed.sourceVoice, MetricIntent::StrictGrid, bed.id});
+        auto terminalPitch = voicing[index];
+        if (index + 1 == voicing.size() && terminalPitch + 12 <= bed.maximumPitch)
+            terminalPitch += 12;
+        closure.notes.push_back({secondAttack,
+            std::max(.25, closureLength - secondAttack - .0625),
+            terminalPitch, std::max(38, 58 - static_cast<int>(index) * 4),
+            bed.sourceVoice, MetricIntent::StrictGrid, bed.id});
+    }
+    score.cells.push_back(std::move(closure));
+    PerformancePlacement closurePlacement;
+    closurePlacement.cellId = closureId;
+    closurePlacement.sectionIndex = static_cast<int>(resolutionIndex);
+    closurePlacement.startBeat = closureStart;
+    closurePlacement.repeats = 1;
+    closurePlacement.purpose = "bounded primary chord-bed tonic closure";
+    closurePlacement.fragmentStart = 0.0;
+    closurePlacement.fragmentEnd = closureLength;
+    score.placements.push_back(std::move(closurePlacement));
+
+    resolution.harmonicEvents.erase(std::remove_if(
+        resolution.harmonicEvents.begin(), resolution.harmonicEvents.end(),
+        [&](const auto& event) {
+            return event.barOffset * plan.beatsPerBar + event.beatOffset >=
+                closureStart - .0001;
+        }), resolution.harmonicEvents.end());
+    resolution.harmonicEvents.push_back({resolution.bars - closureBars, 0.0,
+        tonic->id, 1.0, "transactional tonic resolution"});
+    std::sort(resolution.harmonicEvents.begin(), resolution.harmonicEvents.end(),
+        [](const auto& left, const auto& right) {
+            return std::tie(left.barOffset, left.beatOffset) <
+                std::tie(right.barOffset, right.beatOffset);
+        });
+
+    const auto verification = performanceDeficits(plan, score, {*bedIndex});
+    if (std::any_of(verification.begin(), verification.end(),
+            [](const auto& finding) { return finding.missingCodaResolution; })) {
+        plan = originalPlan;
         return false;
     }
     return true;

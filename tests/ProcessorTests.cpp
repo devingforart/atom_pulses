@@ -1799,6 +1799,7 @@ int main(int argc, char** argv) {
                 deploymentObject->getProperty("ai_model").toString() == "gpt-5.6-terra" &&
                 deploymentObject->getProperty("ai_reasoning_effort").toString() == "medium" &&
                 !static_cast<bool>(deploymentObject->getProperty("electronic_production_audited")) &&
+                !static_cast<bool>(deploymentObject->getProperty("electronic_pulse_required")) &&
                 !deploymentObject->hasProperty("electronic_production_score") &&
                 deploymentObject->getProperty("sound_world").toString().isNotEmpty() &&
                 deploymentObject->getProperty("deployment_mode").toString() == "full_orchestration" &&

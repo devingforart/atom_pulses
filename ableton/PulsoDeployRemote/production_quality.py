@@ -20,6 +20,8 @@ def evaluate_creative_quality(request):
 
     domain = str(request.get("production_domain", "adaptive")).casefold()
     percussion_free = bool(request.get("percussion_free", False))
+    pulse_required = bool(request.get(
+        "electronic_pulse_required", domain == "club_electronic" and not percussion_free))
     foreground = _number(request, "foreground_ai_authorship_ratio", 0.0)
     movement_bass = _number(request, "movement_bass_ai_authorship_ratio", 0.0)
     foreground_notes = int(_number(request, "foreground_note_count", 0.0))
@@ -53,7 +55,7 @@ def evaluate_creative_quality(request):
         codes.append("fragmented_bass_narrative")
     if scalar_run > 5:
         codes.append("scalar_melody_without_speech")
-    if domain == "club_electronic" and not percussion_free:
+    if pulse_required:
         if groove < 0.45:
             codes.append("groove_not_ai_authored")
         if drum_gap > 16:

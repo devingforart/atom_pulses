@@ -1168,6 +1168,28 @@ void runGeneratorTests() {
     require(hybridShape.active && hybridAudit.active && hybridShape.rhythmNotesEvolved > 0 &&
                 hybridAudit.maximumRhythmRun <= 4,
             "Hybrid electronic music must receive the same groove-evolution critic as club music");
+    if (std::none_of(hybridPlan.instruments.begin(), hybridPlan.instruments.end(),
+            [](const auto& part) {
+                return part.sourceVoice == VoiceId::CoreDrums || part.instrumentId == "kick_drum";
+            })) {
+        InstrumentAssignment kick;
+        kick.id = "hybrid_structural_kick";
+        kick.instrumentId = "kick_drum";
+        kick.sourceVoice = VoiceId::CoreDrums;
+        hybridPlan.instruments.push_back(kick);
+    }
+    Pattern sparseHybridPulse;
+    sparseHybridPulse.lengthBeats = hybridPlan.totalBars * hybridPlan.beatsPerBar;
+    sparseHybridPulse.notes.push_back({64.0, .25, 36, 92, 10,
+        VoiceId::CoreDrums, 1, true, NoteOrigin::AiAuthored});
+    for (auto bar = 0; bar < hybridPlan.totalBars; ++bar)
+        sparseHybridPulse.notes.push_back({bar * 4.0, .5, 42, 72, 6,
+            VoiceId::MovementBass, 0, true, NoteOrigin::AiAuthored});
+    const auto sparseHybridAudit = NarrativeScoreGate::audit(sparseHybridPulse, hybridPlan);
+    require(sparseHybridAudit.maximumClubDrumGapBars > 16 &&
+                std::find(sparseHybridAudit.issues.begin(), sparseHybridAudit.issues.end(),
+                          "club_pulse_absent_too_long") != sparseHybridAudit.issues.end(),
+            "A pulse-bearing hybrid score must audit the exact exported kick gaps instead of reporting zero");
 
     auto peakPlan = clubPlan;
     auto& peakSection = *std::max_element(peakPlan.sections.begin(), peakPlan.sections.end(),

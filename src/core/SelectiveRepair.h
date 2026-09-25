@@ -151,6 +151,10 @@ public:
     [[nodiscard]] static bool ensureAuthoredProtagonistCoda(
         const SongPlan&, PerformanceScore&,
         std::string_view preferredCellId = {});
+    // Repairs only the terminal two-to-four bars of the primary chord bed using
+    // the AI-authored tonic palette. Earlier placements and every other instrument
+    // remain byte-for-byte unchanged.
+    [[nodiscard]] static bool ensurePrimaryChordBedClosure(SongPlan&);
 
 private:
     [[nodiscard]] static std::vector<PerformanceCoverageDeficit> performanceDeficitsImpl(

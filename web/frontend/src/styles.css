@@ -36,6 +36,184 @@ em { color:var(--acid); font-style:normal; }
 .pricing-page { min-height:80vh; padding-bottom:130px; }.billing-toggle { display:flex; justify-content:center; margin:0 auto 36px; }.billing-toggle button { padding:10px 16px; background:#131614; color:#8d918a; border:1px solid var(--line); cursor:pointer; }.billing-toggle button.active { color:#10120f; background:var(--acid); }.billing-toggle span { font-size:9px; }.price-card { max-width:840px; margin:auto; border:1px solid #3a3e39; padding:50px; display:grid; grid-template-columns:1fr 1fr; gap:36px 70px; background:#111315; }.price-card h2 { font:400 52px 'DM Mono'; margin:18px 0; }.price-card small { font-size:13px;color:#888;}.price-card ul { margin:10px 0;padding:0;list-style:none;line-height:2.4;color:#b3b6af;font-size:14px}.price-card li::first-letter { color:var(--acid);}.price-card .button { grid-column:1/-1; }.pricing-note { max-width:650px;margin:25px auto;color:#686c66;font-size:11px;text-align:center;line-height:1.7}.form-error { color:#ff8c7d!important;font-size:13px!important;grid-column:1/-1}
 .auth-page { min-height:calc(100vh - 84px); display:grid; place-items:center; padding:80px 24px; }.auth-card { width:min(470px,100%); border:1px solid #343833; padding:42px; background:#111315; }.auth-card h1 { font-size:42px; }.auth-card label { display:block;color:#aeb1aa;font-size:12px;margin:24px 0}.auth-card input { display:block;width:100%;margin-top:8px;background:#090b0c;border:1px solid #343833;color:#eee;padding:14px;outline:none}.auth-card input:focus { border-color:var(--acid); }.auth-card label small { color:#666;display:block;margin-top:6px}.auth-card .button { width:100%; }.auth-card>p:last-child { text-align:center;color:#777;font-size:12px;margin:24px 0 0}.auth-card>p:last-child a {color:var(--acid)}
 .account-page { max-width:1200px;margin:auto;padding:110px 48px 140px;min-height:80vh}.account-head {display:flex;justify-content:space-between;align-items:start}.account-head h1 {font-size:58px}.text-button {border:0;background:none;color:#999;cursor:pointer;text-decoration:underline}.account-grid {display:grid;grid-template-columns:2fr 1fr;gap:24px}.download-card,.subscription-card,.install-steps {border:1px solid var(--line);padding:36px;background:#111315}.download-card h2 {font:400 38px 'DM Mono';margin:24px 0}.download-card>p:not(.eyebrow),.subscription-card>p:not(.eyebrow) {color:#8e928b;line-height:1.6}.download-card .button {margin:24px 0 12px}.download-card small {display:block;color:#666}.status {display:inline-block;padding:7px 9px;border:1px solid #555;font:10px 'DM Mono';text-transform:uppercase}.status-active,.status-trialing {color:var(--acid);border-color:#617b2d}.subscription-card .button {margin-top:15px}.install-steps {margin-top:24px}.install-steps ol {color:#aaa;line-height:2}.install-steps code {color:var(--acid)}.legal h2 {font-size:28px;margin-top:55px}.legal h1 {font-size:70px}footer {max-width:1440px;margin:auto;padding:70px 48px 40px;display:grid;grid-template-columns:2fr 1fr;gap:50px;border-top:1px solid var(--line);color:#747871;font-size:12px}footer p {margin-top:18px}.footer-links {display:grid;grid-template-columns:1fr 1fr;gap:16px}footer>span {grid-column:1/-1;border-top:1px solid var(--line);padding-top:24px;font:9px 'DM Mono'}
+
+/* Rust × Ableton: mineral warmth, functional contrast and an uncompromising grid. */
+:root {
+  color-scheme: light;
+  color:#191a18;
+  background:#e7e3da;
+  --acid:#a94725;
+  --rust:#a94725;
+  --rust-hot:#e36a3d;
+  --paper:#e7e3da;
+  --paper-raised:#f1eee7;
+  --ink:#191a18;
+  --charcoal:#202220;
+  --muted:#6e6d67;
+  --line:#bdb8ad;
+  --panel:#f1eee7;
+}
+body {
+  color:var(--ink);
+  background-color:var(--paper);
+  background-image:
+    linear-gradient(#1c1d1a0a 1px,transparent 1px),
+    linear-gradient(90deg,#1c1d1a0a 1px,transparent 1px),
+    radial-gradient(circle at 82% 8%,#a9472522 0,transparent 28rem);
+  background-size:48px 48px,48px 48px,auto;
+}
+.nav-wrap { background:#e7e3daed; border-color:var(--line); backdrop-filter:blur(14px); }
+.logo { color:var(--ink); }
+.logo i { border:2px solid var(--rust); border-radius:3px; transform:rotate(45deg); }
+.logo i::before,.logo i::after { background:var(--rust); }
+nav { color:#5e5e58; }
+nav a:hover,nav a.active { color:var(--rust); }
+.button { border-color:var(--rust); background:var(--rust); color:#fff9f2; font-family:"Cascadia Mono","SFMono-Regular",Consolas,monospace; box-shadow:3px 3px 0 #191a18; }
+.button:hover { box-shadow:6px 6px 0 #191a18; transform:translate(-2px,-2px); }
+.button-ghost { color:var(--ink); background:transparent; border-color:#77756e; box-shadow:none; }
+.button-ghost:hover { color:#fff; background:var(--ink); box-shadow:none; }
+.button-light { background:var(--ink); border-color:var(--ink); color:#fff; }
+.eyebrow,em { color:var(--rust)!important; }
+.hero-copy .lead,.page-hero>p:not(.eyebrow) { color:#5f5f59; }
+.text-link { color:var(--ink); border-color:#89867f; }
+.trust-row { color:#74736c; }
+.midi-stage { background:#202220; border:1px solid #060706; box-shadow:12px 14px 0 #b2ada3,0 35px 90px #33251e33; }
+.stage-head { color:#aaa9a1; border-color:#444641; background:#191b19; }
+.midi-track { border-color:#3a3c38; }
+.midi-track>b { color:#aaa9a1; }
+.note-lane { background:repeating-linear-gradient(90deg,transparent 0,transparent calc(12.5% - 1px),#3a3c38 12.5%); }
+.note-lane i { background:var(--rust-hot); opacity:.92; box-shadow:none; border-left:2px solid #ff9a70; }
+.midi-track:nth-child(3) .note-lane i { background:#e9b949; border-color:#ffe093; }
+.midi-track:nth-child(5) .note-lane i { background:#bcae91; border-color:#ded5c2; }
+.playhead { background:#f5f1e9b8; }
+.statement,.workflow,.capabilities,.page-hero,.pricing-page,.account-page { color:var(--ink); }
+.statement>p,.workflow-grid span,.capability-grid span { color:#7b7972; }
+.workflow-grid p,.capability-grid p,.system-row p { color:#64635e; }
+.workflow-grid,.capability-grid,.workflow-grid article,.capability-grid article { border-color:var(--line); }
+.feature-split { color:#eae6dc; background:var(--charcoal); border-color:#0c0d0c; }
+.feature-split p { color:#aaa9a2; }
+.feature-split .eyebrow { color:#e36a3d!important; }
+.score-card { border-color:#565951; background:linear-gradient(145deg,#30332f,#171917); box-shadow:8px 8px 0 #0d0e0d; }
+.arc i { border-color:var(--rust-hot); background:linear-gradient(#e36a3d66,transparent); }
+.system-row { background:#d9d5cc; border-color:#aaa69d; }
+.cta { color:#fff8f0; background:var(--rust); border-top:1px solid #7f2f19; }
+.cta .eyebrow { color:#4b1b10!important; }
+.cta em { color:#fff!important; }
+.price-card,.auth-card,.download-card,.subscription-card,.install-steps { color:var(--ink); background:var(--paper-raised); border-color:#a9a59c; box-shadow:8px 8px 0 #cbc6bc; }
+.price-card ul,.auth-card label,.download-card>p:not(.eyebrow),.subscription-card>p:not(.eyebrow),.install-steps ol { color:#5e5d57; }
+.billing-toggle button { color:#686760; background:#d6d2c9; border-color:#aaa69d; }
+.billing-toggle button.active { color:#fff; background:var(--rust); border-color:var(--rust); }
+.auth-card input { color:var(--ink); background:#e5e1d8; border-color:#aaa69d; }
+.auth-card input:focus { border-color:var(--rust); box-shadow:0 0 0 2px #a9472525; }
+.auth-card>p:last-child,.download-card small,.pricing-note,.text-button { color:#6e6d67; }
+.auth-card>p:last-child a,.install-steps code { color:var(--rust); }
+.status { border-color:#8f8b82; }
+.status-active,.status-trialing { color:#7e2f19; border-color:#a94725; background:#a9472513; }
+.form-error { color:#a62f1f!important; }
+footer { max-width:none; padding-left:max(48px,calc((100vw - 1344px)/2)); padding-right:max(48px,calc((100vw - 1344px)/2)); color:#aaa9a2; background:var(--charcoal); border-color:#3b3e39; }
+footer .logo { color:#eeeae1; }
+footer .logo i { border-color:var(--rust-hot); }
+footer .logo i::before,footer .logo i::after { background:var(--rust-hot); }
+footer>span { border-color:#3b3e39; }
+
+/* Flat studio controls: precise states, no voxel depth. */
+.nav-wrap {
+  position:sticky;
+  top:0;
+  z-index:50;
+  height:68px;
+  padding-top:3px;
+  background:#e7e3daf5;
+  border-bottom:1px solid #8d8a83;
+  box-shadow:inset 0 3px 0 var(--rust);
+}
+.logo { gap:11px; font-size:16px; letter-spacing:.18em; }
+.logo-mark { width:29px; height:21px; overflow:visible; }
+.pulse-line { fill:none; stroke:var(--rust); stroke-width:2; stroke-linecap:square; stroke-linejoin:miter; }
+.pulse-node { fill:var(--ink); }
+nav { align-self:stretch; gap:30px; }
+nav a {
+  position:relative;
+  display:flex;
+  align-items:center;
+  color:#50514d;
+  font:500 10px "Cascadia Mono","SFMono-Regular",Consolas,monospace;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+nav a::after { content:""; position:absolute; right:0; bottom:-1px; left:0; height:2px; background:transparent; }
+nav a:hover,nav a.active { color:var(--ink); }
+nav a:hover::after,nav a.active::after { background:var(--rust); }
+.button {
+  min-height:38px;
+  padding:11px 18px;
+  border:1px solid var(--rust);
+  box-shadow:none;
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:.09em;
+  line-height:1;
+  transition:background-color .14s,color .14s,border-color .14s;
+}
+.button:hover { color:#fff; background:var(--ink); border-color:var(--ink); box-shadow:none; transform:none; }
+.button:focus-visible,nav a:focus-visible,.text-link:focus-visible { outline:2px solid var(--rust); outline-offset:3px; }
+.button-small { min-height:32px; padding:9px 14px; }
+.button-ghost { color:var(--ink); background:transparent; border-color:#77756e; }
+.button-ghost:hover { color:#fff; background:var(--ink); border-color:var(--ink); }
+.button-light { color:#fff; background:var(--ink); border-color:var(--ink); }
+.button-light:hover { color:var(--ink); background:#fff; border-color:#fff; }
+.price-card,.auth-card,.download-card,.subscription-card,.install-steps { box-shadow:none; }
+footer .pulse-line { stroke:var(--rust-hot); }
+footer .pulse-node { fill:#eeeae1; }
+
+/* Studio actions: neutral surfaces with a small state light. */
+.button {
+  min-height:36px;
+  gap:10px;
+  padding:10px 15px;
+  color:var(--ink);
+  background:#ece9e2;
+  border:1px solid #73726c;
+  border-radius:2px;
+  font-size:9px;
+  font-weight:600;
+  letter-spacing:.1em;
+}
+.button::before {
+  content:"";
+  flex:0 0 auto;
+  width:5px;
+  height:5px;
+  background:var(--rust);
+}
+.button:hover {
+  color:#f4f1e9;
+  background:#292b28;
+  border-color:#292b28;
+}
+.button:hover::before { background:var(--rust-hot); }
+.button-small { min-height:30px; padding:8px 12px; }
+.button-ghost { color:#444540; background:transparent; border-color:#9a978f; }
+.button-ghost::before { background:#77766f; }
+.button-ghost:hover { color:var(--ink); background:#d7d3ca; border-color:#77756e; }
+.button-ghost:hover::before { background:var(--rust); }
+.button-light { color:#f4f1e9; background:#202220; border-color:#202220; }
+.button-light::before { background:#f4f1e9; }
+.button-light:hover { color:var(--ink); background:#fff; border-color:#fff; }
+.button-light:hover::before { background:var(--rust); }
+.billing-toggle { gap:0; }
+.billing-toggle button {
+  min-height:34px;
+  padding:8px 15px;
+  color:#64635d;
+  background:transparent;
+  border:1px solid #aaa69d;
+  font:500 9px "Cascadia Mono","SFMono-Regular",Consolas,monospace;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.billing-toggle button+button { border-left:0; }
+.billing-toggle button.active { color:#f4f1e9; background:#292b28; border-color:#292b28; }
 @media (max-width:900px){.nav-wrap{padding:0 22px;grid-template-columns:1fr auto}.nav-wrap nav{display:none}.section-grid{grid-template-columns:1fr;padding:80px 24px;gap:70px}.midi-stage{transform:none}.workflow,.capabilities{padding:90px 24px}.workflow-grid,.capability-grid{grid-template-columns:1fr}.workflow-grid article,.workflow-grid article+article,.capability-grid article,.capability-grid article+article{padding:30px 0;border-right:0;border-bottom:1px solid var(--line)}.workflow-grid h3,.capability-grid h3{margin-top:25px}.feature-split,.system-row{padding:90px 24px;grid-template-columns:1fr}.page-hero{padding:90px 24px 70px}.product-stage{padding:0 24px}.price-card{margin:0 24px;grid-template-columns:1fr;padding:32px}.price-card .button{grid-column:auto}.account-page{padding:80px 24px}.account-grid{grid-template-columns:1fr}footer{padding:60px 24px;grid-template-columns:1fr}.trust-row{flex-wrap:wrap}.statement{padding:100px 24px}}
 @media (max-width:520px){h1{font-size:46px}.actions{align-items:stretch;flex-direction:column}.midi-stage{min-height:330px;padding-left:10px;padding-right:10px}.midi-track{grid-template-columns:75px;min-height:62px}.midi-track>b{font-size:6px}.statement h2{font-size:34px}.price-card h2{font-size:40px}.auth-card{padding:28px}.account-head{display:block}.account-head .text-button{margin-bottom:28px}}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}.button:hover{transform:none}}

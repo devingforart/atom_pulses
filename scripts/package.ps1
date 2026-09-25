@@ -40,6 +40,8 @@ New-Item -ItemType Directory -Path (Join-Path $stage 'Standalone') -Force | Out-
 New-Item -ItemType Directory -Path (Join-Path $stage 'Documentation') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $stage 'AbletonBridge') -Force | Out-Null
 Copy-Item -LiteralPath $vstSource -Destination (Join-Path $stage 'VST3\PULSO.vst3') -Recurse
+Get-ChildItem -LiteralPath (Join-Path $stage 'VST3\PULSO.vst3') -Recurse -File -Filter '*.incomplete.*' |
+    Remove-Item -Force
 Copy-Item -LiteralPath $appSource -Destination (Join-Path $stage 'Standalone\PULSO.exe')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'README.md') -Destination (Join-Path $stage 'README.md')
 Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE.md') -Destination (Join-Path $stage 'LICENSE.md')

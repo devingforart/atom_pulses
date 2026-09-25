@@ -14,3 +14,10 @@
 *.dll
 *.pdb
 .DS_Store
+/web/frontend/node_modules/
+/web/frontend/dist/
+/web/backend/target/
+/web/.env
+/web/.env.*
+!/web/.env.example
+!/web/.env.production.example

@@ -7,9 +7,10 @@ const tracks = [
 
 export function MidiStage() {
   return <div className="midi-stage" aria-label="Vista conceptual de una composición en PULSO">
+    <div className="device-bar"><span><i/>PULSO / ARRANGEMENT</span><span>SCORE 01</span></div>
     <div className="stage-head"><span>F♯ MINOR</span><span>06:30</span><span>128 BPM</span></div>
     {tracks.map((track, index) => <div className="midi-track" key={track.name}>
-      <b>{track.name}</b><div className="note-lane">
+      <b><span>{track.name}</span><small>0{index + 1}</small></b><div className="note-lane">
         {track.notes.map(([left,width], note) => <i key={note} style={{ left: `${left}%`, width: `${width}%`, top: `${(note * 7 + index * 9) % 70}%` }} />)}
       </div>
     </div>)}

@@ -2586,6 +2586,31 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
     // boundary after the final expression pass so Live never receives a hanging
     // harmonic body even when a preset adds release tail.
     enforceElectronicReleaseCeilings(song, plan);
+    // Attention shaping can legitimately thin sustained local colours enough to
+    // fall below their viability contract. Re-develop only those already-declared
+    // local owners from their existing motif before terminal compaction. A GPT cast
+    // remains untouched: missing AI material must be repaired by the model, never
+    // silently composed here.
+    if (!plan.instrumentCastAuthored) {
+        const auto postAttentionViability = TrackViability::enforce(song, plan);
+        viabilityDeveloped += postAttentionViability.developedTracks;
+        viabilityNotesCreated += postAttentionViability.notesCreated;
+        viabilityMerged += postAttentionViability.mergedTracks;
+        viabilityPruned += postAttentionViability.prunedTracks;
+        publishedTonalReport = repairTonalContract(
+            song, plan.rootPitchClass, plan.scale, plan.beatsPerBar, harmonicWindows, 0.035,
+            plan.harmonicLanguage.tonalPolicy);
+        [[maybe_unused]] const auto postAttentionOverlap = repairSamePitchOverlaps(song);
+        const auto postAttentionVertical = VerticalHarmonyGate::enforce(song);
+        verticalHarmony.collisionsBefore += postAttentionVertical.collisionsBefore;
+        verticalHarmony.collisionsAfter = postAttentionVertical.collisionsAfter;
+        verticalHarmony.supportNotesDucked += postAttentionVertical.supportNotesDucked;
+        verticalHarmony.supportNotesOctaveDisplaced += postAttentionVertical.supportNotesOctaveDisplaced;
+        verticalHarmony.continuationFragmentsCreated +=
+            postAttentionVertical.continuationFragmentsCreated;
+        [[maybe_unused]] const auto postAttentionDurations =
+            enforceAudibleDurations(song, harmonicWindows);
+    }
     const auto attentionCompaction = TrackViability::compactIncomplete(song, plan);
     viabilityMerged += attentionCompaction.mergedTracks;
     viabilityPruned += attentionCompaction.prunedTracks;

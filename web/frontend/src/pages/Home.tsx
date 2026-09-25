@@ -16,7 +16,11 @@ export function Home() {
         <div className="actions"><Link className="button" to="/pricing">Obtener PULSO</Link><Link className="text-link" to="/product">Explorar el instrumento →</Link></div>
         <div className="trust-row"><span>VST3 · WINDOWS</span><span>ABLETON LIVE 12</span><span>MIDI EDITABLE</span></div>
       </div>
-      <MidiStage />
+      <div className="hero-visual">
+        <div className="visual-status"><span><i/>COMPOSITION READY</span><b>04 VOICES / 01 NARRATIVE</b></div>
+        <MidiStage />
+        <div className="visual-foot"><span>FORM</span><b>INTRO → ASCENT → PEAK → RETURN</b><span>MIDI / EDITABLE</span></div>
+      </div>
     </section>
     <section className="statement"><p>Un loop repite.</p><h2>Una composición <em>recuerda, cambia<br/>y encuentra su destino.</em></h2></section>
     <section id="workflow" className="workflow"><div className="section-title"><p className="eyebrow">EL FLUJO</p><h2>De una frase a una arquitectura musical.</h2></div>

@@ -7,7 +7,7 @@ export function Layout() {
   return <div className="site-shell">
     <a className="skip-link" href="#content">Saltar al contenido</a>
     <header className="nav-wrap">
-      <Link to="/" className="brand-link"><Logo /></Link>
+      <Link to="/" className="brand-link"><Logo /><span className="brand-caption">Composition system</span></Link>
       <nav aria-label="Principal">
         <NavLink to="/product">Producto</NavLink>
         <NavLink to="/pricing">Planes</NavLink>

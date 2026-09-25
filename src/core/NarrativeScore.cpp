@@ -722,7 +722,7 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     if (report.melodicIntervals >= 8 && report.melodicStepwiseRatio < 0.15)
         report.issues.push_back("disconnected_melody_without_voice_leading");
     if (pulseAuditRequired &&
-        report.maximumClubDrumGapBars > 16)
+        report.maximumClubDrumGapBars >= 16)
         report.issues.push_back("club_pulse_absent_too_long");
     if (pulseAuditRequired &&
         report.maximumClubLowEndGapBars > 16)
@@ -748,7 +748,7 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     const auto movementBassReady = !report.movementBassExpected ||
         (report.movementBassNotes >= 8 && report.movementBassAiAuthorshipRatio >= 0.75);
     const auto clubReady = !pulseAuditRequired ||
-        (report.grooveAuthorshipCoverage >= 0.45 && report.maximumClubDrumGapBars <= 16 &&
+        (report.grooveAuthorshipCoverage >= 0.45 && report.maximumClubDrumGapBars < 16 &&
          report.maximumClubLowEndGapBars <= 16);
     report.creativeReady = !report.active || (report.primaryVoiceCoverage >= 0.40 &&
         foregroundReady && movementBassReady && memoryReady && developmentReady && bassReady && melodicSpeechReady &&

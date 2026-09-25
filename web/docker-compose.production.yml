@@ -1,0 +1,49 @@
+name: pulso
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pulso
+      POSTGRES_USER: pulso
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - pulso-postgres:/var/lib/postgresql/data
+    networks: [database]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulso -d pulso"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    security_opt: [no-new-privileges:true]
+
+  app:
+    image: pulso-web:local
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PULSO_WEB_BIND: 0.0.0.0:8080
+      FRONTEND_DIR: /app/frontend
+      DATABASE_URL: postgres://pulso:${POSTGRES_PASSWORD}@postgres:5432/pulso
+    ports:
+      - "127.0.0.1:${PULSO_HOST_PORT:-8188}:8080"
+    networks: [database, ingress]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+
+networks:
+  database:
+    internal: true
+  ingress:
+
+volumes:
+  pulso-postgres:

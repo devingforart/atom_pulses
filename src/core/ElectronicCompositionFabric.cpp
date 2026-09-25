@@ -494,7 +494,7 @@ void ElectronicCompositionFabric::normalizePlan(SongPlan& plan) {
     // A closed GPT cast is compositional authority. The local fabric may complete
     // notes inside roles GPT explicitly declared, but it must not invent a generic
     // pad/arp/lead/reply roster behind the model's back.
-    if (aiAuthoredScore(plan) && plan.productionModeSource != "local_inference") return;
+    if (plan.instrumentCastAuthored && plan.productionModeSource != "local_inference") return;
 
     ensureVoice(plan, VoiceId::HarmonicFoundation, "Continuous multi-layer harmonic floor", .78);
     ensureVoice(plan, VoiceId::Lead, "Primary narrative speaker", .42);
@@ -1075,13 +1075,16 @@ TimbralHandoffReport ElectronicCompositionFabric::realizeTimbralHandoffs(
             notesByWindow[static_cast<int>(std::floor(note.startBeat / phraseBeats))]
                 .push_back(noteIndex);
         }
+        const auto handoffCount = members.size() - 1;
+        const auto handoffStride = std::clamp<std::size_t>(
+            notesByWindow.size() / std::max<std::size_t>(1, handoffCount), 1, 3);
         std::map<std::size_t, std::size_t> assignedWindows;
         for (const auto& [window, noteIndices] : notesByWindow) {
             const auto beat = window * phraseBeats;
             const auto* section = sectionAt(plan, beat);
             std::vector<std::size_t> eligible;
             const auto preserveCanonical = canonical != members.end() &&
-                (std::abs(window) % 3 != 0);
+                (std::abs(window) % static_cast<int>(handoffStride) != 0);
             if (preserveCanonical) {
                 if (section == nullptr || activeIn(plan.instruments[*canonical], *section))
                     eligible.push_back(*canonical);

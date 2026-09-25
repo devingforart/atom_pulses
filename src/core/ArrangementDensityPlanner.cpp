@@ -210,6 +210,17 @@ ArrangementDensityTargets ArrangementDensityPlanner::targetsFor(const SongPlan& 
     result.minimumHarmonyParts = result.percussionFree ? 9 : 7;
     result.minimumMelodyParts = result.percussionFree ? 3 : 2;
     result.minimumTextureParts = result.percussionFree ? 4 : 3;
+    // Local inference names a broad audition palette, then viability compaction keeps
+    // only musically independent owners. Requiring nearly every nominal patch to
+    // survive made the release gate reward token tracks and duplicated material. The
+    // AI contract remains strict; only the deterministic fallback is graded against
+    // the smaller production-ready ensemble it can genuinely develop.
+    if (result.percussionFree && !plan.instrumentCastAuthored) {
+        result.minimumPopulatedParts = std::min(
+            result.minimumPopulatedParts,
+            std::max<std::size_t>(10, result.proposedParts * 11 / 20));
+        result.minimumMelodyParts = 2;
+    }
     // Advisory compatibility value only. Publication is no longer rejected from a
     // raw track peak: perceptual load is measured by AttentionDirector instead.
     result.maximumSimultaneousParts = static_cast<std::size_t>(std::clamp(

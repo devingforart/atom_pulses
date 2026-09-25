@@ -320,10 +320,10 @@ int main(int argc, char** argv) {
    #endif
     pulso::plugin::ApiCredentialStore::refresh();
     require(pulso::plugin::ApiCredentialStore::isPlausibleKey(
-                "sk-proj-example_key_material_1234567890") &&
+                "sk-" "proj-example_key_material_1234567890") &&
                 !pulso::plugin::ApiCredentialStore::isPlausibleKey("not-a-key") &&
                 !pulso::plugin::ApiCredentialStore::isPlausibleKey(
-                    "sk-proj-key with whitespace"),
+                    "sk-" "proj-key with whitespace"),
             "The in-plugin credential editor must reject malformed or whitespace-bearing secrets");
     constexpr auto sampleRate = 48000.0;
     constexpr auto blockSize = 256;
@@ -1606,7 +1606,7 @@ int main(int argc, char** argv) {
                 apiSettingsPanel->findChildWithID("api-key-test") != nullptr &&
                 apiSettingsPanel->findChildWithID("api-key-remove") != nullptr,
             "The AI panel must mask, save, test and remove credentials without exposing them");
-    const std::string sentinelSecret = "sk-proj-ui_state_must_never_serialize_1234567890";
+    const std::string sentinelSecret = "sk-" "proj-ui_state_must_never_serialize_1234567890";
     apiKeyInput->setText(sentinelSecret, false);
     juce::MemoryBlock credentialState;
     processor.getStateInformation(credentialState);

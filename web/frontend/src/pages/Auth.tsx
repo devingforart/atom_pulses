@@ -28,6 +28,6 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     <label>Contraseña<input required minLength={12} type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={e=>setPassword(e.target.value)} /><small>Mínimo 12 caracteres.</small></label>
     {error && <p className="form-error" role="alert">{error}</p>}
     <button className="button" disabled={busy}>{busy ? 'Procesando…' : mode === 'login' ? 'Ingresar' : 'Crear cuenta'}</button>
-    <p>{mode === 'login' ? <>¿Todavía no tienes cuenta? <Link to="/register">Registrarte</Link></> : <>¿Ya tienes cuenta? <Link to="/login">Ingresar</Link></>}</p>
+    <p>{mode === 'login' ? <>¿Todavía no tienes cuenta? <Link to="/register">Registrarte</Link><br /><Link to="/forgot-password">Olvidé mi contraseña</Link></> : <>¿Ya tienes cuenta? <Link to="/login">Ingresar</Link></>}</p>
   </form></section>
 }

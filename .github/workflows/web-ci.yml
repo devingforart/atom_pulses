@@ -1,0 +1,80 @@
+name: Web CI
+
+on:
+  push:
+    paths: ["web/**", ".github/workflows/web-ci.yml"]
+  pull_request:
+    paths: ["web/**", ".github/workflows/web-ci.yml"]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: web/frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          {
+            node-version: 24,
+            cache: npm,
+            cache-dependency-path: web/frontend/package-lock.json,
+          }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: pulso
+          POSTGRES_PASSWORD: pulso
+          POSTGRES_DB: pulso
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pulso -d pulso"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults: { run: { working-directory: web/backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: rustfmt, clippy }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: web/backend }
+      - run: cargo fmt -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - name: Migrate and smoke-test the API
+        env:
+          PULSO_WEB_BIND: 127.0.0.1:8080
+          PUBLIC_URL: http://127.0.0.1:8080
+          FRONTEND_DIR: ../frontend/dist
+          SECURE_COOKIES: "false"
+          DATABASE_URL: postgres://pulso:pulso@127.0.0.1:5432/pulso
+          STRIPE_SECRET_KEY: sk_test_ci_placeholder
+          STRIPE_WEBHOOK_SECRET: whsec_ci_placeholder
+          STRIPE_STUDIO_PRICE_ID: price_ci_studio
+          GITHUB_OWNER: example
+          GITHUB_REPO: pulso
+          PULSO_LICENSE_SIGNING_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+        run: |
+          cargo run --locked >/tmp/pulso-api.log 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/api/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/pulso-api.log
+          exit 1
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t pulso-web:test web

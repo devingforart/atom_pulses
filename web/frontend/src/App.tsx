@@ -7,11 +7,15 @@ import { Home } from './pages/Home'
 import { Privacy, Terms } from './pages/Legal'
 import { Pricing } from './pages/Pricing'
 import { Product } from './pages/Product'
+import { Activate } from './pages/Activate'
+import { ForgotPassword, ResetPassword, VerifyEmail } from './pages/Recovery'
 
 export function App() {
   return <BrowserRouter><AuthProvider><Routes><Route element={<Layout />}>
     <Route index element={<Home />} /><Route path="product" element={<Product />} /><Route path="pricing" element={<Pricing />} />
     <Route path="login" element={<AuthPage mode="login" />} /><Route path="register" element={<AuthPage mode="register" />} />
+    <Route path="forgot-password" element={<ForgotPassword />} /><Route path="reset-password" element={<ResetPassword />} />
+    <Route path="verify-email" element={<VerifyEmail />} /><Route path="activate" element={<Activate />} />
     <Route path="account" element={<Account />} /><Route path="privacy" element={<Privacy />} /><Route path="terms" element={<Terms />} />
     <Route path="*" element={<section className="page-hero"><h1>404</h1><p>Esta página no existe.</p></section>} />
   </Route></Routes></AuthProvider></BrowserRouter>

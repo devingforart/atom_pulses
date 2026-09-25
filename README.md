@@ -1,5 +1,9 @@
 # PULSO
 
+## Web comercial
+
+La aplicación de producto, suscripciones y descargas vive en [`web/`](web/README.md). Usa React para la interfaz y Rust/Axum para cuentas, Stripe y GitHub Releases. Cada tag `vX.Y.Z` puede construir y publicar el instalador correspondiente mediante [Release PULSO](.github/workflows/release.yml); la web consulta esa release como fuente única de versión.
+
 ### 0.58.33 — cierre verificable para toda protagonista poblada
 
 - La reparación transaccional de coda se ejecuta ahora también cuando Terra escribió una protagonista completa pero omitió únicamente su cierre terminal.

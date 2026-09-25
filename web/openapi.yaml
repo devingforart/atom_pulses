@@ -1,0 +1,254 @@
+openapi: 3.1.0
+info:
+  title: PULSO Web API
+  version: 0.1.0
+servers:
+  - url: /api
+security: []
+paths:
+  /health:
+    get:
+      summary: Check service health
+      operationId: health
+      responses: { "204": { description: Ready } }
+  /auth/register:
+    post:
+      summary: Register a customer account
+      operationId: register
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/Register" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Session created },
+          "409": { $ref: "#/components/responses/Error" },
+        }
+  /auth/login:
+    post:
+      summary: Start a customer session
+      operationId: login
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                { schema: { $ref: "#/components/schemas/Login" } },
+            },
+        }
+      responses:
+        {
+          "200": { description: Session created },
+          "401": { $ref: "#/components/responses/Error" },
+        }
+  /auth/logout:
+    post:
+      summary: Revoke the current session
+      operationId: logout
+      responses: { "204": { description: Session revoked } }
+  /auth/me:
+    get:
+      summary: Read the current customer
+      operationId: currentUser
+      security: [{ cookieSession: [] }]
+      responses:
+        {
+          "200": { description: Current user },
+          "401": { $ref: "#/components/responses/Error" },
+        }
+  /auth/forgot-password:
+    post:
+      summary: Request password recovery
+      operationId: requestPasswordReset
+      responses:
+        { "204": { description: Request accepted without account enumeration } }
+  /auth/reset-password:
+    post:
+      summary: Complete password recovery
+      operationId: resetPassword
+      responses:
+        { "204": { description: Password changed and sessions revoked } }
+  /auth/verify-email:
+    post:
+      summary: Verify an email address
+      operationId: verifyEmail
+      responses: { "204": { description: Email verified } }
+  /billing/plans:
+    get:
+      summary: List purchasable plans
+      operationId: billingPlans
+      responses: { "200": { description: Prices read from Stripe } }
+  /billing/checkout:
+    post:
+      summary: Create a Stripe Checkout session
+      operationId: createCheckout
+      security: [{ cookieSession: [] }]
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      type: object,
+                      required: [plan],
+                      properties:
+                        {
+                          plan:
+                            {
+                              type: string,
+                              enum: [studio, cloud_monthly, cloud_annual],
+                            },
+                        },
+                    },
+                },
+            },
+        }
+      responses:
+        {
+          "200": { description: Stripe-hosted Checkout URL },
+          "401": { $ref: "#/components/responses/Error" },
+        }
+  /billing/portal:
+    post:
+      summary: Open Stripe Customer Portal
+      operationId: createCustomerPortal
+      security: [{ cookieSession: [] }]
+      responses: { "200": { description: Stripe Customer Portal URL } }
+  /billing/webhook:
+    post:
+      summary: Process a signed Stripe event
+      operationId: stripeWebhook
+      parameters:
+        [
+          {
+            in: header,
+            name: Stripe-Signature,
+            required: true,
+            schema: { type: string },
+          },
+        ]
+      responses:
+        {
+          "200": { description: Event processed },
+          "400": { $ref: "#/components/responses/Error" },
+        }
+  /releases/latest:
+    get:
+      summary: Read the latest product release
+      operationId: latestRelease
+      responses: { "200": { description: Latest GitHub Release metadata } }
+  /downloads/latest/windows:
+    get:
+      summary: Download the authorized Windows installer
+      operationId: downloadWindows
+      security: [{ cookieSession: [] }]
+      responses:
+        {
+          "200":
+            {
+              description: Authorized Windows installer stream,
+              content: { application/octet-stream: {} },
+            },
+          "402": { $ref: "#/components/responses/Error" },
+        }
+  /licenses/device-code:
+    post:
+      summary: Start device authorization
+      operationId: createDeviceCode
+      responses:
+        { "200": { description: Short-lived device authorization code } }
+  /licenses/device-approve:
+    post:
+      summary: Approve a device from the web account
+      operationId: approveDevice
+      security: [{ cookieSession: [] }]
+      responses:
+        {
+          "200": { description: Device approved },
+          "402": { $ref: "#/components/responses/Error" },
+        }
+  /licenses/device-token:
+    post:
+      summary: Exchange an approved device code
+      operationId: exchangeDeviceToken
+      responses:
+        {
+          "200":
+            { description: Signed 30-day offline license and refresh token },
+          "202": { description: Authorization pending },
+        }
+  /licenses/refresh:
+    post:
+      summary: Renew an offline license
+      operationId: refreshLicense
+      responses: { "200": { description: Renewed signed offline license } }
+  /licenses/devices:
+    get:
+      summary: List active devices
+      operationId: listDevices
+      security: [{ cookieSession: [] }]
+      responses: { "200": { description: Active devices and activation limit } }
+  /licenses/devices/{id}:
+    delete:
+      summary: Revoke an active device
+      operationId: revokeDevice
+      security: [{ cookieSession: [] }]
+      parameters:
+        [
+          {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, format: uuid },
+          },
+        ]
+      responses: { "204": { description: Device revoked } }
+  /updates/manifest:
+    get:
+      summary: Read signed update metadata
+      operationId: updateManifest
+      parameters:
+        [
+          {
+            in: query,
+            name: channel,
+            schema: { type: string, enum: [stable, beta], default: stable },
+          },
+        ]
+      responses: { "200": { description: Ed25519-signed update metadata } }
+components:
+  securitySchemes:
+    cookieSession: { type: apiKey, in: cookie, name: pulso_session }
+  schemas:
+    Register:
+      type: object
+      required: [email, password, displayName]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 12 }
+        displayName: { type: string, minLength: 2, maxLength: 80 }
+    Login:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+  responses:
+    Error:
+      description: Request failed
+      content:
+        {
+          application/json:
+            {
+              schema: { type: object, properties: { error: { type: string } } },
+            },
+        }

@@ -533,9 +533,9 @@ TrackViabilityContract TrackViability::contractFor(const InstrumentPart& part,
             // intentional rests in the score, but require roughly 35--45% of the
             // available horizon so a large cast does not turn into an empty grid.
             result.minimumActiveBars = capped(std::max<std::size_t>(12,
-                static_cast<std::size_t>(std::lround(horizon *
-                    (part.sourceVoice == VoiceId::SubBass ? .44 : .36)))));
-            result.minimumNotes = std::max<std::size_t>(20, result.minimumActiveBars);
+                static_cast<std::size_t>(std::lround(available *
+                    (part.sourceVoice == VoiceId::SubBass ? .44 : .40)))));
+            result.minimumNotes = std::max<std::size_t>(18, result.minimumActiveBars);
             result.minimumPhrases = horizon >= 96 ? 4 : 3;
             break;
         case TrackFunction::HarmonicFloor:

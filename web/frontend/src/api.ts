@@ -3,6 +3,9 @@ export type User = {
   email: string
   displayName: string
   subscription: 'none' | 'trialing' | 'active' | 'past_due' | 'canceled'
+  emailVerified: boolean
+  studioOwned: boolean
+  studioUpdatesUntil: number | null
 }
 
 export type Release = {
@@ -14,9 +17,12 @@ export type Release = {
 }
 
 export type BillingPlans = {
-  monthly: { amount: number; currency: string; interval: string }
-  annual: { amount: number; currency: string; interval: string }
+  studio: { amount: number; currency: string; interval: string }
+  monthly: { amount: number; currency: string; interval: string } | null
+  annual: { amount: number; currency: string; interval: string } | null
 }
+
+export type Device = { id: string; name: string; createdAt: number; lastSeenAt: number }
 
 type ApiErrorBody = { error?: string }
 
@@ -51,11 +57,18 @@ export const api = {
       method: 'POST', body: JSON.stringify({ email, password }),
     }),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
+  forgotPassword: (email: string) => request<void>('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (token: string, password: string) => request<void>('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
+  verifyEmail: (token: string) => request<void>('/api/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) }),
+  resendVerification: () => request<void>('/api/auth/resend-verification', { method: 'POST' }),
+  approveDevice: (code: string) => request<{ approved: boolean }>('/api/licenses/device-approve', { method: 'POST', body: JSON.stringify({ code }) }),
+  devices: () => request<{ devices: Device[]; limit: number }>('/api/licenses/devices'),
+  revokeDevice: (id: string) => request<void>(`/api/licenses/devices/${id}`, { method: 'DELETE' }),
   release: () => request<Release>('/api/releases/latest'),
   plans: () => request<BillingPlans>('/api/billing/plans'),
-  checkout: (interval: 'monthly' | 'annual') =>
+  checkout: (plan: 'studio' | 'cloud_monthly' | 'cloud_annual') =>
     request<{ url: string }>('/api/billing/checkout', {
-      method: 'POST', body: JSON.stringify({ interval }),
+      method: 'POST', body: JSON.stringify({ plan }),
     }),
   portal: () => request<{ url: string }>('/api/billing/portal', { method: 'POST' }),
 }

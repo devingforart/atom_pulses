@@ -5,28 +5,6 @@
   font-weight: 200 800;
   src: url("@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2") format("woff2-variations");
 }
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 400;
-  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
-}
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 500;
-  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2") format("woff2");
-}
-@font-face {
-  font-family: "IBM Plex Mono";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 600;
-  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2") format("woff2");
-}
-
 :root {
   color-scheme: light;
   font-family: "Manrope Variable", "Segoe UI", sans-serif;
@@ -47,7 +25,7 @@
   --muted: #666861;
   --line: #b9bab3;
   --line-dark: #777972;
-  --mono: "IBM Plex Mono", monospace;
+  --mono: "Manrope Variable", "Segoe UI", sans-serif;
   --max: 1420px;
 }
 
@@ -84,13 +62,13 @@ em { color: var(--rust); font-style: normal; }
 }
 .nav-wrap::before { position: absolute; inset: 0 auto 0 0; width: 6px; content: ""; background: var(--rust); }
 .brand-link { display: inline-flex; align-items: center; justify-self: start; gap: 17px; }
-.brand-caption { padding-left: 17px; color: #74766f; border-left: 1px solid var(--line); font: 500 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
-.logo { display: inline-flex; align-items: center; gap: 10px; font: 600 15px/1 var(--mono); letter-spacing: .19em; }
+.brand-caption { padding-left: 17px; color: #74766f; border-left: 1px solid var(--line); font: 650 10px/1 var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+.logo { display: inline-flex; align-items: center; gap: 10px; font: 750 15px/1 var(--mono); letter-spacing: .08em; }
 .logo-mark { width: 30px; height: 22px; }
 .pulse-line { fill: none; stroke: var(--rust); stroke-width: 2.1; stroke-linecap: square; stroke-linejoin: miter; }
 .pulse-node { fill: var(--ink); }
 nav { align-self: stretch; display: flex; gap: 38px; }
-nav a { position: relative; display: flex; align-items: center; color: #5e6059; font: 500 10px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; }
+nav a { position: relative; display: flex; align-items: center; color: #5e6059; font: 650 11px/1 var(--mono); letter-spacing: .015em; }
 nav a::after { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; content: ""; background: transparent; }
 nav a:hover, nav a.active { color: var(--ink); }
 nav a:hover::after, nav a.active::after { background: var(--rust); }
@@ -107,9 +85,8 @@ nav a:hover::after, nav a.active::after { background: var(--rust); }
   background: var(--ink);
   border: 1px solid var(--ink);
   border-radius: 0;
-  font: 600 10px/1 var(--mono);
-  letter-spacing: .07em;
-  text-transform: uppercase;
+  font: 700 11px/1 var(--mono);
+  letter-spacing: .01em;
   cursor: pointer;
   transition: color .15s, background-color .15s, border-color .15s;
 }
@@ -124,7 +101,7 @@ nav a:hover::after, nav a.active::after { background: var(--rust); }
 .button-light:hover { color: white; background: var(--rust); border-color: var(--rust); }
 .button:focus-visible, nav a:focus-visible, .text-link:focus-visible, input:focus-visible { outline: 2px solid var(--rust); outline-offset: 4px; }
 
-.eyebrow { color: var(--rust-dark) !important; font: 600 10px/1.4 var(--mono) !important; letter-spacing: .12em; text-transform: uppercase; }
+.eyebrow { color: var(--rust-dark) !important; font: 700 10px/1.4 var(--mono) !important; letter-spacing: .09em; text-transform: uppercase; }
 .section-grid {
   position: relative;
   display: grid;

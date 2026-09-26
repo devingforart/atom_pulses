@@ -104,7 +104,7 @@ fn normalized_code(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)
         .filter(|code| !code.is_empty())
-        .filter(|code| code.len() <= 64 && code.chars().all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '_'))
+        .filter(|code| code.len() <= 64 && code.chars().all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | '@')))
         .map(str::to_owned)
 }
 

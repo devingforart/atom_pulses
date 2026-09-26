@@ -12,17 +12,25 @@ public:
                           juce::Slider&) override;
     void drawButtonBackground(juce::Graphics&, juce::Button&, const juce::Colour&,
                               bool highlighted, bool down) override;
+    void drawComboBox(juce::Graphics&, int width, int height, bool isButtonDown,
+                      int buttonX, int buttonY, int buttonW, int buttonH,
+                      juce::ComboBox&) override;
 };
 
 namespace colours {
-inline const auto background = juce::Colour::fromRGB(15, 17, 22);
-inline const auto panel = juce::Colour::fromRGB(24, 27, 34);
-inline const auto panelRaised = juce::Colour::fromRGB(34, 38, 47);
-inline const auto accent = juce::Colour::fromRGB(105, 239, 174);
-inline const auto accentHot = juce::Colour::fromRGB(255, 180, 86);
-inline const auto accentCounter = juce::Colour::fromRGB(125, 172, 255);
-inline const auto text = juce::Colour::fromRGB(235, 239, 244);
-inline const auto muted = juce::Colour::fromRGB(135, 145, 158);
+// PULSO's native UI uses the same warm canvas, dark ink and oxide accent as
+// the public product. Controls remain high-contrast enough for a DAW session.
+inline const auto background = juce::Colour::fromRGB(245, 244, 242);
+inline const auto panel = juce::Colour::fromRGB(247, 246, 242);
+inline const auto panelRaised = juce::Colour::fromRGB(226, 225, 219);
+inline const auto panelHover = juce::Colour::fromRGB(235, 234, 228);
+inline const auto accent = juce::Colour::fromRGB(216, 79, 43);
+inline const auto accentHot = juce::Colour::fromRGB(168, 56, 29);
+inline const auto accentCounter = juce::Colour::fromRGB(113, 161, 208);
+inline const auto text = juce::Colour::fromRGB(24, 25, 22);
+inline const auto muted = juce::Colour::fromRGB(98, 100, 93);
+inline const auto line = juce::Colour::fromRGB(185, 186, 179);
+inline const auto lineDark = juce::Colour::fromRGB(119, 121, 114);
 } // namespace colours
 
 } // namespace pulso::plugin

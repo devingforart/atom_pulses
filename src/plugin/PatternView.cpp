@@ -599,7 +599,9 @@ void PatternView::paint(juce::Graphics& graphics) {
     const auto language = processor.uiLanguage();
     const auto bounds = getLocalBounds().toFloat();
     graphics.setColour(colours::panel);
-    graphics.fillRoundedRectangle(bounds, 12.0f);
+    graphics.fillRoundedRectangle(bounds, 4.0f);
+    graphics.setColour(colours::line);
+    graphics.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
     auto inner = bounds.reduced(14.0f);
     const auto dragStrip = inner.removeFromBottom(34.0f);
     inner.removeFromBottom(8.0f);
@@ -706,7 +708,7 @@ void PatternView::paint(juce::Graphics& graphics) {
         if (octave != 0) soundName += octave > 0 ? "  +12" : "  -12";
         if (std::abs(levelDb) >= 0.05f)
             soundName += "  " + juce::String(levelDb, 1) + "DB";
-        graphics.drawFittedText(juce::String("::  ") + voiceName + "  >  " + soundName,
+        graphics.drawFittedText(voiceName + "  /  " + soundName,
                                 timbreArea.toNearestInt().reduced(3, 0),
                                 juce::Justification::centredLeft, 1);
         auto soloButton = laneBounds.withX(laneBounds.getX() + labelWidth - 40.0f).withWidth(19.0f).reduced(1.0f);
@@ -842,7 +844,7 @@ void PatternView::paint(juce::Graphics& graphics) {
         graphics.setColour((highlighted ? colours::background : colours::muted)
                                .withAlpha(enabled ? 1.0f : 0.35f));
         graphics.setFont(juce::FontOptions(10.5f, juce::Font::bold));
-        graphics.drawText(juce::String("::  ") + labels[static_cast<std::size_t>(index)], cell,
+        graphics.drawText(labels[static_cast<std::size_t>(index)], cell,
                           juce::Justification::centred);
     }
 

@@ -69,8 +69,11 @@ ApiSettingsPanel::~ApiSettingsPanel() {
 
 void ApiSettingsPanel::paint(juce::Graphics& graphics) {
     graphics.fillAll(colours::panel);
-    graphics.setColour(colours::accent.withAlpha(0.75f));
-    graphics.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 10.0f, 1.5f);
+    auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+    graphics.setColour(colours::lineDark);
+    graphics.drawRoundedRectangle(bounds, 4.0f, 1.0f);
+    graphics.setColour(colours::accent);
+    graphics.fillRect(bounds.removeFromTop(5.0f));
 }
 
 void ApiSettingsPanel::resized() {
@@ -226,8 +229,8 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     setSize(1120, 760);
 
     title.setText("PULSO v" PULSO_VERSION_STRING, juce::dontSendNotification);
-    title.setFont(juce::FontOptions(30.0f, juce::Font::bold));
-    title.setColour(juce::Label::textColourId, colours::accent);
+    title.setFont(juce::FontOptions(28.0f, juce::Font::bold));
+    title.setColour(juce::Label::textColourId, colours::text);
     status.setJustificationType(juce::Justification::centredRight);
     status.setColour(juce::Label::textColourId, colours::muted);
 
@@ -349,33 +352,55 @@ void PulsoAudioProcessorEditor::applyTranslations() {
 
 void PulsoAudioProcessorEditor::paint(juce::Graphics& graphics) {
     graphics.fillAll(colours::background);
-    graphics.setColour(colours::panelRaised.withAlpha(0.7f));
-    graphics.drawHorizontalLine(76, 24.0f, static_cast<float>(getWidth() - 24));
+    graphics.setColour(colours::accent);
+    graphics.fillRect(0.0f, 0.0f, 6.0f, static_cast<float>(getHeight()));
+
+    auto header = getLocalBounds().toFloat().withHeight(88.0f);
+    graphics.setColour(colours::panel.withAlpha(0.92f));
+    graphics.fillRect(header);
+    graphics.setColour(colours::line);
+    graphics.drawHorizontalLine(87, 28.0f, static_cast<float>(getWidth() - 28));
+
+    graphics.setColour(colours::muted);
+    graphics.setFont(juce::FontOptions(9.5f, juce::Font::bold));
+    graphics.drawText("COMPOSITION INSTRUMENT  /  VST3", 30, 13, 320, 16,
+                      juce::Justification::left);
+    graphics.setColour(colours::accent);
+    graphics.fillRect(30.0f, 35.0f, 42.0f, 2.0f);
+
+    const auto card = juce::Rectangle<float>(28.0f, 108.0f,
+                                             static_cast<float>(getWidth() - 56), 82.0f);
+    graphics.setColour(colours::panel);
+    graphics.fillRoundedRectangle(card, 4.0f);
+    graphics.setColour(colours::line);
+    graphics.drawRoundedRectangle(card, 4.0f, 1.0f);
 }
 
 void PulsoAudioProcessorEditor::resized() {
-    auto area = getLocalBounds().reduced(24);
-    auto header = area.removeFromTop(52);
-    title.setBounds(header.removeFromLeft(130));
-    languageSelector.setBounds(header.removeFromRight(120).reduced(5, 9));
-    apiSettingsButton.setBounds(header.removeFromRight(150).reduced(5, 9));
-    status.setBounds(header.reduced(8, 0));
-    area.removeFromTop(18);
+    auto area = getLocalBounds().reduced(28);
+    auto header = area.removeFromTop(60);
+    title.setBounds(header.removeFromLeft(190).withTrimmedTop(17));
+    languageSelector.setBounds(header.removeFromRight(112).reduced(0, 13));
+    apiSettingsButton.setBounds(header.removeFromRight(154).reduced(0, 13));
+    status.setBounds(header.reduced(12, 15));
+    area.removeFromTop(20);
 
-    auto promptLabels = area.removeFromTop(18);
-    durationLabel.setBounds(promptLabels.removeFromRight(100));
+    auto promptCard = area.removeFromTop(82).reduced(14, 10);
+    auto promptLabels = promptCard.removeFromTop(16);
+    durationLabel.setBounds(promptLabels.removeFromRight(108));
     promptLabel.setBounds(promptLabels);
-    auto promptRow = area.removeFromTop(46);
-    generateButton.setBounds(promptRow.removeFromRight(180));
+    promptCard.removeFromTop(5);
+    auto promptRow = promptCard;
+    generateButton.setBounds(promptRow.removeFromRight(184));
     promptRow.removeFromRight(10);
-    duration.setBounds(promptRow.removeFromRight(90));
+    duration.setBounds(promptRow.removeFromRight(96));
     promptRow.removeFromRight(10);
     prompt.setBounds(promptRow);
-    area.removeFromTop(12);
+    area.removeFromTop(16);
 
-    auto liveRow = area.removeFromBottom(48);
-    deployLiveButton.setBounds(liveRow.removeFromRight(220).reduced(0, 4));
-    area.removeFromBottom(10);
+    auto liveRow = area.removeFromBottom(52);
+    deployLiveButton.setBounds(liveRow.removeFromRight(226).reduced(0, 4));
+    area.removeFromBottom(12);
     patternView.setBounds(area);
     compositionProgress.setBounds(patternView.getBounds());
     const auto panelWidth = std::min(520, getWidth() - 48);

@@ -1102,6 +1102,19 @@ realmente audible y se reducen a puntos significativos por frase. Una `TimbrePal
 global coordina material, espacio, brillo, calidez y balance acústico/electrónico antes de
 resolver los sonidos individuales instalados en Live.
 
+### 0.58.40 — coda estable tras normalización
+
+- La recuperación de una protagonista vacía selecciona desde el origen una escala temporal admitida por el motor MIDI; la normalización ya no puede desplazar su ataque terminal fuera de la ventana de resolución.
+- Una prueba de regresión atraviesa promoción, coda, normalización completa y auditoría independiente antes de aceptar el arreglo.
+- La presencia narrativa y el fraseo todavía insuficientes continúan hacia la reparación selectiva; sólo una identidad realmente vacía o una coda todavía ausente bloquean antes de la audición.
+
+### 0.58.39 — publicación transaccional y reparación causal
+
+- Una composición completa y técnicamente válida ya no se descarta solamente porque su cierre sea editorialmente débil; si la reparación opcional empeora la obra, se publica intacto el checkpoint original con observaciones.
+- Los fallos genuinos de producción, material críticamente incompleto y narrativa global por debajo del piso de seguridad continúan bloqueando la publicación.
+- El diagnóstico dirige problemas de groove al pulso estructural, fragmentación grave al bajo móvil y deuda terminal al protagonista y al colchón armónico, en vez de reescribir colores instrumentales no relacionados.
+- Las pruebas reproducen el perfil exacto del rechazo de 192 compases y verifican que una reparación regresiva nunca destruya una composición completa.
+
 ### 0.58.38 — autoría audible y continuidad exacta
 
 - El colchón armónico principal queda bajo propiedad exclusiva de la partitura de IA: los pases locales ya no rellenan sus silencios, cambian sus inversiones ni reescriben su coda.

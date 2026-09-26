@@ -104,6 +104,9 @@ struct EnsembleContinuityReport {
 class SelectiveRepair final {
 public:
     [[nodiscard]] static bool publicationReady(const CompositionRenderReport&) noexcept;
+    // Terminal means structurally unusable, not merely in need of editorial polish.
+    // A complete high-scoring checkpoint with an inconclusive ending remains
+    // publishable when a bounded optional repair cannot improve it.
     [[nodiscard]] static bool criticalFailure(const CompositionRenderReport&) noexcept;
     // A strict fallback for a technically and musically healthy score whose only
     // remaining findings are optional editorial refinements. This never overrides

@@ -30,14 +30,14 @@
 :root {
   color-scheme: light;
   font-family: "Manrope Variable", "Segoe UI", sans-serif;
-  color: #181916;
-  background: #ecebe6;
+  color: hwb(80 9% 90%);
+  background: #fdfdf9;
   font-synthesis: none;
   --ink: #181916;
   --ink-2: #292a27;
   --paper: #f7f6f2;
-  --canvas: #ecebe6;
-  --soft: #deddd7;
+  --canvas: #f5f4f2;
+  --soft: #f3f2ea;
   --rust: #d84f2b;
   --rust-dark: #a8381d;
   --rust-pale: #f1c6b8;

@@ -2595,6 +2595,82 @@ void runGeneratorTests() {
     require(!SelectiveRepair::safeWithEditorialObservations(observedSafeFallback),
             "An underdeveloped declared voice must not bypass the safe editorial fallback");
 
+    CompositionRenderReport unresolvedButComplete;
+    unresolvedButComplete.production.ready = true;
+    unresolvedButComplete.narrative.active = true;
+    unresolvedButComplete.narrative.creativeReady = false;
+    unresolvedButComplete.narrative.score = 0.795;
+    unresolvedButComplete.narrative.resolutionScore = 0.019;
+    unresolvedButComplete.narrative.densityControl = 1.0;
+    unresolvedButComplete.narrative.narrativeSpineReady = false;
+    unresolvedButComplete.narrative.issues = {
+        "groove_structure_not_ai_authored", "fragmented_movement_bass",
+        "club_pulse_absent_too_long", "undeveloped_rhythm_narrative",
+        "ending_does_not_repay_harmonic_debt"};
+    unresolvedButComplete.soundscape.active = true;
+    unresolvedButComplete.soundscape.ready = false;
+    unresolvedButComplete.soundscape.score = 0.85;
+    unresolvedButComplete.soundscape.meaningfulCoverage = 0.90;
+    unresolvedButComplete.trackViability.active = true;
+    unresolvedButComplete.trackViability.ready = false;
+    unresolvedButComplete.trackViability.score = 1.0;
+    unresolvedButComplete.trackViability.viabilityRatio = 1.0;
+    require(!SelectiveRepair::criticalFailure(unresolvedButComplete),
+            "A complete high-scoring checkpoint must survive an inconclusive ending when optional repair regresses");
+    auto genuinelyBroken = unresolvedButComplete;
+    genuinelyBroken.narrative.score = 0.60;
+    require(SelectiveRepair::criticalFailure(genuinelyBroken),
+            "A genuinely weak unresolved narrative must remain a terminal failure");
+
+    SongPlan causalRepairPlan;
+    causalRepairPlan.beatsPerBar = 4.0;
+    causalRepairPlan.totalBars = 64;
+    SongSection causalOpening;
+    causalOpening.name = "Opening";
+    causalOpening.startBar = 0;
+    causalOpening.bars = 32;
+    SongSection causalResolution;
+    causalResolution.name = "Resolution";
+    causalResolution.startBar = 32;
+    causalResolution.bars = 32;
+    causalRepairPlan.sections = {causalOpening, causalResolution};
+    InstrumentAssignment causalKick;
+    causalKick.id = "kick_structural_grid";
+    causalKick.instrumentId = "kick_drum";
+    causalKick.name = "Kick Structural Grid";
+    causalKick.sourceVoice = VoiceId::CoreDrums;
+    causalKick.prominence = 0.8;
+    InstrumentAssignment causalBass;
+    causalBass.id = "electric_bass_harmonic_propulsion";
+    causalBass.instrumentId = "electric_bass";
+    causalBass.name = "Movement Bass";
+    causalBass.sourceVoice = VoiceId::MovementBass;
+    causalBass.prominence = 0.8;
+    InstrumentAssignment causalBed;
+    causalBed.id = "piano_chord_bed";
+    causalBed.instrumentId = "piano";
+    causalBed.name = "Piano Chord Bed";
+    causalBed.sourceVoice = VoiceId::HarmonicFoundation;
+    causalBed.role = "primary_chord_bed";
+    causalBed.prominence = 0.8;
+    InstrumentAssignment causalLead;
+    causalLead.id = "lead_deferred_answer";
+    causalLead.instrumentId = "lead_synth";
+    causalLead.name = "Lead";
+    causalLead.sourceVoice = VoiceId::Lead;
+    causalLead.role = "protagonist";
+    causalLead.prominence = 0.9;
+    causalRepairPlan.instruments = {causalKick, causalBass, causalBed, causalLead};
+    causalRepairPlan.narrativeSpine.protagonistInstrumentId = causalLead.id;
+    Pattern causalPattern;
+    causalPattern.lengthBeats = causalRepairPlan.totalBars * causalRepairPlan.beatsPerBar;
+    const auto causalDiagnosis = SelectiveRepair::diagnose(
+        causalRepairPlan, causalPattern, unresolvedButComplete, 4);
+    const std::set<std::size_t> causalTargets(causalDiagnosis.instrumentIndices.begin(),
+                                               causalDiagnosis.instrumentIndices.end());
+    require(causalTargets == std::set<std::size_t>({0, 1, 2, 3}),
+            "Narrative repair must target protagonist, structural pulse, moving bass and chord bed instead of unrelated colours");
+
     PerformanceScore partialRepair;
     partialRepair.cells.push_back(repairPlan.performanceScore.cells.front());
     partialRepair.placements.push_back({partialRepair.cells.front().id, 0});

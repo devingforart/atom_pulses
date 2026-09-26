@@ -169,6 +169,8 @@ void runSelectiveRepairTests() {
     SongPlan narrativePlan;
     InstrumentAssignment protagonist;
     protagonist.id = "protagonist";
+    protagonist.instrumentId = "lead_synth";
+    protagonist.name = "Protagonist";
     protagonist.sourceVoice = VoiceId::Lead;
     narrativePlan.instruments = {protagonist};
     narrativePlan.narrativeSpine.protagonistInstrumentId = protagonist.id;
@@ -259,6 +261,34 @@ void runSelectiveRepairTests() {
     require(oversizedDeficit == oversizedFindings.end() ||
                 !oversizedDeficit->missingCodaResolution,
             "A repaired oversized source must pass the independent terminal-boundary audit");
+
+    PerformanceScore fractionalScaleSource;
+    auto fractionalCell = promoted;
+    fractionalCell.id = "fractional_scale_authored_phrase";
+    fractionalCell.lengthBeats = 48.0;
+    fractionalCell.notes = {
+        {0.0, .5, 61, 84, VoiceId::Lead, MetricIntent::StrictGrid, protagonist.id},
+        {20.0, .5, 63, 88, VoiceId::Lead, MetricIntent::StrictGrid, protagonist.id},
+        {40.0, 1.0, 65, 78, VoiceId::Lead, MetricIntent::StrictGrid, protagonist.id},
+    };
+    fractionalScaleSource.cells.push_back(fractionalCell);
+    auto fractionalPlacement = premise;
+    fractionalPlacement.cellId = fractionalCell.id;
+    fractionalPlacement.fragmentEnd = fractionalCell.lengthBeats;
+    fractionalScaleSource.placements.push_back(fractionalPlacement);
+    require(SelectiveRepair::ensureAuthoredProtagonistCoda(
+                narrativePlan, fractionalScaleSource, fractionalCell.id),
+            "A long authored phrase must receive a coda using a legal normalized time scale");
+    narrativePlan.performanceScore = fractionalScaleSource;
+    SongComposer::normalizePlan(narrativePlan);
+    const auto normalizedCodaFindings = SelectiveRepair::performanceDeficits(
+        narrativePlan, narrativePlan.performanceScore, {0});
+    const auto normalizedCodaDeficit = std::find_if(
+        normalizedCodaFindings.begin(), normalizedCodaFindings.end(),
+        [](const auto& finding) { return finding.instrumentId == "protagonist"; });
+    require(normalizedCodaDeficit == normalizedCodaFindings.end() ||
+                !normalizedCodaDeficit->missingCodaResolution,
+            "Plan normalization must not move a verified protagonist coda away from the audible boundary");
 
     SongPlan longNarrative;
     longNarrative.totalBars = 128;

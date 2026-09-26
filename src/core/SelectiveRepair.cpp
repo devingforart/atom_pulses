@@ -7,6 +7,7 @@
 #include "TrackViability.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <map>
@@ -297,9 +298,16 @@ bool SelectiveRepair::publicationReady(const CompositionRenderReport& report) no
 
 bool SelectiveRepair::criticalFailure(const CompositionRenderReport& report) noexcept {
     if (!report.production.ready) return true;
+    // A weak ending or an incomplete narrative spine is an editorial defect when the
+    // complete score is otherwise coherent.  Treat it as terminal only when the
+    // broader narrative evidence is also below the minimum usable floor.  The old
+    // predicate discarded technically healthy, fully authored songs solely because
+    // their final cadence was not conclusive enough; a failed optional rewrite then
+    // left the user with no composition at all.
     const auto brokenNarrative = report.narrative.active && !report.narrative.creativeReady &&
         (report.narrative.score < 0.68 ||
-         (!report.narrative.narrativeSpineReady && report.narrative.resolutionScore < 0.48));
+         (!report.narrative.narrativeSpineReady && report.narrative.score < 0.74 &&
+          report.narrative.resolutionScore < 0.25));
     const auto brokenSoundscape = report.soundscape.active && !report.soundscape.ready &&
         (report.soundscape.score < 0.70 || report.soundscape.meaningfulCoverage < 0.65);
     const auto brokenTracks = report.trackViability.active && !report.trackViability.ready &&
@@ -493,6 +501,52 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
         return std::find(report.narrative.issues.begin(), report.narrative.issues.end(), issue) !=
                report.narrative.issues.end();
     };
+
+    // Route critic findings to their actual musical owners.  Generic prominence
+    // ranking used to send groove and cadence problems to pads, flute and cello,
+    // making a costly repair incapable of addressing the reported defect.
+    const auto grooveNeedsRepair = hasNarrativeIssue("groove_structure_not_ai_authored") ||
+        hasNarrativeIssue("club_pulse_absent_too_long") ||
+        hasNarrativeIssue("undeveloped_rhythm_narrative");
+    if (grooveNeedsRepair) {
+        for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+            const auto& instrument = plan.instruments[index];
+            if (!isVoiceInFamily(instrument.sourceVoice, VoiceFamily::Rhythm)) continue;
+            const auto structuralOwner = instrument.sourceVoice == VoiceId::CoreDrums ||
+                containsAny(instrument, {"kick", "structural_grid", "pulse owner"});
+            add(index, structuralOwner ? 22.0 : 14.0,
+                "repair AI-authored groove continuity and sectional rhythmic development");
+        }
+    }
+    if (hasNarrativeIssue("fragmented_movement_bass") ||
+        hasNarrativeIssue("low_end_narrative_absent_too_long")) {
+        for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+            const auto& instrument = plan.instruments[index];
+            if (!isVoiceInFamily(instrument.sourceVoice, VoiceFamily::Bass)) continue;
+            const auto movementOwner = instrument.sourceVoice == VoiceId::MovementBass ||
+                containsAny(instrument, {"movement", "propulsion", "moving bass"});
+            add(index, movementOwner ? 22.0 : 13.0,
+                "repair the moving-bass phrase arc and low-end continuity");
+        }
+    }
+    const auto endingNeedsRepair = hasNarrativeIssue("ending_does_not_repay_harmonic_debt") ||
+        report.narrative.resolutionScore < 0.48 || !report.narrative.narrativeSpineReady;
+    if (endingNeedsRepair) {
+        for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+            const auto& instrument = plan.instruments[index];
+            const auto protagonist = instrument.id == plan.narrativeSpine.protagonistInstrumentId ||
+                instrument.sourceVoice == VoiceId::Lead ||
+                containsAny(instrument, {"protagonist", "principal speaker"});
+            const auto harmonicOwner = instrument.sourceVoice == VoiceId::HarmonicFoundation ||
+                containsAny(instrument, {"primary_chord_bed", "chord bed", "harmonic floor"});
+            if (protagonist)
+                add(index, 24.0,
+                    "resolve the protagonist at the final boundary and repay thematic debt");
+            else if (harmonicOwner)
+                add(index, 21.0,
+                    "author an audible final harmonic cadence without changing the blueprint");
+        }
+    }
     if (report.narrative.resolutionScore < 0.72 || !report.narrative.narrativeSpineReady) {
         const auto finalName = plan.sections.empty() ? std::string{} : plan.sections.back().name;
         for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
@@ -1371,10 +1425,21 @@ bool SelectiveRepair::ensureAuthoredProtagonistCoda(
         std::max(0.5, plan.beatsPerBar * 0.5));
     const auto codaWindowStart = std::max(0.0, sectionLength -
         std::min(8, resolution.bars) * plan.beatsPerBar);
-    auto timeScale = 1.0;
     const auto availableSpan = terminalTarget - codaWindowStart;
-    if (lastBeat > availableSpan && lastBeat > .001)
-        timeScale = std::max(.25, availableSpan / lastBeat);
+    auto timeScale = 1.0;
+    if (lastBeat > availableSpan && lastBeat > .001) {
+        // PerformanceScoreEngine normalizes strict-grid placement scales to this
+        // discrete set. Select from it now and compute the onset from the selected
+        // value; otherwise normalization can shorten a fractional scale (for example
+        // .75 -> .5), pull the last authored attack out of the final two bars and make
+        // a coda that just passed verification fail immediately afterwards.
+        constexpr std::array legalScales{0.25, 0.5, 1.0, 2.0, 4.0};
+        const auto maximumScale = availableSpan / lastBeat;
+        const auto legal = std::find_if(legalScales.rbegin(), legalScales.rend(),
+            [&](double candidate) { return candidate <= maximumScale + .0001; });
+        if (legal == legalScales.rend()) return false;
+        timeScale = *legal;
+    }
     if (lastBeat * timeScale > terminalTarget - codaWindowStart + .001)
         return false;
     auto transpose = positiveModulo(plan.rootPitchClass - authored.back()->pitch, 12);

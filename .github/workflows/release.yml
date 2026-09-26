@@ -44,7 +44,7 @@ jobs:
           # This avoids runner-specific preset resolution while still producing
           # the same Release artefacts and test configuration.
           cmake -S . -B build/windows-release -DPULSO_BUILD_PLUGIN=ON -DPULSO_BUILD_TESTS=ON
-          cmake --build build/windows-release --config Release --target Pulso_VST3 Pulso_Standalone --parallel
+          cmake --build build/windows-release --config Release --target Pulso_VST3 Pulso_Standalone pulso_tests pulso_processor_tests --parallel
       - name: Test
         run: ctest --test-dir build/windows-release -C Release --output-on-failure
       - name: Install Inno Setup

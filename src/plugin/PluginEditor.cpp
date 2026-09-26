@@ -229,8 +229,8 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     setSize(1120, 760);
 
     title.setText("PULSO v" PULSO_VERSION_STRING, juce::dontSendNotification);
-    title.setFont(juce::FontOptions(28.0f, juce::Font::bold));
-    title.setColour(juce::Label::textColourId, colours::text);
+    title.setFont(juce::FontOptions(27.0f, juce::Font::bold));
+    title.setColour(juce::Label::textColourId, colours::panel);
     status.setJustificationType(juce::Justification::centredRight);
     status.setColour(juce::Label::textColourId, colours::muted);
 
@@ -353,50 +353,59 @@ void PulsoAudioProcessorEditor::applyTranslations() {
 void PulsoAudioProcessorEditor::paint(juce::Graphics& graphics) {
     graphics.fillAll(colours::background);
     graphics.setColour(colours::accent);
-    graphics.fillRect(0.0f, 0.0f, 6.0f, static_cast<float>(getHeight()));
+    graphics.fillRect(0.0f, 0.0f, 7.0f, static_cast<float>(getHeight()));
 
-    auto header = getLocalBounds().toFloat().withHeight(88.0f);
-    graphics.setColour(colours::panel.withAlpha(0.92f));
-    graphics.fillRect(header);
+    const auto header = juce::Rectangle<float>(24.0f, 24.0f,
+                                                static_cast<float>(getWidth() - 48), 84.0f);
+    const auto identity = header.withWidth(230.0f);
+    graphics.setColour(colours::text);
+    graphics.fillRect(identity);
+    graphics.setColour(colours::accent);
+    graphics.fillRect(identity.withHeight(5.0f));
+    graphics.setColour(colours::panel);
+    graphics.fillRect(header.withTrimmedLeft(230.0f));
     graphics.setColour(colours::line);
-    graphics.drawHorizontalLine(87, 28.0f, static_cast<float>(getWidth() - 28));
+    graphics.drawRect(header, 1.0f);
 
-    graphics.setColour(colours::muted);
+    graphics.setColour(colours::stageMuted);
     graphics.setFont(juce::FontOptions(9.5f, juce::Font::bold));
-    graphics.drawText("COMPOSITION INSTRUMENT  /  VST3", 30, 13, 320, 16,
+    graphics.drawText("COMPOSITION INSTRUMENT", 42, 38, 170, 14,
                       juce::Justification::left);
     graphics.setColour(colours::accent);
-    graphics.fillRect(30.0f, 35.0f, 42.0f, 2.0f);
+    graphics.fillRect(42.0f, 86.0f, 52.0f, 2.0f);
 
-    const auto card = juce::Rectangle<float>(28.0f, 108.0f,
-                                             static_cast<float>(getWidth() - 56), 82.0f);
-    graphics.setColour(colours::panel);
-    graphics.fillRoundedRectangle(card, 4.0f);
-    graphics.setColour(colours::line);
-    graphics.drawRoundedRectangle(card, 4.0f, 1.0f);
+    const auto deck = juce::Rectangle<float>(24.0f, 124.0f,
+                                             static_cast<float>(getWidth() - 48), 110.0f);
+    graphics.setColour(colours::text);
+    graphics.fillRect(deck);
+    graphics.setColour(colours::accent);
+    graphics.fillRect(deck.withWidth(5.0f));
+    graphics.setColour(colours::stageGrid);
+    graphics.drawRect(deck, 1.0f);
 }
 
 void PulsoAudioProcessorEditor::resized() {
-    auto area = getLocalBounds().reduced(28);
-    auto header = area.removeFromTop(60);
-    title.setBounds(header.removeFromLeft(190).withTrimmedTop(17));
-    languageSelector.setBounds(header.removeFromRight(112).reduced(0, 13));
-    apiSettingsButton.setBounds(header.removeFromRight(154).reduced(0, 13));
-    status.setBounds(header.reduced(12, 15));
-    area.removeFromTop(20);
+    auto area = getLocalBounds().reduced(24);
+    auto header = area.removeFromTop(84);
+    auto identity = header.removeFromLeft(230);
+    title.setBounds(identity.reduced(18, 15));
+    languageSelector.setBounds(header.removeFromRight(108).reduced(14, 22));
+    apiSettingsButton.setBounds(header.removeFromRight(150).reduced(14, 22));
+    status.setBounds(header.reduced(18, 24));
+    area.removeFromTop(16);
 
-    auto promptCard = area.removeFromTop(82).reduced(14, 10);
+    auto promptCard = area.removeFromTop(110).reduced(18, 14);
     auto promptLabels = promptCard.removeFromTop(16);
     durationLabel.setBounds(promptLabels.removeFromRight(108));
     promptLabel.setBounds(promptLabels);
-    promptCard.removeFromTop(5);
+    promptCard.removeFromTop(7);
     auto promptRow = promptCard;
-    generateButton.setBounds(promptRow.removeFromRight(184));
+    generateButton.setBounds(promptRow.removeFromRight(190));
     promptRow.removeFromRight(10);
     duration.setBounds(promptRow.removeFromRight(96));
     promptRow.removeFromRight(10);
     prompt.setBounds(promptRow);
-    area.removeFromTop(16);
+    area.removeFromTop(18);
 
     auto liveRow = area.removeFromBottom(52);
     deployLiveButton.setBounds(liveRow.removeFromRight(226).reduced(0, 4));

@@ -64,9 +64,19 @@ void PulsoLookAndFeel::drawButtonBackground(juce::Graphics& graphics, juce::Butt
     if (down) fill = fill.darker(0.10f);
     auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
     graphics.setColour(fill);
-    graphics.fillRoundedRectangle(bounds, 3.0f);
+    graphics.fillRoundedRectangle(bounds, 2.0f);
     graphics.setColour(border);
-    graphics.drawRoundedRectangle(bounds, 3.0f, 1.0f);
+    graphics.drawRoundedRectangle(bounds, 2.0f, 1.0f);
+}
+
+void PulsoLookAndFeel::drawButtonText(juce::Graphics& graphics, juce::TextButton& button,
+                                      bool, bool) {
+    const auto id = button.getComponentID();
+    const auto inverse = id == "compose-song" || id == "create-in-live";
+    graphics.setColour(inverse ? colours::panel : colours::text);
+    graphics.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+    graphics.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(9, 1),
+                            juce::Justification::centred, 1);
 }
 
 void PulsoLookAndFeel::drawComboBox(juce::Graphics& graphics, int width, int height,

@@ -19,6 +19,7 @@ constexpr auto voiceTargetBase = 100;
 constexpr auto noTarget = -999;
 constexpr auto laneLabelWidth = 210;
 constexpr auto laneButtonWidth = 20;
+constexpr auto stageHeaderHeight = 28;
 
 constexpr std::array<std::string_view, 29> instrumentSoundNames{
     "AI / Generic", "Kick", "Snare / Clap", "Hi-Hats", "Timpani", "Taiko",
@@ -188,12 +189,14 @@ juce::Rectangle<int> PatternView::dragStripBounds() const noexcept {
 juce::Rectangle<int> PatternView::sectionStripBounds() const noexcept {
     auto inner = getLocalBounds().reduced(14);
     inner.removeFromBottom(42);
+    inner.removeFromTop(stageHeaderHeight + 8);
     return inner.removeFromTop(34);
 }
 
 juce::Rectangle<int> PatternView::voiceTimelineBounds() const noexcept {
     auto inner = getLocalBounds().reduced(14);
     inner.removeFromBottom(42);
+    inner.removeFromTop(stageHeaderHeight + 8);
     const auto plan = processor.currentSongPlan();
     if (plan && !plan->sections.empty()) inner.removeFromTop(40);
     return inner;
@@ -598,13 +601,27 @@ void PatternView::mouseExit(const juce::MouseEvent&) {
 void PatternView::paint(juce::Graphics& graphics) {
     const auto language = processor.uiLanguage();
     const auto bounds = getLocalBounds().toFloat();
-    graphics.setColour(colours::panel);
-    graphics.fillRoundedRectangle(bounds, 4.0f);
-    graphics.setColour(colours::line);
-    graphics.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
+    graphics.setColour(colours::stage);
+    graphics.fillRoundedRectangle(bounds, 3.0f);
+    graphics.setColour(colours::text);
+    graphics.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
     auto inner = bounds.reduced(14.0f);
     const auto dragStrip = inner.removeFromBottom(34.0f);
     inner.removeFromBottom(8.0f);
+    const auto stageHeader = inner.removeFromTop(static_cast<float>(stageHeaderHeight));
+    graphics.setColour(colours::stageRaised);
+    graphics.fillRect(stageHeader);
+    graphics.setColour(colours::stageMuted);
+    graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+    graphics.drawText("MIDI ARRANGEMENT", stageHeader.toNearestInt().reduced(10, 0),
+                      juce::Justification::centredLeft);
+    graphics.setColour(colours::green);
+    graphics.fillEllipse(stageHeader.getRight() - 115.0f, stageHeader.getCentreY() - 3.0f, 6.0f, 6.0f);
+    graphics.setColour(colours::stageMuted);
+    graphics.drawText("LIVE READY", juce::Rectangle<float>(stageHeader.getRight() - 101.0f,
+                                                             stageHeader.getY(), 91.0f, stageHeader.getHeight()).toNearestInt(),
+                      juce::Justification::centredLeft);
+    inner.removeFromTop(8.0f);
 
     const auto pattern = processor.currentPattern();
     const auto plan = processor.currentSongPlan();
@@ -630,7 +647,7 @@ void PatternView::paint(juce::Graphics& graphics) {
                 graphics.drawRoundedRectangle(sectionBounds, 5.0f, 1.5f);
             }
             if (sectionBounds.getWidth() > 42.0f) {
-                graphics.setColour(colours::background);
+            graphics.setColour(colours::stage);
                 graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
                 auto label = juce::String::fromUTF8(section.name.c_str()).toUpperCase();
                 if (sectionBounds.getWidth() > 78.0f)
@@ -664,7 +681,7 @@ void PatternView::paint(juce::Graphics& graphics) {
         const auto laneBounds = juce::Rectangle<float>{inner.getX(), inner.getY() + lane * laneHeight,
                                                        inner.getWidth(), laneHeight};
         if (lane % 2 == 1) {
-            graphics.setColour(colours::panelRaised.withAlpha(0.28f));
+            graphics.setColour(colours::stageRaised.withAlpha(0.86f));
             graphics.fillRect(laneBounds);
         }
         auto activeInSelection = true;
@@ -679,7 +696,7 @@ void PatternView::paint(juce::Graphics& graphics) {
             graphics.setColour(colourForFamily(voiceDefinition(voice).family).withAlpha(0.10f));
             graphics.fillRoundedRectangle(timbreArea, 3.0f);
         }
-        graphics.setColour((highlighted ? colourForFamily(voiceDefinition(voice).family) : colours::muted)
+        graphics.setColour((highlighted ? colourForFamily(voiceDefinition(voice).family) : colours::stageText)
                                .withAlpha(activeInSelection ? 1.0f : 0.32f));
         graphics.setFont(juce::FontOptions(hasSongPlan ? 8.6f : 9.5f, juce::Font::bold));
         auto voiceName = voiceDisplayName(language, voice).toUpperCase();
@@ -715,15 +732,15 @@ void PatternView::paint(juce::Graphics& graphics) {
         auto muteButton = laneBounds.withX(laneBounds.getX() + labelWidth - 20.0f).withWidth(19.0f).reduced(1.0f);
         const auto solo = processor.isVoiceSolo(voice);
         const auto muted = processor.isVoiceMuted(voice);
-        graphics.setColour((solo ? colours::accent : colours::panelRaised).withAlpha(solo ? 0.95f : 0.62f));
-        graphics.fillRoundedRectangle(soloButton, 3.0f);
-        graphics.setColour(solo ? colours::background : colours::muted);
+        graphics.setColour((solo ? colours::accent : colours::stageGrid).withAlpha(solo ? 0.95f : 0.90f));
+        graphics.fillRoundedRectangle(soloButton, 2.0f);
+        graphics.setColour(solo ? colours::stage : colours::stageText);
         graphics.drawText("S", soloButton.toNearestInt(), juce::Justification::centred);
-        graphics.setColour((muted ? colours::accentHot : colours::panelRaised).withAlpha(muted ? 0.95f : 0.62f));
-        graphics.fillRoundedRectangle(muteButton, 3.0f);
-        graphics.setColour(muted ? colours::background : colours::muted);
+        graphics.setColour((muted ? colours::accentHot : colours::stageGrid).withAlpha(muted ? 0.95f : 0.90f));
+        graphics.fillRoundedRectangle(muteButton, 2.0f);
+        graphics.setColour(muted ? colours::stage : colours::stageText);
         graphics.drawText("M", muteButton.toNearestInt(), juce::Justification::centred);
-        graphics.setColour(colours::panelRaised);
+        graphics.setColour(colours::stageGrid);
         graphics.drawHorizontalLine(juce::roundToInt(laneBounds.getBottom()),
                                     timeline.getX(), timeline.getRight());
     }
@@ -732,10 +749,10 @@ void PatternView::paint(juce::Graphics& graphics) {
         if (bar != bars && bar % barStride != 0) continue;
         const auto x = timeline.getX() + timeline.getWidth() * static_cast<float>(bar) /
                                           static_cast<float>(bars);
-        graphics.setColour(colours::muted.withAlpha(0.42f));
+        graphics.setColour(colours::stageGrid.withAlpha(0.9f));
         graphics.drawVerticalLine(juce::roundToInt(x), timeline.getY(), timeline.getBottom());
         if (bar < bars) {
-            graphics.setColour(colours::muted.withAlpha(0.65f));
+            graphics.setColour(colours::stageMuted);
             graphics.setFont(10.0f);
             graphics.drawText(juce::String(bar + 1), juce::roundToInt(x) + 4,
                               juce::roundToInt(timeline.getY()), 22, 13, juce::Justification::left);
@@ -743,7 +760,7 @@ void PatternView::paint(juce::Graphics& graphics) {
     }
 
     if (!pattern || pattern->notes.empty()) {
-        graphics.setColour(colours::muted);
+        graphics.setColour(colours::stageMuted);
         graphics.setFont(15.0f);
         graphics.drawFittedText(tr(language, TextId::EmptyPattern), inner.toNearestInt(),
                                 juce::Justification::centred, 1);
@@ -816,7 +833,7 @@ void PatternView::paint(juce::Graphics& graphics) {
         const auto readoutX = std::clamp(playheadX - readoutWidth * 0.5f,
                                          timeline.getX(), timeline.getRight() - readoutWidth);
         auto readoutBounds = juce::Rectangle<float>{readoutX, timeline.getY(), readoutWidth, 16.0f};
-        graphics.setColour(colours::background.withAlpha(0.88f));
+        graphics.setColour(colours::stage.withAlpha(0.92f));
         graphics.fillRoundedRectangle(readoutBounds, 3.0f);
         graphics.setColour(colours::accent);
         graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
@@ -838,10 +855,10 @@ void PatternView::paint(juce::Graphics& graphics) {
         const auto channel = exportChannels[static_cast<std::size_t>(index)];
         const auto enabled = hasNotesForChannel(channel);
         const auto highlighted = channel == armedChannel || channel == hoverChannel;
-        graphics.setColour((highlighted ? colours::accent : colours::panelRaised)
+        graphics.setColour((highlighted ? colours::accent : colours::stageRaised)
                                .withAlpha(enabled ? (highlighted ? 0.90f : 0.72f) : 0.22f));
         graphics.fillRoundedRectangle(cell.toFloat(), 6.0f);
-        graphics.setColour((highlighted ? colours::background : colours::muted)
+        graphics.setColour((highlighted ? colours::stage : colours::stageText)
                                .withAlpha(enabled ? 1.0f : 0.35f));
         graphics.setFont(juce::FontOptions(10.5f, juce::Font::bold));
         graphics.drawText(labels[static_cast<std::size_t>(index)], cell,

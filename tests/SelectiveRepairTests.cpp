@@ -236,6 +236,40 @@ void runSelectiveRepairTests() {
     require(promotedDeficit == promotedFindings.end() ||
                 !promotedDeficit->missingCodaResolution,
             "The promoted authored phrase must resolve at the audible final boundary");
+    const auto resolvedPlacementCount = promotedScore.placements.size();
+    require(!SelectiveRepair::ensureAuthoredProtagonistCoda(
+                narrativePlan, promotedScore, promoted.id) &&
+                promotedScore.placements.size() == resolvedPlacementCount,
+            "Coda convergence must be idempotent and never duplicate an already resolved protagonist");
+
+    auto aftermathPlan = narrativePlan;
+    aftermathPlan.totalBars = 24;
+    aftermathPlan.sections.front().bars = 16;
+    SongSection aftermath;
+    aftermath.name = "Aftermath";
+    aftermath.startBar = 16;
+    aftermath.bars = 8;
+    aftermathPlan.sections.push_back(aftermath);
+    PerformanceScore aftermathScore;
+    aftermathScore.cells = {promoted};
+    aftermathScore.placements = {premise};
+    require(SelectiveRepair::ensureAuthoredProtagonistCoda(
+                aftermathPlan, aftermathScore, promoted.id),
+            "A declared resolution followed by aftermath must close at the absolute song boundary");
+    require(std::any_of(aftermathScore.placements.begin(), aftermathScore.placements.end(),
+                [](const auto& placement) {
+                    return placement.sectionIndex == 1 &&
+                        placement.purpose == "authored protagonist coda";
+                }),
+            "The protagonist coda must be placed in the actual final section, not the earlier Resolution act");
+    const auto aftermathFindings = SelectiveRepair::performanceDeficits(
+        aftermathPlan, aftermathScore, {0});
+    const auto aftermathDeficit = std::find_if(
+        aftermathFindings.begin(), aftermathFindings.end(),
+        [](const auto& finding) { return finding.instrumentId == "protagonist"; });
+    require(aftermathDeficit == aftermathFindings.end() ||
+                !aftermathDeficit->missingCodaResolution,
+            "Absolute-boundary verification must accept the connected aftermath coda");
 
     PerformanceScore oversizedSourceScore;
     auto oversizedSource = promoted;
@@ -251,26 +285,26 @@ void runSelectiveRepairTests() {
     oversizedPlacement.cellId = oversizedSource.id;
     oversizedPlacement.fragmentEnd = oversizedSource.lengthBeats;
     oversizedSourceScore.placements.push_back(oversizedPlacement);
-    require(SelectiveRepair::ensureAuthoredProtagonistCoda(
+    require(!SelectiveRepair::ensureAuthoredProtagonistCoda(
                 narrativePlan, oversizedSourceScore, oversizedSource.id),
-            "A source cell longer than the resolution must produce a bounded verified authored coda fragment");
+            "Isolated marker notes must never be compacted into a synthetic protagonist coda");
     const auto oversizedFindings = SelectiveRepair::performanceDeficits(
         narrativePlan, oversizedSourceScore, {0});
     const auto oversizedDeficit = std::find_if(oversizedFindings.begin(), oversizedFindings.end(),
         [](const auto& finding) { return finding.instrumentId == "protagonist"; });
-    require(oversizedDeficit == oversizedFindings.end() ||
-                !oversizedDeficit->missingCodaResolution,
-            "A repaired oversized source must pass the independent terminal-boundary audit");
+    require(oversizedDeficit != oversizedFindings.end() &&
+                oversizedDeficit->missingCodaResolution,
+            "Sparse markers must remain visibly unresolved for focused AI authorship");
 
     PerformanceScore fractionalScaleSource;
     auto fractionalCell = promoted;
     fractionalCell.id = "fractional_scale_authored_phrase";
     fractionalCell.lengthBeats = 48.0;
-    fractionalCell.notes = {
-        {0.0, .5, 61, 84, VoiceId::Lead, MetricIntent::StrictGrid, protagonist.id},
-        {20.0, .5, 63, 88, VoiceId::Lead, MetricIntent::StrictGrid, protagonist.id},
-        {40.0, 1.0, 65, 78, VoiceId::Lead, MetricIntent::StrictGrid, protagonist.id},
-    };
+    fractionalCell.notes.clear();
+    for (auto index = 0; index < 12; ++index)
+        fractionalCell.notes.push_back({index * 3.0, index == 11 ? 1.0 : .5,
+            61 + (index % 5), 78 + (index % 3) * 4, VoiceId::Lead,
+            MetricIntent::StrictGrid, protagonist.id});
     fractionalScaleSource.cells.push_back(fractionalCell);
     auto fractionalPlacement = premise;
     fractionalPlacement.cellId = fractionalCell.id;
@@ -346,6 +380,30 @@ void runSelectiveRepairTests() {
                 literalLeadFindings.front().literalPlacementRatio > .99 &&
                 literalLeadFindings.front().missingMelodicSpeech,
             "A ubiquitous literal leap-cell must not masquerade as a developed AI protagonist");
+
+    auto weaklyConnectedLead = literalLead;
+    weaklyConnectedLead.cells.front().id = "weakly_connected_lead";
+    weaklyConnectedLead.cells.front().notes = {
+        {0.0, .3, 60, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {.5, .3, 62, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {1.0, .3, 67, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {1.5, .3, 72, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {2.0, .3, 74, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {2.5, .3, 67, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {3.0, .3, 60, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {3.5, .3, 65, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {4.0, .3, 72, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+        {4.5, .8, 67, 80, VoiceId::Lead, MetricIntent::StrictGrid, longLead.id},
+    };
+    for (auto& placement : weaklyConnectedLead.placements)
+        placement.cellId = weaklyConnectedLead.cells.front().id;
+    const auto weakConnectionFindings = SelectiveRepair::performanceDeficits(
+        longNarrative, weaklyConnectedLead, {0});
+    require(!weakConnectionFindings.empty() &&
+                weakConnectionFindings.front().melodicStepRatio >= .15 &&
+                weakConnectionFindings.front().melodicStepRatio < .25 &&
+                weakConnectionFindings.front().missingMelodicSpeech,
+            "A merely tonal line below 25 percent conjunct motion must be rewritten as melodic speech");
 
     auto markerLead = literalLead;
     markerLead.cells.front().id = "isolated_markers";
@@ -607,6 +665,35 @@ void runSelectiveRepairTests() {
                     chordFinding->minimumPolyphonicChordAttacks &&
                  chordFinding->longestChordBedBreathBars >= 2),
             "A self-contained polyphonic bed with sectional withdrawal must satisfy the new chord contract");
+
+    auto chordArcPlan = chordBedPlan;
+    chordArcPlan.sections.clear();
+    for (auto sectionIndex = 0; sectionIndex < 4; ++sectionIndex) {
+        SongSection section;
+        section.name = "Arc scene " + std::to_string(sectionIndex + 1);
+        section.startBar = sectionIndex * 16;
+        section.bars = 16;
+        chordArcPlan.sections.push_back(section);
+    }
+    chordArcPlan.instruments.front().activeSections = {
+        "Arc scene 1", "Arc scene 2", "Arc scene 3", "Arc scene 4"};
+    PerformanceScore incompleteChordArc;
+    incompleteChordArc.cells = {polyphonicBed};
+    for (auto sectionIndex : {1, 2}) {
+        PerformancePlacement placement;
+        placement.cellId = polyphonicBed.id;
+        placement.sectionIndex = sectionIndex;
+        placement.repeats = 16;
+        placement.fragmentEnd = polyphonicBed.lengthBeats;
+        incompleteChordArc.placements.push_back(placement);
+    }
+    const auto chordArcDeficits = SelectiveRepair::performanceDeficits(
+        chordArcPlan, incompleteChordArc, {0});
+    require(chordArcDeficits.size() == 1 &&
+                chordArcDeficits.front().missingChordBedNarrativeArc &&
+                chordArcDeficits.front().chordBedNarrativeStages <
+                    chordArcDeficits.front().minimumChordBedNarrativeStages,
+            "A central chord bed confined to middle scenes must not pass the narrative-arc contract");
 
     auto unresolvedBedPlan = chordBedPlan;
     unresolvedBedPlan.rootPitchClass = 6; // F-sharp

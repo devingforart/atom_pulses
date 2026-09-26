@@ -43,6 +43,8 @@ struct PerformanceCoverageDeficit {
     std::size_t polyphonicChordAttacks{};
     std::size_t minimumPolyphonicChordAttacks{};
     std::size_t longestChordBedBreathBars{};
+    std::size_t chordBedNarrativeStages{};
+    std::size_t minimumChordBedNarrativeStages{};
     double duplicateEventOverlap{};
     std::string duplicatedWithInstrumentId;
     bool missingCodaResolution{};
@@ -54,6 +56,7 @@ struct PerformanceCoverageDeficit {
     bool missingMelodicSpeech{};
     bool missingCentralChordBed{};
     bool missingChordBedBreath{};
+    bool missingChordBedNarrativeArc{};
 };
 
 enum class ConstraintAuthority {

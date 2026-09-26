@@ -1243,6 +1243,39 @@ placement of that authored cell at the resolution boundary and the shortest tona
 transposition required for a stable ending. No notes, rhythms, durations, or dynamics
 are generated locally. Publication validation then measures the repaired rendered MIDI.
 
+### Early transactional coda convergence (0.58.43)
+
+Immediately after the isolated protagonist block is parsed and normalized, the writer audits it before invoking remote granular recovery. When concrete connected phrases exist and the terminal placement is missing, `ensureAuthoredProtagonistCoda` transactionally derives a transformed return from that same AI-authored identity, places it at the absolute song boundary, renders it and re-runs the shared publication deficit contract. No notes are invented and no supporting lane can donate material. A failed verification restores the original score and resumes normal bounded recovery.
+
+This ordering prevents a zero-event recovery response from discarding an otherwise complete protagonist, while retaining the early failure guarantee for empty identities and isolated markers.
+
+### Protagonist-first convergence and harmonic arc (0.58.42)
+
+Performance generation now checkpoints the authoritative protagonist in a dedicated first block. It must contain connected four-to-eight-bar sentences, sectional development and an absolute-boundary coda before any supporting ensemble block is requested. This prevents a costly full orchestration from being assembled around an absent speaker and prevents sparse cue markers from being promoted into a nominal lead.
+
+Both selective repair and the independent narrative auditor define a phrase as at least four distinct attacks whose adjacent gaps do not exceed three quarters of a bar. Coda validation uses `totalBars * beatsPerBar`, not the end of a possibly earlier Resolution act, and accepts the home tonic or an explicitly declared stable terminal chord.
+
+The elected `primary_chord_bed` is made eligible for premise, transformation, climax, resolution and the final section. Its audit requires actual placement across those dramatic anchors as well as polyphonic attacks and at least one intentional two-bar breath. The result is a persistent harmonic argument without a constant tutti pad.
+
+### Narrative convergence at publication (0.58.41)
+
+The assembled AI score now runs protagonist-coda convergence unconditionally before final constraint
+classification. The operation adds only a transformed placement of an existing AI-authored cell,
+selects a normalization-safe time scale, verifies the rendered terminal attack, and is idempotent.
+This closes the former path where a populated lead could bypass recovery and stop several sections
+before the song ended.
+
+Melodic speech is evaluated in a 25–68 percent conjunct-motion band. Characteristic leaps remain
+available, but a predominantly disconnected chord-tone sequence and a continuous scalar walk both
+become focused editorial objectives. Candidate comparison includes this evidence, terminal resolution
+and three conversational lines for large long-form casts.
+
+Low-end publication no longer manufactures coverage with isolated sustained notes. When bounded
+continuity is needed, it transfers one complete AI-authored four-bar pocket, preserves its internal
+rhythm and relative harmonic degrees, and leaves a role-dependent breath budget. Counterpoint lanes
+with an independent relationship count as audible dialogue without allowing a protagonist labelled
+`counterpoint` to masquerade as its own answer.
+
 ### Evidence-based orchestral independence (0.58.21–0.58.22)
 
 The performance validator renders the complete accepted score before publication and compares

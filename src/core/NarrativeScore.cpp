@@ -453,9 +453,40 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
         if (left->startBeat != right->startBeat) return left->startBeat < right->startBeat;
         return left->pitch < right->pitch;
     });
-    const auto protagonistCloses = codaTheme.size() >= 3 &&
+    auto connectedAttacks = codaTheme.empty() ? std::size_t{} : std::size_t{1};
+    auto longestConnected = connectedAttacks;
+    auto previousAttack = codaTheme.empty() ? 0.0 : codaTheme.front()->startBeat;
+    for (std::size_t index = 1; index < codaTheme.size(); ++index) {
+        const auto attack = codaTheme[index]->startBeat;
+        if (std::abs(attack - previousAttack) < .01) continue;
+        connectedAttacks = attack - previousAttack <= plan.beatsPerBar * .75 + .001
+            ? connectedAttacks + 1 : 1;
+        longestConnected = std::max(longestConnected, connectedAttacks);
+        previousAttack = attack;
+    }
+    std::set<int> stableTerminalPitchClasses{
+        positiveModulo(plan.rootPitchClass, 12)};
+    if (!plan.sections.empty() && !plan.sections.back().harmonicEvents.empty()) {
+        const auto terminalEvent = std::max_element(
+            plan.sections.back().harmonicEvents.begin(),
+            plan.sections.back().harmonicEvents.end(),
+            [](const auto& left, const auto& right) {
+                return std::tie(left.barOffset, left.beatOffset) <
+                    std::tie(right.barOffset, right.beatOffset);
+            });
+        const auto chord = std::find_if(plan.chordPalette.begin(), plan.chordPalette.end(),
+            [&](const auto& candidate) { return candidate.id == terminalEvent->chordId; });
+        if (chord != plan.chordPalette.end()) {
+            stableTerminalPitchClasses.insert(positiveModulo(chord->rootPitchClass, 12));
+            stableTerminalPitchClasses.insert(positiveModulo(chord->bassPitchClass, 12));
+            for (const auto pitchClass : chord->pitchClasses)
+                stableTerminalPitchClasses.insert(positiveModulo(pitchClass, 12));
+        }
+    }
+    const auto protagonistCloses = longestConnected >= 4 &&
         codaTheme.back()->startBeat >= totalBeats - plan.beatsPerBar * 2.0 &&
-        positiveModulo(codaTheme.back()->pitch, 12) == plan.rootPitchClass;
+        stableTerminalPitchClasses.contains(
+            positiveModulo(codaTheme.back()->pitch, 12));
     if (!premiseTheme.empty() && !codaTheme.empty())
         report.motifClosure = contourClosure(premiseTheme, codaTheme);
     if (!codaTheme.empty()) {
@@ -674,9 +705,9 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     const auto audibleLineage = std::clamp(
         (report.audibleThematicSimilarity - 0.55) / 0.25, 0.0, 1.0);
     const auto melodicSpeech = std::clamp(1.0 - std::max(0.0,
-        0.15 - report.melodicStepwiseRatio) / 0.15 -
+        0.25 - report.melodicStepwiseRatio) / 0.25 -
         std::max(0.0,
-        report.melodicStepwiseRatio - 0.62) / 0.38 -
+        report.melodicStepwiseRatio - 0.65) / 0.35 -
         std::max(0.0, static_cast<double>(report.maximumMelodicStepRun) - 4.0) * 0.08,
         0.0, 1.0);
     const auto pulseAuditRequired = requiresElectronicPulseAudit(plan);
@@ -716,10 +747,10 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         report.issues.push_back("literal_theme_copy_without_development");
     if (report.bassWindows >= 3 && report.bassPhraseContinuity < 0.60)
         report.issues.push_back("fragmented_movement_bass");
-    if (report.melodicIntervals >= 8 && (report.melodicStepwiseRatio > 0.78 ||
+    if (report.melodicIntervals >= 8 && (report.melodicStepwiseRatio > 0.68 ||
         report.maximumMelodicStepRun > 5))
         report.issues.push_back("scalar_melody_without_speech");
-    if (report.melodicIntervals >= 8 && report.melodicStepwiseRatio < 0.15)
+    if (report.melodicIntervals >= 8 && report.melodicStepwiseRatio < 0.25)
         report.issues.push_back("disconnected_melody_without_voice_leading");
     if (pulseAuditRequired &&
         report.maximumClubDrumGapBars >= 16)
@@ -741,7 +772,7 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         (report.literalThematicReturnRatio <= 0.70 && report.thematicDevelopment >= 0.55);
     const auto bassReady = report.bassPhrases < 4 || report.bassPhraseContinuity >= 0.60;
     const auto melodicSpeechReady = report.melodicIntervals < 8 ||
-        (report.melodicStepwiseRatio >= 0.15 && report.melodicStepwiseRatio <= 0.78 &&
+        (report.melodicStepwiseRatio >= 0.25 && report.melodicStepwiseRatio <= 0.68 &&
          report.maximumMelodicStepRun <= 5);
     const auto foregroundReady = !report.foregroundExpected ||
         (report.foregroundNotes >= 8 && report.foregroundAiAuthorshipRatio >= 0.85);

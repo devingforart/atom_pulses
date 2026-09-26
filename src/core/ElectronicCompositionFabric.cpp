@@ -14,6 +14,7 @@
 #include <numeric>
 #include <set>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 namespace pulso {
@@ -51,6 +52,17 @@ bool dialoguePart(const InstrumentAssignment& part) noexcept {
            part.lineRelationship == "call_response" ||
            contains(part.role, "reply") || contains(part.role, "response") ||
            contains(part.role, "answer");
+}
+
+bool audibleDialoguePart(const SongPlan& plan,
+                         const InstrumentAssignment& part) noexcept {
+    if (dialoguePart(part)) return true;
+    // An independently authored counterline is conversational evidence even when
+    // its playable archetype is HarmonicUpper or Lead. Do not count the declared
+    // protagonist itself: its common "counterpoint" orchestral function describes
+    // texture, not a second speaker.
+    return part.id != plan.narrativeSpine.protagonistInstrumentId &&
+        part.lineRelationship == "counterpoint";
 }
 
 bool primaryChordBed(const InstrumentAssignment& part) noexcept {
@@ -1237,8 +1249,14 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                     source.push_back(note);
             if (source.empty()) continue;
             const auto windowBeats = plan.beatsPerBar * 4.0;
+            // Movement bass must breathe; sub anchors may be more persistent. The old
+            // 85% target wrote one long note into every missing window, which inflated
+            // coverage while creating isolated, non-musical "phrases". Extend only a
+            // complete authored pocket and retain substantial negative space.
+            const auto targetShare = plan.instruments[index].sourceVoice == VoiceId::MovementBass
+                ? .65 : .78;
             const auto targetWindows = static_cast<std::size_t>(std::ceil(
-                (static_cast<double>(plan.totalBars) / 4.0) * .85));
+                (static_cast<double>(plan.totalBars) / 4.0) * targetShare));
             auto populated = std::size_t{};
             std::vector<int> missing;
             for (auto window = 0; window * windowBeats < pattern.lengthBeats; ++window) {
@@ -1250,22 +1268,66 @@ ElectronicFabricReport ElectronicCompositionFabric::convergePublication(
                 if (notes > 0) ++populated;
                 else missing.push_back(window);
             }
+            std::map<int, std::vector<NoteEvent>> authoredPockets;
+            for (const auto& note : source) {
+                const auto pocket = static_cast<int>(std::floor(note.startBeat / windowBeats));
+                authoredPockets[pocket].push_back(note);
+            }
+            const auto bestPocket = std::max_element(authoredPockets.begin(), authoredPockets.end(),
+                [](const auto& left, const auto& right) {
+                    return left.second.size() < right.second.size();
+                });
+            if (bestPocket == authoredPockets.end() || bestPocket->second.size() < 3)
+                continue;
+            auto phrase = bestPocket->second;
+            std::sort(phrase.begin(), phrase.end(), [](const auto& left, const auto& right) {
+                return std::tie(left.startBeat, left.pitch) < std::tie(right.startBeat, right.pitch);
+            });
+            const auto phraseOrigin = bestPocket->first * windowBeats;
+
             for (const auto window : missing) {
                 if (populated >= targetWindows) break;
-                const auto& templateNote = source[static_cast<std::size_t>(window) % source.size()];
                 const auto start = window * windowBeats;
                 const auto& owner = plan.instruments[index];
-                const auto& chord = chordAt(plan, start);
-                auto pitch = templateNote.pitch;
-                if (!chord.pitchClasses.empty())
-                    pitch = nearestPitch(chord.pitchClasses.front(), pitch, owner);
-                const auto duration = std::min(windowBeats - 1.0 / 32.0,
-                    std::max(1.0, templateNote.durationBeats));
-                if (addNote(pattern, owner, ownerId, start, duration, pitch,
-                            std::max(38, templateNote.velocity - 4),
-                            0x4c4f5746u + static_cast<std::uint32_t>(window), report,
-                            report.publicationClosureNotesCreated, 7))
+                const auto noteCountBefore = pattern.notes.size();
+                auto written = std::size_t{};
+                for (const auto& templateNote : phrase) {
+                    const auto relative = templateNote.startBeat - phraseOrigin;
+                    if (relative < -.001 || relative >= windowBeats) continue;
+                    const auto beat = start + relative;
+                    const auto& sourceChord = chordAt(plan, templateNote.startBeat);
+                    const auto& targetChord = chordAt(plan, beat);
+                    auto pitch = templateNote.pitch;
+                    if (!sourceChord.pitchClasses.empty() && !targetChord.pitchClasses.empty()) {
+                        const auto relativeDegree = positiveModulo(
+                            templateNote.pitch - sourceChord.pitchClasses.front(), 12);
+                        const auto targetPitchClass = positiveModulo(
+                            targetChord.pitchClasses.front() + relativeDegree, 12);
+                        pitch = nearestPitch(targetPitchClass, templateNote.pitch, owner);
+                    }
+                    const auto duration = std::min(
+                        windowBeats - relative - 1.0 / 32.0,
+                        std::max(.25, templateNote.durationBeats));
+                    if (duration <= .04 || overlapsPart(
+                            pattern, ownerId, beat, beat + duration)) continue;
+                    if (addNote(pattern, owner, ownerId, beat, duration, pitch,
+                                std::max(38, templateNote.velocity - 4),
+                                templateNote.narrativeId == 0
+                                    ? 0x4c4f5746u + static_cast<std::uint32_t>(window)
+                                    : templateNote.narrativeId,
+                                report, report.publicationClosureNotesCreated, 7))
+                        ++written;
+                }
+                if (written >= 3) {
                     ++populated;
+                } else {
+                    // A partial transfer recreates the isolated gestures this pass
+                    // exists to remove. Commit a complete phrase or roll the window
+                    // back atomically, including its construction telemetry.
+                    pattern.notes.resize(noteCountBefore);
+                    report.publicationClosureNotesCreated -= std::min(
+                        report.publicationClosureNotesCreated, written);
+                }
             }
         }
     }
@@ -1540,7 +1602,10 @@ ElectronicFabricReport ElectronicCompositionFabric::audit(const Pattern& pattern
     auto floors = indicesFor(plan, floorPart);
     if (floors.size() > 4) floors.resize(4);
     const auto arps = indicesFor(plan, arpPart);
-    const auto dialogues = indicesFor(plan, dialoguePart);
+    std::vector<std::size_t> dialogues;
+    for (std::size_t index = 0; index < plan.instruments.size(); ++index)
+        if (audibleDialoguePart(plan, plan.instruments[index]))
+            dialogues.push_back(index);
     std::map<std::string, std::vector<const NoteEvent*>> notesByLane;
     for (const auto& note : pattern.notes) {
         if (note.partId == 0 || note.partId > plan.instruments.size()) continue;

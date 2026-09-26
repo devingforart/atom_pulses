@@ -400,7 +400,8 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
             return finding.missingCodaResolution || finding.duplicatedIndependentLine ||
                 finding.missingSectionalEvolution || finding.missingNarrativePresence ||
                 finding.missingThematicDevelopment || finding.missingMelodicSpeech ||
-                finding.missingCentralChordBed || finding.missingChordBedBreath;
+                finding.missingCentralChordBed || finding.missingChordBedBreath ||
+                finding.missingChordBedNarrativeArc;
         });
     result.needed = !publicationReady(report) || hasBlockingMusicalEvidence ||
         flatLongFormDensity;
@@ -457,6 +458,9 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
         if (finding.missingChordBedBreath)
             add(finding.instrumentIndex, 11.0,
                 "shape sectional withdrawal and re-entry in the central chord bed without removing harmonic continuity");
+        if (finding.missingChordBedNarrativeArc)
+            add(finding.instrumentIndex, 17.0,
+                "extend the central chord bed through premise, development, climax and the audible final stage");
     }
 
     // Token and underwritten tracks are the cheapest, most deterministic repairs.
@@ -641,7 +645,7 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::marginalBarAcceptances(
             finding.duplicatedIndependentLine || finding.missingSectionalEvolution ||
             finding.missingNarrativePresence || finding.missingThematicDevelopment ||
             finding.missingMelodicSpeech || finding.missingCentralChordBed ||
-            finding.missingChordBedBreath ||
+            finding.missingChordBedBreath || finding.missingChordBedNarrativeArc ||
             (finding.minimumSections > 0 && finding.sections < finding.minimumSections) ||
             !TrackViability::marginalActiveBarAcceptance(
                 finding.notes, finding.activeBars, finding.phrases, contract);
@@ -870,6 +874,9 @@ std::vector<PerformanceConstraint> SelectiveRepair::classifyPerformanceDeficits(
         if (constraint.evidence.missingCentralChordBed)
             constraint.operations.push_back(
                 PerformanceRepairOperation::AuthorCentralChordBed);
+        if (constraint.evidence.missingChordBedNarrativeArc)
+            constraint.operations.push_back(
+                PerformanceRepairOperation::ExtendCoverage);
         if (constraint.evidence.missingChordBedBreath)
             constraint.operations.push_back(
                 PerformanceRepairOperation::ShapeHarmonicBreath);
@@ -989,14 +996,6 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
     const std::set<std::size_t> candidateSet(candidates.begin(), candidates.end());
     const auto duplicatedTargets = duplicatedIndependentTargets(
         plan, renderedByInstrument, candidateSet);
-    auto resolutionSection = plan.sections.empty() ? -1 : static_cast<int>(plan.sections.size() - 1);
-    for (const auto& act : plan.narrativeSpine.acts) {
-        if (act.stage != NarrativeStage::Resolution) continue;
-        const auto found = std::find_if(plan.sections.begin(), plan.sections.end(),
-            [&](const auto& section) { return section.name == act.sectionName; });
-        if (found != plan.sections.end())
-            resolutionSection = static_cast<int>(std::distance(plan.sections.begin(), found));
-    }
     std::set<int> resolutionStablePitchClasses{positiveModulo(plan.rootPitchClass, 12)};
     auto explicitTonicEnding = false;
     auto intentionalOpenEnding = false;
@@ -1026,9 +1025,11 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
             intentionalOpenEnding = true;
     }
     const HarmonicChord* terminalResolutionChord = nullptr;
-    if (resolutionSection >= 0 &&
-        static_cast<std::size_t>(resolutionSection) < plan.sections.size()) {
-        const auto& section = plan.sections[static_cast<std::size_t>(resolutionSection)];
+    // Closure is audited against what the listener actually hears last. A declared
+    // Resolution act may be followed by an aftermath; validating against the earlier
+    // act allowed the protagonist to disappear before the absolute song ending.
+    if (!plan.sections.empty()) {
+        const auto& section = plan.sections.back();
         const HarmonicEvent* terminalEvent = nullptr;
         for (const auto& event : section.harmonicEvents)
             if (terminalEvent == nullptr ||
@@ -1150,6 +1151,34 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                     incomplete = true;
                 }
 
+                std::set<int> essentialStages;
+                if (!plan.sections.empty()) {
+                    essentialStages.insert(0);
+                    essentialStages.insert(static_cast<int>(plan.sections.size() / 2));
+                    essentialStages.insert(static_cast<int>(plan.sections.size() - 1));
+                    for (const auto& act : plan.narrativeSpine.acts) {
+                        if (act.stage != NarrativeStage::Transformation &&
+                            act.stage != NarrativeStage::Climax &&
+                            act.stage != NarrativeStage::Resolution) continue;
+                        const auto found = std::find_if(plan.sections.begin(), plan.sections.end(),
+                            [&](const auto& section) {
+                                return section.name == act.sectionName;
+                            });
+                        if (found != plan.sections.end())
+                            essentialStages.insert(static_cast<int>(
+                                std::distance(plan.sections.begin(), found)));
+                    }
+                }
+                deficit.minimumChordBedNarrativeStages = essentialStages.size();
+                for (const auto stage : essentialStages)
+                    if (sections[instrument.id].contains(stage))
+                        ++deficit.chordBedNarrativeStages;
+                if (deficit.chordBedNarrativeStages <
+                    deficit.minimumChordBedNarrativeStages) {
+                    deficit.missingChordBedNarrativeArc = true;
+                    incomplete = true;
+                }
+
                 auto longestBreath = std::size_t{};
                 auto currentBreath = std::size_t{};
                 for (auto bar = 0; bar < std::max(1, plan.totalBars); ++bar) {
@@ -1261,8 +1290,12 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                 }
                 if (deficit.melodicIntervals > 0)
                     deficit.melodicStepRatio /= static_cast<double>(deficit.melodicIntervals);
+                // A line made almost entirely from chord-tone jumps is tonal but does
+                // not speak. Conversely, an uninterrupted scalar walk is connective
+                // but equally synthetic. Preserve characteristic leaps inside an
+                // audibly singable amount of conjunct motion.
                 if (deficit.melodicIntervals >= 8 &&
-                    (deficit.melodicStepRatio < .15 || deficit.melodicStepRatio > .75)) {
+                    (deficit.melodicStepRatio < .25 || deficit.melodicStepRatio > .68)) {
                     deficit.missingMelodicSpeech = true;
                     incomplete = true;
                 }
@@ -1316,24 +1349,34 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
         // The model—not the renderer—must complete the protagonist's transformed
         // answer at the audible boundary. A phrase merely somewhere in the final act
         // still leaves several bars of narrative vacuum.
-        if (protagonist && resolutionSection >= 0) {
-            const auto& resolution = plan.sections[static_cast<std::size_t>(resolutionSection)];
-            const auto resolutionEnd = (resolution.startBar + resolution.bars) * plan.beatsPerBar;
-            const auto codaStart = resolutionEnd - std::min(8, resolution.bars) * plan.beatsPerBar;
-            const auto finalTwoBars = resolutionEnd - std::min(2, resolution.bars) * plan.beatsPerBar;
+        if (protagonist && !plan.sections.empty()) {
+            const auto songEnd = plan.totalBars * plan.beatsPerBar;
+            const auto codaStart = std::max(0.0, songEnd - plan.beatsPerBar * 8.0);
+            const auto finalTwoBars = std::max(0.0, songEnd - plan.beatsPerBar * 2.0);
             std::vector<const NoteEvent*> coda;
             for (const auto* note : renderedByInstrument[instrument.id])
-                if (note->startBeat >= codaStart && note->startBeat < resolutionEnd)
+                if (note->startBeat >= codaStart && note->startBeat < songEnd)
                     coda.push_back(note);
             std::sort(coda.begin(), coda.end(), [](const auto* left, const auto* right) {
                 return left->startBeat < right->startBeat;
             });
+            auto connectedAttacks = coda.empty() ? std::size_t{} : std::size_t{1};
+            auto longestConnected = connectedAttacks;
+            auto previousAttack = coda.empty() ? 0.0 : coda.front()->startBeat;
+            for (std::size_t noteIndex = 1; noteIndex < coda.size(); ++noteIndex) {
+                const auto attack = coda[noteIndex]->startBeat;
+                if (std::abs(attack - previousAttack) < .01) continue;
+                connectedAttacks = attack - previousAttack <=
+                    plan.beatsPerBar * .75 + .001 ? connectedAttacks + 1 : 1;
+                longestConnected = std::max(longestConnected, connectedAttacks);
+                previousAttack = attack;
+            }
             const auto terminalPitchClass = coda.empty()
                 ? -1 : positiveModulo(coda.back()->pitch, 12);
             const auto stableEnding = explicitTonicEnding
                 ? terminalPitchClass == positiveModulo(plan.rootPitchClass, 12)
                 : resolutionStablePitchClasses.contains(terminalPitchClass);
-            const auto audibleBoundary = coda.size() >= 3 &&
+            const auto audibleBoundary = longestConnected >= 4 &&
                 coda.back()->startBeat >= finalTwoBars && stableEnding;
             if (!audibleBoundary) {
                 deficit.missingCodaResolution = true;
@@ -1372,14 +1415,22 @@ bool SelectiveRepair::ensureAuthoredProtagonistCoda(
     const auto& protagonistId = plan.narrativeSpine.protagonistInstrumentId;
     if (protagonistId.empty() || plan.sections.empty()) return false;
 
-    auto resolutionSection = static_cast<int>(plan.sections.size() - 1);
-    for (const auto& act : plan.narrativeSpine.acts) {
-        if (act.stage != NarrativeStage::Resolution) continue;
-        const auto found = std::find_if(plan.sections.begin(), plan.sections.end(),
-            [&](const auto& section) { return section.name == act.sectionName; });
-        if (found != plan.sections.end())
-            resolutionSection = static_cast<int>(std::distance(plan.sections.begin(), found));
-    }
+    const auto protagonist = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+        [&](const auto& instrument) { return instrument.id == protagonistId; });
+    if (protagonist == plan.instruments.end()) return false;
+    const auto protagonistIndex = static_cast<std::size_t>(
+        std::distance(plan.instruments.begin(), protagonist));
+    const auto existingVerification = performanceDeficits(plan, score, {protagonistIndex});
+    const auto alreadyResolved = std::none_of(existingVerification.begin(),
+        existingVerification.end(), [&](const auto& finding) {
+            return finding.instrumentId == protagonistId && finding.missingCodaResolution;
+        });
+    if (alreadyResolved) return false;
+
+    // Always close in the section containing the absolute song boundary. The
+    // narrative may name an earlier Resolution followed by an Aftermath, but that
+    // does not make the earlier boundary audible as the end of the track.
+    const auto resolutionSection = static_cast<int>(plan.sections.size() - 1);
     const auto& resolution = plan.sections[static_cast<std::size_t>(resolutionSection)];
     const auto sectionLength = resolution.bars * plan.beatsPerBar;
     if (sectionLength <= 0.0) return false;
@@ -1387,11 +1438,24 @@ bool SelectiveRepair::ensureAuthoredProtagonistCoda(
     const PerformanceCell* source = nullptr;
     std::size_t bestNotes = 0;
     for (const auto& cell : score.cells) {
-        const auto count = static_cast<std::size_t>(std::count_if(
-            cell.notes.begin(), cell.notes.end(), [&](const auto& note) {
-                return note.instrumentId == protagonistId;
-            }));
-        if (count < 3) continue;
+        std::vector<double> attacks;
+        for (const auto& note : cell.notes)
+            if (note.instrumentId == protagonistId)
+                attacks.push_back(note.beat);
+        const auto count = attacks.size();
+        if (count < 4) continue;
+        std::sort(attacks.begin(), attacks.end());
+        attacks.erase(std::unique(attacks.begin(), attacks.end(),
+            [](double left, double right) { return std::abs(left - right) < .01; }),
+            attacks.end());
+        auto connected = attacks.empty() ? std::size_t{} : std::size_t{1};
+        auto longestConnected = connected;
+        for (std::size_t attack = 1; attack < attacks.size(); ++attack) {
+            connected = attacks[attack] - attacks[attack - 1] <=
+                plan.beatsPerBar * .75 + .001 ? connected + 1 : 1;
+            longestConnected = std::max(longestConnected, connected);
+        }
+        if (longestConnected < 4) continue;
         const auto preferred = !preferredCellId.empty() && cell.id == preferredCellId;
         const auto currentPreferred = source != nullptr &&
             !preferredCellId.empty() && source->id == preferredCellId;
@@ -1409,18 +1473,44 @@ bool SelectiveRepair::ensureAuthoredProtagonistCoda(
     std::sort(authored.begin(), authored.end(), [](const auto* left, const auto* right) {
         return std::tie(left->beat, left->pitch) < std::tie(right->beat, right->pitch);
     });
-    if (authored.size() < 3) return false;
+    if (authored.size() < 4) return false;
 
-    // Build a bounded transformed return from up to eight authored attacks. Three
-    // attacks are enough for backwards-compatible recovery, but a populated source
-    // now retains a complete sentence instead of collapsing its coda to three markers.
+    // Extract a real connected sentence. Sparse one-note cue markers are not a
+    // melodic source and must never be compacted into an artificial protagonist.
+    std::vector<std::size_t> attackStarts;
+    attackStarts.push_back(0);
+    for (std::size_t index = 1; index < authored.size(); ++index)
+        if (std::abs(authored[index]->beat - authored[index - 1]->beat) >= .01)
+            attackStarts.push_back(index);
+    std::size_t bestAttackBegin{};
+    std::size_t bestAttackEnd{};
+    auto runBegin = std::size_t{};
+    for (std::size_t attack = 1; attack <= attackStarts.size(); ++attack) {
+        const auto continues = attack < attackStarts.size() &&
+            authored[attackStarts[attack]]->beat -
+                authored[attackStarts[attack - 1]]->beat <=
+                    plan.beatsPerBar * .75 + .001;
+        if (continues) continue;
+        if (attack - runBegin >= 4 && attack - runBegin >=
+                bestAttackEnd - bestAttackBegin) {
+            bestAttackBegin = runBegin;
+            bestAttackEnd = attack;
+        }
+        runBegin = attack;
+    }
+    if (bestAttackEnd - bestAttackBegin < 4) return false;
+
+    // Build a bounded transformed return from up to twelve connected attacks.
     // Rebasing an existing fragment is necessary when its source cell is longer
     // than the resolution section; a placement of the full cell would be clipped
     // before its intended final attack and would falsely report success.
-    const auto fragmentCount = std::min<std::size_t>(8, authored.size());
-    const auto fragmentBegin = authored.size() - fragmentCount;
+    const auto selectedAttackBegin = bestAttackEnd - bestAttackBegin > 12
+        ? bestAttackEnd - 12 : bestAttackBegin;
+    const auto fragmentBegin = attackStarts[selectedAttackBegin];
+    const auto fragmentEnd = bestAttackEnd < attackStarts.size()
+        ? attackStarts[bestAttackEnd] : authored.size();
     const auto firstBeat = authored[fragmentBegin]->beat;
-    const auto lastBeat = authored.back()->beat - firstBeat;
+    const auto lastBeat = authored[fragmentEnd - 1]->beat - firstBeat;
     const auto terminalTarget = std::max(0.0, sectionLength -
         std::max(0.5, plan.beatsPerBar * 0.5));
     const auto codaWindowStart = std::max(0.0, sectionLength -
@@ -1442,7 +1532,26 @@ bool SelectiveRepair::ensureAuthoredProtagonistCoda(
     }
     if (lastBeat * timeScale > terminalTarget - codaWindowStart + .001)
         return false;
-    auto transpose = positiveModulo(plan.rootPitchClass - authored.back()->pitch, 12);
+    auto terminalPitchClass = positiveModulo(plan.rootPitchClass, 12);
+    const auto resolutionWords = lower(plan.narrativeSpine.resolution);
+    const auto explicitTonicEnding = resolutionWords.find("tonic") != std::string::npos ||
+        resolutionWords.find("root") != std::string::npos ||
+        resolutionWords.find("home note") != std::string::npos ||
+        resolutionWords.find("tonica") != std::string::npos;
+    if (!explicitTonicEnding && !resolution.harmonicEvents.empty()) {
+        const auto terminalEvent = std::max_element(
+            resolution.harmonicEvents.begin(), resolution.harmonicEvents.end(),
+            [](const auto& left, const auto& right) {
+                return std::tie(left.barOffset, left.beatOffset) <
+                    std::tie(right.barOffset, right.beatOffset);
+            });
+        const auto chord = std::find_if(plan.chordPalette.begin(), plan.chordPalette.end(),
+            [&](const auto& candidate) { return candidate.id == terminalEvent->chordId; });
+        if (chord != plan.chordPalette.end())
+            terminalPitchClass = positiveModulo(chord->rootPitchClass, 12);
+    }
+    auto transpose = positiveModulo(
+        terminalPitchClass - authored[fragmentEnd - 1]->pitch, 12);
     if (transpose > 6) transpose -= 12;
 
     PerformanceCell codaCell;
@@ -1450,7 +1559,7 @@ bool SelectiveRepair::ensureAuthoredProtagonistCoda(
     codaCell.themeId = source->themeId;
     codaCell.narrativeFunction = "transformed_resolution";
     codaCell.ownedVoices = source->ownedVoices;
-    for (auto index = fragmentBegin; index < authored.size(); ++index) {
+    for (auto index = fragmentBegin; index < fragmentEnd; ++index) {
         auto note = *authored[index];
         note.beat -= firstBeat;
         codaCell.notes.push_back(std::move(note));
@@ -1482,14 +1591,6 @@ bool SelectiveRepair::ensureAuthoredProtagonistCoda(
     coda.fragmentEnd = score.cells.back().lengthBeats;
     score.placements.push_back(std::move(coda));
 
-    const auto protagonist = std::find_if(plan.instruments.begin(), plan.instruments.end(),
-        [&](const auto& instrument) { return instrument.id == protagonistId; });
-    if (protagonist == plan.instruments.end()) {
-        score = originalScore;
-        return false;
-    }
-    const auto protagonistIndex = static_cast<std::size_t>(
-        std::distance(plan.instruments.begin(), protagonist));
     const auto verification = performanceDeficits(plan, score, {protagonistIndex});
     const auto unresolved = std::find_if(verification.begin(), verification.end(),
         [&](const auto& finding) {
@@ -1523,15 +1624,7 @@ bool SelectiveRepair::ensurePrimaryChordBedClosure(SongPlan& plan) {
             [](const auto& chord) { return chord.function == HarmonicFunction::Tonic; });
     if (tonic == plan.chordPalette.end()) return false;
 
-    auto resolutionIndex = plan.sections.size() - 1;
-    for (const auto& act : plan.narrativeSpine.acts) {
-        if (act.stage != NarrativeStage::Resolution) continue;
-        const auto found = std::find_if(plan.sections.begin(), plan.sections.end(),
-            [&](const auto& section) { return section.name == act.sectionName; });
-        if (found != plan.sections.end())
-            resolutionIndex = static_cast<std::size_t>(
-                std::distance(plan.sections.begin(), found));
-    }
+    const auto resolutionIndex = plan.sections.size() - 1;
     auto& resolution = plan.sections[resolutionIndex];
     const auto closureBars = std::min(4, std::max(2, resolution.bars));
     const auto sectionLength = resolution.bars * plan.beatsPerBar;
@@ -1736,7 +1829,8 @@ bool SelectiveRepair::requiresReplacement(
     // required horizon; that target must be replaced so silence can be authored.
     if (deficit.duplicatedIndependentLine || deficit.missingSectionalEvolution ||
         deficit.missingThematicDevelopment || deficit.missingMelodicSpeech ||
-        deficit.missingCentralChordBed || deficit.missingChordBedBreath) return true;
+        deficit.missingCentralChordBed || deficit.missingChordBedBreath ||
+        deficit.missingChordBedNarrativeArc) return true;
     return deficit.minimumPhrases > 0 && deficit.phrases < deficit.minimumPhrases &&
         deficit.notes >= deficit.minimumNotes &&
         deficit.activeBars >= deficit.minimumActiveBars;

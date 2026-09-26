@@ -1102,6 +1102,29 @@ realmente audible y se reducen a puntos significativos por frase. Una `TimbrePal
 global coordina material, espacio, brillo, calidez y balance acústico/electrónico antes de
 resolver los sonidos individuales instalados en Live.
 
+### 0.58.43 — convergencia temprana de la coda
+
+- Un protagonista completo que solo omite su colocación terminal ya no dispara otra llamada remota ni rechaza la canción.
+- Antes de recuperar por red, PULSO reutiliza una frase conectada del mismo protagonista generado por la IA, crea una recapitulación transformada en el final absoluto y la valida mediante el renderizador independiente.
+- La operación es transaccional: no inventa notas, no toma material de otro instrumento y restaura el bloque original si la coda no satisface el contrato.
+- Los protagonistas vacíos, los marcadores aislados y las líneas sin frases conectadas continúan fallando temprano.
+
+### 0.58.42 — protagonista primero y arco armónico completo
+
+- El protagonista se escribe y valida en un bloque exclusivo antes de orquestar el resto: una respuesta vacía, marcadores aislados o una coda desconectada abortan temprano, sin gastar el presupuesto completo en un ensemble que no tiene voz principal.
+- Ninguna promoción de propiedad acepta ahora eventos sueltos como frase. El material donante debe contener al menos cuatro ataques conectados y la auditoría final aplica exactamente el mismo criterio.
+- La coda se mide contra el final absoluto de la canción, incluso cuando el acto `resolution` está seguido por un `aftermath`; el último ataque debe caer en los dos compases finales sobre una nota estable de la armonía terminal.
+- `Primary Chord Bed` participa en los hitos esenciales de premisa, desarrollo, clímax y final con revoicings independientes, conservando respiraciones intencionales en vez de convertirse en un pad permanente.
+- Se añadieron regresiones para marcadores falsos, escalado normalizado, finales con aftermath y colchones confinados indebidamente a escenas intermedias.
+
+### 0.58.41 — narrativa audible y recapitulación garantizada
+
+- La recapitulación de la protagonista se verifica siempre sobre la partitura ensamblada, aunque ninguna otra cobertura active la recuperación. La operación reutiliza notas escritas por la IA, es transaccional e idempotente.
+- El criterio melódico exige entre 25 % y 68 % de movimiento conjunto dentro de las frases: conserva saltos característicos, pero rechaza tanto la “ruleta de acordes” como las escalas mecánicas.
+- El bajo ya no obtiene continuidad mediante una nota larga aislada por ventana. Reutiliza un pocket completo escrito por la IA, lo adapta a la armonía de destino y conserva aproximadamente un 35 % de respiración en el bajo móvil.
+- Una obra larga debe proponer al menos tres voces conversacionales: una respuesta derivada y dos contralíneas independientes. El auditor reconoce contrapuntos reales aunque no lleven literalmente la etiqueta `reply`.
+- La selección de revisiones pondera explícitamente resolución, fraseo conectado y cantidad de diálogos. Una revisión fallida sigue conservando la composición completa en lugar de provocar un rechazo destructivo.
+
 ### 0.58.40 — coda estable tras normalización
 
 - La recuperación de una protagonista vacía selecciona desde el origen una escala temporal admitida por el motor MIDI; la normalización ya no puede desplazar su ataque terminal fuera de la ventana de resolución.

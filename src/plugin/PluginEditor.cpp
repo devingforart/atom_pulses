@@ -230,7 +230,7 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
 
     title.setText("PULSO v" PULSO_VERSION_STRING, juce::dontSendNotification);
     title.setFont(juce::FontOptions(27.0f, juce::Font::bold));
-    title.setColour(juce::Label::textColourId, colours::panel);
+    title.setColour(juce::Label::textColourId, colours::stageText);
     status.setJustificationType(juce::Justification::centredRight);
     status.setColour(juce::Label::textColourId, colours::muted);
 
@@ -358,7 +358,7 @@ void PulsoAudioProcessorEditor::paint(juce::Graphics& graphics) {
     const auto header = juce::Rectangle<float>(24.0f, 24.0f,
                                                 static_cast<float>(getWidth() - 48), 84.0f);
     const auto identity = header.withWidth(230.0f);
-    graphics.setColour(colours::text);
+    graphics.setColour(colours::stage);
     graphics.fillRect(identity);
     graphics.setColour(colours::accent);
     graphics.fillRect(identity.withHeight(5.0f));
@@ -376,11 +376,11 @@ void PulsoAudioProcessorEditor::paint(juce::Graphics& graphics) {
 
     const auto deck = juce::Rectangle<float>(24.0f, 124.0f,
                                              static_cast<float>(getWidth() - 48), 110.0f);
-    graphics.setColour(colours::text);
+    graphics.setColour(colours::panelRaised);
     graphics.fillRect(deck);
     graphics.setColour(colours::accent);
     graphics.fillRect(deck.withWidth(5.0f));
-    graphics.setColour(colours::stageGrid);
+    graphics.setColour(colours::line);
     graphics.drawRect(deck, 1.0f);
 }
 

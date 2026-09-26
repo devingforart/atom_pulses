@@ -19,8 +19,8 @@ PulsoLookAndFeel::PulsoLookAndFeel() {
     setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     setColour(juce::TextButton::textColourOffId, colours::text);
     setColour(juce::TextButton::textColourOnId, colours::background);
-    setColour(juce::TooltipWindow::backgroundColourId, colours::text);
-    setColour(juce::TooltipWindow::textColourId, colours::background);
+    setColour(juce::TooltipWindow::backgroundColourId, colours::stage);
+    setColour(juce::TooltipWindow::textColourId, colours::stageText);
     setColour(juce::TooltipWindow::outlineColourId, colours::accent);
 }
 
@@ -54,13 +54,13 @@ void PulsoLookAndFeel::drawButtonBackground(juce::Graphics& graphics, juce::Butt
     const auto id = button.getComponentID();
     const auto primary = id == "compose-song";
     const auto live = id == "create-in-live";
-    auto fill = primary ? colours::text : (live ? colours::accent : colours::panel);
-    auto border = primary ? colours::text : (live ? colours::accent : colours::lineDark);
+    auto fill = primary ? colours::accent : (live ? colours::panelRaised : colours::panel);
+    auto border = primary ? colours::accent : (live ? colours::accent : colours::line);
     if (button.getToggleState()) {
         fill = colours::accent;
         border = colours::accent;
     }
-    if (highlighted) fill = fill.interpolatedWith(primary ? colours::accentHot : colours::panelHover, 0.18f);
+    if (highlighted) fill = fill.interpolatedWith(primary ? colours::accentHot : colours::panelHover, 0.22f);
     if (down) fill = fill.darker(0.10f);
     auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
     graphics.setColour(fill);
@@ -72,8 +72,8 @@ void PulsoLookAndFeel::drawButtonBackground(juce::Graphics& graphics, juce::Butt
 void PulsoLookAndFeel::drawButtonText(juce::Graphics& graphics, juce::TextButton& button,
                                       bool, bool) {
     const auto id = button.getComponentID();
-    const auto inverse = id == "compose-song" || id == "create-in-live";
-    graphics.setColour(inverse ? colours::panel : colours::text);
+    const auto inverse = id == "compose-song";
+    graphics.setColour(inverse ? colours::stage : (id == "create-in-live" ? colours::rustPale : colours::text));
     graphics.setFont(juce::FontOptions(10.5f, juce::Font::bold));
     graphics.drawFittedText(button.getButtonText(), button.getLocalBounds().reduced(9, 1),
                             juce::Justification::centred, 1);

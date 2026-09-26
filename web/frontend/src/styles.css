@@ -243,6 +243,17 @@ nav a:hover::after, nav a.active::after { background: var(--rust); }
 .price-card li::first-letter { color: var(--rust); }
 .pricing-note { max-width: 680px; margin: 25px auto; color: #70726b; font-size: 11px; line-height: 1.7; text-align: center; }
 .form-error { color: #aa2f1c !important; font-size: 13px !important; }
+.form-success { margin: 14px 0 0; color: #286f36; font-size: 12px; line-height: 1.55; }
+.promotion-panel { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(310px, .75fr); max-width: 1104px; margin: 14px auto 0; padding: 34px 36px; color: var(--ink); background: #deddd7; border: 1px solid var(--line-dark); gap: 54px; }
+.promotion-panel h2 { max-width: 570px; margin: 16px 0; font-size: clamp(27px, 3vw, 40px); }
+.promotion-panel p:not(.eyebrow) { max-width: 610px; color: #5b5d56; font-size: 13px; line-height: 1.7; }
+.promotion-panel code { color: var(--rust-dark); font: 600 11px var(--mono); }
+.promotion-form { align-self: center; }
+.promotion-form label { display: block; margin-bottom: 8px; color: #555750; font: 600 10px var(--mono); text-transform: uppercase; }
+.promotion-form input { width: 100%; padding: 14px; color: var(--ink); background: #f8f7f2; border: 1px solid var(--line-dark); border-radius: 0; outline: 0; font: 500 14px var(--mono); }
+.promotion-form input:focus { border-color: var(--rust); box-shadow: inset 3px 0 var(--rust); }
+.promotion-actions { display: flex; align-items: center; gap: 20px; margin-top: 13px; }
+.promotion-actions .text-button:disabled { opacity: .45; cursor: not-allowed; }
 
 .auth-page { display: grid; min-height: calc(100vh - 76px); place-items: center; padding: 80px 24px; background: linear-gradient(90deg, transparent calc(50% - 1px), #d2d1cb 50%, transparent calc(50% + 1px)); }
 .auth-card { position: relative; width: min(490px, 100%); padding: 42px; background: var(--paper); border: 1px solid var(--line-dark); box-shadow: 12px 12px 0 var(--rust); }
@@ -306,6 +317,7 @@ footer > span { grid-column: 1 / -1; padding-top: 23px; border-top: 1px solid #3
   .page-hero { padding: 100px 24px 72px; }
   .page-hero::after { display: none; }
   .pricing-grid { grid-template-columns: 1fr; padding-inline: 24px; }
+  .promotion-panel { grid-template-columns: 1fr; margin-inline: 24px; gap: 28px; }
   .account-grid { grid-template-columns: 1fr; }
   footer { grid-template-columns: 1fr; padding: 60px 24px 36px; }
 }
@@ -340,6 +352,7 @@ footer > span { grid-column: 1 / -1; padding-top: 23px; border-top: 1px solid #3
   .product-stage { margin-inline: 12px; padding: 7px; }
   .product-stage .midi-stage { min-height: 400px; }
   .price-card, .auth-card { padding: 28px; }
+  .promotion-panel { margin-inline: 20px; padding: 27px 24px; }
   .price-card h2 { font-size: 36px; }
   .auth-card { box-shadow: 7px 7px 0 var(--rust); }
   .account-page { padding: 85px 20px 110px; }

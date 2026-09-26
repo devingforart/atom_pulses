@@ -52,6 +52,7 @@ fn router(state: AppState) -> Router {
         .route("/auth/verify-email", post(auth::verify_email))
         .route("/auth/resend-verification", post(auth::resend_verification))
         .route("/billing/checkout", post(billing::checkout))
+        .route("/billing/redeem-promo", post(billing::redeem_promo))
         .route("/billing/plans", get(billing::plans))
         .route("/billing/portal", post(billing::portal))
         .route("/billing/webhook", post(billing::webhook))

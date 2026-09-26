@@ -16,7 +16,7 @@ use crate::{
     AppState,
     auth::require_user,
     error::{ApiError, ApiResult},
-    models::CheckoutInput,
+    models::{CheckoutInput, RedeemPromotionInput},
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -44,6 +44,17 @@ struct StripePrice {
 #[derive(Deserialize)]
 struct StripeRecurring {
     interval: String,
+}
+
+#[derive(Deserialize)]
+struct StripeList<T> {
+    data: Vec<T>,
+}
+
+#[derive(Deserialize)]
+struct StripePromotionCode {
+    id: String,
+    active: bool,
 }
 
 async fn stripe_post(
@@ -87,6 +98,36 @@ async fn stripe_price(state: &AppState, price_id: &str) -> ApiResult<StripePrice
         ));
     }
     Ok(response.json().await?)
+}
+
+fn normalized_code(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|code| !code.is_empty())
+        .filter(|code| code.len() <= 64 && code.chars().all(|character| character.is_ascii_alphanumeric() || character == '-' || character == '_'))
+        .map(str::to_owned)
+}
+
+async fn stripe_promotion_code(state: &AppState, code: &str) -> ApiResult<String> {
+    let response = state
+        .http
+        .get("https://api.stripe.com/v1/promotion_codes")
+        .basic_auth(&state.config.stripe_secret_key, Some(""))
+        .header("Stripe-Version", "2025-06-30.basil")
+        .query(&[("code", code), ("active", "true"), ("limit", "1")])
+        .send()
+        .await?;
+    if !response.status().is_success() {
+        tracing::error!(status = %response.status(), "Stripe promotion-code lookup failed");
+        return Err(ApiError::public(StatusCode::BAD_GATEWAY, "No pudimos validar el código de descuento."));
+    }
+    let result: StripeList<StripePromotionCode> = response.json().await?;
+    result
+        .data
+        .into_iter()
+        .find(|item| item.active)
+        .map(|item| item.id)
+        .ok_or_else(|| ApiError::public(StatusCode::BAD_REQUEST, "El código de descuento no es válido o ya venció."))
 }
 
 pub async fn plans(State(state): State<AppState>) -> ApiResult<Json<Value>> {
@@ -201,34 +242,96 @@ pub async fn checkout(
         user.stripe_customer_id,
     )
     .await?;
+    let supplied_promotion_code = input
+        .promotion_code
+        .as_deref()
+        .map(str::trim)
+        .filter(|code| !code.is_empty());
+    let promotion_code = match supplied_promotion_code {
+        Some(_) if normalized_code(input.promotion_code.as_deref()).is_none() => {
+            return Err(ApiError::public(
+                StatusCode::BAD_REQUEST,
+                "El código de descuento tiene un formato inválido.",
+            ));
+        }
+        Some(code) if code.eq_ignore_ascii_case(&state.config.southatoms_promo_code) => {
+            return Err(ApiError::public(
+                StatusCode::BAD_REQUEST,
+                "SouthAtoms es un código de acceso gratuito. Canjéalo en la sección de invitaciones.",
+            ));
+        }
+        Some(code) => Some(stripe_promotion_code(&state, code).await?),
+        None => None,
+    };
+    let mut fields = vec![
+        ("mode", mode.into()),
+        ("customer", customer),
+        ("client_reference_id", user.id.to_string()),
+        ("line_items[0][price]", price),
+        ("line_items[0][quantity]", "1".into()),
+        ("automatic_tax[enabled]", "true".into()),
+        ("success_url", format!("{}/account?checkout=success", state.config.public_url)),
+        ("cancel_url", format!("{}/pricing?checkout=canceled", state.config.public_url)),
+        ("metadata[pulso_user_id]", user.id.to_string()),
+        ("metadata[pulso_plan]", input.plan.clone()),
+    ];
+    if let Some(promotion_code) = promotion_code {
+        fields.push(("discounts[0][promotion_code]", promotion_code));
+    } else {
+        // Stripe's hosted checkout remains the canonical UI for any other
+        // promotion code, including region-specific campaigns.
+        fields.push(("allow_promotion_codes", "true".into()));
+    }
     let session = stripe_post(
         &state,
         "checkout/sessions",
-        vec![
-            ("mode", mode.into()),
-            ("customer", customer),
-            ("client_reference_id", user.id.to_string()),
-            ("line_items[0][price]", price),
-            ("line_items[0][quantity]", "1".into()),
-            ("allow_promotion_codes", "true".into()),
-            ("automatic_tax[enabled]", "true".into()),
-            (
-                "success_url",
-                format!("{}/account?checkout=success", state.config.public_url),
-            ),
-            (
-                "cancel_url",
-                format!("{}/pricing?checkout=canceled", state.config.public_url),
-            ),
-            ("metadata[pulso_user_id]", user.id.to_string()),
-            ("metadata[pulso_plan]", input.plan.clone()),
-        ],
+        fields,
     )
     .await?;
     let url = session
         .url
         .ok_or_else(|| ApiError::internal("Stripe checkout had no URL"))?;
     Ok(Json(json!({ "url": url })))
+}
+
+pub async fn redeem_promo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(input): Json<RedeemPromotionInput>,
+) -> ApiResult<Json<Value>> {
+    let user = require_user(&state, &headers).await?;
+    let code = normalized_code(Some(&input.code)).ok_or_else(|| {
+        ApiError::public(StatusCode::BAD_REQUEST, "Ingresa un código de invitación válido.")
+    })?;
+    if !code.eq_ignore_ascii_case(&state.config.southatoms_promo_code) {
+        return Err(ApiError::public(StatusCode::BAD_REQUEST, "El código de invitación no es válido."));
+    }
+
+    let timestamp = now();
+    let updates_until = timestamp + state.config.promotion_updates_days * 24 * 60 * 60;
+    let campaign = "southatoms";
+    let result = sqlx::query(
+        "INSERT INTO promotion_redemptions(user_id,campaign,redeemed_at) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
+    )
+    .bind(user.id)
+    .bind(campaign)
+    .bind(timestamp)
+    .execute(&state.db)
+    .await?;
+
+    sqlx::query("INSERT INTO entitlements(user_id,product,status,updates_until,source,created_at,updated_at) VALUES($1,'studio','active',$2,'promotion:southatoms',$3,$3) ON CONFLICT(user_id) DO UPDATE SET status='active',updates_until=GREATEST(COALESCE(entitlements.updates_until,0),EXCLUDED.updates_until),source=CASE WHEN entitlements.source='stripe' THEN entitlements.source ELSE EXCLUDED.source END,updated_at=EXCLUDED.updated_at")
+        .bind(user.id)
+        .bind(updates_until)
+        .bind(timestamp)
+        .execute(&state.db)
+        .await?;
+
+    tracing::info!(user_id = %user.id, campaign, new_redemption = result.rows_affected() == 1, "promotion entitlement granted");
+    Ok(Json(json!({
+        "granted": true,
+        "alreadyRedeemed": result.rows_affected() == 0,
+        "updatesUntil": updates_until,
+    })))
 }
 
 pub async fn portal(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {

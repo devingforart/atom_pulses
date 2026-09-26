@@ -66,9 +66,13 @@ export const api = {
   revokeDevice: (id: string) => request<void>(`/api/licenses/devices/${id}`, { method: 'DELETE' }),
   release: () => request<Release>('/api/releases/latest'),
   plans: () => request<BillingPlans>('/api/billing/plans'),
-  checkout: (plan: 'studio' | 'cloud_monthly' | 'cloud_annual') =>
+  checkout: (plan: 'studio' | 'cloud_monthly' | 'cloud_annual', promotionCode?: string) =>
     request<{ url: string }>('/api/billing/checkout', {
-      method: 'POST', body: JSON.stringify({ plan }),
+      method: 'POST', body: JSON.stringify({ plan, promotionCode }),
+    }),
+  redeemPromotion: (code: string) =>
+    request<{ granted: boolean; alreadyRedeemed: boolean; updatesUntil: number }>('/api/billing/redeem-promo', {
+      method: 'POST', body: JSON.stringify({ code }),
     }),
   portal: () => request<{ url: string }>('/api/billing/portal', { method: 'POST' }),
 }

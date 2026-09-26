@@ -66,4 +66,11 @@ pub struct LoginInput {
 #[derive(Debug, Deserialize)]
 pub struct CheckoutInput {
     pub plan: String,
+    #[serde(default)]
+    pub promotion_code: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RedeemPromotionInput {
+    pub code: String,
 }

@@ -14,6 +14,8 @@ pub struct Config {
     pub stripe_monthly_price_id: Option<String>,
     pub stripe_annual_price_id: Option<String>,
     pub stripe_studio_price_id: String,
+    pub southatoms_promo_code: String,
+    pub promotion_updates_days: i64,
     pub github_owner: String,
     pub github_repo: String,
     pub github_token: Option<String>,
@@ -53,6 +55,16 @@ impl Config {
                 .ok()
                 .filter(|value| !value.is_empty()),
             stripe_studio_price_id: required("STRIPE_STUDIO_PRICE_ID")?,
+            // It is intentionally overridable in the production environment so a
+            // campaign can be rotated without a software release. The default is
+            // the launch code requested for SouthAtoms collaborators.
+            southatoms_promo_code: env::var("PULSO_SOUTHATOMS_PROMO_CODE")
+                .unwrap_or_else(|_| "SouthAtoms".into()),
+            promotion_updates_days: env::var("PULSO_PROMOTION_UPDATES_DAYS")
+                .ok()
+                .and_then(|value| value.parse::<i64>().ok())
+                .filter(|value| *value > 0 && *value <= 3650)
+                .unwrap_or(365),
             github_owner: env::var("GITHUB_OWNER").unwrap_or_else(|_| "devingforart".into()),
             github_repo: env::var("GITHUB_REPO").unwrap_or_else(|_| "atom_pulses".into()),
             github_token: env::var("GITHUB_TOKEN").ok().filter(|v| !v.is_empty()),

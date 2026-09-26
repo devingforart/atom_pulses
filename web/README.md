@@ -7,7 +7,9 @@ Sitio comercial y portal de clientes de PULSO. React entrega la interfaz; la API
 - Landing, producto, planes, registro, acceso, cuenta y descarga responsive.
 - Sesiones revocables mediante cookie `HttpOnly`, `SameSite=Lax` y token almacenado únicamente como SHA-256.
 - Contraseñas Argon2id y PostgreSQL con migraciones automáticas.
-- Stripe Checkout para Studio perpetuo y Cloud mensual/anual, Customer Portal y webhooks firmados e idempotentes.
+- Stripe Checkout alojado para Studio perpetuo, factura postcompra, Customer Portal y webhooks firmados e idempotentes.
+- Órdenes persistentes conciliables con Price, PaymentIntent, factura, importe, moneda e impuestos.
+- Pagos demorados, reembolsos y disputas sincronizados con el acceso a la licencia.
 - Códigos de promoción de Stripe y canje auditable de la campaña gratuita SouthAtoms.
 - Email verificable, recuperación de contraseña sin enumeración de cuentas y envío mediante Resend.
 - Activación de hasta dos dispositivos, revocación y licencia offline Ed25519 de 30 días.
@@ -51,7 +53,8 @@ curl --fail http://127.0.0.1:8188/api/health
 - Guarda los secretos en el gestor del proveedor, nunca en GitHub ni en el frontend.
 - Genera `PULSO_LICENSE_SIGNING_KEY` con 32 bytes aleatorios codificados como 64 caracteres hexadecimales y consérvala sólo en el gestor de secretos.
 - Configura `RESEND_API_KEY` y valida el dominio usado por `MAIL_FROM`.
-- En Stripe registra `https://TU_DOMINIO/api/billing/webhook` para `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated` y `customer.subscription.deleted`.
+- En Stripe registra `https://TU_DOMINIO/api/billing/webhook` para `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `refund.created`, `refund.updated`, `charge.dispute.created`, `charge.dispute.closed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.created`, `customer.subscription.updated` y `customer.subscription.deleted`.
+- Studio usa una factura de Stripe creada por Checkout. Configura el producto como software descargable y confirma con asesoría fiscal si corresponde uso personal (`txcd_10202000`) o comercial (`txcd_10202003`) antes de activar live mode.
 - Define `PULSO_SOUTHATOMS_PROMO_CODE` y `PULSO_PROMOTION_UPDATES_DAYS` en el entorno de producción. El valor inicial `SouthAtoms` concede Studio y 365 días de actualizaciones una vez por cuenta; rota o elimina la variable al cerrar la campaña.
 - Activa Stripe Customer Portal, facturas, impuestos y los métodos de pago deseados. No habilites los precios Cloud hasta desplegar y auditar el gateway de IA.
 - Para un repositorio privado, usa un fine-grained `GITHUB_TOKEN` con acceso de lectura a Contents de este repositorio.

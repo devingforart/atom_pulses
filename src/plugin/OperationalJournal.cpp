@@ -59,6 +59,17 @@ juce::File OperationalJournal::writeRejectedAudit(
     root->setProperty("rejection_stage", rejectionStage);
     root->setProperty("production_ready", report.production.ready);
     root->setProperty("production_score", report.production.score);
+    root->setProperty("composition_behavior",
+        juce::String(compositionBehaviorKey(plan.compositionBehavior).data()));
+    auto integrity = new juce::DynamicObject();
+    integrity->setProperty("unsupported_chromatic_notes", report.production.unsupportedChromaticNotes);
+    integrity->setProperty("invalid_sustains", report.production.invalidSustains);
+    integrity->setProperty("harsh_overlaps", report.production.unintendedHarshOverlaps);
+    integrity->setProperty("low_register_clashes", static_cast<int>(report.production.lowRegisterVerticalClashes));
+    integrity->setProperty("metric_violations", static_cast<int>(report.production.metricViolations));
+    integrity->setProperty("unsafe_durations", static_cast<int>(report.production.unsafeDurations));
+    integrity->setProperty("orphan_events", static_cast<int>(report.production.orphanEvents));
+    root->setProperty("production_integrity", juce::var(integrity));
     root->setProperty("creative_ready", report.narrative.creativeReady);
     root->setProperty("creative_score", report.narrative.score);
     root->setProperty("narrative_resolution", report.narrative.resolutionScore);

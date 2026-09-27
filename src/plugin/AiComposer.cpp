@@ -1749,6 +1749,37 @@ const juce::String performanceBlockSchema = R"json({
   },"required":["block_id","covered_instrument_ids","performance_score"],"additionalProperties":false
 })json";
 
+juce::String compositionBehaviorBrief(CompositionBehavior behavior) {
+    if (behavior == CompositionBehavior::Adaptive) return {};
+    if (behavior == CompositionBehavior::Narrative)
+        return "STYLE: narrative development with thematic contrast, earned climax and resolution. ";
+    return "STYLE: hypnotic evolution. Sustain a recognizable harmonic and rhythmic identity across "
+        "long states, using staggered entries, complementary voicings, restrained motif variation and "
+        "authored expression controls. Evolve one layer at a time when musically appropriate. "
+        "Preserve complete phrases, instrumental responsibilities, thematic relationships and an "
+        "intentional stable ending. This preference does not relax MIDI integrity, tonal compatibility, "
+        "coverage or closure requirements. Follow explicit instrument and percussion exclusions. ";
+}
+
+juce::String boundedPerformanceSchema(
+    const SongPlan& plan, const std::vector<std::size_t>& indices) {
+    auto schema = juce::JSON::parse(performanceBlockSchema);
+    juce::Array<juce::var> ids;
+    for (const auto index : indices)
+        if (index < plan.instruments.size())
+            ids.add(juce::String::fromUTF8(plan.instruments[index].id.c_str()));
+    if (ids.isEmpty()) return {};
+    auto properties = schema.getProperty("properties", {});
+    properties.getProperty("covered_instrument_ids", {}).getProperty("items", {})
+        .getDynamicObject()->setProperty("enum", ids);
+    auto cells = properties.getProperty("performance_score", {}).getProperty("properties", {})
+        .getProperty("cells", {}).getProperty("items", {}).getProperty("properties", {});
+    for (const auto* events : {"notes", "controls"})
+        cells.getProperty(events, {}).getProperty("items", {}).getProperty("properties", {})
+            .getProperty("instrument_id", {}).getDynamicObject()->setProperty("enum", ids);
+    return juce::JSON::toString(schema, true);
+}
+
 juce::String describeReference(const Pattern* pattern, std::uint8_t lockedLayers) {
     if (pattern == nullptr || pattern->notes.empty() || lockedLayers == 0) return "None.";
     juce::String result;
@@ -2223,7 +2254,10 @@ juce::String performanceBlockPrompt(const juce::String& direction,
         "harmony. Use the home tonic only when the blueprint explicitly requires tonic closure; suspended, modal and "
         "open endings remain valid creative decisions. Across every section where it is active, the protagonist must "
         "contain AI-written four-to-eight-bar sentences with at least four distinct connected attacks (no adjacent "
-        "attack gap above three quarters of a bar) in at least 40 percent of eligible eight-bar windows. Isolated marker "
+        "attack gap above three quarters of a bar) in at least 40 percent of eligible " ) +
+        juce::String(plan.compositionBehavior == CompositionBehavior::Hypnotic ?
+            "sixteen-bar states" : "eight-bar windows") + juce::String(
+        ". Isolated marker "
         "notes never count as a phrase. "
         "Silence inside and between those phrases is welcome: ensemble continuity belongs to independent harmonic, "
         "atmospheric and movement voices, never to a permanently talking lead. Across four "
@@ -2279,7 +2313,8 @@ juce::String performanceBlockPrompt(const juce::String& direction,
         "changes and below one eighth of the complete form. Keep each note inside the declared register and use only the declared source_voice for that "
         "instrument. Return no instrument outside this block. Cell ids must start with b") +
         juce::String(static_cast<int>(blockIndex + 1)) + "_. Attempt " + juce::String(attempt) +
-        ". Original direction: " + direction +
+        ". Original direction: " + direction + "\n" +
+        compositionBehaviorBrief(plan.compositionBehavior) +
         "\nINSTRUMENTS IN THIS BLOCK:\n" + instrumentBlockBrief(plan, indices) +
         "\nGLOBAL ORCHESTRATION MATRIX (authoritative for every block):\n" +
         orchestrationMatrixBrief(plan) +
@@ -2540,6 +2575,12 @@ juce::String performanceDeficitBrief(const SongPlan& plan,
         if (deficit.minimumNarrativePhraseWindows > 0)
             result << " narrative_windows=" << static_cast<int>(deficit.narrativePhraseWindows) << "/"
                    << static_cast<int>(deficit.minimumNarrativePhraseWindows);
+        if (deficit.missingNarrativePresence &&
+            !deficit.missingNarrativeWindowStartBars.empty()) {
+            result << " missing_window_start_bars=";
+            for (const auto bar : deficit.missingNarrativeWindowStartBars)
+                result << bar << ",";
+        }
         if (deficit.missingCodaResolution) result << " coda=missing";
         if (deficit.missingThematicRelationship) result << " theme_relation=missing";
         if (deficit.duplicatedIndependentLine)
@@ -2625,6 +2666,12 @@ juce::String performanceConstraintBrief(const SongPlan& plan,
         if (evidence.missingNarrativePresence)
             result << "; narrative_windows=" << static_cast<int>(evidence.narrativePhraseWindows)
                    << "/" << static_cast<int>(evidence.minimumNarrativePhraseWindows);
+        if (evidence.missingNarrativePresence &&
+            !evidence.missingNarrativeWindowStartBars.empty()) {
+            result << "; missing_window_start_bars=";
+            for (const auto bar : evidence.missingNarrativeWindowStartBars)
+                result << bar << ",";
+        }
         if (evidence.missingThematicDevelopment)
             result << "; literal_return_ratio=" << juce::String(evidence.literalPlacementRatio, 3);
         if (evidence.missingMelodicSpeech)
@@ -3001,6 +3048,7 @@ juce::String selectiveRepairPrompt(const juce::String& direction,
         "harmonic owner preserves context, and end on the declared tonic or on an explicitly intentional stable suspended "
         "settlement. Use compact reusable cells; this is "
         "a bounded repair, not a new composition.\nORIGINAL DIRECTION:\n") + direction +
+        "\n" + compositionBehaviorBrief(plan.compositionBehavior) +
         (repairingProtagonist
             ? "\nPROTAGONIST REWRITE CONTRACT:\nThe promoted or transferred phrase is seed material only. Author this protagonist's own premise, question, development, transformed return and coda across multiple sections. Do not clone the flute, counterline or donor contour; establish a recognisable onset grammar, meaningful rests, an answered interval and a decisive final consequence.\n"
             : "") +
@@ -3015,6 +3063,13 @@ juce::String selectiveRepairPrompt(const juce::String& direction,
 juce::String audibleAuditSummary(const CompositionRenderReport& report) {
     return "production=" + juce::String(report.production.score, 3) +
         " ready=" + juce::String(static_cast<int>(report.production.ready)) +
+        " integrity[chromatic=" + juce::String(report.production.unsupportedChromaticNotes) +
+        ",sustain=" + juce::String(report.production.invalidSustains) +
+        ",overlap=" + juce::String(report.production.unintendedHarshOverlaps) +
+        ",low_clash=" + juce::String(static_cast<int>(report.production.lowRegisterVerticalClashes)) +
+        ",metric=" + juce::String(static_cast<int>(report.production.metricViolations)) +
+        ",duration=" + juce::String(static_cast<int>(report.production.unsafeDurations)) +
+        ",orphan=" + juce::String(static_cast<int>(report.production.orphanEvents)) + "]" +
         " | narrative=" + juce::String(report.narrative.score, 3) +
         " ready=" + juce::String(static_cast<int>(report.narrative.creativeReady)) +
         " resolution=" + juce::String(report.narrative.resolutionScore, 3) +
@@ -3029,6 +3084,11 @@ juce::String audibleAuditSummary(const CompositionRenderReport& report) {
 }
 
 juce::String AiComposer::defaultModel() { return model; }
+
+juce::String AiComposer::performanceSchemaFor(
+    const SongPlan& plan, const std::vector<std::size_t>& indices) {
+    return boundedPerformanceSchema(plan, indices);
+}
 
 juce::String AiComposer::defaultReasoningEffort() { return reasoningEffort; }
 
@@ -3340,6 +3400,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         juce::String(static_cast<juce::int64>(seed)) + " | target_seconds=" +
         juce::String(targetSeconds) + " | bars=" + juce::String(totalBars) +
         " | requested_cast=" + juce::String(static_cast<int>(requestedCastCount)) +
+        " | behavior=" + juce::String(compositionBehaviorKey(behavior).data()) +
         " | direction=" + direction.substring(0, 240));
     const auto directionLower = direction.toLowerCase();
     const auto hypnoticProgressiveReference = directionLower.contains("guy j");
@@ -3351,28 +3412,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             "long tension plateaus, delayed returns and a decisive transformed recall. Complexity must emerge from "
             "micro-development and automation, not melodic busyness or orchestral accumulation. ")
         : juce::String();
-    const auto behaviorBrief = behavior == CompositionBehavior::Hypnotic
-        ? juce::String(
-            "EXPLICIT COMPOSITION BEHAVIOR: HYPNOTIC. This overrides generic pressure for frequent contrast, "
-            "piano-like harmonic narration or concert-style foreground turnover. Preserve long perceptual states "
-            "for 16-64 bars when justified, with a strict novelty budget: establish one compact pitch/rhythm DNA "
-            "and normally change only one responsibility at a time. Stagger entries, withdrawals, register shifts, "
-            "articulation and CC1/CC11/CC74 motion across instruments instead of moving the whole arrangement at "
-            "section boundaries. Harmonic stasis, pedals and transformed repetition are valid development. Keep "
-            "foreground speech sparse and memorable; do not add notes merely to prove that a track evolves. A climax "
-            "may be an accumulated perceptual opening or transformed return rather than new melodic material. Preserve "
-            "club functionality when the creative direction implies dance music: stable kick/bass identity, patient "
-            "subtraction, delayed payoff and mixable continuity. Validation must distinguish intentional scarcity from "
-            "an unwritten part. ")
-        : behavior == CompositionBehavior::Narrative
-            ? juce::String(
-                "EXPLICIT COMPOSITION BEHAVIOR: NARRATIVE. Preserve PULSO's established causal arc: distinct premise, "
-                "question, development, contrast, earned climax, transformed return and audible resolution. Changes may "
-                "be bold, but every new event must follow from the thematic and harmonic argument. ")
-            : juce::String(
-                "COMPOSITION BEHAVIOR: ADAPTIVE. Infer from the musician's words whether the work needs patient hypnotic "
-                "continuity, explicit narrative contrast, or a balanced combination. Do not default electronic music to "
-                "piano-like harmonic busyness or orchestral turnover. ");
+    const auto behaviorBrief = compositionBehaviorBrief(behavior);
     const auto prompt = juce::String(
         "You are the long-form composition architect for PULSO. Design one complete song, not a loop. "
         "Create a narratively inevitable form with introduction, thematic statements, contrast, development, "
@@ -3382,8 +3422,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "what caused it and the audible consequence; transformation changes that identity because of the obligation; "
         "climax makes the accumulated debt unavoidable; resolution audibly repays it through motif closure, tonal arrival, "
         "register relaxation and reduced density. protagonist_instrument_id must exactly match one declared Lead instrument "
-        "and that protagonist or its explicit handoff must speak in at least 40 percent of eligible eight-bar phrase "
-        "windows, using rests inside and between phrases rather than continuous note streams. Ensemble continuity must "
+        "and that protagonist or its explicit handoff must speak in at least 40 percent of eligible ") +
+        juce::String(behavior == CompositionBehavior::Hypnotic ?
+            "sixteen-bar states" : "eight-bar phrase windows") + juce::String(
+        ", using rests inside and between phrases rather than continuous note streams. Ensemble continuity must "
         "come from independent harmonic, atmospheric and movement voices. In electronic harmonic works, preserve tonal "
         "memory across roughly 70-90 percent of bars through complementary owners, but do not keep every floor layer "
         "active continuously. Author a perceptible density curve: at least one reduced-memory passage, one progressive "
@@ -4333,8 +4375,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     "blueprint's resolution window and ends on a stable terminal-harmony pitch; "
                     "develop_sectional_evolution replaces literal repetition with the measured three-to-six phrase states "
                     "distributed across setup, development, climax and return; "
-                    "develop_narrative_presence writes distinct protagonist statements into the measured missing eight-bar "
-                    "windows without continuous filler; transform_thematic_returns keeps the recognisable nucleus but "
+                    "develop_narrative_presence writes distinct protagonist statements into the measured missing " +
+                    juce::String(result.compositionBehavior == CompositionBehavior::Hypnotic ?
+                        "sixteen-bar states" : "eight-bar windows") +
+                    " without continuous filler; transform_thematic_returns keeps the recognisable nucleus but "
                     "replaces dominant literal copies through contour, onset, fragmentation or cadential consequence; "
                     "shape_melodic_speech combines singable stepwise connection with characteristic leaps, rests and "
                     "held consequences; avoid both disconnected interval roulette and continuous scalar walking; "
@@ -4387,7 +4431,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     juce::JSON::toString(juce::var(cacheKey)) + ",\"input\":" +
                     juce::JSON::toString(juce::var(shardPrompt)) +
                     ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_performance_block\","
-                    "\"strict\":true,\"schema\":" + performanceBlockSchema + "}}}";
+                    "\"strict\":true,\"schema\":" + performanceSchemaFor(result, shard) + "}}}";
                 const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
                     overallDeadline - std::chrono::steady_clock::now());
                 if (remaining < std::chrono::seconds(30)) {
@@ -4417,7 +4461,18 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     " recovery routing: " + routing.summary(assignedIds));
                 if (!valid) {
                     unresolved.insert(unresolved.end(), request.indices.begin(), request.indices.end());
-                    lastBlockError = shardError.isNotEmpty() ? shardError : apiErrorMessage(response);
+                    const auto failure = shardError.isNotEmpty() ? shardError :
+                        responseText.isEmpty() && response.connected &&
+                                response.status >= 200 && response.status < 300
+                            ? juce::String("OpenAI returned an empty recovery response")
+                            : apiErrorMessage(response);
+                    lastBlockError = "Recovery for " +
+                        (assignedIds.empty() ? juce::String("unknown instrument") :
+                            juce::String::fromUTF8(assignedIds.begin()->c_str())) +
+                        " returned no usable notes: " + failure;
+                    OperationalJournal::write("WARN", "RECOVERY", lastBlockError +
+                        " | measured deficit=" + performanceDeficitBrief(
+                            result, assembledScore, request.indices));
                     continue;
                 }
                 retainOnlyInstrumentMaterial(shardScore, assignedIds);
@@ -4507,7 +4562,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             juce::JSON::toString(juce::var(cacheKey)) + ",\"input\":" +
             juce::JSON::toString(juce::var(blockPrompt)) +
             ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_performance_block\","
-            "\"strict\":true,\"schema\":" + performanceBlockSchema + "}}}";
+            "\"strict\":true,\"schema\":" + performanceSchemaFor(result, indices) + "}}}";
         const auto requestBudget = std::min(remaining,
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::minutes(3)));
         const auto blockHttp = performRequest(blockBody, apiKey, token, requestBudget);
@@ -4659,7 +4714,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             unresolved.erase(std::unique(unresolved.begin(), unresolved.end()), unresolved.end());
             if (unresolved.empty()) return true;
             if (isProtagonistOnly(indices)) {
-                lastBlockError = "OpenAI protagonist failed the connected-phrase, development or final-coda contract";
+                lastBlockError = "OpenAI protagonist remains below the measured contract: " +
+                    performanceDeficitBrief(result, assembledScore, unresolved) +
+                    " | last recovery: " + lastBlockError;
                 return false;
             }
             const auto unresolvedConstraints = SelectiveRepair::performanceConstraints(
@@ -5359,7 +5416,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 juce::JSON::toString(juce::var(repairPrompt)) +
                 ",\"text\":{\"format\":{\"type\":\"json_schema\","
                 "\"name\":\"pulso_selective_repair_shard\",\"strict\":true,\"schema\":" +
-                performanceBlockSchema + "}}}";
+                performanceSchemaFor(bestPlan, indices) + "}}}";
         };
         auto executeRepairRound = [&](const std::vector<std::vector<std::size_t>>& shards,
                                       int attempt, std::chrono::milliseconds requestBudget) {
@@ -5935,19 +5992,17 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             CompositionRenderReport revisedReport;
             [[maybe_unused]] const auto auditedRevision = SongComposer{}.render(
                 revised, revisedFoundation, {}, &revisedReport);
-            const auto hypnoticAudit = behavior == CompositionBehavior::Hypnotic;
-            const auto longFormDialogueTarget = !hypnoticAudit && totalBars >= 96 &&
-                result.instruments.size() >= 12 ? std::size_t{3} : std::size_t{1};
-            const auto meetsNarrativeTarget = [longFormDialogueTarget, hypnoticAudit](
-                const CompositionRenderReport& report) {
+            const auto longFormDialogueTarget = totalBars >= 96 && result.instruments.size() >= 12
+                ? std::size_t{3} : std::size_t{1};
+            const auto meetsNarrativeTarget = [longFormDialogueTarget](const CompositionRenderReport& report) {
                 const auto memoryReady = report.narrative.audibleThematicWindows < 3 ||
                     (report.narrative.thematicRecallRatio >= 0.40 &&
                      report.narrative.audibleThematicSimilarity >= 0.66);
                 const auto bassReady = report.narrative.bassPhrases < 4 ||
                     report.narrative.bassPhraseContinuity >= 0.60;
                 const auto developmentReady = report.narrative.comparableThematicReturns < 4 ||
-                    (report.narrative.literalThematicReturnRatio <= (hypnoticAudit ? .90 : .70) &&
-                     report.narrative.thematicDevelopment >= (hypnoticAudit ? .25 : .55));
+                    (report.narrative.literalThematicReturnRatio <= 0.70 &&
+                     report.narrative.thematicDevelopment >= 0.55);
                 const auto electronicReady = !report.electronicProduction.active ||
                     (report.electronicProduction.score >= 0.68 &&
                      report.electronicProduction.maximumRhythmRun <= 6 &&
@@ -5956,7 +6011,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                        report.electronicProduction.maximumLowEndGapBarsAfter <= 12)));
                 const auto audibleAuthorship =
                     (!report.narrative.foregroundExpected ||
-                     (report.narrative.foregroundNotes >= (hypnoticAudit ? 4U : 8U) &&
+                     (report.narrative.foregroundNotes >= 8 &&
                       report.narrative.foregroundAiAuthorshipRatio >= 0.85)) &&
                     (!report.narrative.movementBassExpected ||
                      (report.narrative.movementBassNotes >= 8 &&
@@ -5970,19 +6025,16 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 return report.production.ready && report.narrative.creativeReady &&
                     (!report.soundscape.active || report.soundscape.ready) &&
                     report.trackViability.ready &&
-                    report.narrative.primaryVoiceCoverage >= (hypnoticAudit ? .35 : .65) && audibleAuthorship &&
+                    report.narrative.primaryVoiceCoverage >= 0.65 && audibleAuthorship &&
                     memoryReady && bassReady && developmentReady && electronicReady && melodicSpeech &&
-                    report.narrative.resolutionScore >= (hypnoticAudit ? .46 : .58) &&
+                    report.narrative.resolutionScore >= 0.58 &&
                     report.electronicFabric.dialogueLines >= longFormDialogueTarget &&
                     report.narrative.densityControl >= 0.82 &&
                     report.narrative.maximumMelodicStepRun <= 5;
             };
-            const auto targetDeficit = [longFormDialogueTarget, hypnoticAudit](
-                const CompositionRenderReport& report) {
-                const auto coverageTarget = hypnoticAudit ? .35 : .65;
-                const auto foregroundTarget = hypnoticAudit ? std::size_t{4} : std::size_t{8};
-                auto deficit = std::max(0.0, coverageTarget - report.narrative.primaryVoiceCoverage) * 1.8;
-                if (report.narrative.foregroundNotes >= foregroundTarget)
+            const auto targetDeficit = [longFormDialogueTarget](const CompositionRenderReport& report) {
+                auto deficit = std::max(0.0, 0.65 - report.narrative.primaryVoiceCoverage) * 1.8;
+                if (report.narrative.foregroundNotes >= 8)
                     deficit += std::max(0.0, 0.85 - report.narrative.foregroundAiAuthorshipRatio) * 1.8;
                 else if (report.narrative.foregroundExpected)
                     deficit += 1.4;
@@ -6000,15 +6052,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 }
                 if (report.narrative.comparableThematicReturns >= 4) {
                     deficit += std::max(0.0,
-                        report.narrative.literalThematicReturnRatio - (hypnoticAudit ? .90 : .70));
-                    deficit += std::max(0.0,
-                        (hypnoticAudit ? .25 : .55) - report.narrative.thematicDevelopment);
+                        report.narrative.literalThematicReturnRatio - 0.70);
+                    deficit += std::max(0.0, 0.55 - report.narrative.thematicDevelopment);
                 }
                 deficit += std::max(0.0, 0.82 - report.narrative.densityControl);
-                deficit += std::max(0.0,
-                    (hypnoticAudit ? .50 : .62) - report.narrative.causalNarrative) * 1.4;
-                deficit += std::max(0.0,
-                    (hypnoticAudit ? .46 : .58) - report.narrative.resolutionScore) * 1.4;
+                deficit += std::max(0.0, 0.62 - report.narrative.causalNarrative) * 1.4;
+                deficit += std::max(0.0, 0.58 - report.narrative.resolutionScore) * 1.4;
                 if (report.narrative.melodicIntervals >= 8) {
                     deficit += std::max(0.0,
                         0.25 - report.narrative.melodicStepwiseRatio) * 1.6;
@@ -6059,7 +6108,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     "Preserve the candidate's strong form, harmony, "
                     "cast and successful cells. Rewrite and replace only placements or cells responsible for these "
                     "measured failures. Principal voice coverage must be at least " +
-                    juce::String(hypnoticAudit ? .35 : .65, 2) +
+                    juce::String(.65, 2) +
                     ". A recurring theme must preserve "
                     "audible onset rhythm and interval contour, not merely theme_id. Movement bass must form coherent "
                     "four-to-eight-bar pocket phrases with breaths and a developed return. Club bars must contain no "

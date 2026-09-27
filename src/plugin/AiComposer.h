@@ -45,6 +45,8 @@ public:
     [[nodiscard]] static bool structuredOutputSchemaIsValid();
     [[nodiscard]] static bool songPlanSchemaIsValid();
     [[nodiscard]] static bool incrementalSchemasAreValid();
+    [[nodiscard]] static juce::String performanceSchemaFor(
+        const SongPlan&, const std::vector<std::size_t>& assignedInstruments);
     [[nodiscard]] static std::size_t maximumSongInstruments() noexcept;
     [[nodiscard]] static std::size_t castDetailShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t selectiveRepairShardCount(std::size_t instruments) noexcept;

@@ -381,6 +381,28 @@ void runSelectiveRepairTests() {
                 literalLeadFindings.front().missingMelodicSpeech,
             "A ubiquitous literal leap-cell must not masquerade as a developed AI protagonist");
 
+    auto patientLead = literalLead;
+    patientLead.placements.erase(
+        std::remove_if(patientLead.placements.begin(), patientLead.placements.end(),
+            [](const auto& placement) { return placement.startBeat > 0.0; }),
+        patientLead.placements.end());
+    const auto narrativePatient = SelectiveRepair::performanceDeficits(
+        longNarrative, patientLead, {0});
+    auto hypnoticPlan = longNarrative;
+    hypnoticPlan.compositionBehavior = CompositionBehavior::Hypnotic;
+    const auto hypnoticPatient = SelectiveRepair::performanceDeficits(
+        hypnoticPlan, patientLead, {0});
+    require(narrativePatient.size() == 1 && hypnoticPatient.size() == 1 &&
+                narrativePatient.front().missingNarrativePresence &&
+                narrativePatient.front().narrativePhraseWindows == 4 &&
+                narrativePatient.front().minimumNarrativePhraseWindows == 7 &&
+                !hypnoticPatient.front().missingNarrativePresence &&
+                hypnoticPatient.front().narrativePhraseWindows == 4 &&
+                hypnoticPatient.front().minimumNarrativePhraseWindows == 4 &&
+                hypnoticPatient.front().missingCodaResolution &&
+                hypnoticPatient.front().missingThematicDevelopment,
+            "Hypnotic states may contain patient melodic statements while coda and development stay independent obligations");
+
     auto weaklyConnectedLead = literalLead;
     weaklyConnectedLead.cells.front().id = "weakly_connected_lead";
     weaklyConnectedLead.cells.front().notes = {

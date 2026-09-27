@@ -34,14 +34,16 @@ El selector de composición expresa cómo debe transcurrir el tiempo musical sin
 en un género:
 
 - **Adaptativo** mantiene el comportamiento consolidado y deja que la dirección escrita decida el
-  equilibrio entre continuidad y contraste. Si el texto pide de forma inequívoca hipnosis,
-  minimalismo o evolución lenta, adopta internamente el contrato hipnótico.
+  equilibrio entre continuidad y contraste, sin activar otro modo internamente.
 - **Hipnótico** prioriza estados largos, repetición transformada, pedal armónico, una sola novedad
   perceptual por vez y evolución escalonada de articulación, registro y controladores MIDI.
 - **Narrativo** prioriza cambios audibles, clímax, recapitulación y resolución causal.
 
 Ninguno de estos modos fija secciones de ocho compases. La duración de cada estado es una decisión
 compositiva de la IA dentro de la forma completa solicitada.
+
+Desde 0.58.47, los tres modos comparten los contratos de viabilidad, integridad, expresión y
+auditoría anteriores al selector. Hipnótico es una preferencia explícita de escritura y reparación.
 
 ## Alcance de 0.25
 

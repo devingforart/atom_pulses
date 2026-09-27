@@ -450,9 +450,9 @@ void runGeneratorTests() {
     const auto hypnoticFloorContract = TrackViability::contractFor(
         *floorOwner, hypnoticTexturePlan);
     require(hypnoticFloorContract.minimumActiveBars == adaptiveFloorContract.minimumActiveBars &&
-                hypnoticFloorContract.minimumNotes < adaptiveFloorContract.minimumNotes &&
-                hypnoticFloorContract.minimumPhrases <= 2,
-            "Hypnotic validation must preserve long-lived harmonic responsibility without forcing attack density");
+                hypnoticFloorContract.minimumNotes == adaptiveFloorContract.minimumNotes &&
+                hypnoticFloorContract.minimumPhrases == adaptiveFloorContract.minimumPhrases,
+            "A style preference must not silently weaken the established musical viability contract");
     std::string textureCast;
     for (const auto& part : texturePlan.instruments) textureCast += part.instrumentId + ":" + std::to_string(static_cast<int>(part.sourceVoice)) + ",";
     require(std::none_of(texturePlan.instruments.begin(), texturePlan.instruments.end(), [](const auto& part) {

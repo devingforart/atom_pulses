@@ -2,6 +2,23 @@
 
 ## Web comercial
 
+### 0.58.48 — frases hipnóticas y recuperación precisa
+
+- La presencia de la voz protagonista en modo Hipnótico se evalúa por estados de 16 compases, sin exigir una nueva frase cada ocho. Narrativo y Adaptativo conservan su evaluación anterior.
+- El desarrollo temático y la coda siguen siendo obligatorios; una repetición literal o una frase aislada no bastan para aprobar la composición.
+- Si faltan frases, la reparación recibe los compases exactos de los estados pendientes. Si una respuesta no trae notas utilizables, el registro lo indica junto con el déficit medido.
+
+### 0.58.47 — recuperación conservadora del comportamiento musical
+
+- Adaptativo ya no activa Hipnótico por palabras del prompt. La selección es explícita.
+- Se restauran los contratos de viabilidad, auditoría narrativa y expresión anteriores a 0.58.46.
+  Hipnótico orienta la escritura y las reparaciones sin rebajar los requisitos de integridad musical.
+- Las respuestas estructuradas de cada bloque y reparación restringen los propietarios de notas y
+  controladores a los identificadores exactos de las pistas asignadas.
+- Los registros y auditorías de rechazo detallan cromatismos, sustains, solapamientos, conflictos
+  graves, cuantización, duraciones y eventos huérfanos; una puntuación narrativa no explica por sí
+  sola un fallo de integridad.
+
 ### 0.58.46 — comportamiento compositivo explícito
 
 - La interfaz reemplaza el indicador heredado `8 BARS` por un selector persistente: **Adaptativo**, **Hipnótico** o **Narrativo**.

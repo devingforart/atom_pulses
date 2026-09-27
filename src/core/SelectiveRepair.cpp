@@ -1214,17 +1214,20 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                 }
             }
             if (protagonist) {
+                const auto narrativeWindowBars =
+                    plan.compositionBehavior == CompositionBehavior::Hypnotic ? 16 : 8;
                 for (const auto& section : plan.sections) {
                     const auto active = instrument.activeSections.empty() ||
                         std::find(instrument.activeSections.begin(), instrument.activeSections.end(),
                                   section.name) != instrument.activeSections.end();
                     if (!active) continue;
-                    for (auto localBar = 0; localBar < section.bars; localBar += 8) {
+                    for (auto localBar = 0; localBar < section.bars;
+                         localBar += narrativeWindowBars) {
                         ++deficit.minimumNarrativePhraseWindows;
                         const auto start = (section.startBar + localBar) * plan.beatsPerBar;
                         const auto end = std::min(
                             (section.startBar + section.bars) * plan.beatsPerBar,
-                            start + plan.beatsPerBar * 8.0);
+                            start + plan.beatsPerBar * narrativeWindowBars);
                         std::vector<const NoteEvent*> windowNotes;
                         for (const auto* note : notes)
                             if (note->startBeat >= start && note->startBeat < end)
@@ -1249,6 +1252,8 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                             previousAttack = attack;
                         }
                         if (longestConnected >= 4) ++deficit.narrativePhraseWindows;
+                        else deficit.missingNarrativeWindowStartBars.push_back(
+                            section.startBar + localBar);
                     }
                 }
                 // A protagonist is a dramatic speaker, not an always-on density

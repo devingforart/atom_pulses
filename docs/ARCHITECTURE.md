@@ -1304,21 +1304,30 @@ remains blocking for the declared protagonist. Its repair remains free to choose
 tonic ending, but the last attack must occur at the audible boundary and belong to the blueprint's
 terminal harmony. No local composer fabricates counterpoint or closure.
 
-### Composition behavior contract (0.58.46)
+### Composition behavior contract (0.58.47)
 
-`CompositionBehavior` is persisted independently from genre and orchestration intent. `Adaptive`
-preserves the established pipeline; an explicit hypnotic phrase in the musician's direction may
-resolve it to `Hypnotic` for that request. An explicit UI choice always wins over inference.
+The persisted selector is explicit. Adaptive sends the musician's direction through the
+established path, without keyword-based mode activation. Hypnotic and Narrative add a
+style preference to the blueprint, performance writer and selective repair prompts.
 
-The effective behavior is copied into `SongPlan`, the AI blueprint and focused-repair prompts, the
-serialized plan, terminal viability contracts, narrative publication audits and expression rendering.
-`Hypnotic` retains every instrument's declared temporal responsibility while lowering attack-count
-pressure for pads, environments, harmonic voices and sparse foreground speakers. It evaluates melodic
-presence in sixteen-bar windows and permits harmonic stasis and transformed repetition without
-classifying them as missing development. Expression curves may span up to thirty-two bars and receive
-voice-dependent phase offsets, preventing all layers from opening at the same boundary. Rhythm
-responsibilities remain intact, so club continuity cannot be excused as intentional scarcity.
+The 0.58.46 changes to narrative thresholds, track viability and generated expression curves
+have been reverted to the pre-selector implementation. All modes use the same established
+musical contracts. A stylistic preference never bypasses corrupt MIDI or tonal-collision checks.
 
-`Narrative` retains the prior causal premise-development-climax-resolution thresholds. Because
-`Adaptive` is the default and follows those existing code paths unless the prompt explicitly requests
-hypnosis, old sessions and ordinary prompts remain musically backward compatible.
+Performance and recovery requests specialize the strict JSON schema with an enum of the exact
+assigned instrument IDs for covered_instrument_ids, note owners and controller owners. The
+parser still rejects foreign owners; it never guesses which track an unknown ID belongs to.
+This prevents the observed unknown_id failure at generation rather than misrouting notes.
+
+Terminal journal entries and rejection audits expose every production-integrity counter and
+the selected behavior. Production readiness must be diagnosed from these counters, not inferred
+from a low narrative resolution score. Existing audit files lack these counters, so they cannot
+establish which individual production invariant failed retrospectively.
+
+### Hypnotic protagonist coverage (0.58.48)
+
+Hypnotic protagonist presence is evaluated in 16-bar states, whereas Adaptive and Narrative retain
+eight-bar windows. Each populated state still requires a connected phrase (four attacks), and the
+40-percent coverage floor remains. Thematic development and final-coda checks are unchanged.
+Selective repair receives the exact start bars of uncovered states; an empty or unusable repair
+response is reported with the measured deficit instead of a generic protagonist failure.

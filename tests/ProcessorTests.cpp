@@ -1079,6 +1079,26 @@ int main(int argc, char** argv) {
     foreignLead.name = "Foreign Lead";
     foreignLead.sourceVoice = pulso::VoiceId::Lead;
     routingPlan.instruments = {routedHat, foreignLead};
+    const auto boundedSchema = juce::JSON::parse(
+        pulso::plugin::AiComposer::performanceSchemaFor(routingPlan, {0}));
+    const auto schemaProperties = boundedSchema.getProperty("properties", {});
+    const auto cellProperties = schemaProperties.getProperty("performance_score", {})
+        .getProperty("properties", {}).getProperty("cells", {}).getProperty("items", {})
+        .getProperty("properties", {});
+    const auto allowedOwners = [&](const juce::var& value) {
+        const auto* allowed = value.getProperty("enum", {}).getArray();
+        return allowed != nullptr && allowed->size() == 1 &&
+            allowed->getReference(0).toString().toStdString() == routedHat.id;
+    };
+    require(allowedOwners(schemaProperties.getProperty("covered_instrument_ids", {})
+                .getProperty("items", {})),
+            "The remote response must only declare coverage for assigned instrument owners");
+    for (const auto* events : {"notes", "controls"})
+        require(allowedOwners(cellProperties.getProperty(events, {}).getProperty("items", {})
+                    .getProperty("properties", {}).getProperty("instrument_id", {})),
+                "Strict response schemas must prevent invented or foreign note and controller owners");
+    require(pulso::plugin::AiComposer::performanceSchemaFor(routingPlan, {}).isEmpty(),
+            "An unassigned performance request must never silently allow arbitrary owners");
     const auto routedBlock = juce::String(R"json({"performance_score":{"cells":[{
       "id":"b1_route","length_beats":4,"owned_voices":["core_drums"],"theme_id":"","narrative_function":"support",
       "notes":[

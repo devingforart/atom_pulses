@@ -895,19 +895,6 @@ int PulsoAudioProcessor::currentPhraseBars() const noexcept {
     return ids::phraseLengths[static_cast<std::size_t>(index)];
 }
 
-static CompositionBehavior inferredCompositionBehavior(CompositionBehavior selected,
-                                                        juce::String direction) {
-    if (selected != CompositionBehavior::Adaptive) return selected;
-    direction = direction.toLowerCase();
-    const auto explicitlyHypnotic = direction.contains("hypnotic") ||
-        direction.contains("hipnot") || direction.contains("meditative") ||
-        direction.contains("minimal") || direction.contains("slow evolution") ||
-        direction.contains("evolucion lenta") || direction.contains("evolución lenta") ||
-        direction.contains("long plateau") || direction.contains("trance-like") ||
-        direction.contains("repetitive but evolving");
-    return explicitlyHypnotic ? CompositionBehavior::Hypnotic
-                              : CompositionBehavior::Adaptive;
-}
 
 CompositionBehavior PulsoAudioProcessor::compositionBehavior() const noexcept {
     const auto value = std::clamp(
@@ -1443,8 +1430,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 songDirection += "\nOrchestration mode: symphonic. Treat the orchestra as multiple independent choirs with divisi strings, woodwind and brass dialogue, orchestral percussion, register-aware counterpoint, articulation contrast and a long-range chamber-to-tutti arc.";
             const auto selectedBehavior = static_cast<CompositionBehavior>(std::clamp(
                 static_cast<int>(newest.compositionBehavior), 0, 2));
-            const auto requestedBehavior = inferredCompositionBehavior(
-                selectedBehavior, userSongDirection);
+            const auto requestedBehavior = selectedBehavior;
             if (isSongRequest) {
                 const auto totalBars = SongComposer::phraseAlignedBars(static_cast<int>(std::lround(
                     newest.targetSongSeconds * currentTempo() / 60.0 / newest.beatsPerBar)));

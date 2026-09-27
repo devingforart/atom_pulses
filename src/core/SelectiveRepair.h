@@ -37,6 +37,7 @@ struct PerformanceCoverageDeficit {
     std::size_t minimumSectionalStates{};
     std::size_t narrativePhraseWindows{};
     std::size_t minimumNarrativePhraseWindows{};
+    std::vector<int> missingNarrativeWindowStartBars;
     double literalPlacementRatio{};
     double melodicStepRatio{};
     std::size_t melodicIntervals{};

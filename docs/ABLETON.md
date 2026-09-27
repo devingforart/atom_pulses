@@ -1,6 +1,13 @@
 # Probar PULSO en Ableton Live
 
+Desde 0.58.48, Hipnótico permite que la voz protagonista respire durante estados de 16 compases. Esto no elimina la exigencia de desarrollo temático ni de cierre: si faltan frases, el registro muestra qué compases necesita completar la IA. Adaptativo y Narrativo mantienen el criterio previo.
+
 ## Adaptativo, Hipnótico y Narrativo (0.58.46)
+
+Desde 0.58.47, selecciona **Hipnótico** de forma explícita si lo deseas: Adaptativo no lo
+activa automáticamente por palabras del prompt. Los tres modos comparten las mismas
+comprobaciones de integridad y viabilidad musical. Si una generación se rechaza, el
+registro y el archivo de auditoría indican ahora cuál de las comprobaciones de producción falló.
 
 Antes de **Componer canción**, el selector **Composición** define el comportamiento temporal. Usa
 **Adaptativo** para conservar el rango habitual de PULSO, **Hipnótico** para música de evolución larga

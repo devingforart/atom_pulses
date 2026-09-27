@@ -27,6 +27,8 @@ struct PerformanceCoverageDeficit {
     std::string instrumentId;
     std::size_t notes{};
     std::size_t minimumNotes{};
+    std::size_t authoredNotes{};
+    std::size_t minimumAuthoredNotes{};
     std::size_t activeBars{};
     std::size_t minimumActiveBars{};
     std::size_t phrases{};
@@ -50,6 +52,7 @@ struct PerformanceCoverageDeficit {
     std::string duplicatedWithInstrumentId;
     bool missingCodaResolution{};
     bool missingThematicRelationship{};
+    bool missingAuthoredDevelopment{};
     bool duplicatedIndependentLine{};
     bool missingSectionalEvolution{};
     bool missingNarrativePresence{};

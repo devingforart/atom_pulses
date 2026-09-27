@@ -2817,6 +2817,98 @@ void runGeneratorTests() {
                 marginalCoveragePlan, marginalCoverageScore, {0}).empty(),
             "A two-bar and one-note deficit must remain a hard incremental failure");
 
+    SongPlan sourceDevelopmentPlan;
+    sourceDevelopmentPlan.beatsPerBar = 4.0;
+    sourceDevelopmentPlan.totalBars = 192;
+    sourceDevelopmentPlan.instrumentCastAuthored = true;
+    for (int sectionIndex = 0; sectionIndex < 4; ++sectionIndex) {
+        SongSection section;
+        section.name = "Source state " + std::to_string(sectionIndex + 1);
+        section.startBar = sectionIndex * 48;
+        section.bars = 48;
+        sourceDevelopmentPlan.sections.push_back(section);
+    }
+    InstrumentAssignment sourceOwner;
+    sourceOwner.id = "underwritten_synth";
+    sourceOwner.instrumentId = "poly_synth";
+    sourceOwner.name = "Independent synth line";
+    sourceOwner.sourceVoice = VoiceId::HarmonicUpper;
+    sourceOwner.role = "independent harmonic answer";
+    for (const auto& section : sourceDevelopmentPlan.sections)
+        sourceOwner.activeSections.push_back(section.name);
+    sourceDevelopmentPlan.instruments.push_back(sourceOwner);
+    PerformanceScore sourceDevelopmentScore;
+    PerformanceCell tinySource;
+    tinySource.id = "four_note_source";
+    tinySource.lengthBeats = 16.0;
+    tinySource.ownedVoices = {VoiceId::HarmonicUpper};
+    for (int noteIndex = 0; noteIndex < 4; ++noteIndex)
+        tinySource.notes.push_back({static_cast<double>(noteIndex * 4), 1.0,
+            60 + noteIndex * 2, 82, VoiceId::HarmonicUpper,
+            MetricIntent::StrictGrid, sourceOwner.id});
+    sourceDevelopmentScore.cells.push_back(tinySource);
+    for (int sectionIndex = 0; sectionIndex < 4; ++sectionIndex) {
+        PerformancePlacement placement;
+        placement.cellId = tinySource.id;
+        placement.sectionIndex = sectionIndex;
+        placement.repeats = 12;
+        placement.fragmentEnd = 16.0;
+        sourceDevelopmentScore.placements.push_back(placement);
+    }
+    const auto tinySourceDeficits = SelectiveRepair::performanceDeficits(
+        sourceDevelopmentPlan, sourceDevelopmentScore, {0});
+    require(tinySourceDeficits.size() == 1 &&
+                tinySourceDeficits.front().missingAuthoredDevelopment &&
+                tinySourceDeficits.front().authoredNotes == 4 &&
+                tinySourceDeficits.front().minimumAuthoredNotes == 12 &&
+                tinySourceDeficits.front().notes >= 48 &&
+                SelectiveRepair::requiresReplacement(tinySourceDeficits.front()),
+            "A repeated four-note cell must not pass as a developed long-form synth performance");
+    const auto sourceConstraints = SelectiveRepair::classifyPerformanceDeficits(
+        sourceDevelopmentPlan, tinySourceDeficits, false);
+    require(sourceConstraints.size() == 1 &&
+                std::find(sourceConstraints.front().operations.begin(),
+                          sourceConstraints.front().operations.end(),
+                          PerformanceRepairOperation::DevelopPhrase) !=
+                    sourceConstraints.front().operations.end() &&
+                std::find(sourceConstraints.front().operations.begin(),
+                          sourceConstraints.front().operations.end(),
+                          PerformanceRepairOperation::DevelopSectionalEvolution) !=
+                    sourceConstraints.front().operations.end(),
+            "Tiny repeated source material must route to phrase and sectional replacement");
+    PerformanceCell unplacedSource = tinySource;
+    unplacedSource.id = "unplaced_padding";
+    for (auto& note : unplacedSource.notes) note.pitch += 3;
+    sourceDevelopmentScore.cells.push_back(unplacedSource);
+    require(SelectiveRepair::performanceDeficits(
+                sourceDevelopmentPlan, sourceDevelopmentScore, {0}).front().authoredNotes == 4,
+            "Unplaced MIDI notes must not satisfy the source-development contract");
+    for (int noteIndex = 4; noteIndex < 12; ++noteIndex)
+        sourceDevelopmentScore.cells.front().notes.push_back({
+            static_cast<double>(noteIndex), .5, 60 + noteIndex % 5, 76,
+            VoiceId::HarmonicUpper, MetricIntent::StrictGrid, sourceOwner.id});
+    const auto developedSourceDeficits = SelectiveRepair::performanceDeficits(
+        sourceDevelopmentPlan, sourceDevelopmentScore, {0});
+    require(std::none_of(developedSourceDeficits.begin(), developedSourceDeficits.end(),
+                [](const auto& finding) { return finding.missingAuthoredDevelopment; }),
+            "Distinct placed source MIDI must clear the repetition-specific finding");
+    auto rhythmicRepetitionPlan = sourceDevelopmentPlan;
+    rhythmicRepetitionPlan.instruments.front().sourceVoice = VoiceId::HighPercussion;
+    rhythmicRepetitionPlan.instruments.front().instrumentId = "hi_hats";
+    rhythmicRepetitionPlan.instruments.front().role = "steady high percussion";
+    auto rhythmicRepetitionScore = sourceDevelopmentScore;
+    rhythmicRepetitionScore.cells.front().notes.resize(4);
+    rhythmicRepetitionScore.cells.front().ownedVoices = {VoiceId::HighPercussion};
+    for (auto& note : rhythmicRepetitionScore.cells.front().notes) {
+        note.voice = VoiceId::HighPercussion;
+        note.pitch = 42;
+    }
+    const auto rhythmicRepetitionDeficits = SelectiveRepair::performanceDeficits(
+        rhythmicRepetitionPlan, rhythmicRepetitionScore, {0});
+    require(std::none_of(rhythmicRepetitionDeficits.begin(), rhythmicRepetitionDeficits.end(),
+                [](const auto& finding) { return finding.missingAuthoredDevelopment; }),
+            "Deliberately repeated percussion must not be forced into pitched phrase authorship");
+
     SongPlan universalConstraintPlan;
     InstrumentAssignment universalProtagonist;
     universalProtagonist.id = "universal_protagonist";

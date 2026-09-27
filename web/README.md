@@ -63,7 +63,7 @@ curl --fail http://127.0.0.1:8188/api/health
 
 ## Releases sincronizadas
 
-El tag debe coincidir con `CMakeLists.txt`: para PULSO 0.58.48, publica `v0.58.48`. El workflow `release.yml` construye Windows, genera instalador NSIS y ZIP, verifica checksums, SBOM y procedencia, y los adjunta a GitHub Releases. La firma digital se pospone hasta contar con un certificado comercial. La web consulta `/releases/latest`; no contiene una versión hardcodeada.
+El tag debe coincidir con `CMakeLists.txt`: para la versión `X.Y.Z`, publica `vX.Y.Z`. El workflow `release.yml` construye Windows, genera instalador NSIS y ZIP, verifica checksums, SBOM y procedencia, y los adjunta a GitHub Releases. La firma digital se pospone hasta contar con un certificado comercial. La web consulta `/releases/latest`; no contiene una versión hardcodeada.
 
 La descarga requiere una licencia perpetua Studio o una suscripción Cloud `active`/`trialing`. El backend pide el instalador a GitHub con su token y lo transmite sin exponer credenciales.
 

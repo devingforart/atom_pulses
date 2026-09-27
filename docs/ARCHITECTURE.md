@@ -1324,6 +1324,10 @@ the selected behavior. Production readiness must be diagnosed from these counter
 from a low narrative resolution score. Existing audit files lack these counters, so they cannot
 establish which individual production invariant failed retrospectively.
 
+### Authored-source development (0.58.49)
+
+The incremental performance contract measures placed, AI-authored MIDI notes separately from the notes created by placement repeats. In long-form works, persistent pitched owners with multiple assigned sections need a bounded source-note vocabulary (eight notes from 64 bars; twelve from 128 bars). A four-note cell repeated through 192 bars therefore becomes a focused replacement target, even when rendered note and active-bar counts look large. Unplaced cells cannot satisfy this contract. Event, rhythm and deliberately static pedal/drone lanes are exempt. From 128 bars, initial performance requests contain at most six owners so the existing output-token budget can hold complete phrases instead of token placeholders. Recovery shards for this finding contain one owner each and preserve already accepted unrelated material. The final audible gate remains unchanged.
+
 ### Hypnotic protagonist coverage (0.58.48)
 
 Hypnotic protagonist presence is evaluated in 16-bar states, whereas Adaptive and Narrative retain

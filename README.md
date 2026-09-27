@@ -2,6 +2,10 @@
 
 ## Web comercial
 
+### 0.58.49 — desarrollo real de las pistas largas
+
+PULSO ahora mide cuántas notas fueron escritas realmente para cada instrumento, además de las notas que aparecen al repetir sus células MIDI. En obras largas, una pista melódica o armónica con cuatro notas repetidas durante decenas de compases se reescribe de forma focalizada antes de la auditoría final. Los golpes puntuales, la percusión y los pedales deliberados conservan su comportamiento repetitivo. La reparación muestra en el registro el material original frente al mínimo requerido; no añade notas procedurales ni relaja el control de publicación.
+
 ### 0.58.48 — frases hipnóticas y recuperación precisa
 
 - La presencia de la voz protagonista en modo Hipnótico se evalúa por estados de 16 compases, sin exigir una nueva frase cada ocho. Narrativo y Adaptativo conservan su evaluación anterior.

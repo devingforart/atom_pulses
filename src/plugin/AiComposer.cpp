@@ -2240,9 +2240,13 @@ juce::String performanceBlockPrompt(const juce::String& direction,
         "form, harmony, cast, key or narrative. Every pitch must agree with the blueprint's exact section chord at its "
         "placement. Use strict quarter-note beat coordinates relative to each reusable cell and section-relative "
         "placements. Write complete playable phrases, not token notes: beds and pulses need repeated but evolving "
-        "coverage; leads need statement, answer, rests and transformed return; transitions may be rare. One cell may "
-        "serve related instruments only when its notes retain each exact instrument_id. Use at most one principal cell "
-        "per independent content lane and develop it through placements rather than inventing unrelated fragments. "
+        "coverage; leads need statement, answer, rests and transformed return; transitions may be rare. "
+        "For a persistent pitched lane in a song of at least 64 bars, write at least eight source MIDI notes "
+        "(twelve from 128 bars onward) across genuinely different sectional phrases. A four-note source cell "
+        "repeated thirty times remains only four authored notes. Constant percussion, one-shots and true "
+        "pedal/drone lanes are exempt. One cell may serve related instruments only when its notes retain each "
+        "exact instrument_id. Use one principal motif cell per independent lane, with distinct development and "
+        "return cells where needed. Placements extend complete phrases; they cannot replace authorship. "
         "The declared protagonist owns the complete leitmotif lineage. A call_response instrument may quote only a "
         "short clue and must answer in negative space with a different rhythmic sentence; harmonic, color, pedal, body "
         "and transition instruments must follow their own chordal or textural trajectories and must not receive copies "
@@ -2561,8 +2565,11 @@ juce::String performanceDeficitBrief(const SongPlan& plan,
         if (result.isNotEmpty()) result << "; ";
         result << juce::String::fromUTF8(deficit.instrumentId.c_str())
                << " notes=" << static_cast<int>(deficit.notes) << "/"
-               << static_cast<int>(deficit.minimumNotes)
-               << " bars=" << static_cast<int>(deficit.activeBars) << "/"
+               << static_cast<int>(deficit.minimumNotes);
+        if (deficit.minimumAuthoredNotes > 0)
+            result << " source_notes=" << static_cast<int>(deficit.authoredNotes) << "/"
+                   << static_cast<int>(deficit.minimumAuthoredNotes);
+        result << " bars=" << static_cast<int>(deficit.activeBars) << "/"
                << static_cast<int>(deficit.minimumActiveBars)
                << " phrases=" << static_cast<int>(deficit.phrases) << "/"
                << static_cast<int>(deficit.minimumPhrases);
@@ -2583,6 +2590,8 @@ juce::String performanceDeficitBrief(const SongPlan& plan,
         }
         if (deficit.missingCodaResolution) result << " coda=missing";
         if (deficit.missingThematicRelationship) result << " theme_relation=missing";
+        if (deficit.missingAuthoredDevelopment)
+            result << " source_phrase=underwritten_repetition";
         if (deficit.duplicatedIndependentLine)
             result << " duplicate_with="
                    << juce::String::fromUTF8(deficit.duplicatedWithInstrumentId.c_str())
@@ -2648,8 +2657,11 @@ juce::String performanceConstraintBrief(const SongPlan& plan,
                << static_cast<int>(evidence.phrases) << "/"
                << static_cast<int>(evidence.minimumPhrases) << ", sections "
                << static_cast<int>(evidence.sections) << "/"
-               << static_cast<int>(evidence.minimumSections)
-               << "; operations=";
+               << static_cast<int>(evidence.minimumSections);
+        if (evidence.missingAuthoredDevelopment)
+            result << ", source_notes " << static_cast<int>(evidence.authoredNotes)
+                   << "/" << static_cast<int>(evidence.minimumAuthoredNotes);
+        result << "; operations=";
         for (const auto operation : constraint.operations) {
             const auto key = performanceRepairOperationKey(operation);
             result << juce::String::fromUTF8(key.data(), static_cast<int>(key.size())) << ",";
@@ -3037,7 +3049,9 @@ juce::String selectiveRepairPrompt(const juce::String& direction,
         "not listed below are immutable and already accepted. Return replacement performance_score cells and placements "
         "ONLY for the listed instrument ids. Solve every audible critic finding as one coherent edit. Do not add tracks, "
         "change chords, rewrite unrelated ideas or increase global density. Preserve the song's recognisable motifs while "
-        "giving underwritten lines complete phrases, contrasting returns and meaningful rests. If a pulse or arpeggio is "
+        "giving underwritten lines complete phrases, contrasting returns and meaningful rests. If the source-note "
+        "deficit is present, replace tiny repeated cells with distinct authored phrases in the same lane; "
+        "renaming the same four notes or adding unplaced cells is not a repair. If a pulse or arpeggio is "
         "dominant, create subtraction, mutations and hand-offs instead of a continuous note stream. If closure is weak, "
         "make the final active phrases answer earlier material and resolve harmonic debt. All notes remain strict-grid. "
         "When the critic reports a flat density curve, do not add notes: author section-specific withdrawal, re-entry and "
@@ -3055,6 +3069,8 @@ juce::String selectiveRepairPrompt(const juce::String& direction,
         "\nAUDIBLE CRITIC FINDINGS:\n" + issues +
         "TARGET INSTRUMENTS (replace these only):\n" +
         instrumentBlockBrief(plan, diagnosis.instrumentIndices) +
+        "\nMEASURED SOURCE-MATERIAL DEFICITS:\n" +
+        performanceDeficitBrief(plan, plan.performanceScore, diagnosis.instrumentIndices) +
         "\nCURRENT TARGET MATERIAL (retain its identity while improving it):\n" +
         existingTargetMaterial(plan, targetIds) +
         "\nCOMPACT IMMUTABLE BLUEPRINT:\n" + blueprintBrief;
@@ -4216,6 +4232,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         orderedInstruments.erase(protagonistOwner);
     }
 
+    // Long-form lanes need more source material per owner. Keep each request small
+    // enough to return complete phrases inside the existing output-token budget;
+    // otherwise a ten-owner block can spend its budget on four-note placeholders.
+    const auto performanceShardSize = result.totalBars >= 128
+        ? std::size_t{6} : instrumentsPerPerformanceBlock;
+    const auto narrativeShardSize = std::min(performanceShardSize, std::size_t{8});
     // Give answerers and pitched motion owners one compact shared context after the
     // protagonist has independently converged.
     std::vector<std::size_t> narrativeOwners;
@@ -4228,22 +4250,29 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         (narrative ? narrativeOwners : supportingOwners).push_back(index);
     }
     if (!narrativeOwners.empty()) {
-        // Fill the shared narrative shard only to eight owners. This preserves room
+        // Fill the shared narrative shard only to its bounded owner capacity. This preserves room
         // for a complete protagonist answer while normally keeping the same request
         // count as the former ten-by-ten partition.
         const auto companions = std::min<std::size_t>(
-            supportingOwners.size(), narrativeOwners.size() < 8 ? 8 - narrativeOwners.size() : 0);
+            supportingOwners.size(), narrativeOwners.size() < narrativeShardSize
+                ? narrativeShardSize - narrativeOwners.size() : 0);
         narrativeOwners.insert(narrativeOwners.end(), supportingOwners.begin(),
             supportingOwners.begin() + static_cast<std::ptrdiff_t>(companions));
         supportingOwners.erase(supportingOwners.begin(),
             supportingOwners.begin() + static_cast<std::ptrdiff_t>(companions));
-        blocks.push_back(std::move(narrativeOwners));
+        for (std::size_t begin = 0; begin < narrativeOwners.size();
+             begin += performanceShardSize) {
+            const auto end = std::min(narrativeOwners.size(), begin + performanceShardSize);
+            blocks.emplace_back(
+                narrativeOwners.begin() + static_cast<std::ptrdiff_t>(begin),
+                narrativeOwners.begin() + static_cast<std::ptrdiff_t>(end));
+        }
     }
     for (std::size_t begin = 0; begin < supportingOwners.size();
-         begin += instrumentsPerPerformanceBlock) {
+         begin += performanceShardSize) {
         std::vector<std::size_t> block;
         const auto end = std::min(supportingOwners.size(),
-                                  begin + instrumentsPerPerformanceBlock);
+                                  begin + performanceShardSize);
         for (auto index = begin; index < end; ++index) block.push_back(supportingOwners[index]);
         blocks.push_back(std::move(block));
     }
@@ -4340,10 +4369,16 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                      int recoveryAttempt,
                                      std::size_t displayBlock) {
         std::vector<std::size_t> unresolved;
+        const auto pendingDeficits = SelectiveRepair::performanceDeficits(
+            result, assembledScore, pending);
+        const auto focusedSourceRewrite = std::any_of(
+            pendingDeficits.begin(), pendingDeficits.end(),
+            [](const auto& finding) { return finding.missingAuthoredDevelopment; });
+        const auto shardWidth = focusedSourceRewrite ? std::size_t{1} : instrumentsPerRepairShard;
         for (std::size_t batchBegin = 0; batchBegin < pending.size();
-             batchBegin += instrumentsPerRepairShard * maximumConcurrentRepairShards) {
+             batchBegin += shardWidth * maximumConcurrentRepairShards) {
             const auto batchEnd = std::min(pending.size(), batchBegin +
-                instrumentsPerRepairShard * maximumConcurrentRepairShards);
+                shardWidth * maximumConcurrentRepairShards);
             struct PendingRequest {
                 std::vector<std::size_t> indices;
                 std::set<std::string> replacementIds;
@@ -4351,8 +4386,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 std::future<HttpResponse> response;
             };
             std::vector<PendingRequest> requests;
-            for (auto begin = batchBegin; begin < batchEnd; begin += instrumentsPerRepairShard) {
-                const auto end = std::min(batchEnd, begin + instrumentsPerRepairShard);
+            for (auto begin = batchBegin; begin < batchEnd; begin += shardWidth) {
+                const auto end = std::min(batchEnd, begin + shardWidth);
                 std::vector<std::size_t> shard(pending.begin() + static_cast<std::ptrdiff_t>(begin),
                                                pending.begin() + static_cast<std::ptrdiff_t>(end));
                 std::set<std::string> replacementIds;
@@ -4375,6 +4410,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     "blueprint's resolution window and ends on a stable terminal-harmony pitch; "
                     "develop_sectional_evolution replaces literal repetition with the measured three-to-six phrase states "
                     "distributed across setup, development, climax and return; "
+                    "When source_notes is below minimum, replace the target's repeated tiny cell with the measured "
+                    "number of genuinely authored notes across distinct phrases; duplicate or unplaced cells do not count. "
                     "develop_narrative_presence writes distinct protagonist statements into the measured missing " +
                     juce::String(result.compositionBehavior == CompositionBehavior::Hypnotic ?
                         "sixteen-bar states" : "eight-bar windows") +
@@ -4697,6 +4734,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     std::set<std::size_t> singleAttemptTargets;
                     for (const auto& constraint : constraints)
                         if (constraint.evidence.duplicatedIndependentLine ||
+                            constraint.evidence.missingAuthoredDevelopment ||
                             constraint.evidence.missingSectionalEvolution ||
                             constraint.evidence.missingCodaResolution)
                             singleAttemptTargets.insert(constraint.evidence.instrumentIndex);
@@ -5310,6 +5348,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     1.0 - static_cast<double>(actual) / static_cast<double>(required));
             };
             debt += ratioDebt(finding.notes, finding.minimumNotes) +
+                ratioDebt(finding.authoredNotes, finding.minimumAuthoredNotes) +
                 ratioDebt(finding.activeBars, finding.minimumActiveBars) +
                 ratioDebt(finding.phrases, finding.minimumPhrases) +
                 ratioDebt(finding.sections, finding.minimumSections);
@@ -5317,6 +5356,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             debt += finding.duplicatedIndependentLine ? 3.0 : 0.0;
             debt += finding.missingNarrativePresence ? 2.0 : 0.0;
             debt += finding.missingThematicDevelopment ? 2.0 : 0.0;
+            debt += finding.missingAuthoredDevelopment ? 3.0 : 0.0;
             debt += finding.missingMelodicSpeech ? 2.0 : 0.0;
             debt += finding.missingSectionalEvolution ? 1.5 : 0.0;
             debt += finding.missingCentralChordBed ? 3.0 : 0.0;

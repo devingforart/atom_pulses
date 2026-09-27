@@ -398,6 +398,7 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
     const auto hasBlockingMusicalEvidence = std::any_of(
         performanceFindings.begin(), performanceFindings.end(), [](const auto& finding) {
             return finding.missingCodaResolution || finding.duplicatedIndependentLine ||
+                finding.missingAuthoredDevelopment ||
                 finding.missingSectionalEvolution || finding.missingNarrativePresence ||
                 finding.missingThematicDevelopment || finding.missingMelodicSpeech ||
                 finding.missingCentralChordBed || finding.missingChordBedBreath ||
@@ -434,6 +435,9 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
     };
 
     for (const auto& finding : performanceFindings) {
+        if (finding.missingAuthoredDevelopment)
+            add(finding.instrumentIndex, 18.0,
+                "replace a tiny repeated source cell with independently authored sectional phrases");
         if (finding.duplicatedIndependentLine)
             add(finding.instrumentIndex, 14.0 + finding.duplicateEventOverlap * 4.0,
                 "rewrite a cloned independent line with complementary onset grammar and contour");
@@ -856,10 +860,12 @@ std::vector<PerformanceConstraint> SelectiveRepair::classifyPerformanceDeficits(
             constraint.operations.push_back(
                 PerformanceRepairOperation::ExtendCoverage);
         if (constraint.evidence.notes < constraint.evidence.minimumNotes ||
-            constraint.evidence.phrases < constraint.evidence.minimumPhrases)
+            constraint.evidence.phrases < constraint.evidence.minimumPhrases ||
+            constraint.evidence.missingAuthoredDevelopment)
             constraint.operations.push_back(
                 PerformanceRepairOperation::DevelopPhrase);
-        if (constraint.evidence.missingSectionalEvolution)
+        if (constraint.evidence.missingSectionalEvolution ||
+            constraint.evidence.missingAuthoredDevelopment)
             constraint.operations.push_back(
                 PerformanceRepairOperation::DevelopSectionalEvolution);
         if (constraint.evidence.missingNarrativePresence)
@@ -961,14 +967,20 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
     const std::vector<std::size_t>& candidates,
     bool allowMarginalBarAcceptance) {
     std::map<std::string, std::size_t> noteCounts;
+    std::map<std::string, std::size_t> placedAuthoredNotes;
     std::map<std::string, std::set<int>> sections;
     std::map<std::string, std::set<std::string>> instrumentsByCell;
     std::map<std::string, std::set<std::string>> themesByInstrument;
     std::map<std::string, std::map<std::string, std::size_t>> placementStates;
+    std::set<std::string> placedCellIds;
+    for (const auto& placement : score.placements)
+        placedCellIds.insert(placement.cellId);
     for (const auto& cell : score.cells) {
         for (const auto& note : cell.notes) {
             if (note.instrumentId.empty()) continue;
             ++noteCounts[note.instrumentId];
+            if (placedCellIds.contains(cell.id))
+                ++placedAuthoredNotes[note.instrumentId];
             instrumentsByCell[cell.id].insert(note.instrumentId);
             if (!cell.themeId.empty()) themesByInstrument[note.instrumentId].insert(cell.themeId);
         }
@@ -1096,6 +1108,7 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
         deficit.instrumentId = instrument.id;
         deficit.notes = noteCounts[instrument.id];
         deficit.minimumNotes = minimumNotes;
+        deficit.authoredNotes = placedAuthoredNotes[instrument.id];
         deficit.sections = sections[instrument.id].size();
         deficit.minimumSections = minimumSections;
         if (const auto duplicate = duplicatedTargets.find(index);
@@ -1320,6 +1333,22 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
             deficit.minimumSections = rareEvent ? std::size_t{1} :
                 std::min(intendedSections,
                     plan.totalBars >= 96 ? std::size_t{3} : std::size_t{2});
+            // A few source notes repeated over a long form must not masquerade as
+            // hundreds of independently composed notes. Limit this contract to
+            // persistent pitched owners; drums, one-shots and true pedals may be
+            // intentionally repetitive. The threshold is bounded, not per bar.
+            const auto sourceDevelopmentRequired = plan.totalBars >= 64 &&
+                !rareEvent && !isVoiceInFamily(instrument.sourceVoice, VoiceFamily::Rhythm) &&
+                !containsAny(instrument, {"pedal", "drone", "single note"}) &&
+                intendedSections >= 2;
+            if (sourceDevelopmentRequired) {
+                deficit.minimumAuthoredNotes = plan.totalBars >= 128 ? 12 : 8;
+                if (deficit.authoredNotes < deficit.minimumAuthoredNotes &&
+                    deficit.notes >= deficit.minimumAuthoredNotes * 3) {
+                    deficit.missingAuthoredDevelopment = true;
+                    incomplete = true;
+                }
+            }
             const auto coverageIncomplete = allowMarginalBarAcceptance
                 ? !TrackViability::acceptsCoverage(
                     deficit.notes, deficit.activeBars, deficit.phrases, contract)
@@ -1832,7 +1861,8 @@ bool SelectiveRepair::requiresReplacement(
     // Notes can repair missing quantity and placements can extend active coverage.
     // They cannot create a phrase break inside material that already fills its
     // required horizon; that target must be replaced so silence can be authored.
-    if (deficit.duplicatedIndependentLine || deficit.missingSectionalEvolution ||
+    if (deficit.duplicatedIndependentLine || deficit.missingAuthoredDevelopment ||
+        deficit.missingSectionalEvolution ||
         deficit.missingThematicDevelopment || deficit.missingMelodicSpeech ||
         deficit.missingCentralChordBed || deficit.missingChordBedBreath ||
         deficit.missingChordBedNarrativeArc) return true;

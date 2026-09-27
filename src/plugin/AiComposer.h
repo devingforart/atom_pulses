@@ -84,6 +84,7 @@ public:
     [[nodiscard]] static SongPlan planSong(const juce::String& creativeDirection,
                                            int targetSeconds, int totalBars, double bpm,
                                            double beatsPerBar, std::uint64_t seed,
+                                           CompositionBehavior behavior,
                                            std::stop_token, juce::String& error,
                                            const AiSongProgress& progress = {});
     [[nodiscard]] static bool parseSongPlanJson(const juce::String&, int targetSeconds,

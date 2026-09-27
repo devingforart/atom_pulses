@@ -300,11 +300,24 @@ void PerformanceExpression::apply(Pattern& pattern, const SongPlan& plan, bool s
 
             if (!expressiveVoice(voice)) continue;
             const auto depth = std::clamp(profile.expressionDepth, 0.0, 1.0);
-            const auto curveStep = isVoiceInFamily(voice, VoiceFamily::Melodic) ? 0.5 : 1.0;
-            const auto phraseBeats = std::max(plan.beatsPerBar, std::min(8.0 * plan.beatsPerBar,
-                                                                         sectionEnd - sectionStart));
+            const auto hypnotic = plan.compositionBehavior == CompositionBehavior::Hypnotic;
+            const auto curveStep = hypnotic
+                ? (isVoiceInFamily(voice, VoiceFamily::Melodic) ? 1.0 : 2.0)
+                : (isVoiceInFamily(voice, VoiceFamily::Melodic) ? 0.5 : 1.0);
+            const auto maximumEvolutionBars = hypnotic ? 32.0 : 8.0;
+            const auto phraseBeats = std::max(plan.beatsPerBar,
+                std::min(maximumEvolutionBars * plan.beatsPerBar,
+                         sectionEnd - sectionStart));
+            // Independent phase offsets prevent every filter/expression curve from
+            // opening and closing together at a section boundary. Adaptive and
+            // Narrative preserve the established exact behaviour.
+            const auto phaseOffset = hypnotic
+                ? std::fmod((static_cast<int>(voice) + 1) * .61803398875 * plan.beatsPerBar,
+                            phraseBeats)
+                : 0.0;
             for (auto beat = sectionStart; beat < sectionEnd; beat += curveStep) {
-                const auto phrasePosition = std::fmod(beat - sectionStart, phraseBeats) / phraseBeats;
+                const auto phrasePosition = std::fmod(
+                    beat - sectionStart + phaseOffset, phraseBeats) / phraseBeats;
                 const auto contour = contourValue(profile.dynamics, phrasePosition, beat);
                 const auto expression = std::clamp(static_cast<int>(std::lround(
                     62.0 + section.energy * 38.0 + contour * depth * 34.0)), 18, 127);

@@ -239,6 +239,9 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     durationLabel.setJustificationType(juce::Justification::centredRight);
     durationLabel.setFont(juce::FontOptions(10.5f, juce::Font::bold));
     durationLabel.setColour(juce::Label::textColourId, colours::muted);
+    behaviorLabel.setJustificationType(juce::Justification::centred);
+    behaviorLabel.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+    behaviorLabel.setColour(juce::Label::textColourId, colours::muted);
     prompt.setText(processor.currentCreativeDirection(), false);
     prompt.setMultiLine(false);
     prompt.setReturnKeyStartsNewLine(false);
@@ -263,6 +266,8 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
 
     languageSelector.addItemList({"ENGLISH", juce::String::fromUTF8("ESPA\xC3\x91OL")}, 1);
     languageSelector.setJustificationType(juce::Justification::centred);
+    behaviorSelector.addItemList({"ADAPTIVE", "HYPNOTIC", "NARRATIVE"}, 1);
+    behaviorSelector.setJustificationType(juce::Justification::centred);
 
     // The reduced workflow has no hidden creative switches. Old projects may still
     // carry these values, so opening the editor explicitly restores the single,
@@ -291,19 +296,21 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     apiSettingsPanel.setComponentID("api-settings-panel");
     prompt.setComponentID("prompt-input");
     duration.setComponentID("duration-input");
+    behaviorSelector.setComponentID("composition-behavior");
     generateButton.setComponentID("compose-song");
     patternView.setComponentID("midi-vision");
     deployLiveButton.setComponentID("create-in-live");
 
-    for (auto* component : std::array<juce::Component*, 11>{
-             &title, &status, &promptLabel, &durationLabel, &prompt, &duration,
-             &generateButton, &languageSelector, &apiSettingsButton, &patternView, &deployLiveButton})
+    for (auto* component : std::array<juce::Component*, 13>{
+             &title, &status, &promptLabel, &durationLabel, &behaviorLabel, &prompt, &duration,
+             &behaviorSelector, &generateButton, &languageSelector, &apiSettingsButton, &patternView, &deployLiveButton})
         addAndMakeVisible(component);
 
     addChildComponent(compositionProgress);
     addChildComponent(apiSettingsPanel);
 
     languageAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "language", languageSelector);
+    behaviorAttachment = std::make_unique<ChoiceAttachment>(processor.parameters, "compositionBehavior", behaviorSelector);
     languageSelector.onChange = [safe = juce::Component::SafePointer<PulsoAudioProcessorEditor>(this)] {
         juce::MessageManager::callAsync([safe] {
             if (safe != nullptr) safe->applyTranslations();
@@ -320,6 +327,10 @@ void PulsoAudioProcessorEditor::applyTranslations() {
     displayedLanguage = language;
     promptLabel.setText(tr(language, TextId::PromptLabel), juce::dontSendNotification);
     durationLabel.setText(tr(language, TextId::DurationLabel), juce::dontSendNotification);
+    behaviorLabel.setText(tr(language, TextId::BehaviorLabel), juce::dontSendNotification);
+    behaviorSelector.changeItemText(1, language == UiLanguage::Spanish ? "ADAPTATIVO" : "ADAPTIVE");
+    behaviorSelector.changeItemText(2, language == UiLanguage::Spanish ? juce::String::fromUTF8("HIPN\xC3\x93TICO") : "HYPNOTIC");
+    behaviorSelector.changeItemText(3, language == UiLanguage::Spanish ? "NARRATIVO" : "NARRATIVE");
     prompt.setTextToShowWhenEmpty(tr(language, TextId::PromptPlaceholder), colours::muted);
     generateButton.setButtonText(tr(language, processor.targetSongDurationSeconds() > 0
         ? TextId::ComposeSong : TextId::GenerateIdea));
@@ -330,6 +341,8 @@ void PulsoAudioProcessorEditor::applyTranslations() {
     promptLabel.setTooltip(prompt.getTooltip());
     duration.setTooltip(tr(language, TextId::DurationTip));
     durationLabel.setTooltip(duration.getTooltip());
+    behaviorSelector.setTooltip(tr(language, TextId::BehaviorTip));
+    behaviorLabel.setTooltip(behaviorSelector.getTooltip());
     title.setTooltip(tr(language, TextId::TitleTip));
     status.setTooltip(tr(language, TextId::StatusTip));
     languageSelector.setTooltip(tr(language, TextId::LanguageTip));
@@ -397,12 +410,15 @@ void PulsoAudioProcessorEditor::resized() {
     auto promptCard = area.removeFromTop(110).reduced(18, 14);
     auto promptLabels = promptCard.removeFromTop(16);
     durationLabel.setBounds(promptLabels.removeFromRight(108));
+    behaviorLabel.setBounds(promptLabels.removeFromRight(152));
     promptLabel.setBounds(promptLabels);
     promptCard.removeFromTop(7);
     auto promptRow = promptCard;
     generateButton.setBounds(promptRow.removeFromRight(190));
     promptRow.removeFromRight(10);
     duration.setBounds(promptRow.removeFromRight(96));
+    promptRow.removeFromRight(10);
+    behaviorSelector.setBounds(promptRow.removeFromRight(142));
     promptRow.removeFromRight(10);
     prompt.setBounds(promptRow);
     area.removeFromTop(18);
@@ -429,6 +445,7 @@ void PulsoAudioProcessorEditor::timerCallback() {
     generateButton.setEnabled(!composing);
     prompt.setEnabled(!composing);
     duration.setEnabled(!composing);
+    behaviorSelector.setEnabled(!composing);
     languageSelector.setEnabled(!composing);
     apiSettingsButton.setEnabled(!composing);
     apiSettingsButton.setButtonText(processor.aiAvailable()
@@ -437,8 +454,7 @@ void PulsoAudioProcessorEditor::timerCallback() {
 
     status.setText(localizeStatus(language, processor.currentAiStatus()) + "  " + bullet() + "  " +
                        juce::String(processor.currentTempo(), 1) + " BPM  " + bullet() + "  " +
-                       juce::String(processor.currentPhraseBars()) + " " + tr(language, TextId::Bars) +
-                       "  " + bullet() + "  " + tr(language, TextId::Idea) + " " +
+                       tr(language, TextId::Idea) + " " +
                        juce::String(processor.currentCompositionSeed()) + "." +
                        juce::String(processor.currentVariationIndex()),
                    juce::dontSendNotification);

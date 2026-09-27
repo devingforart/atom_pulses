@@ -598,6 +598,49 @@ TrackViabilityContract TrackViability::contractFor(const InstrumentPart& part,
         result.minimumPhrases = std::max(result.minimumPhrases,
             static_cast<std::size_t>(std::max(1, layer->minimumPhrases)));
     }
+    // Hypnotic writing develops perception more often than pitch inventory. Keep the
+    // temporal responsibility of every declared part, but do not force sustained pads,
+    // drones or compact speakers to manufacture attacks simply to satisfy the general
+    // narrative contract. Rhythm remains unchanged because a requested club pocket must
+    // still be structurally usable.
+    if (plan.compositionBehavior == CompositionBehavior::Hypnotic && !result.eventException) {
+        const auto sparseNotes = [&](std::size_t floor, double attacksPerActiveBar) {
+            return std::max(floor, std::min(result.minimumNotes,
+                static_cast<std::size_t>(std::ceil(
+                    result.minimumActiveBars * attacksPerActiveBar))));
+        };
+        switch (result.function) {
+            case TrackFunction::HarmonicFloor:
+            case TrackFunction::Environment:
+                result.minimumNotes = sparseNotes(4, .35);
+                result.minimumPhrases = std::min<std::size_t>(result.minimumPhrases, 2);
+                break;
+            case TrackFunction::HarmonicVoice:
+                result.minimumNotes = sparseNotes(6, .55);
+                result.minimumPhrases = std::min<std::size_t>(result.minimumPhrases, 2);
+                break;
+            case TrackFunction::Pulse:
+                result.minimumNotes = sparseNotes(10, 1.0);
+                result.minimumPhrases = std::min<std::size_t>(result.minimumPhrases, 2);
+                break;
+            case TrackFunction::Protagonist:
+            case TrackFunction::Dialogue:
+                result.minimumActiveBars = std::min(result.minimumActiveBars,
+                    capped(std::max<std::size_t>(4,
+                        static_cast<std::size_t>(std::lround(horizon * .10)))));
+                result.minimumNotes = sparseNotes(6, .75);
+                result.minimumPhrases = std::min<std::size_t>(result.minimumPhrases, 2);
+                break;
+            case TrackFunction::Bass:
+                result.minimumNotes = sparseNotes(10, .80);
+                result.minimumPhrases = std::min<std::size_t>(result.minimumPhrases, 2);
+                break;
+            case TrackFunction::Rhythm:
+            case TrackFunction::Transition:
+            case TrackFunction::OneShot:
+                break;
+        }
+    }
     return result;
 }
 

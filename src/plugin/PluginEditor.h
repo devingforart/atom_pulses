@@ -76,8 +76,10 @@ private:
     juce::Label status;
     juce::Label promptLabel;
     juce::Label durationLabel;
+    juce::Label behaviorLabel;
     juce::TextEditor prompt;
     juce::TextEditor duration;
+    juce::ComboBox behaviorSelector;
     juce::TextButton generateButton{"GENERATE IDEA"};
     juce::ComboBox languageSelector;
     juce::TextButton apiSettingsButton{"AI KEY"};
@@ -86,6 +88,7 @@ private:
 
     using ChoiceAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     std::unique_ptr<ChoiceAttachment> languageAttachment;
+    std::unique_ptr<ChoiceAttachment> behaviorAttachment;
     UiLanguage displayedLanguage{UiLanguage::English};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PulsoAudioProcessorEditor)

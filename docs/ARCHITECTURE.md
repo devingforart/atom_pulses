@@ -1303,3 +1303,22 @@ and independence prompts include a bounded excerpt of the accepted counterpart M
 remains blocking for the declared protagonist. Its repair remains free to choose an open, modal or
 tonic ending, but the last attack must occur at the audible boundary and belong to the blueprint's
 terminal harmony. No local composer fabricates counterpoint or closure.
+
+### Composition behavior contract (0.58.46)
+
+`CompositionBehavior` is persisted independently from genre and orchestration intent. `Adaptive`
+preserves the established pipeline; an explicit hypnotic phrase in the musician's direction may
+resolve it to `Hypnotic` for that request. An explicit UI choice always wins over inference.
+
+The effective behavior is copied into `SongPlan`, the AI blueprint and focused-repair prompts, the
+serialized plan, terminal viability contracts, narrative publication audits and expression rendering.
+`Hypnotic` retains every instrument's declared temporal responsibility while lowering attack-count
+pressure for pads, environments, harmonic voices and sparse foreground speakers. It evaluates melodic
+presence in sixteen-bar windows and permits harmonic stasis and transformed repetition without
+classifying them as missing development. Expression curves may span up to thirty-two bars and receive
+voice-dependent phase offsets, preventing all layers from opening at the same boundary. Rhythm
+responsibilities remain intact, so club continuity cannot be excused as intentional scarcity.
+
+`Narrative` retains the prior causal premise-development-climax-resolution thresholds. Because
+`Adaptive` is the default and follows those existing code paths unless the prompt explicitly requests
+hypnosis, old sessions and ordinary prompts remain musically backward compatible.

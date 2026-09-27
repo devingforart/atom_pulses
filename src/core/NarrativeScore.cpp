@@ -518,6 +518,7 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
 
 NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const SongPlan& plan) {
     NarrativeScoreReport report;
+    const auto hypnotic = plan.compositionBehavior == CompositionBehavior::Hypnotic;
     report.active = plan.productionModeSource == "gpt_plan" ||
         (!plan.performanceScore.empty() && plan.productionModeSource != "local_fallback" &&
          plan.productionModeSource != "local_engine");
@@ -627,17 +628,19 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         // eight-bar window count as one narrative appearance; rests and breath inside
         // that phrase are preserved instead of being penalised as missing duration.
         if (expectsForeground) {
-            for (auto localBar = 0; localBar < section.bars; localBar += 8) {
+            const auto phraseWindowBars = hypnotic ? 16 : 8;
+            const auto minimumPhraseAttacks = hypnotic ? 2 : 3;
+            for (auto localBar = 0; localBar < section.bars; localBar += phraseWindowBars) {
                 ++primaryAvailable;
                 const auto start = (section.startBar + localBar) * plan.beatsPerBar;
                 const auto end = std::min((section.startBar + section.bars) * plan.beatsPerBar,
-                                          start + plan.beatsPerBar * 8.0);
+                                          start + plan.beatsPerBar * phraseWindowBars);
                 const auto notes = std::count_if(pattern.notes.begin(), pattern.notes.end(),
                     [&](const auto& note) {
                         return primaryVoice(note.voice) && aiOrigin(note.origin) &&
                             note.startBeat >= start && note.startBeat < end;
                     });
-                if (notes >= 3) ++primaryAuthored;
+                if (notes >= minimumPhraseAttacks) ++primaryAuthored;
             }
         }
         for (const auto voice : section.activeVoices) {
@@ -683,7 +686,8 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         for (const auto& event : section.harmonicEvents) chords.insert(event.chordId);
         const auto startsAtZero = std::any_of(section.harmonicEvents.begin(), section.harmonicEvents.end(),
             [](const auto& event) { return event.barOffset == 0 && std::abs(event.beatOffset) < 0.001; });
-        if (startsAtZero && chords.size() >= 2 && !section.harmonicDirection.empty()) ++directedSections;
+        if (startsAtZero && chords.size() >= (hypnotic ? 1U : 2U) &&
+            !section.harmonicDirection.empty()) ++directedSections;
     }
     report.harmonicDirection = static_cast<double>(directedSections) /
         std::max<std::size_t>(1, plan.sections.size());
@@ -726,8 +730,11 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         report.harmonicDirection * 0.04 + report.rhythmicDevelopment * 0.03 +
         melodicSpeech * 0.04 + clubContinuity * 0.02 +
         report.causalNarrative * 0.07 + report.resolutionScore * 0.04, 0.0, 1.0);
-    if (report.active && report.primaryVoiceCoverage < 0.40) report.issues.push_back("insufficient_ai_phrase_coverage");
-    if (report.active && report.foregroundExpected && report.foregroundNotes < 8)
+    const auto minimumPrimaryCoverage = hypnotic ? .25 : .40;
+    const auto minimumForegroundNotes = hypnotic ? std::size_t{4} : std::size_t{8};
+    if (report.active && report.primaryVoiceCoverage < minimumPrimaryCoverage)
+        report.issues.push_back("insufficient_ai_phrase_coverage");
+    if (report.active && report.foregroundExpected && report.foregroundNotes < minimumForegroundNotes)
         report.issues.push_back("ai_foreground_missing");
     if (report.active && report.foregroundNotes >= 8 && report.foregroundAiAuthorshipRatio < 0.85)
         report.issues.push_back("procedural_foreground_dominates");
@@ -759,32 +766,40 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         report.maximumClubLowEndGapBars > 16)
         report.issues.push_back("low_end_narrative_absent_too_long");
     if (report.densityControl < 0.82) report.issues.push_back("overcrowded_arrangement");
-    if (report.harmonicDirection < 0.70) report.issues.push_back("weak_harmonic_direction");
+    if (report.harmonicDirection < (hypnotic ? .55 : .70))
+        report.issues.push_back("weak_harmonic_direction");
     if (!plan.percussionFreeIntent && report.rhythmicDevelopment < 0.45)
         report.issues.push_back("undeveloped_rhythm_narrative");
-    if (report.active && !report.narrativeSpineReady) {
-        if (report.causalNarrative < .62) report.issues.push_back("narrative_events_lack_audible_consequence");
-        if (report.resolutionScore < .58) report.issues.push_back("ending_does_not_repay_harmonic_debt");
+    const auto narrativeReady = report.narrativeSpineReady || (hypnotic &&
+        report.causalNarrative >= .50 && report.resolutionScore >= .46);
+    report.narrativeSpineReady = narrativeReady;
+    if (report.active && !narrativeReady) {
+        if (report.causalNarrative < (hypnotic ? .50 : .62))
+            report.issues.push_back("narrative_events_lack_audible_consequence");
+        if (report.resolutionScore < (hypnotic ? .46 : .58))
+            report.issues.push_back("ending_does_not_repay_harmonic_debt");
     }
     const auto memoryReady = report.audibleThematicWindows < 3 ||
         (report.thematicRecallRatio >= 0.40 && report.audibleThematicSimilarity >= 0.66);
     const auto developmentReady = report.comparableThematicReturns < 4 ||
-        (report.literalThematicReturnRatio <= 0.70 && report.thematicDevelopment >= 0.55);
+        (report.literalThematicReturnRatio <= (hypnotic ? .90 : .70) &&
+         report.thematicDevelopment >= (hypnotic ? .25 : .55));
     const auto bassReady = report.bassPhrases < 4 || report.bassPhraseContinuity >= 0.60;
     const auto melodicSpeechReady = report.melodicIntervals < 8 ||
         (report.melodicStepwiseRatio >= 0.25 && report.melodicStepwiseRatio <= 0.68 &&
          report.maximumMelodicStepRun <= 5);
     const auto foregroundReady = !report.foregroundExpected ||
-        (report.foregroundNotes >= 8 && report.foregroundAiAuthorshipRatio >= 0.85);
+        (report.foregroundNotes >= minimumForegroundNotes &&
+         report.foregroundAiAuthorshipRatio >= 0.85);
     const auto movementBassReady = !report.movementBassExpected ||
         (report.movementBassNotes >= 8 && report.movementBassAiAuthorshipRatio >= 0.75);
     const auto clubReady = !pulseAuditRequired ||
         (report.grooveAuthorshipCoverage >= 0.45 && report.maximumClubDrumGapBars < 16 &&
          report.maximumClubLowEndGapBars <= 16);
-    report.creativeReady = !report.active || (report.primaryVoiceCoverage >= 0.40 &&
+    report.creativeReady = !report.active || (report.primaryVoiceCoverage >= minimumPrimaryCoverage &&
         foregroundReady && movementBassReady && memoryReady && developmentReady && bassReady && melodicSpeechReady &&
-        clubReady && report.narrativeSpineReady && report.densityControl >= 0.82 && report.maximumMelodicStepRun <= 5 &&
-        report.score >= 0.76);
+        clubReady && narrativeReady && report.densityControl >= 0.82 && report.maximumMelodicStepRun <= 5 &&
+        report.score >= (hypnotic ? .70 : .76));
     return report;
 }
 

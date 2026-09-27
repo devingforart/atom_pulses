@@ -220,7 +220,8 @@ int main(int argc, char** argv) {
         std::jthread request([&] {
             plan = pulso::plugin::AiComposer::planSong(
                 "A long progressive composition used to verify network cancellation",
-                540, 270, 120.0, 4.0, 919191, stopSource.get_token(), error);
+                540, 270, 120.0, 4.0, 919191, pulso::CompositionBehavior::Adaptive,
+                stopSource.get_token(), error);
         });
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
         stopSource.request_stop();
@@ -239,7 +240,8 @@ int main(int argc, char** argv) {
         std::vector<pulso::plugin::AiSongProgressUpdate> liveProgress;
         const auto plan = pulso::plugin::AiComposer::planSong(
             "An evolving instrumental journey with restraint, thematic recall and a decisive resolution",
-            60, 30, 120.0, 4.0, 424242, stopSource.get_token(), error,
+            60, 30, 120.0, 4.0, 424242, pulso::CompositionBehavior::Adaptive,
+            stopSource.get_token(), error,
             [&](const auto& update) {
                 liveProgress.push_back(update);
                 std::cout << "[AI] stage=" << static_cast<int>(update.stage)
@@ -677,6 +679,9 @@ int main(int argc, char** argv) {
     require(processor.parameters.getParameter("language") != nullptr &&
                 processor.uiLanguage() == pulso::plugin::UiLanguage::Spanish,
             "The complete interface language must be a persistent parameter and default to Spanish");
+    require(processor.parameters.getParameter("compositionBehavior") != nullptr &&
+                processor.compositionBehavior() == pulso::CompositionBehavior::Adaptive,
+            "Composition behavior must be host-visible and preserve the established Adaptive path by default");
     const auto accentedTranslation = pulso::plugin::tr(
         pulso::plugin::UiLanguage::Spanish, pulso::plugin::TextId::Subtitle);
     require(accentedTranslation.containsChar(0x00d3),
@@ -1583,6 +1588,7 @@ int main(int argc, char** argv) {
     require(editor->findChildWithID("language-selector") != nullptr &&
                 editor->findChildWithID("prompt-input") != nullptr &&
                 editor->findChildWithID("duration-input") != nullptr &&
+                editor->findChildWithID("composition-behavior") != nullptr &&
                 editor->findChildWithID("compose-song") != nullptr &&
                 editor->findChildWithID("api-settings") != nullptr &&
                 editor->findChildWithID("api-settings-panel") != nullptr &&
@@ -1619,6 +1625,8 @@ int main(int argc, char** argv) {
 
     processor.parameters.getParameter("previewWorld")->setValueNotifyingHost(1.0f);
     processor.parameters.getParameter("language")->setValueNotifyingHost(0.0f);
+    auto* behaviorParameter = processor.parameters.getParameter("compositionBehavior");
+    behaviorParameter->setValueNotifyingHost(behaviorParameter->convertTo0to1(2.0f));
     processor.setVoicePreviewTimbre(pulso::VoiceId::SnareClap, 1);
     processor.setVoicePreviewTimbre(pulso::VoiceId::ClosedHats, 2);
     processor.setVoicePreviewTimbre(pulso::VoiceId::Lead, 4);
@@ -1698,6 +1706,8 @@ int main(int argc, char** argv) {
             "The selected preview sound world must survive a DAW project reload");
     require(restored.uiLanguage() == pulso::plugin::UiLanguage::English,
             "The selected interface and tooltip language must survive a DAW project reload");
+    require(restored.compositionBehavior() == pulso::CompositionBehavior::Narrative,
+            "The selected composition behavior must survive an Ableton project reload");
     require(restored.voicePreviewTimbre(pulso::VoiceId::SnareClap) == 1 &&
                 restored.voicePreviewTimbre(pulso::VoiceId::ClosedHats) == 2 &&
                 restored.voicePreviewTimbre(pulso::VoiceId::Lead) == 4,

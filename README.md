@@ -2,6 +2,14 @@
 
 ## Web comercial
 
+### 0.58.46 — comportamiento compositivo explícito
+
+- La interfaz reemplaza el indicador heredado `8 BARS` por un selector persistente: **Adaptativo**, **Hipnótico** o **Narrativo**.
+- Adaptativo conserva el recorrido musical existente y reconoce pedidos hipnóticos explícitos en el texto; no obliga a que la canción cambie cada ocho compases.
+- Hipnótico permite estados perceptuales de 16–64 compases, restringe la novedad, escalona entradas y automatizaciones y evita que los validadores conviertan la evolución tímbrica en exceso de notas.
+- Narrativo conserva el arco causal de premisa, desarrollo, contraste, clímax, retorno y resolución.
+- La elección viaja por planificación, escritura GPT, recuperación, auditoría, expresión MIDI, serialización y restauración del proyecto de Live.
+
 La aplicación de producto, suscripciones y descargas vive en [`web/`](web/README.md). Usa React para la interfaz y Rust/Axum para cuentas, Stripe y GitHub Releases. Cada tag `vX.Y.Z` puede construir y publicar el instalador correspondiente mediante [Release PULSO](.github/workflows/release.yml); la web consulta esa release como fuente única de versión.
 
 ### 0.58.33 — cierre verificable para toda protagonista poblada

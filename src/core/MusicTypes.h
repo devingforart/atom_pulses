@@ -14,6 +14,20 @@ namespace pulso {
 enum class Role : std::uint8_t { Bass = 0, Percussion, Countermelody, Ensemble };
 enum class ScaleKind : std::uint8_t { Major = 0, Minor, Dorian, Mixolydian, Chromatic };
 enum class ScoreDepartment : std::uint8_t { Rhythm = 0, Harmony, Melody };
+// High-level musical behaviour is deliberately independent from genre. A techno,
+// ambient or orchestral prompt may all ask for either slow perceptual evolution or
+// an explicit dramatic argument. Adaptive preserves the established PULSO path.
+enum class CompositionBehavior : std::uint8_t { Adaptive = 0, Hypnotic, Narrative };
+
+[[nodiscard]] constexpr std::string_view compositionBehaviorKey(
+    CompositionBehavior behavior) noexcept {
+    switch (behavior) {
+        case CompositionBehavior::Adaptive: return "adaptive";
+        case CompositionBehavior::Hypnotic: return "hypnotic";
+        case CompositionBehavior::Narrative: return "narrative";
+    }
+    return "adaptive";
+}
 enum class InstrumentSoundModel : std::uint8_t {
     Generic = 0, Kick, SnareClap, Hats, Timpani, Taiko, LatinPercussion, Shaker, Cymbal,
     Piano, Harp, HighStrings, MidStrings, LowStrings, Flute, Oboe, Clarinet, Bassoon,

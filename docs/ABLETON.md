@@ -1,5 +1,13 @@
 # Probar PULSO en Ableton Live
 
+## Adaptativo, Hipnótico y Narrativo (0.58.46)
+
+Antes de **Componer canción**, el selector **Composición** define el comportamiento temporal. Usa
+**Adaptativo** para conservar el rango habitual de PULSO, **Hipnótico** para música de evolución larga
+y novedad contenida, o **Narrativo** para una forma de contrastes y resolución más explícitos. La
+elección queda guardada dentro del Live Set. El antiguo texto `8 BARS` no era la duración de la canción
+ni una obligación de cambiar cada ocho compases y ya no aparece en la interfaz.
+
 ## Contrato 0.57.0
 
 El registro de una recuperación muestra descriptores con `authority`, `blocking`, `evidence` y

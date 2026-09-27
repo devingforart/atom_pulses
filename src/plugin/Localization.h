@@ -11,14 +11,14 @@ namespace pulso::plugin {
 enum class UiLanguage : std::uint8_t { English = 0, Spanish };
 
 enum class TextId : std::uint8_t {
-    Subtitle, PromptLabel, DurationLabel, PromptPlaceholder,
+    Subtitle, PromptLabel, DurationLabel, BehaviorLabel, PromptPlaceholder,
     GenerateIdea, ComposeSong, NextIdea, RegenerateUnlocked, Undo,
     PreviewAudio, HumanPerformance, MidiThru,
     LockHarmony, LockMelodic, LockBass, LockRhythm,
     LockHarmonyTip, LockMelodicTip, LockBassTip, LockRhythmTip,
     GenerateTip, NextTip, RegenerateTip, UndoTip, PreviewTip, PerformanceTip,
     SoundWorldTip, ThruTip, PromptTip, DurationTip, TitleTip, SubtitleTip,
-    StatusTip, AiTip, IdeaTitleTip, IdeaDescriptionTip, PatternTip, LanguageTip,
+    StatusTip, BehaviorTip, AiTip, IdeaTitleTip, IdeaDescriptionTip, PatternTip, LanguageTip,
     PreviewSound, Octave, Level, Audition, SoundTip, OctaveDownTip,
     OctaveOriginalTip, OctaveUpTip, LevelTip, AuditionTip,
     FullSong, Rhythm, Bass, Harmony, LeadsFx, Section,

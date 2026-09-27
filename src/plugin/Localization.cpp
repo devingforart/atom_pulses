@@ -16,6 +16,7 @@ const char8_t* english(TextId id) noexcept {
         case TextId::Subtitle: return u8"AI COMPOSITION BROWSER";
         case TextId::PromptLabel: return u8"DESCRIBE THE IDEA (OPTIONAL)";
         case TextId::DurationLabel: return u8"SONG LENGTH";
+        case TextId::BehaviorLabel: return u8"COMPOSITION";
         case TextId::PromptPlaceholder: return u8"e.g. intimate nocturnal soul, memorable hook, tension blooming before the climax…";
         case TextId::GenerateIdea: return u8"GENERATE IDEA";
         case TextId::ComposeSong: return u8"COMPOSE SONG";
@@ -45,7 +46,8 @@ const char8_t* english(TextId id) noexcept {
         case TextId::DurationTip: return u8"Target duration. Use 9:00 or '9 min' for a full song; type IDEA for a short compositional sketch.";
         case TextId::TitleTip: return u8"PULSO turns compositional intent into editable multitrack MIDI.";
         case TextId::SubtitleTip: return u8"Installed version and current product mode.";
-        case TextId::StatusTip: return u8"Host tempo, phrase length, idea lineage and transport state.";
+        case TextId::StatusTip: return u8"Host tempo, idea lineage and generation state.";
+        case TextId::BehaviorTip: return u8"Adaptive preserves PULSO's established range. Hypnotic favors long stable states, staggered micro-evolution and a low novelty budget. Narrative favors explicit contrast, climax and resolution.";
         case TextId::AiTip: return u8"GPT status is explicit. PULSO never labels local fallback output as AI-generated.";
         case TextId::IdeaTitleTip: return u8"Title and tonal centre proposed for the current composition.";
         case TextId::IdeaDescriptionTip: return u8"Compositional intention behind the current idea.";
@@ -108,6 +110,7 @@ const char8_t* spanish(TextId id) noexcept {
         case TextId::Subtitle: return u8"NAVEGADOR DE COMPOSICIÓN CON IA";
         case TextId::PromptLabel: return u8"DESCRIBE LA IDEA (OPCIONAL)";
         case TextId::DurationLabel: return u8"DURACIÓN";
+        case TextId::BehaviorLabel: return u8"COMPOSICIÓN";
         case TextId::PromptPlaceholder: return u8"p. ej. soul nocturno e íntimo, motivo memorable y tensión antes del clímax…";
         case TextId::GenerateIdea: return u8"GENERAR IDEA";
         case TextId::ComposeSong: return u8"COMPONER CANCIÓN";
@@ -137,7 +140,8 @@ const char8_t* spanish(TextId id) noexcept {
         case TextId::DurationTip: return u8"Duración objetivo. Usa 9:00 o '9 min' para una canción completa; escribe IDEA para un boceto corto.";
         case TextId::TitleTip: return u8"PULSO convierte intención compositiva en MIDI multipista editable.";
         case TextId::SubtitleTip: return u8"Versión instalada y modo actual del producto.";
-        case TextId::StatusTip: return u8"Tempo del host, duración de frase, linaje de la idea y estado del transporte.";
+        case TextId::StatusTip: return u8"Tempo del host, linaje de la idea y estado de generación.";
+        case TextId::BehaviorTip: return u8"Adaptativo conserva el rango actual de PULSO. Hipnótico prioriza estados largos, microevolución escalonada y poca novedad. Narrativo prioriza contraste, clímax y resolución explícitos.";
         case TextId::AiTip: return u8"El estado de GPT es explícito. PULSO nunca presenta una salida local como generada por IA.";
         case TextId::IdeaTitleTip: return u8"Título y centro tonal propuestos para la composición actual.";
         case TextId::IdeaDescriptionTip: return u8"Intención compositiva de la idea actual.";

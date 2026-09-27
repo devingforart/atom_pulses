@@ -28,6 +28,21 @@ el flujo de la sesión.
 7. Mantener resultados reproducibles dentro de una sesión.
 8. Explicar cada decisión en contexto: ningún control depende de consultar un manual externo.
 
+## Comportamiento compositivo
+
+El selector de composición expresa cómo debe transcurrir el tiempo musical sin encerrar al usuario
+en un género:
+
+- **Adaptativo** mantiene el comportamiento consolidado y deja que la dirección escrita decida el
+  equilibrio entre continuidad y contraste. Si el texto pide de forma inequívoca hipnosis,
+  minimalismo o evolución lenta, adopta internamente el contrato hipnótico.
+- **Hipnótico** prioriza estados largos, repetición transformada, pedal armónico, una sola novedad
+  perceptual por vez y evolución escalonada de articulación, registro y controladores MIDI.
+- **Narrativo** prioriza cambios audibles, clímax, recapitulación y resolución causal.
+
+Ninguno de estos modos fija secciones de ocho compases. La duración de cada estado es una decisión
+compositiva de la IA dentro de la forma completa solicitada.
+
 ## Alcance de 0.25
 
 Incluye composición simbólica mediante GPT, salida estructurada validada, fallback

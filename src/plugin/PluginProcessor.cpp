@@ -35,6 +35,7 @@ constexpr auto cohesion = "cohesion";
 constexpr auto energy = "energy";
 constexpr auto phraseBars = "phraseBars";
 constexpr auto mode = "mode";
+constexpr auto compositionBehavior = "compositionBehavior";
 constexpr auto preview = "preview";
 constexpr auto performance = "performance";
 constexpr auto language = "language";
@@ -62,7 +63,7 @@ constexpr auto thru = "thru";
 constexpr auto gain = "gain";
 constexpr std::array generative{role, scale, root, follow, risk, space, repetition,
                                 complexity, development, groove, humanize, cohesion,
-                                energy, phraseBars, mode};
+                                energy, phraseBars, mode, compositionBehavior};
 constexpr std::array phraseLengths{1, 2, 4, 8, 16};
 
 bool isInternalDiagnosticDirection(const juce::String& direction) {
@@ -146,6 +147,8 @@ juce::String songPlanToJson(const SongPlan& plan) {
     jsonRoot->setProperty("title", juce::String::fromUTF8(plan.title.c_str()));
     jsonRoot->setProperty("key", juce::String::fromUTF8(plan.key.c_str()));
     jsonRoot->setProperty("summary", juce::String::fromUTF8(plan.summary.c_str()));
+    jsonRoot->setProperty("composition_behavior",
+        juce::String(compositionBehaviorKey(plan.compositionBehavior).data()));
     jsonRoot->setProperty("instrument_cast_authored", plan.instrumentCastAuthored);
     auto* narrativeSpine = new juce::DynamicObject();
     narrativeSpine->setProperty("authored", plan.narrativeSpine.authored);
@@ -892,6 +895,26 @@ int PulsoAudioProcessor::currentPhraseBars() const noexcept {
     return ids::phraseLengths[static_cast<std::size_t>(index)];
 }
 
+static CompositionBehavior inferredCompositionBehavior(CompositionBehavior selected,
+                                                        juce::String direction) {
+    if (selected != CompositionBehavior::Adaptive) return selected;
+    direction = direction.toLowerCase();
+    const auto explicitlyHypnotic = direction.contains("hypnotic") ||
+        direction.contains("hipnot") || direction.contains("meditative") ||
+        direction.contains("minimal") || direction.contains("slow evolution") ||
+        direction.contains("evolucion lenta") || direction.contains("evolución lenta") ||
+        direction.contains("long plateau") || direction.contains("trance-like") ||
+        direction.contains("repetitive but evolving");
+    return explicitlyHypnotic ? CompositionBehavior::Hypnotic
+                              : CompositionBehavior::Adaptive;
+}
+
+CompositionBehavior PulsoAudioProcessor::compositionBehavior() const noexcept {
+    const auto value = std::clamp(
+        static_cast<int>(parameters.getRawParameterValue(ids::compositionBehavior)->load()), 0, 2);
+    return static_cast<CompositionBehavior>(value);
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout PulsoAudioProcessor::createParameterLayout() {
     using Choice = juce::AudioParameterChoice;
     using Float = juce::AudioParameterFloat;
@@ -917,6 +940,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout PulsoAudioProcessor::createP
                                                juce::StringArray{"1 bar", "2 bars", "4 bars", "8 bars", "16 bars"}, 3));
     result.push_back(std::make_unique<Choice>(ids::mode, "Phrase Mode",
                                               juce::StringArray{"Loop", "Evolve"}, 0));
+    result.push_back(std::make_unique<Choice>(ids::compositionBehavior, "Composition Behavior",
+                                              juce::StringArray{"Adaptive", "Hypnotic", "Narrative"}, 0));
     result.push_back(std::make_unique<Bool>(ids::preview, "Preview", true));
     result.push_back(std::make_unique<Bool>(ids::performance, "Human Performance", false));
     result.push_back(std::make_unique<Choice>(ids::language, "Interface Language",
@@ -1133,6 +1158,7 @@ PulsoAudioProcessor::GenerationRequest PulsoAudioProcessor::makeGenerationReques
     request.lockedLayers = lockedLayers.load(std::memory_order_relaxed);
     request.targetSongSeconds = songDurationSeconds.load(std::memory_order_relaxed);
     request.orchestrationIntent = static_cast<std::uint8_t>(OrchestrationIntent::Adaptive);
+    request.compositionBehavior = static_cast<std::uint8_t>(compositionBehavior());
     return request;
 }
 
@@ -1415,6 +1441,10 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 songDirection += "\nOrchestration mode: deep production. Build a detailed hybrid acoustic/electronic ensemble with independent harmonic families, controlled counterpoint, automation and production-ready negative space.";
             else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Symphonic))
                 songDirection += "\nOrchestration mode: symphonic. Treat the orchestra as multiple independent choirs with divisi strings, woodwind and brass dialogue, orchestral percussion, register-aware counterpoint, articulation contrast and a long-range chamber-to-tutti arc.";
+            const auto selectedBehavior = static_cast<CompositionBehavior>(std::clamp(
+                static_cast<int>(newest.compositionBehavior), 0, 2));
+            const auto requestedBehavior = inferredCompositionBehavior(
+                selectedBehavior, userSongDirection);
             if (isSongRequest) {
                 const auto totalBars = SongComposer::phraseAlignedBars(static_cast<int>(std::lround(
                     newest.targetSongSeconds * currentTempo() / 60.0 / newest.beatsPerBar)));
@@ -1437,7 +1467,8 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     ideaMetadata.store(thinking, std::memory_order_release);
                     generationProgress.store(0.06f, std::memory_order_relaxed);
                     plan = AiComposer::planSong(songDirection, newest.targetSongSeconds, totalBars,
-                        currentTempo(), newest.beatsPerBar, newest.seed, operationToken, aiError,
+                        currentTempo(), newest.beatsPerBar, newest.seed, requestedBehavior,
+                        operationToken, aiError,
                         [this, metadata](const AiSongProgressUpdate& update) {
                             auto progressMetadata = std::make_shared<IdeaMetadata>(*metadata);
                             OperationalJournal::write(
@@ -1521,6 +1552,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                         newest.targetSongSeconds, currentTempo(), newest.beatsPerBar,
                         newest.seed, context.rootPitchClass, context.scale);
                 }
+                plan.compositionBehavior = requestedBehavior;
                 plan.seed = newest.seed;
                 plan.targetSeconds = newest.targetSongSeconds;
                 const auto inferredProduction = ElectronicProductionDirector::infer(

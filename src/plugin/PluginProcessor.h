@@ -125,6 +125,7 @@ public:
         return hostTransportAvailable.load(std::memory_order_relaxed);
     }
     [[nodiscard]] int currentPhraseBars() const noexcept;
+    [[nodiscard]] CompositionBehavior compositionBehavior() const noexcept;
     [[nodiscard]] std::uint64_t currentCompositionSeed() const noexcept {
         return compositionSeed.load(std::memory_order_relaxed);
     }
@@ -209,6 +210,7 @@ private:
         std::uint8_t lockedLayers{};
         int targetSongSeconds{};
         std::uint8_t orchestrationIntent{};
+        std::uint8_t compositionBehavior{};
     };
 
     struct RealtimePattern {

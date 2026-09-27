@@ -47,46 +47,27 @@ jobs:
           cmake --build build/windows-release --config Release --target Pulso_VST3 Pulso_Standalone pulso_tests pulso_processor_tests --parallel
       - name: Test
         run: ctest --test-dir build/windows-release -C Release --output-on-failure
-      - name: Install Inno Setup
-        run: choco install innosetup --yes --no-progress
-      - name: Verify commercial release credentials
+      - name: Install NSIS
+        run: choco install nsis --yes --no-progress
+      - name: Build unsigned beta installer
         shell: pwsh
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          INNO_LICENSE_KEY: ${{ secrets.INNO_SETUP_LICENSE_KEY }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_BASE64)) { throw 'WINDOWS_CERTIFICATE_BASE64 is required for a public release.' }
-          if ([string]::IsNullOrWhiteSpace($env:CERTIFICATE_PASSWORD)) { throw 'WINDOWS_CERTIFICATE_PASSWORD is required for a public release.' }
-          if ([string]::IsNullOrWhiteSpace($env:INNO_LICENSE_KEY)) { throw 'INNO_SETUP_LICENSE_KEY is required for a commercial release.' }
-          reg add 'HKCU\Software\Jordan Russell\Inno Setup\License' /v LicenseKey /t REG_SZ /d $env:INNO_LICENSE_KEY /f | Out-Null
-      - name: Materialize signing certificate
-        shell: pwsh
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
-        run: |
-          $path = Join-Path $env:RUNNER_TEMP 'pulso-signing.pfx'
-          [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:CERTIFICATE_BASE64))
-          "PULSO_CERTIFICATE_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Build signed installer
-        shell: pwsh
-        env:
-          CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: |
-          $arguments = @{ Configuration = 'Release' }
-          if ($env:PULSO_CERTIFICATE_PATH) {
-            $arguments.CertificatePath = $env:PULSO_CERTIFICATE_PATH
-            $arguments.CertificatePassword = $env:CERTIFICATE_PASSWORD
-          }
-          ./scripts/build-installer.ps1 @arguments
+          ./scripts/build-installer.ps1 -Configuration Release
           ./scripts/package.ps1 -Configuration Release
-      - name: Verify Authenticode policy
+      - name: Verify unsigned artifact and checksums
         shell: pwsh
         run: |
-          Get-ChildItem dist -Filter '*.exe' | ForEach-Object {
-            $signature = Get-AuthenticodeSignature $_.FullName
-            if ($signature.Status -ne 'Valid') { throw "Invalid signature: $($_.Name) ($($signature.Status))" }
+          foreach ($artifact in Get-ChildItem dist -File | Where-Object { $_.Name -match '\.(exe|zip)$' }) {
+            $hashFile = "$($artifact.FullName).sha256"
+            if (-not (Test-Path -LiteralPath $hashFile)) { throw "Missing checksum for $($artifact.Name)" }
+            $expected = (Get-Content -LiteralPath $hashFile -Raw).Trim().Split(' ')[0]
+            $actual = (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash
+            if ($expected -ne $actual) { throw "Checksum mismatch: $($artifact.Name)" }
           }
+          $installer = Get-ChildItem dist -Filter '*-setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Installer missing' }
+          $signature = Get-AuthenticodeSignature $installer.FullName
+          if ($signature.Status -ne 'NotSigned') { throw "Unexpected signature state: $($signature.Status)" }
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -108,16 +89,9 @@ jobs:
             dist/PULSO-*-windows-x64.zip
             dist/PULSO-*-windows-x64.zip.sha256
             dist/*-sbom.cdx.json
-      - name: Publish immutable GitHub Release
+      - name: Publish unsigned beta GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create $env:RELEASE_TAG dist/PULSO-*-windows-x64-setup.exe dist/PULSO-*-windows-x64-setup.exe.sha256 dist/PULSO-*-windows-x64.zip dist/PULSO-*-windows-x64.zip.sha256 dist/*-sbom.cdx.json --verify-tag --generate-notes --title "PULSO $($env:RELEASE_TAG.TrimStart('v'))"
-      - name: Remove transient certificate
-        if: always()
-        shell: pwsh
-        run: |
-          if ($env:PULSO_CERTIFICATE_PATH) { Remove-Item -LiteralPath $env:PULSO_CERTIFICATE_PATH -Force -ErrorAction SilentlyContinue }
-          reg delete 'HKCU\Software\Jordan Russell\Inno Setup\License' /v LicenseKey /f 2>$null
-          exit 0
+          gh release create $env:RELEASE_TAG dist/PULSO-*-windows-x64-setup.exe dist/PULSO-*-windows-x64-setup.exe.sha256 dist/PULSO-*-windows-x64.zip dist/PULSO-*-windows-x64.zip.sha256 dist/*-sbom.cdx.json --verify-tag --notes-file docs/UNSIGNED_BETA_RELEASE.md --title "PULSO $($env:RELEASE_TAG.TrimStart('v')) — BETA SIN FIRMA DIGITAL"

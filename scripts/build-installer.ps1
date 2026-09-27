@@ -1,9 +1,6 @@
 param(
     [ValidateSet('Debug', 'Release')]
-    [string]$Configuration = 'Release',
-    [string]$CertificatePath = '',
-    [string]$CertificatePassword = '',
-    [string]$TimestampUrl = 'http://timestamp.digicert.com'
+    [string]$Configuration = 'Release'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,32 +17,19 @@ foreach ($file in @($pluginBinary, $standalone)) {
     if (-not (Test-Path -LiteralPath $file)) { throw "Missing artifact: $file" }
 }
 
-$signTool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
-    Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-if ($CertificatePath) {
-    if (-not $signTool) { throw 'signtool.exe is required for Authenticode signing.' }
-    if (-not (Test-Path -LiteralPath $CertificatePath)) { throw "Certificate not found: $CertificatePath" }
-    foreach ($file in @($pluginBinary, $standalone)) {
-        & $signTool sign /fd SHA256 /td SHA256 /tr $TimestampUrl /f $CertificatePath /p $CertificatePassword $file
-        if ($LASTEXITCODE -ne 0) { throw "Signing failed: $file" }
-        & $signTool verify /pa /v $file
-        if ($LASTEXITCODE -ne 0) { throw "Signature verification failed: $file" }
-    }
-}
+$makensis = @(
+    'C:\Program Files (x86)\NSIS\makensis.exe',
+    'C:\Program Files\NSIS\makensis.exe',
+    (Join-Path $env:LOCALAPPDATA 'Programs\NSIS\makensis.exe')
+) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $makensis) { throw 'NSIS is required. Install it with: winget install NSIS.NSIS' }
 
-$iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe', 'C:\Program Files\Inno Setup 6\ISCC.exe') |
-    Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if (-not $iscc) { throw 'Inno Setup 6 is not installed. Install it with: winget install JRSoftware.InnoSetup' }
 $dist = Join-Path $projectRoot 'dist'
 New-Item -ItemType Directory -Path $dist -Force | Out-Null
-& $iscc "/DAppVersion=$version" "/DSourceRoot=$projectRoot" "/DOutputRoot=$dist" (Join-Path $projectRoot 'installer\PULSO.iss')
-if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
+& $makensis '/INPUTCHARSET' 'UTF8' "/DAPP_VERSION=$version" "/DSOURCE_ROOT=$projectRoot" "/DARTIFACT_ROOT=$artifactRoot" "/DOUTPUT_ROOT=$dist" (Join-Path $projectRoot 'installer\PULSO.nsi')
+if ($LASTEXITCODE -ne 0) { throw 'NSIS compilation failed.' }
 $installer = Join-Path $dist "PULSO-$version-windows-x64-setup.exe"
-if ($CertificatePath) {
-    & $signTool sign /fd SHA256 /td SHA256 /tr $TimestampUrl /f $CertificatePath /p $CertificatePassword $installer
-    if ($LASTEXITCODE -ne 0) { throw 'Installer signing failed.' }
-}
+if (-not (Test-Path -LiteralPath $installer)) { throw "NSIS did not create $installer" }
 $hash = Get-FileHash -LiteralPath $installer -Algorithm SHA256
 [IO.File]::WriteAllText("$installer.sha256", "$($hash.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($installer))`n", [Text.UTF8Encoding]::new($false))
-Write-Host "Created $installer" -ForegroundColor Green
+Write-Host "Created unsigned beta installer $installer" -ForegroundColor Green

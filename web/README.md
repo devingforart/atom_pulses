@@ -59,11 +59,11 @@ curl --fail http://127.0.0.1:8188/api/health
 - Activa Stripe Customer Portal, facturas, impuestos y los métodos de pago deseados. No habilites los precios Cloud hasta desplegar y auditar el gateway de IA.
 - Para un repositorio privado, usa un fine-grained `GITHUB_TOKEN` con acceso de lectura a Contents de este repositorio.
 - Cambia los textos legales provisionales por políticas revisadas para la empresa y jurisdicción reales.
-- Antes de publicar, carga `WINDOWS_CERTIFICATE_BASE64`, `WINDOWS_CERTIFICATE_PASSWORD` e `INNO_SETUP_LICENSE_KEY` como secretos de GitHub; el workflow se detiene si la firma o la licencia comercial del compilador no están configuradas.
+- La beta de Windows usa NSIS y no requiere secretos de firma ni licencia comercial del compilador. El instalador se publica sin firma digital y debe identificarse como tal; Windows SmartScreen puede mostrar una advertencia.
 
 ## Releases sincronizadas
 
-El tag debe coincidir con `CMakeLists.txt`: para PULSO 0.58.40, publica `v0.58.40`. El workflow `release.yml` construye Windows, genera instalador y ZIP, verifica checksums, SBOM, procedencia y firmas, y los adjunta a GitHub Releases. La web consulta `/releases/latest`; no contiene una versión hardcodeada.
+El tag debe coincidir con `CMakeLists.txt`: para PULSO 0.58.48, publica `v0.58.48`. El workflow `release.yml` construye Windows, genera instalador NSIS y ZIP, verifica checksums, SBOM y procedencia, y los adjunta a GitHub Releases. La firma digital se pospone hasta contar con un certificado comercial. La web consulta `/releases/latest`; no contiene una versión hardcodeada.
 
 La descarga requiere una licencia perpetua Studio o una suscripción Cloud `active`/`trialing`. El backend pide el instalador a GitHub con su token y lo transmite sin exponer credenciales.
 

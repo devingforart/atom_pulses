@@ -30,17 +30,19 @@ COPY CMakeLists.txt ./
 COPY cmake ./cmake
 COPY src ./src
 COPY tools ./tools
-RUN cmake -S . -B /source/build -DCMAKE_BUILD_TYPE=Release \
+RUN --mount=type=cache,target=/source/build \
+    cmake -S . -B /source/build -DCMAKE_BUILD_TYPE=Release \
     -DPULSO_BUILD_PLUGIN=OFF -DPULSO_BUILD_TESTS=OFF -DPULSO_BUILD_CLI=OFF \
     -DPULSO_BUILD_CLOUD_WORKER=ON && \
-    cmake --build /source/build --target pulso_cloud_worker --parallel 2
+    cmake --build /source/build --target pulso_cloud_worker --parallel 2 && \
+    cp /source/build/pulso_cloud_worker /tmp/pulso_cloud_worker
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libcurl4 && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 10001 pulso
 WORKDIR /app
 COPY --from=backend /tmp/pulso-web-api /app/pulso-web-api
-COPY --from=composer /source/build/pulso_cloud_worker /app/pulso_cloud_worker
+COPY --from=composer /tmp/pulso_cloud_worker /app/pulso_cloud_worker
 COPY --from=frontend /source/frontend/dist /app/frontend
 RUN mkdir /app/cloud-jobs && chown pulso:pulso /app/cloud-jobs
 USER pulso

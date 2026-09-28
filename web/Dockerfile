@@ -21,6 +21,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM debian:bookworm AS composer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates cmake g++ git make pkg-config libcurl4-openssl-dev \
+    libfreetype-dev libfontconfig1-dev \
+    libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+    libxinerama-dev libxrandr-dev libxrender-dev libxi-dev \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /source
 COPY CMakeLists.txt ./

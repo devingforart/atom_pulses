@@ -1121,8 +1121,9 @@ void applyDirectedPerformance(Pattern& chunk, const SongPlan& plan, const SongSe
         if (left.voice != right.voice) return left.voice < right.voice;
         return left.pitch < right.pitch;
     });
-    std::vector<std::array<int, static_cast<std::size_t>(VoiceId::Count)>> onsetCounts(
-        static_cast<std::size_t>(std::max(1, static_cast<int>(chunk.lengthBeats / beatsPerBar))), {});
+    using OnsetCounts = std::array<int, static_cast<std::size_t>(VoiceId::Count)>;
+    std::vector<OnsetCounts> onsetCounts(
+        static_cast<std::size_t>(std::max(1, static_cast<int>(chunk.lengthBeats / beatsPerBar))));
     chunk.notes.erase(std::remove_if(chunk.notes.begin(), chunk.notes.end(), [&](const auto& note) mutable {
         const auto chunkBar = std::clamp(static_cast<int>(std::floor(note.startBeat / beatsPerBar)),
                                          0, std::max(0, static_cast<int>(chunk.lengthBeats / beatsPerBar) - 1));

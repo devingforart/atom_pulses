@@ -282,10 +282,10 @@ private:
     std::atomic<std::shared_ptr<const Pattern>> previousPatternSnapshot;
     std::atomic<std::shared_ptr<const SongPlan>> songPlanSnapshot;
     struct IdeaMetadata {
-        juce::String title{"Local Idea"};
-        juce::String key{"C minor"};
-        juce::String description{"Deterministic local composition"};
-        juce::String status{"LOCAL ENGINE READY"};
+        juce::String title{"No composition yet"};
+        juce::String key;
+        juce::String description{"Compose with AI to create editable MIDI."};
+        juce::String status{"AI READY"};
     };
     std::atomic<std::shared_ptr<const IdeaMetadata>> ideaMetadata;
     mutable std::mutex creativeDirectionMutex;

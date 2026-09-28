@@ -9,6 +9,10 @@
 namespace pulso::plugin {
 namespace {
 
+juce::String uiUtf8(const char8_t* value) {
+    return juce::String::fromUTF8(reinterpret_cast<const char*>(value));
+}
+
 int durationFromText(juce::String text) {
     text = text.trim().toLowerCase();
     if (text.isEmpty() || text == "idea" || text == "loop" || text == "boceto") return 0;
@@ -100,14 +104,14 @@ void ApiSettingsPanel::resized() {
 void ApiSettingsPanel::setLanguage(UiLanguage value) {
     language = value;
     const auto spanish = language == UiLanguage::Spanish;
-    heading.setText(spanish ? juce::String::fromUTF8("CONFIGURACI\xC3\x93N IA")
+    heading.setText(spanish ? uiUtf8(u8"CONFIGURACIÓN IA")
                             : "AI CONFIGURATION", juce::dontSendNotification);
     explanation.setText(spanish
-        ? juce::String::fromUTF8("La clave se guarda cifrada para tu usuario de Windows. Nunca se incorpora al proyecto de Ableton, al preset ni a los registros.")
+        ? uiUtf8(u8"La clave se guarda cifrada para tu usuario de Windows. Nunca se incorpora al proyecto de Ableton, al preset ni a los registros.")
         : "The key is stored securely for your Windows user. It is never embedded in the Ableton project, preset or logs.",
         juce::dontSendNotification);
     keyLabel.setText(spanish ? "OPENAI API KEY" : "OPENAI API KEY", juce::dontSendNotification);
-    keyEditor.setTextToShowWhenEmpty(spanish ? "Pega una clave nueva para reemplazar la actual"
+    keyEditor.setTextToShowWhenEmpty(spanish ? uiUtf8(u8"Pega una clave nueva para reemplazar la actual")
                                              : "Paste a new key to replace the current one",
                                      colours::muted);
     saveButton.setButtonText(spanish ? "GUARDAR" : "SAVE");
@@ -119,11 +123,11 @@ void ApiSettingsPanel::setLanguage(UiLanguage value) {
                                  : "Paste the complete key. Its contents remain hidden and are never shown again.");
     saveButton.setTooltip(spanish ? "Guarda la clave mediante el Administrador de credenciales de Windows."
                                   : "Save the key with Windows Credential Manager.");
-    testButton.setTooltip(spanish ? "Comprueba autenticaci\xC3\xB3n y conectividad sin componer ni consumir una generaci\xC3\xB3n."
+    testButton.setTooltip(spanish ? uiUtf8(u8"Comprueba autenticación y conectividad sin componer ni consumir una generación.")
                                   : "Check authentication and connectivity without composing or consuming a generation.");
     removeButton.setTooltip(spanish ? "Elimina la clave guardada por PULSO en Windows."
                                     : "Remove the key PULSO saved in Windows.");
-    closeButton.setTooltip(spanish ? "Cerrar configuraci\xC3\xB3n" : "Close settings");
+    closeButton.setTooltip(spanish ? uiUtf8(u8"Cerrar configuración") : "Close settings");
     refreshStatus();
 }
 
@@ -179,7 +183,7 @@ void ApiSettingsPanel::testKey() {
     testButton.setEnabled(false);
     removeButton.setEnabled(false);
     setLanguage(language);
-    credentialStatus.setText(language == UiLanguage::Spanish ? "Comprobando conexi\xC3\xB3n..."
+    credentialStatus.setText(language == UiLanguage::Spanish ? uiUtf8(u8"Comprobando conexión...")
                                                              : "Checking connection...",
                              juce::dontSendNotification);
     const auto safe = juce::Component::SafePointer<ApiSettingsPanel>(this);
@@ -200,7 +204,7 @@ void ApiSettingsPanel::finishTest(bool success, const juce::String& detail) {
     setLanguage(language);
     const auto spanish = language == UiLanguage::Spanish;
     credentialStatus.setText(success
-        ? (detail.isNotEmpty() ? detail : (spanish ? "Conexi\xC3\xB3n verificada" : "Connection verified"))
+        ? (detail.isNotEmpty() ? detail : (spanish ? uiUtf8(u8"Conexión verificada") : "Connection verified"))
         : detail, juce::dontSendNotification);
     credentialStatus.setColour(juce::Label::textColourId,
                                success ? colours::accent : colours::accentHot);
@@ -228,7 +232,7 @@ PulsoAudioProcessorEditor::PulsoAudioProcessorEditor(PulsoAudioProcessor& owner)
     setResizeLimits(1040, 650, 1500, 1020);
     setSize(1120, 760);
 
-    title.setText("PULSO v" PULSO_VERSION_STRING, juce::dontSendNotification);
+    title.setText("PULSO", juce::dontSendNotification);
     title.setFont(juce::FontOptions(27.0f, juce::Font::bold));
     title.setColour(juce::Label::textColourId, colours::stageText);
     status.setJustificationType(juce::Justification::centredRight);
@@ -384,6 +388,24 @@ void PulsoAudioProcessorEditor::paint(juce::Graphics& graphics) {
     graphics.setFont(juce::FontOptions(9.5f, juce::Font::bold));
     graphics.drawText("COMPOSITION INSTRUMENT", 42, 38, 170, 14,
                       juce::Justification::left);
+    // Same 34 x 24 vector mark as web/frontend/src/components/Logo.tsx.
+    // Render it natively so the VST stays sharp at every host DPI scale.
+    constexpr auto markX = 42.0f;
+    constexpr auto markY = 62.0f;
+    graphics.setColour(colours::stageText);
+    graphics.fillEllipse(markX + 0.8f, markY + 9.8f, 4.4f, 4.4f);
+    juce::Path pulseLine;
+    pulseLine.startNewSubPath(markX + 5.5f, markY + 12.0f);
+    for (const auto point : {juce::Point<float>{9.5f, 12.0f}, {11.9f, 5.0f},
+                             {16.1f, 19.0f}, {20.2f, 8.0f}, {23.4f, 15.0f},
+                             {27.4f, 15.0f}, {29.6f, 12.0f}, {33.0f, 12.0f}})
+        pulseLine.lineTo(markX + point.x, markY + point.y);
+    graphics.setColour(colours::accent);
+    graphics.strokePath(pulseLine, juce::PathStrokeType(2.1f));
+    graphics.setColour(colours::stageMuted);
+    graphics.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+    graphics.drawText("v" PULSO_VERSION_STRING, 176, 68, 72, 20,
+                      juce::Justification::centredLeft);
     graphics.setColour(colours::accent);
     graphics.fillRect(42.0f, 86.0f, 52.0f, 2.0f);
 
@@ -401,7 +423,7 @@ void PulsoAudioProcessorEditor::resized() {
     auto area = getLocalBounds().reduced(24);
     auto header = area.removeFromTop(84);
     auto identity = header.removeFromLeft(230);
-    title.setBounds(identity.reduced(18, 15));
+    title.setBounds(identity.getX() + 57, identity.getY() + 30, 95, 32);
     languageSelector.setBounds(header.removeFromRight(108).reduced(14, 22));
     apiSettingsButton.setBounds(header.removeFromRight(150).reduced(14, 22));
     status.setBounds(header.reduced(18, 24));
@@ -452,11 +474,7 @@ void PulsoAudioProcessorEditor::timerCallback() {
         ? (language == UiLanguage::Spanish ? "IA CONECTADA" : "AI CONNECTED")
         : (language == UiLanguage::Spanish ? "CONFIGURAR IA" : "SET UP AI"));
 
-    status.setText(localizeStatus(language, processor.currentAiStatus()) + "  " + bullet() + "  " +
-                       juce::String(processor.currentTempo(), 1) + " BPM  " + bullet() + "  " +
-                       tr(language, TextId::Idea) + " " +
-                       juce::String(processor.currentCompositionSeed()) + "." +
-                       juce::String(processor.currentVariationIndex()),
+    status.setText(localizeStatus(language, processor.currentAiStatus()),
                    juce::dontSendNotification);
     deployLiveButton.setEnabled(processor.liveBridgeAvailable() && !composing && processor.currentPattern() != nullptr &&
                                 !processor.currentPattern()->notes.empty());

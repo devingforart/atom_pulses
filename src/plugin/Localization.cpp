@@ -34,7 +34,7 @@ const char8_t* english(TextId id) noexcept {
         case TextId::LockMelodicTip: return u8"Keep lead and countermelody exactly while regenerating other voice families.";
         case TextId::LockBassTip: return u8"Keep sub bass and movement bass exactly while regenerating unlocked voices.";
         case TextId::LockRhythmTip: return u8"Keep kick, snare, hats and both percussion layers exactly while other families change.";
-        case TextId::GenerateTip: return u8"Ask GPT to compose a complete coherent idea. Without an API key, PULSO clearly uses its local engine.";
+        case TextId::GenerateTip: return u8"Ask AI to compose a complete coherent idea. An OpenAI API key is required; if generation fails, the current idea is kept.";
         case TextId::NextTip: return u8"Create the next idea. Locked layers remain note-for-note identical; unlocked layers are recomposed.";
         case TextId::RegenerateTip: return u8"Recompose only unlocked layers around everything you decided to keep.";
         case TextId::UndoTip: return u8"Restore the complete previous idea. Press again to toggle back.";
@@ -46,9 +46,9 @@ const char8_t* english(TextId id) noexcept {
         case TextId::DurationTip: return u8"Target duration. Use 9:00 or '9 min' for a full song; type IDEA for a short compositional sketch.";
         case TextId::TitleTip: return u8"PULSO turns compositional intent into editable multitrack MIDI.";
         case TextId::SubtitleTip: return u8"Installed version and current product mode.";
-        case TextId::StatusTip: return u8"Host tempo, idea lineage and generation state.";
+        case TextId::StatusTip: return u8"AI composition and generation status.";
         case TextId::BehaviorTip: return u8"Adaptive preserves PULSO's established range. Hypnotic favors long stable states, staggered micro-evolution and a low novelty budget. Narrative favors explicit contrast, climax and resolution.";
-        case TextId::AiTip: return u8"GPT status is explicit. PULSO never labels local fallback output as AI-generated.";
+        case TextId::AiTip: return u8"Configure your OpenAI API key to compose. Failed requests keep the current idea.";
         case TextId::IdeaTitleTip: return u8"Title and tonal centre proposed for the current composition.";
         case TextId::IdeaDescriptionTip: return u8"Compositional intention behind the current idea.";
         case TextId::PatternTip: return u8"Each lane is an execution role; its label shows the orchestral parts sharing it. Click for preview sound, octave, level and audition. Full Song exports one MIDI track per populated instrument.";
@@ -128,7 +128,7 @@ const char8_t* spanish(TextId id) noexcept {
         case TextId::LockMelodicTip: return u8"Conserva exactamente lead y contramelodía mientras se regeneran las demás familias.";
         case TextId::LockBassTip: return u8"Conserva exactamente sub bass y movement bass mientras se regeneran las voces libres.";
         case TextId::LockRhythmTip: return u8"Conserva exactamente bombo, caja, hats y ambas percusiones mientras cambian las demás familias.";
-        case TextId::GenerateTip: return u8"Pide a GPT una idea completa y coherente. Sin clave API, PULSO indica claramente que utiliza el motor local.";
+        case TextId::GenerateTip: return u8"Pide a la IA una idea completa y coherente. Se requiere una clave API de OpenAI; si falla, se conserva la idea actual.";
         case TextId::NextTip: return u8"Crea la siguiente idea. Las capas fijadas permanecen idénticas; las libres se recomponen.";
         case TextId::RegenerateTip: return u8"Recompone solamente las capas libres alrededor de todo lo que decidiste conservar.";
         case TextId::UndoTip: return u8"Restaura la idea anterior completa. Vuelve a pulsar para alternar.";
@@ -140,9 +140,9 @@ const char8_t* spanish(TextId id) noexcept {
         case TextId::DurationTip: return u8"Duración objetivo. Usa 9:00 o '9 min' para una canción completa; escribe IDEA para un boceto corto.";
         case TextId::TitleTip: return u8"PULSO convierte intención compositiva en MIDI multipista editable.";
         case TextId::SubtitleTip: return u8"Versión instalada y modo actual del producto.";
-        case TextId::StatusTip: return u8"Tempo del host, linaje de la idea y estado de generación.";
+        case TextId::StatusTip: return u8"Estado de composición y generación con IA.";
         case TextId::BehaviorTip: return u8"Adaptativo conserva el rango actual de PULSO. Hipnótico prioriza estados largos, microevolución escalonada y poca novedad. Narrativo prioriza contraste, clímax y resolución explícitos.";
-        case TextId::AiTip: return u8"El estado de GPT es explícito. PULSO nunca presenta una salida local como generada por IA.";
+        case TextId::AiTip: return u8"Configura tu clave API de OpenAI para componer. Las solicitudes fallidas conservan la idea actual.";
         case TextId::IdeaTitleTip: return u8"Título y centro tonal propuestos para la composición actual.";
         case TextId::IdeaDescriptionTip: return u8"Intención compositiva de la idea actual.";
         case TextId::PatternTip: return u8"Cada fila es un rol de ejecución y su nombre muestra las partes orquestales que lo comparten. Pulsa para configurar la escucha. Full Song exporta una pista MIDI por instrumento con material.";
@@ -297,8 +297,9 @@ juce::String localizeStatus(UiLanguage language, const juce::String& source) {
                  .replace("FULL SONG", utf8(u8"CANCIÓN COMPLETA"))
                  .replace("PROJECT IDEA RESTORED", utf8(u8"IDEA DEL PROYECTO RESTAURADA"))
                  .replace("UNDO RESTORED", utf8(u8"DESHACER RESTAURÓ LA IDEA"))
-                 .replace("LOCAL ENGINE READY", utf8(u8"MOTOR LOCAL LISTO"))
-                 .replace("LOCAL ENGINE", utf8(u8"MOTOR LOCAL"))
+                 .replace("AI KEY REQUIRED", utf8(u8"SE REQUIERE CLAVE IA"))
+                 .replace("AI READY", utf8(u8"IA LISTA"))
+                 .replace("AI COMPOSITION REJECTED", utf8(u8"COMPOSICIÓN IA RECHAZADA"))
                  .replace("VALIDATED", utf8(u8"VALIDADO"));
 }
 

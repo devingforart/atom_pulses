@@ -2,6 +2,17 @@
 
 ## Web comercial
 
+### 0.58.53 — identidad visual compartida
+
+- La cabecera del VST incorpora el mismo isotipo vectorial de pulso que aparece en el navbar de la web, adaptado a la paleta oscura y renderizado de forma nativa para pantallas HiDPI.
+
+### 0.58.52 — composición exclusivamente con IA y vista MIDI limpia
+
+- Sin clave API o ante un fallo de IA, PULSO conserva la composición actual: no genera una sustitución local.
+- La vista MIDI y las zonas de arrastre muestran sólo voces y grupos con notas reales; tampoco exporta clips vacíos.
+- Se retiran BPM y el contador de idea de la cabecera. Se corrigen cadenas UTF-8 en la configuración de IA.
+- La duración sigue expresada en minutos/segundos para el músico y se convierte internamente a compases según el tempo y el compás de Live.
+
 ### 0.58.50 — recuperación acotada del protagonista
 
 Si una línea protagonista ya tiene notas originales, frases, desarrollo y cierre, pero le faltan algunos compases activos, PULSO pide una única adición breve en huecos concretos sin reescribir lo aceptado. Si la respuesta falla, conserva la línea sustancial y termina de componer la orquestación para que la auditoría musical global decida. Una protagonista vacía, sin coda o sin fraseo sigue bloqueada. Esta ruta no añade notas procedurales ni evita los controles finales de producción y musicalidad.

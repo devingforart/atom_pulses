@@ -34,6 +34,32 @@ struct ProcessorTestAccess {
         while (processor.popGeneratedPattern(result)) serials.push_back(result.serial);
         return serials;
     }
+
+    static void installFixture(PulsoAudioProcessor& processor) {
+        auto fixture = std::make_shared<Pattern>();
+        fixture->lengthBeats = 16.0;
+        fixture->seed = 42;
+        for (const auto start : {0.0, 4.0, 8.0, 12.0}) {
+            fixture->notes.push_back({start, 0.5, 48, 100, 1, VoiceId::SubBass});
+            fixture->notes.push_back({start, 0.5, 60, 100, 2, VoiceId::Lead});
+            fixture->notes.push_back({start, 0.5, 64, 100, 3, VoiceId::HarmonicFoundation});
+            fixture->notes.push_back({start, 0.5, 36, 100, 10, VoiceId::CoreDrums});
+        }
+        std::sort(fixture->notes.begin(), fixture->notes.end(), [](const auto& left, const auto& right) {
+            if (left.startBeat != right.startBeat) return left.startBeat < right.startBeat;
+            if (left.voice != right.voice) return left.voice < right.voice;
+            return left.pitch < right.pitch;
+        });
+        processor.uiPatternSnapshot.store(fixture, std::memory_order_release);
+        PulsoAudioProcessor::RealtimePattern realtime;
+        realtime.pattern = fixture;
+        realtime.lengthBeats = fixture->lengthBeats;
+        realtime.maximumNoteDuration = 0.5;
+        realtime.seed = fixture->seed;
+        realtime.serial = 1;
+        realtime.epoch = processor.processingEpoch.load(std::memory_order_acquire);
+        processor.pushGeneratedPattern(realtime);
+    }
 };
 } // namespace pulso::plugin
 
@@ -121,8 +147,10 @@ int main(int argc, char** argv) {
     juce::ScopedJuceInitialiser_GUI initialiseJuce;
    #if JUCE_WINDOWS
     _putenv_s("PULSO_DISABLE_SECURE_CREDENTIALS", "1");
+    _putenv_s("OPENAI_API_KEY", "");
    #else
     setenv("PULSO_DISABLE_SECURE_CREDENTIALS", "1", 1);
+    unsetenv("OPENAI_API_KEY");
    #endif
     pulso::plugin::ApiCredentialStore::refresh();
     const auto preview64 = renderPreviewWithBlockSize(64);
@@ -727,6 +755,7 @@ int main(int argc, char** argv) {
     TestPlayHead playHead;
     processor.setPlayHead(&playHead);
     processor.prepareToPlay(sampleRate, blockSize);
+    pulso::plugin::ProcessorTestAccess::installFixture(processor);
 
     juce::AudioBuffer<float> audio(2, blockSize);
     juce::MidiBuffer midi;
@@ -743,7 +772,7 @@ int main(int argc, char** argv) {
         advance(playHead, blockSize, sampleRate);
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    require(producedPattern, "The worker must publish a playable pattern without blocking audio");
+    require(producedPattern, "A saved or imported AI pattern must play without blocking audio");
     const auto processedTransportBeat = playHead.ppq -
         static_cast<double>(blockSize) / sampleRate * playHead.bpm / 60.0;
     require(processor.hasHostTransport() && processor.hostIsPlaying() &&
@@ -767,8 +796,6 @@ int main(int argc, char** argv) {
     const auto notesBeforeCancel = composedPattern->notes;
     processor.setTargetSongDurationSeconds(540);
     processor.requestGenerateIdea();
-    require(processor.isComposing(), "A requested song must enter a cancellable composing state");
-    processor.cancelGeneration();
     for (auto attempt = 0; attempt < 120 && processor.isComposing(); ++attempt) {
         midi.clear();
         processor.processBlock(audio, midi);
@@ -779,9 +806,9 @@ int main(int argc, char** argv) {
                 processor.currentVariationIndex() == variationBeforeCancel &&
                 processor.currentIdeaTitle() == titleBeforeCancel &&
                 processor.currentPattern()->notes == notesBeforeCancel,
-            "Cancel must be transactional: keep MIDI, metadata and idea lineage");
-    require(processor.currentAiStatus().containsIgnoreCase("cancelled"),
-            "A cancelled operation must finish with an explicit non-blocking status");
+            "A missing AI key must keep MIDI, metadata and idea lineage");
+    require(processor.currentAiStatus().containsIgnoreCase("key required"),
+            "A missing AI key must report a clear non-blocking status");
     processor.setTargetSongDurationSeconds(0);
 
     // Live may suspend processBlock while its transport/device is reconfiguring. Fill the
@@ -1461,81 +1488,36 @@ int main(int argc, char** argv) {
     require(containsPanic(midi), "A transport seek must clean up active MIDI notes");
     require(containsNoteOn(midi), "A transport seek must recover notes overlapping the destination");
 
-    processor.requestVariation();
-    const auto originalDnaSeed = composedPattern->seed;
     const auto originalComposition = composedPattern->notes;
-    auto variationPanic = false;
-    std::shared_ptr<const pulso::Pattern> variedPattern;
-    for (auto attempt = 0; attempt < 180; ++attempt) {
+    processor.requestVariation();
+    for (auto attempt = 0; attempt < 120 && processor.isComposing(); ++attempt) {
         advance(playHead, blockSize, sampleRate);
         midi.clear();
         processor.processBlock(audio, midi);
-        variationPanic = variationPanic || containsPanic(midi);
-        const auto candidate = processor.currentPattern();
-        if (variationPanic && candidate && candidate->notes != originalComposition) {
-            variedPattern = candidate;
-            break;
-        }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    require(variationPanic, "Replacing a live pattern must clean up notes from the previous pattern");
-    require(variedPattern && variedPattern->seed == originalDnaSeed,
-            "Regenerate Unlocked must preserve the composition family seed");
-    require(variedPattern->notes != originalComposition,
-            "Regenerate Unlocked must create a real transformation rather than a duplicate");
+    require(processor.currentPattern()->notes == originalComposition &&
+                processor.currentAiStatus().containsIgnoreCase("key required"),
+            "Regeneration without AI credentials must preserve the current composition");
 
     processor.requestNewComposition();
-    auto receivedNewDna = false;
-    for (auto attempt = 0; attempt < 100 && !receivedNewDna; ++attempt) {
-        advance(playHead, blockSize, sampleRate);
+    for (auto attempt = 0; attempt < 120 && processor.isComposing(); ++attempt) {
         midi.clear();
         processor.processBlock(audio, midi);
-        if (const auto candidate = processor.currentPattern())
-            receivedNewDna = candidate->seed != originalDnaSeed;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    require(receivedNewDna, "Next Idea must replace the persistent composition identity");
+    require(processor.currentPattern()->notes == originalComposition,
+            "Next Idea without AI credentials must not publish procedural notes");
 
-    const auto beforeSelective = processor.currentPattern();
-    require(beforeSelective != nullptr, "Selective regeneration needs a current idea");
     processor.setLayerLocked(pulso::plugin::PulsoAudioProcessor::Layer::Melody, true);
     processor.requestRegenerateUnlocked();
-    std::shared_ptr<const pulso::Pattern> afterSelective;
-    for (auto attempt = 0; attempt < 120; ++attempt) {
-        advance(playHead, blockSize, sampleRate);
+    for (auto attempt = 0; attempt < 120 && processor.isComposing(); ++attempt) {
         midi.clear();
         processor.processBlock(audio, midi);
-        const auto candidate = processor.currentPattern();
-        if (candidate && candidate->notes != beforeSelective->notes) {
-            afterSelective = candidate;
-            break;
-        }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    require(afterSelective != nullptr, "Regenerate Unlocked must publish a transformed idea");
-    const auto notesForChannel = [](const pulso::Pattern& pattern, int channel) {
-        std::vector<pulso::NoteEvent> notes;
-        std::copy_if(pattern.notes.begin(), pattern.notes.end(), std::back_inserter(notes),
-                     [channel](const auto& note) { return note.channel == channel; });
-        return notes;
-    };
-    require(notesForChannel(*beforeSelective, 2) == notesForChannel(*afterSelective, 2),
-            "A locked melody must remain note-for-note identical");
-    require(notesForChannel(*beforeSelective, 1) != notesForChannel(*afterSelective, 1) ||
-                notesForChannel(*beforeSelective, 10) != notesForChannel(*afterSelective, 10),
-            "At least one unlocked accompaniment layer must be recomposed");
-
-    processor.requestUndo();
-    auto undoRestored = false;
-    for (auto attempt = 0; attempt < 120 && !undoRestored; ++attempt) {
-        advance(playHead, blockSize, sampleRate);
-        midi.clear();
-        processor.processBlock(audio, midi);
-        if (const auto candidate = processor.currentPattern())
-            undoRestored = candidate->notes == beforeSelective->notes;
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    require(undoRestored, "Undo must restore the complete previous composition");
+    require(processor.currentPattern()->notes == originalComposition,
+            "Selective regeneration without AI credentials must preserve all notes");
 
     auto* preview = processor.parameters.getParameter("preview");
     require(preview != nullptr, "Preview parameter must exist");
@@ -1557,7 +1539,6 @@ int main(int argc, char** argv) {
     for (auto block = 0; block < 2000; ++block) {
         playHead.playing = block % 97 != 0;
         if (block % 113 == 0) playHead.ppq = std::fmod(block * 0.137, 16.0);
-        if (block % 31 == 0) processor.requestVariation();
         midi.clear();
         const auto started = std::chrono::steady_clock::now();
         processor.processBlock(audio, midi);

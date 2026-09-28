@@ -204,17 +204,35 @@ juce::Rectangle<int> PatternView::voiceTimelineBounds() const noexcept {
 
 int PatternView::voiceAt(juce::Point<int> point) const noexcept {
     const auto area = voiceTimelineBounds();
-    const auto plan = processor.currentSongPlan();
     if (!area.contains(point)) return -1;
-    const auto fullArrangement = plan && !plan->sections.empty();
-    const auto laneCount = fullArrangement ? static_cast<int>(voiceDefinitions.size()) : 4;
+    const auto voices = visibleVoices();
+    const auto laneCount = static_cast<int>(voices.size());
+    if (laneCount == 0) return -1;
     const auto lane = std::clamp((point.y - area.getY()) * laneCount /
                                  std::max(1, area.getHeight()),
                                  0, laneCount - 1);
-    if (fullArrangement) return voiceTargetBase + static_cast<int>(voiceDefinitions[static_cast<std::size_t>(lane)].id);
-    constexpr std::array compactVoices{VoiceId::HarmonicFoundation, VoiceId::Lead,
-                                       VoiceId::SubBass, VoiceId::CoreDrums};
-    return voiceTargetBase + static_cast<int>(compactVoices[static_cast<std::size_t>(lane)]);
+    return voiceTargetBase + static_cast<int>(voices[static_cast<std::size_t>(lane)]);
+}
+
+std::vector<VoiceId> PatternView::visibleVoices() const {
+    std::vector<VoiceId> voices;
+    const auto pattern = processor.currentPattern();
+    if (!pattern) return voices;
+    for (const auto& definition : voiceDefinitions) {
+        if (std::any_of(pattern->notes.begin(), pattern->notes.end(),
+                        [voice = definition.id](const auto& note) { return resolvedVoice(note) == voice; }))
+            voices.push_back(definition.id);
+    }
+    return voices;
+}
+
+std::vector<int> PatternView::visibleExportChannels() const {
+    constexpr std::array channels{fullSongTarget, rhythmTarget, bassTarget,
+                                  harmonyTarget, melodicTextureTarget, sectionTarget};
+    std::vector<int> visible;
+    for (const auto channel : channels)
+        if (hasNotesForChannel(channel)) visible.push_back(channel);
+    return visible;
 }
 
 int PatternView::auditionAt(juce::Point<int> point) const noexcept {
@@ -261,9 +279,10 @@ int PatternView::sectionAt(juce::Point<int> point) const noexcept {
 int PatternView::channelAt(juce::Point<int> point) const noexcept {
     const auto strip = dragStripBounds();
     if (!strip.contains(point)) return -1;
-    constexpr std::array channels{fullSongTarget, rhythmTarget, bassTarget,
-                                  harmonyTarget, melodicTextureTarget, sectionTarget};
-    const auto index = std::clamp((point.x - strip.getX()) * 6 / std::max(1, strip.getWidth()), 0, 5);
+    const auto channels = visibleExportChannels();
+    if (channels.empty()) return -1;
+    const auto index = std::clamp((point.x - strip.getX()) * static_cast<int>(channels.size()) /
+                                  std::max(1, strip.getWidth()), 0, static_cast<int>(channels.size()) - 1);
     return channels[static_cast<std::size_t>(index)];
 }
 
@@ -272,8 +291,12 @@ bool PatternView::hasNotesForChannel(int channel) const {
     if (!pattern) return false;
     if (channel == sectionTarget) {
         const auto plan = processor.currentSongPlan();
-        return plan && selectedSection >= 0 &&
-               selectedSection < static_cast<int>(plan->sections.size());
+        if (!plan || selectedSection < 0 || selectedSection >= static_cast<int>(plan->sections.size())) return false;
+        const auto& section = plan->sections[static_cast<std::size_t>(selectedSection)];
+        const auto start = section.startBar * plan->beatsPerBar;
+        const auto end = (section.startBar + section.bars) * plan->beatsPerBar;
+        return std::any_of(pattern->notes.begin(), pattern->notes.end(),
+            [start, end](const auto& note) { return note.startBeat < end && note.endBeat() > start; });
     }
     return std::any_of(pattern->notes.begin(), pattern->notes.end(), [channel](const auto& note) {
         return noteMatchesTarget(note, channel);
@@ -350,6 +373,7 @@ juce::File PatternView::createExportFile(int channel) const {
                 }), exportPattern.expressions.end());
         }
     }
+    if (exportPattern.notes.empty()) return {};
     const auto stem = "PULSO_DNA_" + juce::String(processor.currentCompositionSeed()) + "_" +
                       juce::String(processor.currentVariationIndex()) + "_" + role;
     const auto file = folder.getNonexistentChildFile(stem, ".mid", false);
@@ -665,17 +689,11 @@ void PatternView::paint(juce::Graphics& graphics) {
         : pattern && pattern->lengthBeats > 0.0
             ? std::max(1, static_cast<int>(std::lround(pattern->lengthBeats / beatsPerBar)))
             : processor.currentPhraseBars();
-    std::vector<VoiceId> laneVoices;
-    if (hasSongPlan) {
-        for (const auto& definition : voiceDefinitions) laneVoices.push_back(definition.id);
-    } else {
-        laneVoices = {VoiceId::HarmonicFoundation, VoiceId::Lead,
-                      VoiceId::SubBass, VoiceId::CoreDrums};
-    }
+    const auto laneVoices = visibleVoices();
     constexpr auto labelWidth = static_cast<float>(laneLabelWidth);
     auto timeline = inner;
     timeline.removeFromLeft(labelWidth);
-    const auto laneHeight = inner.getHeight() / static_cast<float>(laneVoices.size());
+    const auto laneHeight = inner.getHeight() / static_cast<float>(std::max<std::size_t>(1, laneVoices.size()));
     for (std::size_t lane = 0; lane < laneVoices.size(); ++lane) {
         const auto voice = laneVoices[lane];
         const auto laneBounds = juce::Rectangle<float>{inner.getX(), inner.getY() + lane * laneHeight,
@@ -706,6 +724,8 @@ void PatternView::paint(juce::Graphics& graphics) {
             auto shown = 0;
             for (const auto& part : pattern->parts) {
                 if (part.sourceVoice != voice) continue;
+                if (!std::any_of(pattern->notes.begin(), pattern->notes.end(),
+                    [partId = part.id](const auto& note) { return note.partId == partId; })) continue;
                 if (shown++ > 0) partNames += " / ";
                 partNames += juce::String::fromUTF8(part.name.c_str()).toUpperCase();
                 if (assignedPartSounds.isNotEmpty()) assignedPartSounds += " + ";
@@ -844,13 +864,12 @@ void PatternView::paint(juce::Graphics& graphics) {
     const std::array labels{tr(language, TextId::FullSong), tr(language, TextId::Rhythm),
                             tr(language, TextId::Bass), tr(language, TextId::Harmony),
                             tr(language, TextId::LeadsFx), tr(language, TextId::Section)};
-    constexpr std::array exportChannels{fullSongTarget, rhythmTarget, bassTarget,
-                                        harmonyTarget, melodicTextureTarget, sectionTarget};
-    for (auto index = 0; index < 6; ++index) {
+    const auto exportChannels = visibleExportChannels();
+    for (std::size_t index = 0; index < exportChannels.size(); ++index) {
         auto cell = dragStrip.toNearestInt();
-        const auto cellWidth = cell.getWidth() / 6;
-        cell.setX(cell.getX() + index * cellWidth);
-        cell.setWidth(index == 5 ? dragStrip.toNearestInt().getRight() - cell.getX() : cellWidth);
+        const auto cellWidth = cell.getWidth() / static_cast<int>(exportChannels.size());
+        cell.setX(cell.getX() + static_cast<int>(index) * cellWidth);
+        cell.setWidth(index + 1 == exportChannels.size() ? dragStrip.toNearestInt().getRight() - cell.getX() : cellWidth);
         cell.reduce(3, 1);
         const auto channel = exportChannels[static_cast<std::size_t>(index)];
         const auto enabled = hasNotesForChannel(channel);
@@ -861,7 +880,10 @@ void PatternView::paint(juce::Graphics& graphics) {
         graphics.setColour((highlighted ? colours::stage : colours::stageText)
                                .withAlpha(enabled ? 1.0f : 0.35f));
         graphics.setFont(juce::FontOptions(10.5f, juce::Font::bold));
-        graphics.drawText(labels[static_cast<std::size_t>(index)], cell,
+        const auto labelIndex = channel == fullSongTarget ? 0 : channel == rhythmTarget ? 1 :
+                                channel == bassTarget ? 2 : channel == harmonyTarget ? 3 :
+                                channel == melodicTextureTarget ? 4 : 5;
+        graphics.drawText(labels[static_cast<std::size_t>(labelIndex)], cell,
                           juce::Justification::centred);
     }
 

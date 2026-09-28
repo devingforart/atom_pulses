@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <vector>
 
 namespace pulso::plugin {
 
@@ -19,6 +20,8 @@ public:
 
 private:
     [[nodiscard]] int channelAt(juce::Point<int>) const noexcept;
+    [[nodiscard]] std::vector<VoiceId> visibleVoices() const;
+    [[nodiscard]] std::vector<int> visibleExportChannels() const;
     [[nodiscard]] bool hasNotesForChannel(int channel) const;
     [[nodiscard]] juce::Rectangle<int> dragStripBounds() const noexcept;
     [[nodiscard]] juce::Rectangle<int> sectionStripBounds() const noexcept;

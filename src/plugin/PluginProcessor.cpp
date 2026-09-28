@@ -875,7 +875,8 @@ UiLanguage PulsoAudioProcessor::uiLanguage() const noexcept {
 
 juce::String PulsoAudioProcessor::currentIdeaTitle() const {
     if (const auto metadata = ideaMetadata.load(std::memory_order_acquire))
-        return metadata->title + "  ·  " + metadata->key;
+        return metadata->key.isEmpty() ? metadata->title
+            : metadata->title + "  " + bullet() + "  " + metadata->key;
     return {};
 }
 
@@ -932,7 +933,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PulsoAudioProcessor::createP
     result.push_back(std::make_unique<Bool>(ids::preview, "Preview", true));
     result.push_back(std::make_unique<Bool>(ids::performance, "Human Performance", false));
     result.push_back(std::make_unique<Choice>(ids::language, "Interface Language",
-                                              juce::StringArray{"English", "Español"}, 1));
+                                              juce::StringArray{"English", juce::String::fromUTF8("Espa\xC3\xB1ol")}, 1));
     result.push_back(std::make_unique<Choice>(ids::previewWorld, "Preview Sound World",
                                               juce::StringArray{"Auto", "Deep Progressive", "Organic Motion",
                                                   "Analog Warmth", "Dub Space", "Minimal Pulse",
@@ -1359,6 +1360,9 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
         if (newestExplicitAction != static_cast<std::uint8_t>(IdeaAction::None))
             newest.action = newestExplicitAction;
         const auto action = static_cast<IdeaAction>(newest.action);
+        // Host transport and parameter changes may refresh context, but never compose
+        // a procedural replacement without an explicit musician request.
+        if (action == IdeaAction::None) continue;
         const auto cancellableAction = action != IdeaAction::None && action != IdeaAction::Restore;
         auto operationCancellation = std::make_shared<std::stop_source>();
         const auto metadataBeforeOperation = ideaMetadata.load(std::memory_order_acquire);
@@ -1399,6 +1403,22 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 metadata->status = "PROJECT IDEA RESTORED";
             }
         } else {
+            if (!AiComposer::hasApiKey()) {
+                compositionSeed.store(generationPreviousSeed.load(std::memory_order_relaxed),
+                                      std::memory_order_relaxed);
+                variationIndex.store(generationPreviousVariation.load(std::memory_order_relaxed),
+                                     std::memory_order_relaxed);
+                auto rejected = metadataBeforeOperation
+                    ? std::make_shared<IdeaMetadata>(*metadataBeforeOperation)
+                    : std::make_shared<IdeaMetadata>();
+                rejected->status = "AI KEY REQUIRED - CURRENT IDEA KEPT";
+                rejected->description = "Set up an OpenAI API key before composing. No local composition was generated.";
+                ideaMetadata.store(std::move(rejected), std::memory_order_release);
+                activeGenerationCancellation.store(nullptr, std::memory_order_release);
+                generationInProgress.store(false, std::memory_order_release);
+                generationProgress.store(0.0f, std::memory_order_relaxed);
+                continue;
+            }
             const auto context = expandContext(newest);
             const auto explicitIdeaRequest = action == IdeaAction::Generate ||
                                              action == IdeaAction::Regenerate ||
@@ -1435,18 +1455,8 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 const auto totalBars = SongComposer::phraseAlignedBars(static_cast<int>(std::lround(
                     newest.targetSongSeconds * currentTempo() / 60.0 / newest.beatsPerBar)));
                 auto plan = SongPlan{};
-                auto reusedPlan = false;
-                if (action == IdeaAction::Regenerate) {
-                    if (const auto existingPlan = songPlanSnapshot.load(std::memory_order_acquire);
-                        existingPlan && !existingPlan->sections.empty() && existingPlan->totalBars == totalBars) {
-                        plan = *existingPlan;
-                        reusedPlan = true;
-                    }
-                }
-
                 juce::String aiError;
-                auto usedAiPlan = false;
-                if (!reusedPlan && AiComposer::hasApiKey()) {
+                {
                     auto thinking = std::make_shared<IdeaMetadata>(*metadata);
                     thinking->status = "GPT ARCHITECTING FULL SONG...";
                     thinking->description = "Designing form, thematic DNA, harmonic narrative and dramatic curve.";
@@ -1497,7 +1507,6 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                             }
                             ideaMetadata.store(std::move(progressMetadata), std::memory_order_release);
                         });
-                    usedAiPlan = !plan.sections.empty();
                 }
                 if (operationToken.stop_requested() || token.stop_requested() ||
                     generationCancelRequested.load(std::memory_order_acquire)) {
@@ -1515,7 +1524,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     continue;
                 }
                 if (plan.sections.empty()) {
-                    if (AiComposer::hasApiKey() && aiError.isNotEmpty()) {
+                    {
                         compositionSeed.store(generationPreviousSeed.load(std::memory_order_relaxed),
                                               std::memory_order_relaxed);
                         variationIndex.store(generationPreviousVariation.load(std::memory_order_relaxed),
@@ -1523,10 +1532,10 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                         auto rejected = metadataBeforeOperation
                             ? std::make_shared<IdeaMetadata>(*metadataBeforeOperation)
                             : std::make_shared<IdeaMetadata>();
-                        rejected->status = "AI COMPOSITION REJECTED · CURRENT IDEA KEPT";
+                        rejected->status = "AI COMPOSITION REJECTED - CURRENT IDEA KEPT";
                         rejected->description = "The AI score or its bounded selective repair did not pass "
                             "the audible publication contract. No procedural replacement was published. " + aiError;
-                        OperationalJournal::write("ERROR", "GENERATION", aiError);
+                        OperationalJournal::write("ERROR", "GENERATION", aiError.isNotEmpty() ? aiError : "AI returned no usable song plan");
                         juce::Logger::writeToLog("PULSO AI PUBLICATION GATE: " + aiError);
                         ideaMetadata.store(std::move(rejected), std::memory_order_release);
                         activeGenerationCancellation.store(nullptr, std::memory_order_release);
@@ -1534,21 +1543,12 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                         generationProgress.store(0.0f, std::memory_order_relaxed);
                         continue;
                     }
-                    plan = SongComposer::createLocalPlan(userSongDirection.toStdString(),
-                        newest.targetSongSeconds, currentTempo(), newest.beatsPerBar,
-                        newest.seed, context.rootPitchClass, context.scale);
                 }
                 plan.compositionBehavior = requestedBehavior;
                 plan.seed = newest.seed;
                 plan.targetSeconds = newest.targetSongSeconds;
                 const auto inferredProduction = ElectronicProductionDirector::infer(
                     userSongDirection.toStdString());
-                if (!usedAiPlan &&
-                    newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Adaptive) &&
-                    inferredProduction.electronicIntent > plan.productionLanguage.electronicIntent) {
-                    plan.productionLanguage = inferredProduction;
-                    plan.productionModeSource = "adaptive_prompt_inference";
-                }
                 if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::ClubElectronic)) {
                     plan.productionLanguage = inferredProduction;
                     plan.productionLanguage.domain = ProductionDomain::ClubElectronic;
@@ -1600,18 +1600,9 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                             juce::String::fromUTF8(section.name.c_str()).toUpperCase();
                         ideaMetadata.store(progressMetadata, std::memory_order_release);
                     });
-                if (!usedAiPlan && aiError.isNotEmpty()) {
-                    generated.productionModeSource = "local_fallback";
-                    generated.productionIssues.push_back("warning:ai_fallback:" +
-                        aiError.substring(0, 160).toStdString());
-                    juce::Logger::writeToLog("PULSO AI FALLBACK: " + aiError);
-                }
                 generated.seed = newest.seed;
-                metadata->status = usedAiPlan ? "GPT-5.6 TERRA MID - VALIDATED - FULL SONG"
-                    : reusedPlan ? "SONG RECOMPOSED - STRUCTURE PRESERVED"
-                    : aiError.isNotEmpty() ? "GPT FAILED - " + aiError.substring(0, 72).toUpperCase()
-                                           : "LOCAL LONG-FORM ENGINE";
-                if (usedAiPlan && generated.narrativeAuditPerformed) {
+                metadata->status = "GPT-5.6 TERRA MID - VALIDATED - FULL SONG";
+                if (generated.narrativeAuditPerformed) {
                     metadata->status = generated.creativeReady
                         ? "GPT SOUL GATE PASSED " + juce::String(generated.creativeScore * 100.0, 0) + "%"
                         : "GPT MUSICALITY NEEDS REVISION " + juce::String(generated.creativeScore * 100.0, 0) + "%";
@@ -1632,8 +1623,6 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                         "%, density control " +
                         juce::String(generated.densityControl * 100.0, 0) + "%.";
                 }
-                if (aiError.isNotEmpty())
-                    metadata->description += " Local rendering remained available because: " + aiError;
                 metadata->description += " Arrangement " +
                     juce::String(static_cast<int>(generated.populatedInstrumentParts)) + "/" +
                     juce::String(static_cast<int>(generated.arrangementTargetParts)) +
@@ -1660,7 +1649,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             } else {
             auto usedAI = false;
             juce::String aiError;
-            if (explicitIdeaRequest && AiComposer::hasApiKey()) {
+            if (explicitIdeaRequest) {
                 metadata->status = "GPT COMPOSING…";
                 ideaMetadata.store(std::make_shared<IdeaMetadata>(*metadata),
                                    std::memory_order_release);
@@ -1682,16 +1671,18 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                 }
             }
             if (!usedAI) {
-                generated = generator.generate(context);
-                addHarmonyLayer(generated, context);
-                metadata->title = explicitIdeaRequest ? "New Local Idea" : "Local Idea";
-                metadata->key = juce::StringArray{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
-                                    [std::clamp(context.rootPitchClass, 0, 11)] + " " +
-                                (context.scale == ScaleKind::Major ? "major" : "minor");
-                metadata->description = aiError.isNotEmpty()
-                    ? "GPT unavailable: " + aiError + ". Generated safely with the local composition engine."
-                    : "Coherent deterministic composition generated locally. Open SET UP AI to connect GPT.";
-                metadata->status = aiError.isNotEmpty() ? "LOCAL FALLBACK · GPT UNAVAILABLE" : "LOCAL ENGINE";
+                compositionSeed.store(generationPreviousSeed.load(std::memory_order_relaxed), std::memory_order_relaxed);
+                variationIndex.store(generationPreviousVariation.load(std::memory_order_relaxed), std::memory_order_relaxed);
+                auto rejected = metadataBeforeOperation
+                    ? std::make_shared<IdeaMetadata>(*metadataBeforeOperation)
+                    : std::make_shared<IdeaMetadata>();
+                rejected->status = "AI COMPOSITION REJECTED - CURRENT IDEA KEPT";
+                rejected->description = "The AI returned no usable MIDI. The current composition was kept unchanged. " + aiError;
+                ideaMetadata.store(std::move(rejected), std::memory_order_release);
+                activeGenerationCancellation.store(nullptr, std::memory_order_release);
+                generationInProgress.store(false, std::memory_order_release);
+                generationProgress.store(0.0f, std::memory_order_relaxed);
+                continue;
             }
             PerformanceExpression::applyIdeaDefaults(generated, currentTempo(), newest.beatsPerBar);
             if (explicitIdeaRequest)

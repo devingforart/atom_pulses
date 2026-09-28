@@ -236,7 +236,7 @@ void PerformanceExpression::apply(Pattern& pattern, const SongPlan& plan, bool s
 
     // Idempotent replacement of PULSO-owned expressive controllers.
     constexpr std::array ownedControllers{1, 6, 11, 38, 64, 74, 100, 101};
-    pattern.controls.erase(std::remove_if(pattern.controls.begin(), pattern.controls.end(), [](const auto& control) {
+    pattern.controls.erase(std::remove_if(pattern.controls.begin(), pattern.controls.end(), [&ownedControllers](const auto& control) {
         return std::find(ownedControllers.begin(), ownedControllers.end(), control.controller) !=
                ownedControllers.end();
     }), pattern.controls.end());

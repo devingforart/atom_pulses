@@ -715,8 +715,37 @@ int main(int argc, char** argv) {
     require(accentedTranslation.containsChar(0x00d3),
             "Spanish accents must be decoded as real Unicode code points: " +
                 accentedTranslation.toStdString());
-    require(pulso::plugin::bullet().length() == 1 && pulso::plugin::bullet()[0] == 0x00b7,
-            "The middle-dot separator must be one U+00B7 code point");
+    for (const auto language : {pulso::plugin::UiLanguage::English,
+                                pulso::plugin::UiLanguage::Spanish}) {
+        for (int value = 0; value <= static_cast<int>(pulso::plugin::TextId::LiveReady); ++value) {
+            const auto label = pulso::plugin::tr(language, static_cast<pulso::plugin::TextId>(value));
+            require(label.isNotEmpty() && !label.containsChar(0x00c2) &&
+                        !label.containsChar(0x00c3) && !label.containsChar(0xfffd),
+                    "Every UI translation must be present and free of mojibake");
+        }
+    }
+    require(pulso::plugin::bullet() == "-",
+            "Visible separators must be plain ASCII punctuation");
+    const auto progressInSpanish = pulso::plugin::localizeStatus(
+        pulso::plugin::UiLanguage::Spanish, "TERRA MID - RECOVERING BLOCK - ATTEMPT 2");
+    require(progressInSpanish == juce::String::fromUTF8("Afinando las pistas de tu canci\xC3\xB3n") &&
+                !progressInSpanish.containsIgnoreCase("TERRA") &&
+                !progressInSpanish.containsIgnoreCase("BLOCK"),
+            "The main UI must hide model, block and retry diagnostics");
+    require(pulso::plugin::localizeStatus(pulso::plugin::UiLanguage::Spanish,
+                juce::String::fromUTF8("TERRA MID Â· BLUEPRINT 1/4"))
+                == juce::String::fromUTF8("Dise\xC3\xB1" "ando la estructura musical"),
+            "Previously corrupted technical status must become a clean user-facing milestone");
+    require(pulso::plugin::localizeStatus(pulso::plugin::UiLanguage::English,
+                "GPT-5.6 TERRA MID - VALIDATED - FULL SONG") == "Song ready to edit" &&
+                pulso::plugin::localizeStatus(pulso::plugin::UiLanguage::Spanish,
+                "AI COMPOSITION REJECTED - CURRENT IDEA KEPT") ==
+                    juce::String::fromUTF8("No se complet\xC3\xB3; idea anterior conservada"),
+            "Completion and failure must be musician-facing in both languages");
+    require(pulso::plugin::tr(pulso::plugin::UiLanguage::Spanish,
+                pulso::plugin::TextId::AiComposing) ==
+                    juce::String::fromUTF8("LA IA EST\xC3\x81 COMPONIENDO TUS PISTAS"),
+            "The composition heading must refer to AI generically, not a provider or model");
     {
         pulso::plugin::PulsoAudioProcessor continuityProcessor;
         TestPlayHead stoppedPlayHead;

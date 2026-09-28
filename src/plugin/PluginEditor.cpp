@@ -386,8 +386,9 @@ void PulsoAudioProcessorEditor::paint(juce::Graphics& graphics) {
 
     graphics.setColour(colours::stageMuted);
     graphics.setFont(juce::FontOptions(9.5f, juce::Font::bold));
-    graphics.drawText("COMPOSITION INSTRUMENT", 42, 38, 170, 14,
-                      juce::Justification::left);
+    graphics.drawFittedText(tr(processor.uiLanguage(), TextId::HeaderCaption),
+                            juce::Rectangle<int>{42, 38, 190, 14},
+                            juce::Justification::left, 1);
     // Same 34 x 24 vector mark as web/frontend/src/components/Logo.tsx.
     // Render it natively so the VST stays sharp at every host DPI scale.
     constexpr auto markX = 42.0f;
@@ -461,9 +462,11 @@ void PulsoAudioProcessorEditor::timerCallback() {
     if (displayedLanguage != processor.uiLanguage()) applyTranslations();
     const auto language = processor.uiLanguage();
     const auto composing = processor.isComposing();
-    compositionProgress.setComposing(composing, processor.aiAvailable(),
-                                     localizeStatus(language, processor.currentAiStatus()),
-                                     processor.currentGenerationProgress());
+    const auto progress = processor.currentGenerationProgress();
+    const auto userStatus = composing && progress <= 0.0f
+        ? tr(language, TextId::Directing)
+        : localizeStatus(language, processor.currentAiStatus());
+    compositionProgress.setComposing(composing, userStatus, progress);
     generateButton.setEnabled(!composing);
     prompt.setEnabled(!composing);
     duration.setEnabled(!composing);
@@ -474,8 +477,7 @@ void PulsoAudioProcessorEditor::timerCallback() {
         ? (language == UiLanguage::Spanish ? "IA CONECTADA" : "AI CONNECTED")
         : (language == UiLanguage::Spanish ? "CONFIGURAR IA" : "SET UP AI"));
 
-    status.setText(localizeStatus(language, processor.currentAiStatus()),
-                   juce::dontSendNotification);
+    status.setText(userStatus, juce::dontSendNotification);
     deployLiveButton.setEnabled(processor.liveBridgeAvailable() && !composing && processor.currentPattern() != nullptr &&
                                 !processor.currentPattern()->notes.empty());
     if (processor.currentLiveDeployStatus().isNotEmpty())

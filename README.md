@@ -2,6 +2,19 @@
 
 ## Web comercial
 
+### 0.58.55 — diagnóstico y recuperación del elenco AI
+
+- El registro operativo indica el fragmento del elenco que falló y si fue por tiempo, transporte, HTTP o validación estructural.
+- PULSO reintenta solo los fragmentos pendientes y conserva los ya validados; un fallo temporal puede tener un último intento acotado de 120 s.
+- No se repiten errores HTTP permanentes ni se modifica el contenido musical aceptado.
+
+### 0.58.54 — texto legible y estados localizados
+
+- Se eliminan separadores UTF-8 construidos de forma ambigua en los estados del motor y en el progreso de IA; la UI usa puntuación ASCII estable.
+- Los estados de composición, los encabezados visibles y los mensajes de progreso se presentan en español o inglés según el selector del VST.
+- Se corrigen restos de terminología inglesa en los textos españoles y se verifica que todas las traducciones estén presentes y libres de caracteres corruptos.
+- El progreso visible habla de estructura, pistas, revisión musical y clips MIDI sin exponer modelo, bloques ni reintentos; esos detalles permanecen en el registro operativo.
+
 ### 0.58.53 — identidad visual compartida
 
 - La cabecera del VST incorpora el mismo isotipo vectorial de pulso que aparece en el navbar de la web, adaptado a la paleta oscura y renderizado de forma nativa para pantallas HiDPI.

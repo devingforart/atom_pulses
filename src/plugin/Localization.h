@@ -26,9 +26,10 @@ enum class TextId : std::uint8_t {
     ExportFailed, DropIntoAbleton, MidiReady, DragUnavailable,
     Solo, SoloOff, Muted, MuteOff,
     KickMuted, KickReduced, KickSparse, KickFourOnFloor,
-    Cancel, Cancelling, ProgressTip, CancelTip, GptComposing,
-    Composing, CurrentKeepsPlaying, Directing, Working,
-    SoundStage, SoundStageTip, DeployLive, DeployLiveTip
+    Cancel, Cancelling, ProgressTip, CancelTip, AiComposing,
+    CurrentKeepsPlaying, Directing, Working,
+    SoundStage, SoundStageTip, DeployLive, DeployLiveTip,
+    HeaderCaption, MidiArrangement, LiveReady
 };
 
 [[nodiscard]] juce::String tr(UiLanguage, TextId);

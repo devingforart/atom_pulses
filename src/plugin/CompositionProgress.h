@@ -14,8 +14,7 @@ class CompositionProgress final : public juce::Component,
 public:
     CompositionProgress();
 
-    void setComposing(bool shouldBeActive, bool isUsingAi,
-                      const juce::String& stage, float progress);
+    void setComposing(bool shouldBeActive, const juce::String& stage, float progress);
     void setLanguage(UiLanguage);
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -25,7 +24,6 @@ private:
     void timerCallback() override;
 
     bool active{};
-    bool usingAi{};
     double startedAtMs{};
     float phase{};
     float progress{};

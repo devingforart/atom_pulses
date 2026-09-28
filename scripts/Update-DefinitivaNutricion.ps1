@@ -196,9 +196,9 @@ try {
     $ns1 = Get-NamespaceManager $sheet1
     $ns2 = Get-NamespaceManager $additives
 
-    # Receta revisada: la base 20-20-20 queda en dosis baja para aportar trazas
-    # sin elevar en exceso la fraccion de nitrogeno amoniacal. Las demas sales
-    # completan los objetivos elementales de cada semana.
+    # Receta final basada exclusivamente en sales simples y Micro C. La base
+    # comercial 20-20-20 queda eliminada para que cada elemento sea trazable.
+    Set-CellText $sheet1 $ns1 'D11' 'Base comercial eliminada (g)' '10'
     Set-CellText $sheet1 $ns1 'F11' 'Nitrato K 99% (g) - 13,7% N / 46,1% K2O' '10'
     Set-CellText $sheet1 $ns1 'H11' 'Sulfato K 99% (g) - 44,4% K / 18,2% S' '10'
     Set-CellText $sheet1 $ns1 'I11' 'MKP 0-52-34 (g)' '10'
@@ -207,15 +207,15 @@ try {
     Set-CellText $sheet1 $ns1 'AH11' 'Si aportado (ppm)' '10'
     Set-CellText $sheet1 $ns1 'AI11' 'K del silicato (ppm)' '10'
     $weeklyRatesPer100L = @(
-        @(5.0,52.6,20.7,29.9,6.9,11.3),
-        @(5.0,68.4,24.8,35.0,9.6,15.7),
-        @(5.0,73.7,29.8,40.1,8.4,17.9),
-        @(5.0,73.7,29.8,40.1,9.2,20.1),
-        @(5.0,71.1,29.1,42.1,8.4,22.3),
-        @(5.0,68.4,28.4,42.1,8.1,20.1),
-        @(5.0,60.5,26.4,38.0,8.2,15.7),
-        @(5.0,44.7,15.1,31.9,11.7,11.3),
-        @(3.0,21.1,4.6,20.0,7.2,5.5)
+        @(0.0,52.6,20.7,29.9,6.9,11.3),
+        @(0.0,68.4,24.8,35.0,9.6,15.7),
+        @(0.0,73.7,29.8,40.1,8.4,17.9),
+        @(0.0,73.7,29.8,40.1,9.2,20.1),
+        @(0.0,71.1,29.1,42.1,8.4,22.3),
+        @(0.0,68.4,28.4,42.1,8.1,20.1),
+        @(0.0,60.5,26.4,38.0,8.2,15.7),
+        @(0.0,44.7,15.1,31.9,11.7,11.3),
+        @(0.0,21.1,4.6,20.0,7.2,5.5)
     )
     $nutrientColumns = @('D','E','F','G','H','I')
     $ecTargets = @('1.2 - 1.5','1.4 - 1.7','1.6 - 1.9','1.7 - 2.0','1.8 - 2.1','1.8 - 2.1','1.6 - 1.9','1.3 - 1.6','0.8 - 1.1')
@@ -239,11 +239,31 @@ try {
         Set-CellFormula $sheet1 $ns1 "AC$row" "(((D$row*0.20+I$row*0.34+F$row*'Aditivos'!`$K`$4/100)*0.8301+H$row*'Aditivos'!`$H`$3/100)+AG$row*('Aditivos'!`$K`$7/100)*0.8301)*1000/`$B`$3"
         Set-CellFormula $sheet1 $ns1 "W$row" "ROUND(Y$row,0)&`" N / `"&ROUND(AB$row,0)&`" P / `"&ROUND(AC$row,0)&`" K / `"&ROUND(AD$row,0)&`" Ca / `"&ROUND(AE$row,0)&`" Mg / `"&ROUND(AF$row,0)&`" S / `"&ROUND(AH$row,1)&`" Si ppm | Silicato: `"&ROUND(AG$row,2)&`" g`""
     }
-    Set-CellText $sheet1 $ns1 'B27' 'Orden: agua 70-80% > silicato de potasio Kraff prediluido 1:100 > 20-20-20 > Micro C > Calcinit prediluido > KNO3 > Epsom > K2SO4 > MKP 0-52-34 > completar > EC > pH.'
+    Set-CellText $sheet1 $ns1 'B27' 'Orden: agua 70-80% > silicato de potasio Kraff prediluido 1:100 > Micro C > Calcinit prediluido > KNO3 > Epsom > K2SO4 > MKP 0-52-34 > completar > EC > pH.'
     Set-CellText $sheet1 $ns1 'B28' 'Silicato Kraff: objetivo 7 ppm Si en semanas 1-8; semana 9 sin silicio. Calculo basado en etiqueta: 19,5% SiO2 y 8,2% K2O. Dosificar por peso.'
-    Set-CellText $sheet1 $ns1 'B30' 'La receta usa una dosis baja de 20-20-20 para trazas; Calcinit, KNO3, Epsom, K2SO4 y MKP completan los macros. Micro C completa los micros.'
+    Set-CellText $sheet1 $ns1 'B30' 'Formula 100% trazable sin 20-20-20: Calcinit, KNO3, Epsom, K2SO4 y MKP aportan los macros; Micro C aporta todos los micros.'
 
     Reorder-Sheet1PlanColumns $sheet1 $ns1
+
+    # La antigua columna de base comercial se conserva internamente solo para
+    # no romper el formato heredado, pero queda oculta y con dosis cero.
+    $removedBaseColumn = $sheet1.SelectSingleNode("//s:cols/s:col[@min='4' and @max='4']", $ns1)
+    if ($removedBaseColumn) { $removedBaseColumn.SetAttribute('hidden', '1') }
+
+    # Control quimico visible despues del reordenamiento. No hay aportes ocultos
+    # de una base NPK: cada formula depende solo de las sales declaradas.
+    for ($row = 12; $row -le 20; $row++) {
+        Set-CellFormula $sheet1 $ns1 "Z$row" "(E$row*0.155+F$row*'Aditivos'!`$K`$3/100)*1000/`$B`$3"
+        Set-CellFormula $sheet1 $ns1 "AA$row" "(E$row*0.144+F$row*'Aditivos'!`$K`$3/100)*1000/`$B`$3"
+        Set-CellFormula $sheet1 $ns1 "AB$row" "E$row*0.011*1000/`$B`$3"
+        Set-CellFormula $sheet1 $ns1 "AC$row" "I$row*0.52*0.4364*1000/`$B`$3"
+        Set-CellFormula $sheet1 $ns1 "AD$row" "(((I$row*0.34+F$row*'Aditivos'!`$K`$4/100)*0.8301+H$row*'Aditivos'!`$H`$3/100)+K$row*('Aditivos'!`$K`$7/100)*0.8301)*1000/`$B`$3"
+        Set-CellFormula $sheet1 $ns1 "AE$row" "E$row*0.19*1000/`$B`$3"
+        Set-CellFormula $sheet1 $ns1 "AF$row" "G$row*0.0986*1000/`$B`$3"
+        Set-CellFormula $sheet1 $ns1 "AG$row" "(G$row*0.13+H$row*'Aditivos'!`$H`$4/100)*1000/`$B`$3"
+        Set-CellFormula $sheet1 $ns1 "Y$row" "IFERROR(AB$row/Z$row*100,0)"
+        Set-CellFormula $sheet1 $ns1 "X$row" "ROUND(Z$row,0)&`" N / `"&ROUND(AC$row,0)&`" P / `"&ROUND(AD$row,0)&`" K / `"&ROUND(AE$row,0)&`" Ca / `"&ROUND(AF$row,0)&`" Mg / `"&ROUND(AG$row,0)&`" S / `"&ROUND(AH$row,1)&`" Si ppm | Silicato: `"&ROUND(K$row,2)&`" g`""
+    }
 
     $sheet1Dimension = $sheet1.SelectSingleNode('//s:dimension', $ns1)
     if ($sheet1Dimension) { $sheet1Dimension.SetAttribute('ref', 'A1:AI39') }
@@ -430,7 +450,7 @@ try {
         @('Sulfato de manganeso',7.74,'Monohidratado, 31% Mn; Norte Insumos'),
         @('Sulfato de zinc',2.11,'Heptahidratado P.A. Salttech, ZnSO4.7H2O'),
         @('Acido borico',8.91,'17,5% B'),
-        @('Sulfato de cobre',0.24,'Pentahidratado, aproximadamente 25% Cu; la base completa el resto'),
+        @('Sulfato de cobre',0.48,'Pentahidratado, aproximadamente 25% Cu; Micro C aporta el total'),
         @('Molibdato de sodio',0.20,'Dihidratado, 39,6% Mo')
     )
     for ($i = 0; $i -lt $simpleRecipe.Count; $i++) {
@@ -443,7 +463,7 @@ try {
     Set-CellText $additives $ns2 'A18' 'Agua destilada u osmosis'
     Set-CellText $additives $ns2 'B18' 'Completar hasta 2,00 L finales'
     Set-CellText $additives $ns2 'A19' 'Resultado por dosis de 20 ml/40 L'
-    Set-CellText $additives $ns2 'B19' 'Micro C: Fe 2,10 | Mn 0,60 | Zn 0,12 | B 0,39 | Cu 0,015 | Mo 0,02 ppm. La base lleva el Cu total a aprox. 0,03 ppm.'
+    Set-CellText $additives $ns2 'B19' 'Micro C completo: Fe 2,10 | Mn 0,60 | Zn 0,12 | B 0,39 | Cu 0,030 | Mo 0,02 ppm.'
 
     Set-CellText $additives $ns2 'A22' 'COMO PREPARAR MICRO C UNA SOLA VEZ' '1'
     $microSteps = @(
@@ -463,7 +483,6 @@ try {
     $mixSteps = @(
         'Cargar 70-80% del agua y encender la circulacion.',
         'Pesar el silicato Kraff indicado, prediluirlo al menos 1:100 y agregarlo primero; comprobar que no aparezca turbidez.',
-        'Disolver por separado y agregar el 20-20-20.',
         'Agitar Micro C y agregar los ml indicados en Sheet1.',
         'Prediluir Calcinit y agregar lentamente.',
         'Disolver y agregar por separado nitrato de potasio.',
@@ -483,7 +502,7 @@ try {
     Set-CellText $additives $ns2 'A44' '1'
     Set-CellText $additives $ns2 'B44' 'Nunca mezclar sales concentradas entre si; cada una se disuelve por separado.'
     Set-CellText $additives $ns2 'A45' '2'
-    Set-CellText $additives $ns2 'B45' 'Micro C no contiene Calcinit, KNO3, Epsom, sulfato de potasio, 20-20-20 ni MKP.'
+    Set-CellText $additives $ns2 'B45' 'Micro C no contiene Calcinit, KNO3, Epsom, sulfato de potasio ni MKP.'
     Set-CellText $additives $ns2 'A46' '3'
     Set-CellText $additives $ns2 'B46' 'Si la EC final no coincide, no compensar agregando Micro C.'
     Set-CellText $additives $ns2 'A47' '4'
@@ -498,18 +517,18 @@ try {
     Set-CellText $additives $ns2 'D51' 'Funcion principal' '9'
     Set-CellText $additives $ns2 'E51' 'De donde viene en tu plan' '9'
     $elementGuide = @(
-        @('Macro primario','N','Nitrogeno','Crecimiento, proteinas y clorofila','20-20-20, Calcinit y nitrato de potasio'),
-        @('Macro primario','P','Fosforo','Energia, raices y desarrollo floral','20-20-20 y MKP'),
-        @('Macro primario','K','Potasio','Regulacion del agua, enzimas y floracion','20-20-20, nitrato y sulfato de potasio, MKP'),
+        @('Macro primario','N','Nitrogeno','Crecimiento, proteinas y clorofila','Calcinit y nitrato de potasio'),
+        @('Macro primario','P','Fosforo','Energia, raices y desarrollo floral','MKP'),
+        @('Macro primario','K','Potasio','Regulacion del agua, enzimas y floracion','Nitrato y sulfato de potasio, MKP y silicato'),
         @('Macro secundario','Ca','Calcio','Paredes celulares, brotes y raices nuevas','Calcinit'),
         @('Macro secundario','Mg','Magnesio','Atomo central de la clorofila','Epsom'),
         @('Macro secundario','S','Azufre','Aminoacidos, proteinas y enzimas','Epsom y sulfato de potasio'),
-        @('Micronutriente','Fe','Hierro','Formacion de clorofila y transporte de electrones','20-20-20 y Micro C'),
-        @('Micronutriente','Mn','Manganeso','Fotosintesis y activacion enzimatica','20-20-20 y Micro C'),
-        @('Micronutriente','Zn','Zinc','Crecimiento y regulacion hormonal','20-20-20 y Micro C'),
-        @('Micronutriente','B','Boro','Tejidos nuevos, paredes celulares y floracion','20-20-20 y Micro C'),
-        @('Micronutriente','Cu','Cobre','Enzimas y formacion de tejidos','20-20-20 y Micro C'),
-        @('Micronutriente','Mo','Molibdeno','Permite utilizar correctamente el nitrogeno nitrico','20-20-20 y Micro C'),
+        @('Micronutriente','Fe','Hierro','Formacion de clorofila y transporte de electrones','Micro C'),
+        @('Micronutriente','Mn','Manganeso','Fotosintesis y activacion enzimatica','Micro C'),
+        @('Micronutriente','Zn','Zinc','Crecimiento y regulacion hormonal','Micro C'),
+        @('Micronutriente','B','Boro','Tejidos nuevos, paredes celulares y floracion','Micro C'),
+        @('Micronutriente','Cu','Cobre','Enzimas y formacion de tejidos','Micro C'),
+        @('Micronutriente','Mo','Molibdeno','Permite utilizar correctamente el nitrogeno nitrico','Micro C'),
         @('Elemento benefico','Si','Silicio','Refuerzo estructural y tolerancia a estres','Silicato de potasio Kraff')
     )
     for ($i = 0; $i -lt $elementGuide.Count; $i++) {
@@ -520,7 +539,7 @@ try {
         }
     }
     Set-CellText $additives $ns2 'A65' 'Como leerlo'
-    Set-CellText $additives $ns2 'B65' 'N-P-K son los tres numeros del fertilizante. Por ejemplo, 20-20-20 declara nitrogeno, fosfato y potasa en ese orden.'
+    Set-CellText $additives $ns2 'B65' 'N-P-K expresa nitrogeno, fosfato y potasa. En esta formula cada aporte se calcula desde una sal simple identificada.'
     Set-CellText $additives $ns2 'A66' 'Importante'
     Set-CellText $additives $ns2 'B66' 'La EC indica la concentracion ionica total; no identifica cuanto hay de cada elemento.'
 
@@ -531,20 +550,19 @@ try {
     Set-CellText $additives $ns2 'D70' 'Estado' '9'
     Set-CellText $additives $ns2 'E70' 'Enlace' '9'
     $purchaseLinks = @(
-        @('Tanque','Base 20-20-20','Fertilizante soluble 20-20-20','Ya lo tienes','https://www.sanisidro422.com.ar/shop/products/1709_DSC_sales-minerales-base-20-20-20-125gr-gps-horticultura'),
-        @('Tanque','MKP 0-52-34','KH2PO4; P2O5 52%, K2O 34%; totalmente soluble','Comprar 3 kg; reemplaza Bloom 00-52-34','https://www.mercadolibre.com.ar/fertilizante-fosfato-monopotasico-x-3-kg-soluble/up/MLAU3574211432'),
+        @('Tanque','MKP 0-52-34','KH2PO4; P2O5 52%, K2O 34%; totalmente soluble','Comprar 1 kg; publicacion activa','https://www.mercadolibre.com.ar/fertilizante-fosfato-monopotasico-x-1-kg-solub-quimica-oeste/up/MLAU3701034169'),
         @('Tanque','Calcinit','Nitrato de calcio totalmente soluble','Ya lo tienes','https://www.mercadolibre.com.ar/fert-nitrato-de-calcio-soluble-25k-fertirriego-calcinit-bio/up/MLAU196171698'),
         @('Tanque','Epsom','Sulfato de magnesio','Ya lo tienes','https://www.mercadolibre.com.ar/sales-de-epson-sulfato-de-magnesio-x-1kg-icasa/p/MLA54435900'),
         @('Tanque','Nitrato de potasio','KNO3 soluble; confirmar composicion de tu envase','Ya lo tienes','https://www.mercadolibre.com.ar/nitrato-de-potasio--99--maxima-pureza--1kg-farmashop/up/MLAU3374009278'),
         @('Tanque','Sulfato de potasio Salttech','K2SO4 anhidro P.A. 99%; aprox. 44,4% K y 18,2% S','Comprar 50 g en Norte Insumos','https://www.norteinsumoslab.com/productos/potasio-sulfato-anhidro-pro-analisis-a-c-s-salttech/'),
-        @('Materia prima','Silicato de potasio Kraff 5 L','19,5% SiO2 y 8,2% K2O segun la etiqueta; soluble y sin particulas','Composicion verificada en la etiqueta','https://www.mercadolibre.com.ar/silicato-de-potasio-kraff-5-litros-uso-industrial/up/MLAU4345782094'),
+        @('Materia prima','Silicato de potasio Kraff 5 L','19,5% SiO2 y 8,2% K2O segun la etiqueta; soluble y sin particulas','Usar solo con lote uniforme y ficha/COA','https://www.mercadolibre.com.ar/silicato-de-potasio-kraff-5-litros-uso-industrial/up/MLAU4345782094'),
         @('Micro C','Afital Hierro EDTA liquido','4% Fe p/p; EDTA y lignosulfonatos','Comprar 1 L','https://articulo.mercadolibre.com.ar/MLA-1842015564-hierro-liquido-quelato-edta-fe-_JM'),
         @('Micro C','Sulfato de manganeso','Monohidratado, 31% Mn','Comprar 100 g en Norte Insumos','https://www.norteinsumoslab.com/productos/manganeso-sulfato-industrial/'),
         @('Micro C','Sulfato de zinc Salttech','ZnSO4.7H2O heptahidratado P.A.','Comprar 100 g en Norte Insumos','https://www.norteinsumoslab.com/productos/zinc-sulfato-7-hidrato-pro-analisis-a-c-s-salttech/'),
         @('Micro C','Acido borico','Pureza 99,9%; H3BO3','Comprar 500 g en Norte Insumos','https://www.norteinsumoslab.com/productos/acido-borico-999/'),
-        @('Micro C','Sulfato de cobre grado tecnico','Pentahidratado, CuSO4.5H2O; usar solo si el envase confirma esta formula','Comprar 250 g en Norte Insumos','https://www.norteinsumoslab.com/productos/sulfato-de-cobre-5-hidrato-industrial/'),
+        @('Micro C','Sulfato de cobre pentahidratado','CuSO4.5H2O; no comprar anhidro','Comprar 250 g; publicacion activa','https://www.mercadolibre.com.ar/sulfato-de-cobre-x250gr-pentahidratado/up/MLAU3398410194'),
         @('Micro C','Molibdato de sodio','Na2MoO4.2H2O P.A.; aproximadamente 39,6% Mo','Comprar 10 g en Norte Insumos','https://www.norteinsumoslab.com/productos/sodio-molibdato-2-hidrato-pro-analisis/'),
-        @('Preparacion','Agua destilada','Baja EC, sin minerales agregados','Comprar 2 L','https://listado.mercadolibre.com.ar/agua-destilada')
+        @('Preparacion','Agua bidestilada','Conductividad muy baja, sin minerales agregados','Comprar 2 L; publicacion directa','https://www.mercadolibre.com.ar/agua-para-cpap-2-litros/p/MLA2071438481')
     )
     for ($i = 0; $i -lt $purchaseLinks.Count; $i++) {
         $row = 71 + $i
@@ -557,6 +575,8 @@ try {
     }
     Set-CellText $additives $ns2 'A85' 'Antes de comprar'
     Set-CellText $additives $ns2 'B85' 'Silicato Kraff verificado por etiqueta: 19,5% SiO2 y 8,2% K2O. Si el envase recibido cambia estos porcentajes, actualizar K6 y K7 antes de preparar el tanque.'
+    Set-CellText $additives $ns2 'A86' 'Control de calidad'
+    Set-CellText $additives $ns2 'B86' 'Para un cultivo destinado a consumo, priorizar sales grado fertilizante documentado o P.A. con ficha/COA; no usar materias primas de composicion incierta.'
 
     $dimension = $additives.SelectSingleNode('//s:dimension', $ns2)
     if ($dimension) { $dimension.SetAttribute('ref', 'A1:K85') }

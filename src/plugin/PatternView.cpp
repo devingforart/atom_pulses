@@ -488,7 +488,7 @@ void PatternView::showTimbreMenu(VoiceId voice, const juce::MouseEvent& event) {
                 if (choice == 21) {
                     safe->processor.regeneratePartLiveSound(parts[static_cast<std::size_t>(partIndex)].id);
                     safe->feedback = safe->processor.uiLanguage() == UiLanguage::Spanish
-                        ? "NUEVA VARIANTE LISTA PARA CREATE IN LIVE"
+                    ? "NUEVA VARIANTE LISTA PARA CREAR EN LIVE"
                         : "NEW VARIANT READY FOR CREATE IN LIVE";
                     safe->repaint();
                     return;
@@ -637,12 +637,12 @@ void PatternView::paint(juce::Graphics& graphics) {
     graphics.fillRect(stageHeader);
     graphics.setColour(colours::stageMuted);
     graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-    graphics.drawText("MIDI ARRANGEMENT", stageHeader.toNearestInt().reduced(10, 0),
+    graphics.drawText(tr(language, TextId::MidiArrangement), stageHeader.toNearestInt().reduced(10, 0),
                       juce::Justification::centredLeft);
     graphics.setColour(colours::green);
     graphics.fillEllipse(stageHeader.getRight() - 115.0f, stageHeader.getCentreY() - 3.0f, 6.0f, 6.0f);
     graphics.setColour(colours::stageMuted);
-    graphics.drawText("LIVE READY", juce::Rectangle<float>(stageHeader.getRight() - 101.0f,
+    graphics.drawText(tr(language, TextId::LiveReady), juce::Rectangle<float>(stageHeader.getRight() - 101.0f,
                                                              stageHeader.getY(), 91.0f, stageHeader.getHeight()).toNearestInt(),
                       juce::Justification::centredLeft);
     inner.removeFromTop(8.0f);

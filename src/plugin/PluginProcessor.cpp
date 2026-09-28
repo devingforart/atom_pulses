@@ -1481,7 +1481,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                                 generationProgress.store(0.06f + 0.04f *
                                     static_cast<float>(update.completed) / static_cast<float>(total),
                                     std::memory_order_relaxed);
-                                progressMetadata->status = "TERRA MID · BLUEPRINT " +
+                                progressMetadata->status = "TERRA MID - BLUEPRINT " +
                                     juce::String(static_cast<int>(update.completed + 1)) + "/" +
                                     juce::String(static_cast<int>(total));
                                 progressMetadata->description = update.detail;
@@ -1493,16 +1493,16 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                                 generationProgress.store(0.12f + fraction * 0.34f,
                                                          std::memory_order_relaxed);
                                 progressMetadata->status = update.stage == AiSongStage::Recovery
-                                    ? "TERRA MID · RECOVERING BLOCK · ATTEMPT " + juce::String(update.attempt)
-                                    : "TERRA MID · WRITING BLOCK " +
+                                    ? "TERRA MID - RECOVERING BLOCK - ATTEMPT " + juce::String(update.attempt)
+                                    : "TERRA MID - WRITING BLOCK " +
                                         juce::String(static_cast<int>(update.completed + 1)) + "/" +
                                         juce::String(static_cast<int>(total));
                                 progressMetadata->description = update.detail;
                             } else {
                                 generationProgress.store(0.47f, std::memory_order_relaxed);
                                 progressMetadata->status = update.detail.containsIgnoreCase("selective")
-                                    ? "TERRA MID · SELECTIVE MUSICAL REPAIR"
-                                    : "TERRA MID · AUDIBLE VALIDATION";
+                                    ? "TERRA MID - SELECTIVE MUSICAL REPAIR"
+                                    : "TERRA MID - AUDIBLE VALIDATION";
                                 progressMetadata->description = update.detail;
                             }
                             ideaMetadata.store(std::move(progressMetadata), std::memory_order_release);
@@ -1650,7 +1650,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             auto usedAI = false;
             juce::String aiError;
             if (explicitIdeaRequest) {
-                metadata->status = "GPT COMPOSING…";
+                metadata->status = "GPT COMPOSING...";
                 ideaMetadata.store(std::make_shared<IdeaMetadata>(*metadata),
                                    std::memory_order_release);
                 juce::String direction;
@@ -1666,7 +1666,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     metadata->title = ai.title;
                     metadata->key = ai.key;
                     metadata->description = ai.summary;
-                    metadata->status = "GPT-5.6 TERRA MID · VALIDATED";
+                    metadata->status = "GPT-5.6 TERRA MID - VALIDATED";
                     usedAI = true;
                 }
             }

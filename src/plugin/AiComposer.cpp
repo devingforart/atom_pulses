@@ -3822,7 +3822,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "Every declared instrument is a real exported MIDI track: write enough independent notes, active bars and phrase "
         "returns for its named function. A transition or one-shot may be brief; a pad, pulse, melodic speaker, dialogue "
         "or environment may not be a token track. If the direction requests a very large cast, either author a real "
-        "trajectory for every member or declare fewer instruments—never split one gesture into nominal lanes. "
+        "trajectory for every member or declare fewer instruments - never split one gesture into nominal lanes. "
         "octave_shift is strictly an octave displacement: -24, -12, 0, 12 or 24 semitones. "
         "Every authored note and placement MUST declare metric_intent=strict_grid. Source MIDI timing is always exact; "
         "anticipation, feel and microtiming belong exclusively to PULSO's reversible Human Performance playback layer. "
@@ -4196,61 +4196,68 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         return performRequest(castDetailBody(shardIndex), apiKey, token, budget);
     };
 
-    std::vector<std::size_t> unresolved;
-    for (std::size_t batchBegin = 0; batchBegin < castShards.size();
-         batchBegin += maximumConcurrentCastShards) {
-        const auto batchEnd = std::min(castShards.size(), batchBegin + maximumConcurrentCastShards);
-        std::vector<std::future<HttpResponse>> requests;
-        for (auto index = batchBegin; index < batchEnd; ++index) {
-            requests.push_back(std::async(std::launch::async, requestCastShard, index,
-                                          std::chrono::milliseconds(std::chrono::seconds(90))));
-        }
-        for (auto index = batchBegin; index < batchEnd; ++index) {
-            auto response = requests[index - batchBegin].get();
-            auto detailText = extractOutputText(juce::JSON::parse(response.body));
-            juce::String detailError;
-            if (response.connected && response.status >= 200 && response.status < 300 &&
-                !response.cancelled && !response.timedOut &&
-                validateCastDetailShard(manifestText, castShards[index], detailText, detailError)) {
-                castDetailTexts[index] = std::move(detailText);
-                if (progress) progress({AiSongStage::Blueprint, index + 1, castShards.size(), 1,
-                                        "validated cast detail shard"});
-            } else {
-                unresolved.push_back(index);
-            }
-        }
-    }
-    if (!unresolved.empty() && !token.stop_requested()) {
-        if (progress) progress({AiSongStage::Recovery, castShards.size() - unresolved.size(),
-                                castShards.size(), 2,
-                                "recovering only unresolved cast detail shards"});
-        std::vector<std::size_t> stillMissing;
+    std::vector<std::size_t> unresolved(castShards.size());
+    std::iota(unresolved.begin(), unresolved.end(), 0);
+    std::vector<juce::String> shardFailures(castShards.size());
+    for (int attempt = 1; attempt <= 3 && !unresolved.empty() && !token.stop_requested(); ++attempt) {
+        // A third, longer attempt is reserved for transport/time-budget failures. Completed
+        // but invalid answers get one retry; permanent HTTP errors are never retried.
+        const auto budget = std::chrono::seconds(attempt == 1 ? 90 : attempt == 2 ? 75 : 120);
+        if (attempt > 1 && progress)
+            progress({AiSongStage::Recovery, castShards.size() - unresolved.size(),
+                      castShards.size(), attempt, "recovering only unresolved cast detail shards"});
+        std::vector<std::size_t> retryable;
         for (std::size_t batchBegin = 0; batchBegin < unresolved.size();
              batchBegin += maximumConcurrentCastShards) {
             const auto batchEnd = std::min(unresolved.size(), batchBegin + maximumConcurrentCastShards);
-            std::vector<std::future<HttpResponse>> retries;
-            for (auto offset = batchBegin; offset < batchEnd; ++offset) {
-                retries.push_back(std::async(std::launch::async, requestCastShard, unresolved[offset],
-                                             std::chrono::milliseconds(std::chrono::seconds(75))));
-            }
+            std::vector<std::future<HttpResponse>> requests;
+            for (auto offset = batchBegin; offset < batchEnd; ++offset)
+                requests.push_back(std::async(std::launch::async, requestCastShard,
+                    unresolved[offset], std::chrono::duration_cast<std::chrono::milliseconds>(budget)));
             for (auto offset = batchBegin; offset < batchEnd; ++offset) {
                 const auto index = unresolved[offset];
-                auto response = retries[offset - batchBegin].get();
-                auto detailText = extractOutputText(juce::JSON::parse(response.body));
+                auto response = requests[offset - batchBegin].get();
                 juce::String detailError;
-                if (response.connected && response.status >= 200 && response.status < 300 &&
-                    !response.cancelled && !response.timedOut &&
-                    validateCastDetailShard(manifestText, castShards[index], detailText, detailError)) {
+                const auto httpOk = response.connected && response.status >= 200 &&
+                    response.status < 300 && !response.cancelled && !response.timedOut;
+                auto detailText = httpOk ? extractOutputText(juce::JSON::parse(response.body)) : juce::String{};
+                if (httpOk && validateCastDetailShard(manifestText, castShards[index],
+                                                       detailText, detailError)) {
                     castDetailTexts[index] = std::move(detailText);
-                    if (progress) progress({AiSongStage::Blueprint, index + 1, castShards.size(), 2,
+                    shardFailures[index].clear();
+                    if (progress) progress({AiSongStage::Blueprint, index + 1, castShards.size(), attempt,
+                                            attempt == 1 ? "validated cast detail shard" :
                                             "recovered cast detail shard; prior shards preserved"});
-                } else {
-                    stillMissing.push_back(index);
+                    continue;
                 }
+                const auto transient = response.timedOut || !response.connected ||
+                    response.status == 408 || response.status == 429 || response.status >= 500;
+                const auto reason = response.cancelled ? juce::String("Generation cancelled") :
+                    !httpOk ? apiErrorMessage(response) :
+                    structuredResponseError(response.body, detailError.isNotEmpty() ? detailError :
+                                            "Cast detail response contained no usable output");
+                shardFailures[index] = reason;
+                OperationalJournal::write("WARN", "CAST",
+                    "detail shard " + juce::String(static_cast<int>(index + 1)) + "/" +
+                    juce::String(static_cast<int>(castShards.size())) + " attempt " +
+                    juce::String(attempt) + " failed | budget=" +
+                    juce::String(static_cast<int>(budget.count())) + "s | " + reason);
+                if (!response.cancelled && attempt < 3 && (transient || (attempt == 1 && httpOk)))
+                    retryable.push_back(index);
             }
         }
-        unresolved = std::move(stillMissing);
+        // Validated texts remain in their original slots and are never requested again.
+        unresolved = std::move(retryable);
     }
+    unresolved.clear();
+    for (std::size_t index = 0; index < castDetailTexts.size(); ++index)
+        if (castDetailTexts[index].isEmpty()) {
+            OperationalJournal::write("ERROR", "CAST",
+                "detail shard " + juce::String(static_cast<int>(index + 1)) + "/" +
+                juce::String(static_cast<int>(castShards.size())) + " unresolved | " +
+                shardFailures[index]);
+            unresolved.push_back(index);
+        }
     if (!unresolved.empty() || token.stop_requested()) {
         error = token.stop_requested() ? "Generation cancelled" :
             "OpenAI cast detail phase failed after bounded shard recovery; accepted cast shards were preserved";
@@ -4699,7 +4706,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         const auto stage = attempt == 1 ? AiSongStage::PerformanceBlock : AiSongStage::Recovery;
         if (progress) progress({stage, completedBlocks, blocks.size(), attempt,
             "instrument block " + juce::String(static_cast<int>(displayBlock + 1)) + "/" +
-            juce::String(static_cast<int>(blocks.size())) + " · " +
+            juce::String(static_cast<int>(blocks.size())) + " - " +
             juce::String(static_cast<int>(indices.size())) + " parts"});
 
         const auto serial = requestSerial++;
@@ -5670,7 +5677,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             "/2 | targets=" + targetList + " | before " + audibleAuditSummary(bestReport));
         if (progress) progress({AiSongStage::Validation, completedBlocks + repairPass - 1,
             blocks.size() + 2, repairPass, "selective musical repair " +
-            juce::String(repairPass) + "/2 · " +
+            juce::String(repairPass) + "/2 - " +
             juce::String(static_cast<int>(diagnosis.instrumentIndices.size())) + " part(s)"});
 
         std::vector<std::vector<std::size_t>> repairShards;

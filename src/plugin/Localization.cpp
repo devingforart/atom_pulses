@@ -17,7 +17,7 @@ const char8_t* english(TextId id) noexcept {
         case TextId::PromptLabel: return u8"DESCRIBE THE IDEA (OPTIONAL)";
         case TextId::DurationLabel: return u8"SONG LENGTH";
         case TextId::BehaviorLabel: return u8"COMPOSITION";
-        case TextId::PromptPlaceholder: return u8"e.g. intimate nocturnal soul, memorable hook, tension blooming before the climax…";
+        case TextId::PromptPlaceholder: return u8"e.g. intimate nocturnal soul, memorable hook, tension blooming before the climax...";
         case TextId::GenerateIdea: return u8"GENERATE IDEA";
         case TextId::ComposeSong: return u8"COMPOSE SONG";
         case TextId::NextIdea: return u8"NEXT IDEA";
@@ -89,18 +89,20 @@ const char8_t* english(TextId id) noexcept {
         case TextId::KickSparse: return u8"SPARSE KICK";
         case TextId::KickFourOnFloor: return u8"FOUR ON THE FLOOR";
         case TextId::Cancel: return u8"CANCEL";
-        case TextId::Cancelling: return u8"CANCELLING…";
+        case TextId::Cancelling: return u8"CANCELLING...";
         case TextId::ProgressTip: return u8"PULSO composes in the background. The current idea remains available until the new one is ready.";
         case TextId::CancelTip: return u8"Stop the request immediately and keep the composition already playing.";
-        case TextId::GptComposing: return u8"GPT IS COMPOSING YOUR IDEA";
-        case TextId::Composing: return u8"COMPOSING YOUR IDEA";
-        case TextId::CurrentKeepsPlaying: return u8"The current composition keeps playing while the new one is prepared.";
-        case TextId::Directing: return u8"DIRECTING HARMONY, MELODY, BASS AND RHYTHM";
-        case TextId::Working: return u8"WORKING";
+        case TextId::AiComposing: return u8"AI IS COMPOSING YOUR TRACKS";
+        case TextId::CurrentKeepsPlaying: return u8"You can cancel without losing your previous idea.";
+        case TextId::Directing: return u8"PREPARING YOUR SONG";
+        case TextId::Working: return u8"CREATING YOUR TRACKS";
         case TextId::SoundStage: return u8"LIVE SOUND DIRECTOR";
         case TextId::SoundStageTip: return u8"Index installed native Live sounds, create editable Arrangement tracks and load the AI-selected device or a reported fallback.";
         case TextId::DeployLive: return u8"CREATE IN LIVE";
         case TextId::DeployLiveTip: return u8"Create one editable Arrangement track and MIDI clip per orchestral instrument, then load only native Live devices and Racks.";
+        case TextId::HeaderCaption: return u8"COMPOSITION INSTRUMENT";
+        case TextId::MidiArrangement: return u8"MIDI ARRANGEMENT";
+        case TextId::LiveReady: return u8"LIVE READY";
     }
     return u8"";
 }
@@ -111,7 +113,7 @@ const char8_t* spanish(TextId id) noexcept {
         case TextId::PromptLabel: return u8"DESCRIBE LA IDEA (OPCIONAL)";
         case TextId::DurationLabel: return u8"DURACIÓN";
         case TextId::BehaviorLabel: return u8"COMPOSICIÓN";
-        case TextId::PromptPlaceholder: return u8"p. ej. soul nocturno e íntimo, motivo memorable y tensión antes del clímax…";
+        case TextId::PromptPlaceholder: return u8"p. ej. soul nocturno e íntimo, motivo memorable y tensión antes del clímax...";
         case TextId::GenerateIdea: return u8"GENERAR IDEA";
         case TextId::ComposeSong: return u8"COMPONER CANCIÓN";
         case TextId::NextIdea: return u8"SIGUIENTE IDEA";
@@ -132,7 +134,7 @@ const char8_t* spanish(TextId id) noexcept {
         case TextId::NextTip: return u8"Crea la siguiente idea. Las capas fijadas permanecen idénticas; las libres se recomponen.";
         case TextId::RegenerateTip: return u8"Recompone solamente las capas libres alrededor de todo lo que decidiste conservar.";
         case TextId::UndoTip: return u8"Restaura la idea anterior completa. Vuelve a pulsar para alternar.";
-        case TextId::PreviewTip: return u8"Activa el ensemble multitímbrico de referencia. La exportación y la salida MIDI no cambian.";
+        case TextId::PreviewTip: return u8"Activa el conjunto multitímbrico de referencia. La exportación y la salida MIDI no cambian.";
         case TextId::PerformanceTip: return u8"OFF conserva ataques exactos en semicorcheas y duraciones expresivas. ON agrega una interpretación determinista con timing propio por voz. El MIDI arrastrado conserva ataques exactos; grabar la salida captura la interpretación.";
         case TextId::SoundWorldTip: return u8"Elige el mundo sonoro de escucha para las quince voces. AUTO interpreta la dirección creativa. Sólo cambia la monitorización, no la composición ni el MIDI exportado.";
         case TextId::ThruTip: return u8"Envía el MIDI entrante a la salida junto con la composición de PULSO.";
@@ -145,7 +147,7 @@ const char8_t* spanish(TextId id) noexcept {
         case TextId::AiTip: return u8"Configura tu clave API de OpenAI para componer. Las solicitudes fallidas conservan la idea actual.";
         case TextId::IdeaTitleTip: return u8"Título y centro tonal propuestos para la composición actual.";
         case TextId::IdeaDescriptionTip: return u8"Intención compositiva de la idea actual.";
-        case TextId::PatternTip: return u8"Cada fila es un rol de ejecución y su nombre muestra las partes orquestales que lo comparten. Pulsa para configurar la escucha. Full Song exporta una pista MIDI por instrumento con material.";
+        case TextId::PatternTip: return u8"Cada fila es un rol de ejecución y su nombre muestra las partes orquestales que lo comparten. Pulsa para configurar la escucha. Canción completa exporta una pista MIDI por instrumento con material.";
         case TextId::LanguageTip: return u8"Cambia toda la interfaz de PULSO y cada tooltip entre español e inglés. La elección se guarda con el proyecto.";
         case TextId::PreviewSound: return u8"SONIDO DE ESCUCHA";
         case TextId::Octave: return u8"OCTAVA";
@@ -183,18 +185,20 @@ const char8_t* spanish(TextId id) noexcept {
         case TextId::KickSparse: return u8"BOMBO ESPACIADO";
         case TextId::KickFourOnFloor: return u8"BOMBO EN NEGRAS";
         case TextId::Cancel: return u8"CANCELAR";
-        case TextId::Cancelling: return u8"CANCELANDO…";
+        case TextId::Cancelling: return u8"CANCELANDO...";
         case TextId::ProgressTip: return u8"PULSO compone en segundo plano. La idea actual permanece disponible hasta que la nueva esté lista.";
         case TextId::CancelTip: return u8"Detén inmediatamente la solicitud y conserva la composición que ya está sonando.";
-        case TextId::GptComposing: return u8"GPT ESTÁ COMPONIENDO TU IDEA";
-        case TextId::Composing: return u8"COMPONIENDO TU IDEA";
-        case TextId::CurrentKeepsPlaying: return u8"La composición actual sigue sonando mientras se prepara la nueva.";
-        case TextId::Directing: return u8"DIRIGIENDO ARMONÍA, MELODÍA, BAJO Y RITMO";
-        case TextId::Working: return u8"TRABAJANDO";
+        case TextId::AiComposing: return u8"LA IA ESTÁ COMPONIENDO TUS PISTAS";
+        case TextId::CurrentKeepsPlaying: return u8"Puedes cancelar sin perder tu idea anterior.";
+        case TextId::Directing: return u8"PREPARANDO TU CANCIÓN";
+        case TextId::Working: return u8"CREANDO TUS PISTAS";
         case TextId::SoundStage: return u8"DIRECTOR DE SONIDO LIVE";
-        case TextId::SoundStageTip: return u8"Indexa sonidos nativos instalados, crea pistas editables y carga el dispositivo elegido por la IA o un fallback informado.";
+        case TextId::SoundStageTip: return u8"Indexa sonidos nativos instalados, crea pistas editables y carga el dispositivo elegido por la IA o una alternativa indicada.";
         case TextId::DeployLive: return u8"CREAR EN LIVE";
         case TextId::DeployLiveTip: return u8"Crea una pista y un clip MIDI editables por instrumento y carga exclusivamente dispositivos y Racks nativos de Live.";
+        case TextId::HeaderCaption: return u8"INSTRUMENTO DE COMPOSICIÓN";
+        case TextId::MidiArrangement: return u8"ARREGLO MIDI";
+        case TextId::LiveReady: return u8"LISTO PARA LIVE";
     }
     return u8"";
 }
@@ -205,7 +209,7 @@ juce::String tr(UiLanguage language, TextId id) {
     return utf8(language == UiLanguage::Spanish ? spanish(id) : english(id));
 }
 
-juce::String bullet() { return juce::String::charToString(0x00b7); }
+juce::String bullet() { return "-"; }
 
 juce::String voiceDisplayName(UiLanguage language, VoiceId voice) {
     if (language == UiLanguage::English)
@@ -285,22 +289,52 @@ juce::StringArray localizedSoundWorlds(UiLanguage language, const juce::String& 
 }
 
 juce::String localizeStatus(UiLanguage language, const juce::String& source) {
-    if (language == UiLanguage::English) return source;
-    auto result = source;
-    return result.replace("CANCELLING", utf8(u8"CANCELANDO"))
-                 .replace("CANCELLED", utf8(u8"CANCELADO"))
-                 .replace("CURRENT IDEA KEPT", utf8(u8"IDEA ACTUAL CONSERVADA"))
-                 .replace("GPT ARCHITECTING FULL SONG", utf8(u8"GPT DISEÑANDO LA CANCIÓN"))
-                 .replace("GPT ARCHITECTURE - DRAFTING", utf8(u8"GPT CREANDO LA ARQUITECTURA"))
-                 .replace("GPT CRITIC - OPTIONAL REVISION", utf8(u8"CRÍTICO GPT - REVISIÓN"))
-                 .replace("RENDERING", utf8(u8"RENDERIZANDO"))
-                 .replace("FULL SONG", utf8(u8"CANCIÓN COMPLETA"))
-                 .replace("PROJECT IDEA RESTORED", utf8(u8"IDEA DEL PROYECTO RESTAURADA"))
-                 .replace("UNDO RESTORED", utf8(u8"DESHACER RESTAURÓ LA IDEA"))
-                 .replace("AI KEY REQUIRED", utf8(u8"SE REQUIERE CLAVE IA"))
-                 .replace("AI READY", utf8(u8"IA LISTA"))
-                 .replace("AI COMPOSITION REJECTED", utf8(u8"COMPOSICIÓN IA RECHAZADA"))
-                 .replace("VALIDATED", utf8(u8"VALIDADO"));
+    // Internal diagnostics keep model names, block counts and retry details in the
+    // operational journal. The editor presents only musician-facing milestones.
+    const auto status = source.replace(utf8(u8"Â·"), "-")
+                              .replace(utf8(u8"·"), "-")
+                              .replace(utf8(u8"…"), "...");
+    const auto message = [language](const char8_t* spanish, const char8_t* english) {
+        return utf8(language == UiLanguage::Spanish ? spanish : english);
+    };
+    if (status.containsIgnoreCase("CANCELLING"))
+        return message(u8"Deteniendo la composición...", u8"Stopping composition...");
+    if (status.containsIgnoreCase("CANCELLED"))
+        return message(u8"Composición cancelada; idea anterior conservada",
+                       u8"Composition cancelled; previous idea kept");
+    if (status.containsIgnoreCase("KEY REQUIRED"))
+        return message(u8"Configura tu clave de IA para componer", u8"Set up your AI key to compose");
+    if (status.containsIgnoreCase("PROJECT IDEA RESTORED"))
+        return message(u8"Proyecto listo para continuar", u8"Project ready to continue");
+    if (status.containsIgnoreCase("UNDO RESTORED"))
+        return message(u8"Idea anterior restaurada", u8"Previous idea restored");
+    if (status.containsIgnoreCase("SOUL GATE PASSED"))
+        return message(u8"Canción lista para escuchar y editar", u8"Song ready to listen and edit");
+    if (status.containsIgnoreCase("MUSICALITY NEEDS REVISION"))
+        return message(u8"Canción lista para revisar", u8"Song ready for review");
+    if (status.containsIgnoreCase("VALIDATED"))
+        return status.containsIgnoreCase("FULL SONG")
+            ? message(u8"Canción lista para editar", u8"Song ready to edit")
+            : message(u8"Idea MIDI lista para editar", u8"MIDI idea ready to edit");
+    if (status.containsIgnoreCase("REJECTED") || status.containsIgnoreCase("FAILED") ||
+        status.containsIgnoreCase("COMPOSITION GATE"))
+        return message(u8"No se completó; idea anterior conservada",
+                       u8"Could not finish; previous idea kept");
+    if (status.containsIgnoreCase("RENDERING"))
+        return message(u8"Preparando los clips MIDI", u8"Preparing MIDI clips");
+    if (status.containsIgnoreCase("SELECTIVE MUSICAL REPAIR") ||
+        status.containsIgnoreCase("AUDIBLE VALIDATION") ||
+        status.containsIgnoreCase("CRITIC"))
+        return message(u8"Revisando la coherencia musical", u8"Reviewing musical coherence");
+    if (status.containsIgnoreCase("RECOVERING BLOCK"))
+        return message(u8"Afinando las pistas de tu canción", u8"Refining your song's tracks");
+    if (status.containsIgnoreCase("WRITING BLOCK") || status.containsIgnoreCase("GPT COMPOSING"))
+        return message(u8"Componiendo tus pistas", u8"Composing your tracks");
+    if (status.containsIgnoreCase("BLUEPRINT") || status.containsIgnoreCase("ARCHITECT"))
+        return message(u8"Diseñando la estructura musical", u8"Designing the musical structure");
+    if (status.containsIgnoreCase("AI READY"))
+        return message(u8"IA lista para componer", u8"AI ready to compose");
+    return message(u8"La IA está preparando tu canción", u8"AI is preparing your song");
 }
 
 } // namespace pulso::plugin

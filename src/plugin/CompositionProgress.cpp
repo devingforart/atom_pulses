@@ -31,9 +31,8 @@ void CompositionProgress::resized() {
     cancelButton.setBounds(card.removeFromBottom(34).removeFromRight(118).reduced(4, 2));
 }
 
-void CompositionProgress::setComposing(bool shouldBeActive, bool isUsingAi,
+void CompositionProgress::setComposing(bool shouldBeActive,
                                        const juce::String& nextStage, float nextProgress) {
-    usingAi = isUsingAi;
     stage = nextStage;
     progress = std::clamp(nextProgress, 0.0f, 1.0f);
     if (active == shouldBeActive) {
@@ -93,7 +92,7 @@ void CompositionProgress::paint(juce::Graphics& graphics) {
 
     graphics.setColour(colours::text);
     graphics.setFont(juce::FontOptions(16.0f, juce::Font::bold));
-    graphics.drawText(tr(language, usingAi ? TextId::GptComposing : TextId::Composing),
+    graphics.drawText(tr(language, TextId::AiComposing),
                       copy.removeFromTop(26.0f), juce::Justification::centredLeft, false);
     graphics.setColour(colours::muted);
     graphics.setFont(juce::FontOptions(12.0f));
@@ -101,11 +100,12 @@ void CompositionProgress::paint(juce::Graphics& graphics) {
                       juce::Justification::centredLeft, false);
     graphics.setColour(colours::accent);
     graphics.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-    const auto timing = stage.isNotEmpty() ? stage + "  " + bullet() + "  " +
-        juce::String(elapsedSeconds) + " s"
+    const auto elapsed = juce::String(elapsedSeconds / 60).paddedLeft('0', 2) + ":" +
+        juce::String(elapsedSeconds % 60).paddedLeft('0', 2);
+    const auto timing = stage.isNotEmpty() ? stage + "  " + bullet() + "  " + elapsed
         : elapsedSeconds < 1 ? tr(language, TextId::Directing)
                              : tr(language, TextId::Working) + "  " + bullet() + "  " +
-                               juce::String(elapsedSeconds) + " s";
+                               elapsed;
     graphics.drawText(timing, copy, juce::Justification::centredLeft, false);
 
     if (progress > 0.0f) {

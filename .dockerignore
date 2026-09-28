@@ -1,0 +1,12 @@
+.git
+build
+web/frontend/node_modules
+web/frontend/dist
+web/frontend/*.tsbuildinfo
+web/backend/target
+web/.env
+web/.env.production
+*.xlsx
+*.log
+*.zip
+*.rar

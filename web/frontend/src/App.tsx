@@ -9,6 +9,7 @@ import { Pricing } from './pages/Pricing'
 import { Product } from './pages/Product'
 import { Activate } from './pages/Activate'
 import { ForgotPassword, ResetPassword, VerifyEmail } from './pages/Recovery'
+import { Cloud } from './pages/Cloud'
 
 export function App() {
   return <BrowserRouter><AuthProvider><Routes><Route element={<Layout />}>
@@ -17,6 +18,7 @@ export function App() {
     <Route path="forgot-password" element={<ForgotPassword />} /><Route path="reset-password" element={<ResetPassword />} />
     <Route path="verify-email" element={<VerifyEmail />} /><Route path="activate" element={<Activate />} />
     <Route path="account" element={<Account />} /><Route path="privacy" element={<Privacy />} /><Route path="terms" element={<Terms />} />
+    <Route path="cloud" element={<Cloud />} />
     <Route path="*" element={<section className="page-hero"><h1>404</h1><p>Esta página no existe.</p></section>} />
   </Route></Routes></AuthProvider></BrowserRouter>
 }

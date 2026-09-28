@@ -15,6 +15,8 @@ pub enum ApiError {
     Database(#[from] sqlx::Error),
     #[error(transparent)]
     Upstream(#[from] reqwest::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
     #[error("configuration: {0}")]
     Configuration(String),
     #[error("internal error: {0}")]

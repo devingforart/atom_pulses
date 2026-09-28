@@ -17,6 +17,20 @@ Sitio comercial y portal de clientes de PULSO. React entrega la interfaz; la API
 - Consulta de la última GitHub Release y proxy de descarga autorizado, compatible con repositorios privados.
 - Imagen Docker multi-stage, Compose local y CI para React, Rust, contenedor y releases del VST.
 
+### PULSO Cloud beta
+
+Para una prueba privada, deja `PULSO_CLOUD_BETA_STUDIO=false` y define
+`PULSO_CLOUD_BETA_EMAILS` con los correos verificados autorizados, separados
+por comas. Asi Cloud no se habilita para todos los compradores de Studio. Usa
+una clave de proyecto OpenAI dedicada con limite de gasto antes de iniciar
+solicitudes reales.
+
+La ruta `/cloud` permite a una cuenta autorizada solicitar una composición en segundo plano, cerrar el navegador y volver a descargar cada pista MIDI no vacía. La API Rust guarda la cola, el estado, la idempotencia y el manifiesto en PostgreSQL. Un proceso C++ aislado reutiliza exactamente `AiComposer`, `SongComposer` y `MidiExporter` del VST. La salida MIDI permanece en el volumen persistente `pulso-cloud-jobs`.
+
+Para probar la beta con licencias Studio, configura `OPENAI_API_KEY` exclusivamente en el entorno del servidor y `PULSO_CLOUD_BETA_STUDIO=true`. Por defecto la beta está cerrada y cada cuenta tiene dos trabajos por 24 horas y uno simultáneo. `PULSO_CLOUD_DAILY_JOBS` permite ajustar el límite. Los planes Cloud de Stripe continúan deshabilitados hasta fijar precios y presupuestos a partir de consumos medidos.
+
+Una interrupción del worker se marca como fallida; no se repite una solicitud de IA automáticamente porque ello podría duplicar el cobro. Los resultados terminados, el progreso y la solicitud idempotente sí sobreviven al cierre del navegador. La integración de activación del VST con esta cola y la reanudación interna de fases todavía son trabajo pendiente; no se debe comercializar Cloud como terminado hasta verificarlos.
+
 ## Puesta en marcha local
 
 1. Instala Node 24+, Rust estable, Docker Desktop y Stripe CLI.

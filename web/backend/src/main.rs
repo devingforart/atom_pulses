@@ -1,5 +1,6 @@
 mod auth;
 mod billing;
+mod cloud;
 mod config;
 mod crypto;
 mod error;
@@ -56,6 +57,10 @@ fn router(state: AppState) -> Router {
         .route("/billing/plans", get(billing::plans))
         .route("/billing/portal", post(billing::portal))
         .route("/billing/webhook", post(billing::webhook))
+        .route("/cloud/jobs", post(cloud::create).get(cloud::list))
+        .route("/cloud/status", get(cloud::status))
+        .route("/cloud/jobs/{id}", get(cloud::get).delete(cloud::cancel))
+        .route("/cloud/jobs/{id}/tracks/{filename}", get(cloud::track))
         .route("/releases/latest", get(releases::latest_public))
         .route("/downloads/latest/windows", get(releases::download_windows))
         .route("/licenses/device-code", post(licenses::create_device_code))
@@ -133,6 +138,9 @@ async fn main() -> ApiResult<()> {
         config: config.clone(),
         release_cache: Arc::new(RwLock::new(None)),
     };
+    if config.cloud_worker_path.is_some() {
+        tokio::spawn(cloud::worker_loop(state.clone()));
+    }
     let listener = tokio::net::TcpListener::bind(config.bind)
         .await
         .map_err(|error| ApiError::internal(error.to_string()))?;

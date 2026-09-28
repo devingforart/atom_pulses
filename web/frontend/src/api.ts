@@ -24,6 +24,16 @@ export type BillingPlans = {
 
 export type Device = { id: string; name: string; createdAt: number; lastSeenAt: number }
 
+export type CloudTrack = { filename: string; name: string; notes: number }
+export type CloudJob = {
+  id: string; prompt: string; durationSeconds: number; bpm: number
+  behavior: 'adaptive' | 'hypnotic' | 'narrative'
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  stage: string; completedSteps: number; totalSteps: number
+  resultManifest: { title: string; key: string; bpm: number; bars: number; fullFile: string; tracks: CloudTrack[] } | null
+  errorCode: string | null; createdAt: number; updatedAt: number
+}
+
 type ApiErrorBody = { error?: string }
 
 export class ApiError extends Error {
@@ -75,4 +85,10 @@ export const api = {
       method: 'POST', body: JSON.stringify({ code }),
     }),
   portal: () => request<{ url: string }>('/api/billing/portal', { method: 'POST' }),
+  cloudJobs: () => request<CloudJob[]>('/api/cloud/jobs'),
+  cloudStatus: () => request<{ available: boolean; dailyJobLimit: number }>('/api/cloud/status'),
+  cloudJob: (id: string) => request<CloudJob>(`/api/cloud/jobs/${id}`),
+  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; behavior: CloudJob['behavior']; idempotencyKey: string }) =>
+    request<CloudJob>('/api/cloud/jobs', { method: 'POST', body: JSON.stringify(input) }),
+  cancelCloudJob: (id: string) => request<void>(`/api/cloud/jobs/${id}`, { method: 'DELETE' }),
 }

@@ -77,4 +77,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t pulso-web:test web
+      - run: docker build -f web/Dockerfile -t pulso-web:test .

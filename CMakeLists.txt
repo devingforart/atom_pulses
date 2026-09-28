@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(PULSO_BUILD_PLUGIN "Build the JUCE plug-in" ON)
+option(PULSO_BUILD_CLOUD_WORKER "Build the headless cloud composition worker" OFF)
 option(PULSO_BUILD_TESTS "Build unit tests" ON)
 option(PULSO_BUILD_CLI "Build the pattern demo CLI" ON)
 
@@ -105,7 +106,7 @@ if(PULSO_BUILD_TESTS)
     add_test(NAME pulso_core_tests COMMAND pulso_tests)
 endif()
 
-if(PULSO_BUILD_PLUGIN)
+if(PULSO_BUILD_PLUGIN OR PULSO_BUILD_CLOUD_WORKER)
     FetchContent_Declare(
         JUCE
         GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
@@ -113,6 +114,29 @@ if(PULSO_BUILD_PLUGIN)
         GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(JUCE)
+
+    add_library(pulso_ai STATIC
+        src/plugin/ApiCredentialStore.cpp
+        src/plugin/AiComposer.cpp
+        src/plugin/MidiExporter.cpp
+        src/plugin/OperationalJournal.cpp
+    )
+    target_include_directories(pulso_ai PUBLIC src)
+    target_link_libraries(pulso_ai PUBLIC pulso_core juce::juce_core juce::juce_audio_basics)
+    target_compile_features(pulso_ai PUBLIC cxx_std_20)
+    set_target_properties(pulso_ai PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    if(WIN32)
+        target_compile_definitions(pulso_ai PUBLIC JUCE_USE_CURL=0)
+        target_link_libraries(pulso_ai PUBLIC winhttp advapi32)
+        if(MSVC)
+            target_compile_options(pulso_ai PRIVATE /utf-8)
+        endif()
+    else()
+        target_compile_definitions(pulso_ai PUBLIC JUCE_USE_CURL=1)
+    endif()
+endif()
+
+if(PULSO_BUILD_PLUGIN)
 
     juce_add_plugin(Pulso
         VERSION ${PROJECT_VERSION}
@@ -144,9 +168,7 @@ if(PULSO_BUILD_PLUGIN)
     endif()
 
     target_sources(Pulso PRIVATE
-        src/plugin/ApiCredentialStore.cpp
         src/plugin/ApiCredentialStore.h
-        src/plugin/AiComposer.cpp
         src/plugin/AiComposer.h
         src/plugin/AiModelConfig.h
         src/plugin/CompositionProgress.cpp
@@ -157,9 +179,7 @@ if(PULSO_BUILD_PLUGIN)
         src/plugin/LookAndFeel.h
         src/plugin/Localization.cpp
         src/plugin/Localization.h
-        src/plugin/MidiExporter.cpp
         src/plugin/MidiExporter.h
-        src/plugin/OperationalJournal.cpp
         src/plugin/OperationalJournal.h
         src/plugin/PatternView.cpp
         src/plugin/PatternView.h
@@ -172,6 +192,7 @@ if(PULSO_BUILD_PLUGIN)
     )
 
     target_link_libraries(Pulso PRIVATE
+        pulso_ai
         pulso_core
         juce::juce_audio_utils
         juce::juce_dsp
@@ -186,7 +207,6 @@ if(PULSO_BUILD_PLUGIN)
 
     target_compile_definitions(Pulso PUBLIC
         JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_PLUGINHOST_VST3=1
         PULSO_VERSION_STRING="${PROJECT_VERSION}"
@@ -208,5 +228,17 @@ if(PULSO_BUILD_PLUGIN)
             target_compile_options(pulso_processor_tests PRIVATE /utf-8)
         endif()
         add_test(NAME pulso_processor_tests COMMAND pulso_processor_tests)
+    endif()
+
+endif()
+
+if(PULSO_BUILD_CLOUD_WORKER)
+    # A separate process isolates server jobs from the web API and shares the same
+    # AI, rendering, and MIDI implementation as the plug-in.
+    add_executable(pulso_cloud_worker tools/pulso_cloud_worker.cpp)
+    target_include_directories(pulso_cloud_worker PRIVATE src)
+    target_link_libraries(pulso_cloud_worker PRIVATE pulso_ai pulso_core juce::juce_audio_basics)
+    if(MSVC)
+        target_compile_options(pulso_cloud_worker PRIVATE /utf-8)
     endif()
 endif()

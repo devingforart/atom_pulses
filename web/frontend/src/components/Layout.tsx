@@ -11,6 +11,7 @@ export function Layout() {
       <nav aria-label="Principal">
         <NavLink to="/product">Producto</NavLink>
         <NavLink to="/pricing">Planes</NavLink>
+        <NavLink to="/cloud">Cloud</NavLink>
         <a href="/#workflow">Cómo funciona</a>
       </nav>
       <Link className="button button-small button-ghost" to={user ? '/account' : '/login'}>

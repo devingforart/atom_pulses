@@ -23,6 +23,11 @@ pub struct Config {
     pub license_signing_key: Option<String>,
     pub mail_api_key: Option<String>,
     pub mail_from: String,
+    pub cloud_worker_path: Option<PathBuf>,
+    pub cloud_output_dir: PathBuf,
+    pub cloud_beta_studio: bool,
+    pub cloud_beta_emails: Vec<String>,
+    pub cloud_daily_jobs: i64,
 }
 
 impl Config {
@@ -78,6 +83,24 @@ impl Config {
                 .filter(|value| !value.is_empty()),
             mail_from: env::var("MAIL_FROM")
                 .unwrap_or_else(|_| "PULSO <noreply@pulso.music>".into()),
+            cloud_worker_path: env::var_os("PULSO_CLOUD_WORKER_PATH").map(PathBuf::from),
+            cloud_output_dir: env::var_os("PULSO_CLOUD_OUTPUT_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("./cloud-jobs")),
+            cloud_beta_studio: env::var("PULSO_CLOUD_BETA_STUDIO")
+                .map(|value| value == "true")
+                .unwrap_or(false),
+            cloud_beta_emails: env::var("PULSO_CLOUD_BETA_EMAILS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|email| email.trim().to_ascii_lowercase())
+                .filter(|email| !email.is_empty())
+                .collect(),
+            cloud_daily_jobs: env::var("PULSO_CLOUD_DAILY_JOBS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .filter(|value| (1..=100).contains(value))
+                .unwrap_or(2),
         })
     }
 }

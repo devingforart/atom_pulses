@@ -21,7 +21,9 @@ services:
 
   app:
     image: pulso-web:local
-    build: .
+    build:
+      context: ..
+      dockerfile: web/Dockerfile
     restart: unless-stopped
     env_file: .env
     environment:
@@ -35,6 +37,8 @@ services:
       postgres:
         condition: service_healthy
     read_only: true
+    volumes:
+      - pulso-cloud-jobs:/app/cloud-jobs
     tmpfs:
       - /tmp:size=32m,mode=1777
     security_opt: [no-new-privileges:true]
@@ -47,3 +51,4 @@ networks:
 
 volumes:
   pulso-postgres:
+  pulso-cloud-jobs:

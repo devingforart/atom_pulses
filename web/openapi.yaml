@@ -225,6 +225,55 @@ paths:
           },
         ]
       responses: { "200": { description: Ed25519-signed update metadata } }
+  /cloud/status:
+    get:
+      summary: Check Cloud beta availability and daily quota
+      security: [{ cookieSession: [] }]
+      responses: { "200": { description: Availability for the current account } }
+  /cloud/jobs:
+    get:
+      summary: List the current account's compositions
+      security: [{ cookieSession: [] }]
+      responses: { "200": { description: Recent Cloud jobs } }
+    post:
+      summary: Queue one AI composition with an idempotency key
+      security: [{ cookieSession: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt, durationSeconds, bpm, behavior, idempotencyKey]
+              properties:
+                prompt: { type: string, minLength: 1, maxLength: 600 }
+                durationSeconds: { type: integer, minimum: 30, maximum: 900 }
+                bpm: { type: number, minimum: 60, maximum: 180 }
+                behavior: { type: string, enum: [adaptive, hypnotic, narrative] }
+                idempotencyKey: { type: string, minLength: 8, maxLength: 100 }
+      responses:
+        "201": { description: Job queued }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /cloud/jobs/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Read a composition's stage and result manifest
+      security: [{ cookieSession: [] }]
+      responses: { "200": { description: Job status } }
+    delete:
+      summary: Cancel a queued or running composition
+      security: [{ cookieSession: [] }]
+      responses: { "204": { description: Cancellation requested } }
+  /cloud/jobs/{id}/tracks/{filename}:
+    get:
+      summary: Download an authorized MIDI track or the full multitrack song
+      security: [{ cookieSession: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+        - { in: path, name: filename, required: true, schema: { type: string } }
+      responses: { "200": { description: Standard MIDI file } }
 components:
   securitySchemes:
     cookieSession: { type: apiKey, in: cookie, name: pulso_session }

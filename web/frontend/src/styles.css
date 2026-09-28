@@ -44,6 +44,27 @@ h3 { font-size: 20px; font-weight: 650; letter-spacing: -.035em; }
 em { color: var(--rust); font-style: normal; }
 
 .site-shell { min-height: 100vh; }
+.cloud-page { max-width: var(--max); margin: 0 auto; padding: 0 28px 100px; }
+.cloud-grid { display: grid; grid-template-columns: minmax(300px, 430px) 1fr; gap: 34px; align-items: start; }
+.cloud-form, .cloud-library { border: 1px solid var(--line); background: var(--paper); padding: 28px; }
+.cloud-form h2, .cloud-library h2 { font-size: clamp(30px, 3vw, 46px); }
+.cloud-form label { display: block; margin: 16px 0 8px; font-size: 13px; font-weight: 700; }
+.cloud-form textarea, .cloud-form input, .cloud-form select { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 0; background: #fff; color: var(--ink); font: inherit; }
+.cloud-form textarea { resize: vertical; min-height: 125px; }
+.cloud-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.cloud-form .button { margin-top: 24px; }
+.cloud-caption { margin: 18px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.cloud-job { padding: 22px 0; border-top: 1px solid var(--line); }
+.cloud-job-head { display: flex; justify-content: space-between; gap: 18px; align-items: baseline; }
+.cloud-job-head strong { font-size: 17px; }
+.cloud-job-head span { color: var(--rust-dark); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.cloud-job small { color: var(--muted); }
+.cloud-job-progress { display: flex; align-items: center; gap: 20px; margin-top: 15px; }
+.cloud-job-progress progress { width: 100%; accent-color: var(--rust); }
+.cloud-track-list { margin-top: 15px; }
+.cloud-track-list a { display: flex; justify-content: space-between; gap: 15px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.cloud-track-list a span { color: var(--rust-dark); font-weight: 700; }
+@media (max-width: 800px) { .cloud-grid { grid-template-columns: 1fr; } .cloud-fields { grid-template-columns: 1fr; } }
 .skip-link { position: fixed; z-index: 300; top: -70px; left: 20px; padding: 12px 16px; color: white; background: var(--ink); }
 .skip-link:focus { top: 20px; }
 

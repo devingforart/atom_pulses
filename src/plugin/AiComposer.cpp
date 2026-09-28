@@ -1943,9 +1943,10 @@ HttpResponse performSingleRequest(const char* method, const juce::String& path,
     }
 
     auto url = juce::URL("https://api.openai.com" + path);
-    if (juce::String(method) == "POST")
+    const bool isPost = juce::String(method) == "POST";
+    if (isPost)
         url = url.withPOSTData(body.isEmpty() ? "{}" : body);
-    juce::WebInputStream stream(url, true);
+    juce::WebInputStream stream(url, isPost);
     stream.withExtraHeaders("Content-Type: application/json\r\nAuthorization: Bearer " + apiKey + "\r\n")
           .withConnectionTimeout(static_cast<int>(budget.count()));
 

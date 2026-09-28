@@ -2,9 +2,9 @@ name: Web CI
 
 on:
   push:
-    paths: ["web/**", ".github/workflows/web-ci.yml"]
+    paths: ["web/**", "src/**", "tools/pulso_cloud_worker.cpp", "CMakeLists.txt", ".github/workflows/web-ci.yml"]
   pull_request:
-    paths: ["web/**", ".github/workflows/web-ci.yml"]
+    paths: ["web/**", "src/**", "tools/pulso_cloud_worker.cpp", "CMakeLists.txt", ".github/workflows/web-ci.yml"]
 
 jobs:
   frontend:

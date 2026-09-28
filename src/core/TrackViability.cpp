@@ -5,6 +5,7 @@
 #include "ElectronicSoundscape.h"
 #include "OrchestrationScore.h"
 #include "Scale.h"
+#include "SelectiveRepair.h"
 #include "SongComposer.h"
 
 #include <algorithm>
@@ -177,6 +178,43 @@ bool viable(const Evidence& value, const TrackViabilityContract& contract,
     return exact || (plan.instrumentCastAuthored && value.authoredSeeds > 0 &&
         TrackViability::marginalActiveBarAcceptance(
             value.notes, value.activeBars, value.phrases, contract));
+}
+
+bool auditionableProtagonistCoverage(const Evidence& value,
+                                     const TrackViabilityContract& contract,
+                                     const InstrumentPart& part,
+                                     const Pattern& pattern,
+                                     const SongPlan& plan) {
+    if (!plan.instrumentCastAuthored || plan.performanceScore.empty() ||
+        contract.function != TrackFunction::Protagonist ||
+        value.activeBars >= contract.minimumActiveBars ||
+        value.activeBars * 5 < contract.minimumActiveBars * 3 ||
+        value.notes < contract.minimumNotes ||
+        value.phrases < contract.minimumPhrases ||
+        value.authoredSeeds < contract.minimumNotes)
+        return false;
+    const auto* assignment = assignmentFor(part, plan);
+    if (assignment == nullptr ||
+        assignment->id != plan.narrativeSpine.protagonistInstrumentId)
+        return false;
+    const auto owner = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+        [&](const auto& instrument) { return instrument.id == assignment->id; });
+    if (owner == plan.instruments.end()) return false;
+    const auto index = static_cast<std::size_t>(
+        std::distance(plan.instruments.begin(), owner));
+    const auto findings = SelectiveRepair::performanceDeficits(
+        plan, plan.performanceScore, {index});
+    if (findings.size() != 1 ||
+        !SelectiveRepair::deferableProtagonistCoverage(plan, findings.front()))
+        return false;
+    // The accepted score had a coda. The exact rendered pattern must still
+    // contain its final attack after all scheduling and production passes.
+    const auto finalTwoBars = (plan.totalBars - 2) * plan.beatsPerBar;
+    return std::any_of(pattern.notes.begin(), pattern.notes.end(),
+        [&](const auto& note) {
+            return note.partId == part.id && note.startBeat >= finalTwoBars &&
+                note.startBeat < pattern.lengthBeats;
+        });
 }
 
 bool protectedIndependentAuthorship(const InstrumentPart& part, const SongPlan& plan,
@@ -735,7 +773,9 @@ TrackViabilityReport TrackViability::audit(const Pattern& pattern, const SongPla
         ++report.retainedTracks;
         const auto contract = contractFor(part, plan);
         if (contract.eventException) ++report.eventTracks;
-        if (viable(current, contract, plan)) ++report.viableTracks;
+        if (viable(current, contract, plan) ||
+            auditionableProtagonistCoverage(current, contract, part, pattern, plan))
+            ++report.viableTracks;
         else ++report.tokenTracks;
     }
     report.viabilityRatio = static_cast<double>(report.viableTracks) /

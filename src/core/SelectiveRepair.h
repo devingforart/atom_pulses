@@ -151,6 +151,12 @@ public:
         bool explicitCastCommitment);
     [[nodiscard]] static bool requiresReplacement(
         const PerformanceCoverageDeficit&) noexcept;
+    // A substantial protagonist whose only outstanding obligation is a modest
+    // active-bar shortfall may continue to the complete-score audition if a
+    // focused additive recovery fails. Missing identity, coda or musical speech
+    // never qualify for this early-stage deferral.
+    [[nodiscard]] static bool deferableProtagonistCoverage(
+        const SongPlan&, const PerformanceCoverageDeficit&) noexcept;
     [[nodiscard]] static std::vector<std::size_t> incompleteTargets(
         const SongPlan&, const PerformanceScore&,
         const std::vector<std::size_t>& candidates);

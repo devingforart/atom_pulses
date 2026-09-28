@@ -2341,6 +2341,122 @@ juce::String performanceBlockPrompt(const juce::String& direction,
     return prompt;
 }
 
+std::vector<bool> renderedOwnerBars(const SongPlan& plan,
+                                    const PerformanceScore& score,
+                                    std::size_t instrumentIndex) {
+    std::vector<bool> occupied(static_cast<std::size_t>(std::max(0, plan.totalBars)), false);
+    if (instrumentIndex >= plan.instruments.size() || plan.beatsPerBar <= 0.0)
+        return occupied;
+    for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+        const auto& section = plan.sections[sectionIndex];
+        Pattern chunk;
+        chunk.lengthBeats = section.bars * plan.beatsPerBar;
+        PerformanceScoreEngine::replaceChunk(chunk, score, static_cast<int>(sectionIndex),
+                                             0.0, chunk.lengthBeats, plan.instruments);
+        for (const auto& note : chunk.notes) {
+            if (note.partId != instrumentIndex + 1) continue;
+            const auto first = section.startBar + static_cast<int>(std::floor(
+                note.startBeat / plan.beatsPerBar));
+            const auto last = section.startBar + static_cast<int>(std::floor(
+                std::max(note.startBeat, note.endBeat() - .001) / plan.beatsPerBar));
+            for (auto bar = first; bar <= last; ++bar)
+                if (bar >= 0 && static_cast<std::size_t>(bar) < occupied.size())
+                    occupied[static_cast<std::size_t>(bar)] = true;
+        }
+    }
+    return occupied;
+}
+
+juce::String focusedProtagonistCoveragePrompt(const juce::String& direction,
+                                              const SongPlan& plan,
+                                              const PerformanceScore& score,
+                                              const PerformanceCoverageDeficit& deficit) {
+    const auto& owner = plan.instruments[deficit.instrumentIndex];
+    const auto occupied = renderedOwnerBars(plan, score, deficit.instrumentIndex);
+    const auto missingBars = deficit.minimumActiveBars - deficit.activeBars;
+    juce::String prompt;
+    prompt << "You are repairing ONLY the missing active-bar coverage of one already-authored melodic protagonist. "
+        "Return a SMALL additive performance_score in the required JSON schema: two to four new, distinct "
+        "four-to-eight-bar phrases with their own cells and section-relative placements. Add notes in at least "
+        << static_cast<int>(missingBars) << " previously silent bars, preferably "
+        << static_cast<int>(missingBars + 2) << " to provide a small margin. Existing cells, placements, "
+        "motif, coda, section form and every other instrument are immutable. Do not rewrite or repeat the "
+        "whole protagonist, fill every silence, clone another part, or return only prose. Leave meaningful "
+        "gaps between statements. Give each new cell a unique id and the same theme_id as the accepted motif. "
+        "Use the exact instrument_id and source_voice below, strict_grid timing, MIDI pitches inside its register, "
+        "and section-relative placement start_beat. Each phrase must follow the exact harmonic event active "
+        "at its position. Every required JSON field must be present, including empty controls and voice_map "
+        "arrays. Return only the structured JSON.\n"
+        "OWNER:\n" + instrumentBlockBrief(plan, {deficit.instrumentIndex}) +
+        "KEY=" + juce::String::fromUTF8(plan.key.c_str()) +
+        " root_pc=" + juce::String(plan.rootPitchClass) +
+        " beats_per_bar=" + juce::String(plan.beatsPerBar, 2) +
+        " total_bars=" + juce::String(plan.totalBars) +
+        " accepted_active_bars=" + juce::String(static_cast<int>(deficit.activeBars)) +
+        " required_active_bars=" + juce::String(static_cast<int>(deficit.minimumActiveBars)) +
+        "\nMOTIF=" + juce::String::fromUTF8(plan.narrativeSpine.motifIdentity.c_str()) +
+        "\nORIGINAL DIRECTION=" + direction.substring(0, 500) + "\n";
+    for (const auto& chord : plan.chordPalette) {
+        prompt << "CHORD " << juce::String::fromUTF8(chord.id.c_str())
+               << " root_pc=" << chord.rootPitchClass << " pitch_classes=";
+        for (const auto pitchClass : chord.pitchClasses) prompt << pitchClass << ",";
+        prompt << "\n";
+    }
+    for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+        const auto& section = plan.sections[sectionIndex];
+        const auto assigned = owner.activeSections.empty() ||
+            std::find(owner.activeSections.begin(), owner.activeSections.end(),
+                      section.name) != owner.activeSections.end();
+        if (!assigned) continue;
+        prompt << "SECTION " << static_cast<int>(sectionIndex) << " "
+               << juce::String::fromUTF8(section.name.c_str())
+               << " absolute_start_bar=" << section.startBar
+               << " bars=" << section.bars << " chord_events=";
+        for (const auto& event : section.harmonicEvents)
+            prompt << juce::String::fromUTF8(event.chordId.c_str()) << "@local_bar_"
+                   << event.barOffset << ":beat_" << juce::String(event.beatOffset, 2) << ",";
+        prompt << "\n";
+        for (auto localBar = 0; localBar < section.bars;) {
+            const auto absoluteBar = section.startBar + localBar;
+            if (absoluteBar < 0 || static_cast<std::size_t>(absoluteBar) >= occupied.size() ||
+                occupied[static_cast<std::size_t>(absoluteBar)]) {
+                ++localBar;
+                continue;
+            }
+            const auto start = localBar;
+            while (localBar < section.bars) {
+                const auto bar = section.startBar + localBar;
+                if (bar < 0 || static_cast<std::size_t>(bar) >= occupied.size() ||
+                    occupied[static_cast<std::size_t>(bar)]) break;
+                ++localBar;
+            }
+            if (localBar - start >= 4)
+                prompt << "EMPTY_RANGE section_index=" << static_cast<int>(sectionIndex)
+                       << " local_bars=[" << start << "," << localBar
+                       << ") start_beat=" << juce::String(start * plan.beatsPerBar, 2)
+                       << "\n";
+        }
+    }
+    prompt << "ACCEPTED MOTIF FRAGMENTS (reference only; do not output these cells):\n";
+    auto shownCells = 0;
+    for (const auto& cell : score.cells) {
+        if (shownCells >= 4) break;
+        auto shownNotes = 0;
+        juce::String fragment;
+        for (const auto& note : cell.notes) {
+            if (note.instrumentId != owner.id) continue;
+            if (shownNotes++ < 8)
+                fragment << "(" << juce::String(note.beat, 2) << "," << note.pitch << ","
+                         << juce::String(note.durationBeats, 2) << ")";
+        }
+        if (shownNotes == 0) continue;
+        prompt << "theme_id=" << juce::String::fromUTF8(cell.themeId.c_str())
+               << " phrase=" << fragment << "\n";
+        ++shownCells;
+    }
+    return prompt;
+}
+
 struct PerformanceRoutingReport {
     std::map<std::string, std::size_t> received;
     std::map<std::string, std::size_t> accepted;
@@ -4718,6 +4834,135 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             OperationalJournal::write("WARN", "VALIDATION",
                 "block " + juce::String(static_cast<int>(displayBlock + 1)) +
                 " initial deficits: " + performanceDeficitBrief(result, assembledScore, missing));
+            // A populated protagonist with only a modest active-bar shortage does
+            // not need another full performance-block rewrite. Request a few new
+            // phrases in its genuinely empty bars, once, and keep the accepted
+            // material untouched. If transport fails, the completed ensemble and
+            // independent audible gate will decide whether this is a real defect.
+            if (isProtagonistOnly(indices)) {
+                const auto findings = SelectiveRepair::performanceDeficits(
+                    result, assembledScore, indices);
+                if (findings.size() == 1 &&
+                    SelectiveRepair::deferableProtagonistCoverage(result, findings.front())) {
+                    if (progress) progress({AiSongStage::Recovery, completedBlocks,
+                        blocks.size(), attempt + 1,
+                        "focused protagonist coverage repair; accepted phrases preserved"});
+                    const auto beforeBars = renderedOwnerBars(
+                        result, assembledScore, indices.front());
+                    const auto focusedPrompt = focusedProtagonistCoveragePrompt(
+                        direction, result, assembledScore, findings.front());
+                    const auto focusedSerial = requestSerial++;
+                    const auto focusedBody = juce::String("{\"model\":\"") + model +
+                        "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
+                        realizationReasoningEffort +
+                        "\"},\"max_output_tokens\":4500,\"input\":" +
+                        juce::JSON::toString(juce::var(focusedPrompt)) +
+                        ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_performance_block\","
+                        "\"strict\":true,\"schema\":" +
+                        performanceSchemaFor(result, indices) + "}}}";
+                    const auto focusedRemaining = std::chrono::duration_cast<
+                        std::chrono::milliseconds>(overallDeadline -
+                            std::chrono::steady_clock::now());
+                    juce::String focusedFailure;
+                    if (focusedRemaining >= std::chrono::seconds(30)) {
+                        const auto focusedBudget = std::min(focusedRemaining,
+                            std::chrono::duration_cast<std::chrono::milliseconds>(
+                                std::chrono::seconds(90)));
+                        const auto response = performRequest(
+                            focusedBody, apiKey, token, focusedBudget);
+                        const auto responseText = extractOutputText(
+                            juce::JSON::parse(response.body));
+                        PerformanceScore addition;
+                        PerformanceRoutingReport focusedRouting;
+                        const auto focusedIds = instrumentIdsFor(result, indices);
+                        const auto parsed = response.connected && response.status >= 200 &&
+                            response.status < 300 && !response.cancelled && !response.timedOut &&
+                            !responseText.isEmpty() && parsePerformanceBlock(
+                                responseText, result, focusedIds, addition,
+                                focusedFailure, &focusedRouting);
+                        OperationalJournal::write(parsed ? "INFO" : "WARN", "ROUTING",
+                            "focused protagonist coverage routing: " + focusedRouting.summary(focusedIds));
+                        if (parsed) {
+                            retainOnlyInstrumentMaterial(addition, focusedIds);
+                            const auto addedBars = renderedOwnerBars(
+                                result, addition, indices.front());
+                            auto hasOverlap = false;
+                            for (std::size_t bar = 0; bar < addedBars.size(); ++bar)
+                                if (addedBars[bar] && beforeBars[bar]) {
+                                    hasOverlap = true;
+                                    break;
+                                }
+                            // Evaluate the rendered additional material, not just
+                            // its cell declarations. A malformed placement must
+                            // never overwrite an already accepted protagonist bar.
+                            if (hasOverlap) {
+                                focusedFailure = "Focused addition occupied an accepted protagonist bar";
+                            } else {
+                                auto candidateScore = assembledScore;
+                                mergePerformanceBlock(candidateScore, std::move(addition),
+                                                      focusedSerial);
+                                if (!normalizeAssembledScore(candidateScore,
+                                        "focused protagonist coverage merge")) {
+                                    focusedFailure = "Focused addition exceeded score capacity";
+                                } else {
+                                    const auto afterBars = renderedOwnerBars(
+                                        result, candidateScore, indices.front());
+                                    const auto oldCount = static_cast<std::size_t>(
+                                        std::count(beforeBars.begin(), beforeBars.end(), true));
+                                    const auto newCount = static_cast<std::size_t>(
+                                        std::count(afterBars.begin(), afterBars.end(), true));
+                                    auto originalBarsPreserved = true;
+                                    for (std::size_t bar = 0; bar < beforeBars.size(); ++bar)
+                                        if (beforeBars[bar] && !afterBars[bar]) {
+                                            originalBarsPreserved = false;
+                                            break;
+                                        }
+                                    const auto remainingFindings =
+                                        SelectiveRepair::performanceDeficits(
+                                            result, candidateScore, indices);
+                                    const auto safeRemainder = remainingFindings.empty() ||
+                                        (remainingFindings.size() == 1 &&
+                                         SelectiveRepair::deferableProtagonistCoverage(
+                                             result, remainingFindings.front()));
+                                    if (newCount > oldCount && originalBarsPreserved &&
+                                        safeRemainder) {
+                                        assembledScore = std::move(candidateScore);
+                                        OperationalJournal::write("OK", "CHECKPOINT",
+                                            "focused protagonist coverage added " +
+                                            juce::String(static_cast<int>(newCount - oldCount)) +
+                                            " previously silent bars; accepted notes preserved");
+                                    } else {
+                                        focusedFailure = "Focused addition did not safely improve active-bar coverage";
+                                    }
+                                }
+                            }
+                        } else if (focusedFailure.isEmpty()) {
+                            focusedFailure = responseText.isEmpty() && response.connected &&
+                                response.status >= 200 && response.status < 300
+                                ? juce::String("OpenAI returned an empty focused response")
+                                : apiErrorMessage(response);
+                        }
+                    } else {
+                        focusedFailure = "No time remained for focused recovery";
+                    }
+                    if (focusedFailure.isNotEmpty())
+                        OperationalJournal::write("WARN", "RECOVERY",
+                            "focused protagonist coverage did not converge: " + focusedFailure);
+                    const auto remainder = uncoveredInstruments(
+                        result, assembledScore, indices);
+                    if (remainder.empty()) return true;
+                    const auto residualFindings = SelectiveRepair::performanceDeficits(
+                        result, assembledScore, indices);
+                    if (residualFindings.size() == 1 &&
+                        SelectiveRepair::deferableProtagonistCoverage(
+                            result, residualFindings.front())) {
+                        deferConstraints(remainder,
+                            "substantial authored protagonist has only an optional coverage shortfall; complete-score audible gate retains final authority",
+                            displayBlock);
+                        return true;
+                    }
+                }
+            }
             auto unresolved = missing;
             std::vector<std::size_t> boundedMusicalObservations;
             for (auto recoveryAttempt = attempt + 1;

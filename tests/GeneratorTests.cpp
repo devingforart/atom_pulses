@@ -2916,6 +2916,121 @@ void runGeneratorTests() {
     universalProtagonist.explicitPromptIdentity = true;
     universalConstraintPlan.instruments = {universalProtagonist};
     universalConstraintPlan.narrativeSpine.protagonistInstrumentId = universalProtagonist.id;
+    PerformanceCoverageDeficit substantialProtagonist;
+    substantialProtagonist.instrumentId = universalProtagonist.id;
+    substantialProtagonist.notes = 72;
+    substantialProtagonist.minimumNotes = 49;
+    substantialProtagonist.authoredNotes = 72;
+    substantialProtagonist.minimumAuthoredNotes = 12;
+    substantialProtagonist.activeBars = 36;
+    substantialProtagonist.minimumActiveBars = 49;
+    substantialProtagonist.phrases = 18;
+    substantialProtagonist.minimumPhrases = 4;
+    substantialProtagonist.sections = 9;
+    substantialProtagonist.minimumSections = 3;
+    substantialProtagonist.narrativePhraseWindows = 9;
+    substantialProtagonist.minimumNarrativePhraseWindows = 7;
+    require(SelectiveRepair::deferableProtagonistCoverage(
+                universalConstraintPlan, substantialProtagonist),
+            "A developed protagonist with only modest missing coverage may reach global audition");
+    auto unsafeProtagonist = substantialProtagonist;
+    unsafeProtagonist.activeBars = 12;
+    require(!SelectiveRepair::deferableProtagonistCoverage(
+                universalConstraintPlan, unsafeProtagonist),
+            "A largely absent protagonist must not be deferred");
+    unsafeProtagonist = substantialProtagonist;
+    unsafeProtagonist.missingCodaResolution = true;
+    require(!SelectiveRepair::deferableProtagonistCoverage(
+                universalConstraintPlan, unsafeProtagonist),
+            "A protagonist without closure must remain a blocking repair");
+    unsafeProtagonist = substantialProtagonist;
+    unsafeProtagonist.missingMelodicSpeech = true;
+    require(!SelectiveRepair::deferableProtagonistCoverage(
+                universalConstraintPlan, unsafeProtagonist),
+            "Coverage deferral must not hide an unsingable melodic line");
+    unsafeProtagonist = substantialProtagonist;
+    unsafeProtagonist.authoredNotes = 4;
+    require(!SelectiveRepair::deferableProtagonistCoverage(
+                universalConstraintPlan, unsafeProtagonist),
+            "Coverage deferral must not restore tiny repeated source material");
+    SongPlan auditionPlan;
+    auditionPlan.totalBars = 224;
+    auditionPlan.beatsPerBar = 4.0;
+    auditionPlan.key = "F# major";
+    auditionPlan.rootPitchClass = 6;
+    auditionPlan.scale = ScaleKind::Major;
+    auditionPlan.instrumentCastAuthored = true;
+    auditionPlan.compositionBehavior = CompositionBehavior::Hypnotic;
+    auditionPlan.chordPalette.push_back({"home", "F#", 6, 6, {6, 10, 1}});
+    InstrumentAssignment auditionOwner = universalProtagonist;
+    auditionOwner.id = "audition_protagonist";
+    auditionOwner.instrumentId = "lead_synth";
+    auditionOwner.minimumPitch = 60;
+    auditionOwner.maximumPitch = 84;
+    auditionPlan.narrativeSpine.protagonistInstrumentId = auditionOwner.id;
+    auditionPlan.narrativeSpine.motifIdentity = "journey";
+    for (int sectionIndex = 0; sectionIndex < 7; ++sectionIndex) {
+        SongSection section;
+        section.name = "Journey " + std::to_string(sectionIndex);
+        section.startBar = sectionIndex * 32;
+        section.bars = 32;
+        section.harmonicEvents.push_back({0, 0.0, "home", .8, "tonal anchor"});
+        auditionOwner.activeSections.push_back(section.name);
+        auditionPlan.sections.push_back(std::move(section));
+    }
+    auditionPlan.instruments.push_back(auditionOwner);
+    Pattern auditionPattern;
+    auditionPattern.lengthBeats = auditionPlan.totalBars * auditionPlan.beatsPerBar;
+    InstrumentPart auditionPart;
+    auditionPart.id = 1;
+    auditionPart.catalogId = auditionOwner.instrumentId;
+    auditionPart.sourceVoice = VoiceId::Lead;
+    auditionPart.department = ScoreDepartment::Melody;
+    auditionPart.minimumPitch = auditionOwner.minimumPitch;
+    auditionPart.maximumPitch = auditionOwner.maximumPitch;
+    auditionPart.contentLaneId = auditionOwner.id;
+    auditionPattern.parts.push_back(auditionPart);
+    const std::array auditionSections{0, 1, 2, 3, 4, 5, 6, 2, 4};
+    const std::array auditionLocalBars{0, 0, 0, 0, 0, 0, 28, 16, 16};
+    const std::array auditionPitches{66, 70, 68, 73, 70, 68, 66, 66};
+    for (std::size_t phrase = 0; phrase < auditionSections.size(); ++phrase) {
+        PerformanceCell cell;
+        cell.id = "journey_phrase_" + std::to_string(phrase);
+        cell.themeId = "journey";
+        cell.lengthBeats = 16.0;
+        cell.ownedVoices = {VoiceId::Lead};
+        PerformancePlacement placement;
+        placement.cellId = cell.id;
+        placement.sectionIndex = auditionSections[phrase];
+        placement.startBeat = auditionLocalBars[phrase] * 4.0;
+        placement.fragmentEnd = cell.lengthBeats;
+        auditionPlan.performanceScore.placements.push_back(placement);
+        for (std::size_t noteIndex = 0; noteIndex < auditionPitches.size(); ++noteIndex) {
+            const auto pitch = auditionPitches[noteIndex];
+            cell.notes.push_back({noteIndex * 2.0, .5, pitch, 80,
+                VoiceId::Lead, MetricIntent::StrictGrid, auditionOwner.id});
+            auditionPattern.notes.push_back({
+                auditionPlan.sections[static_cast<std::size_t>(placement.sectionIndex)].startBar * 4.0 +
+                    placement.startBeat + noteIndex * 2.0,
+                .5, pitch, 80, 2, VoiceId::Lead, 1, true, NoteOrigin::AiAuthored, 1});
+        }
+        auditionPlan.performanceScore.cells.push_back(std::move(cell));
+    }
+    const auto auditionFindings = SelectiveRepair::performanceDeficits(
+        auditionPlan, auditionPlan.performanceScore, {0});
+    require(auditionFindings.size() == 1 &&
+                auditionFindings.front().activeBars == 36 &&
+                auditionFindings.front().minimumActiveBars == 49 &&
+                SelectiveRepair::deferableProtagonistCoverage(
+                    auditionPlan, auditionFindings.front()) &&
+                TrackViability::audit(auditionPattern, auditionPlan).ready,
+            "A complete 36/49-bar protagonist must remain eligible for the final audible gate");
+    auditionPattern.notes.erase(std::remove_if(
+        auditionPattern.notes.begin(), auditionPattern.notes.end(),
+        [](const auto& note) { return note.startBeat >= 888.0; }),
+        auditionPattern.notes.end());
+    require(!TrackViability::audit(auditionPattern, auditionPlan).ready,
+            "The final viability exception must not hide a coda lost during rendering");
     PerformanceCoverageDeficit absentExplicitIdentity;
     absentExplicitIdentity.instrumentIndex = 0;
     absentExplicitIdentity.instrumentId = universalProtagonist.id;

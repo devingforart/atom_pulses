@@ -1871,4 +1871,32 @@ bool SelectiveRepair::requiresReplacement(
         deficit.activeBars >= deficit.minimumActiveBars;
 }
 
+bool SelectiveRepair::deferableProtagonistCoverage(
+    const SongPlan& plan, const PerformanceCoverageDeficit& deficit) noexcept {
+    if (deficit.instrumentId.empty() ||
+        deficit.instrumentId != plan.narrativeSpine.protagonistInstrumentId ||
+        deficit.minimumActiveBars == 0 ||
+        deficit.activeBars >= deficit.minimumActiveBars ||
+        deficit.activeBars * 5 < deficit.minimumActiveBars * 3)
+        return false;
+    return deficit.notes >= deficit.minimumNotes &&
+        deficit.notes > 0 &&
+        deficit.authoredNotes >= deficit.minimumAuthoredNotes &&
+        deficit.phrases >= deficit.minimumPhrases &&
+        deficit.sections >= deficit.minimumSections &&
+        deficit.sectionalStates >= deficit.minimumSectionalStates &&
+        deficit.narrativePhraseWindows >= deficit.minimumNarrativePhraseWindows &&
+        !deficit.missingCodaResolution &&
+        !deficit.missingThematicRelationship &&
+        !deficit.missingAuthoredDevelopment &&
+        !deficit.duplicatedIndependentLine &&
+        !deficit.missingSectionalEvolution &&
+        !deficit.missingNarrativePresence &&
+        !deficit.missingThematicDevelopment &&
+        !deficit.missingMelodicSpeech &&
+        !deficit.missingCentralChordBed &&
+        !deficit.missingChordBedBreath &&
+        !deficit.missingChordBedNarrativeArc;
+}
+
 } // namespace pulso

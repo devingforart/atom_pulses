@@ -2,6 +2,10 @@
 
 ## Web comercial
 
+### 0.58.50 — recuperación acotada del protagonista
+
+Si una línea protagonista ya tiene notas originales, frases, desarrollo y cierre, pero le faltan algunos compases activos, PULSO pide una única adición breve en huecos concretos sin reescribir lo aceptado. Si la respuesta falla, conserva la línea sustancial y termina de componer la orquestación para que la auditoría musical global decida. Una protagonista vacía, sin coda o sin fraseo sigue bloqueada. Esta ruta no añade notas procedurales ni evita los controles finales de producción y musicalidad.
+
 ### 0.58.49 — desarrollo real de las pistas largas
 
 PULSO ahora mide cuántas notas fueron escritas realmente para cada instrumento, además de las notas que aparecen al repetir sus células MIDI. En obras largas, una pista melódica o armónica con cuatro notas repetidas durante decenas de compases se reescribe de forma focalizada antes de la auditoría final. Los golpes puntuales, la percusión y los pedales deliberados conservan su comportamiento repetitivo. La reparación muestra en el registro el material original frente al mínimo requerido; no añade notas procedurales ni relaja el control de publicación.

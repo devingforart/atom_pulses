@@ -133,6 +133,8 @@ if(PULSO_BUILD_PLUGIN OR PULSO_BUILD_CLOUD_WORKER)
         endif()
     else()
         target_compile_definitions(pulso_ai PUBLIC JUCE_USE_CURL=1)
+        find_package(CURL REQUIRED)
+        target_link_libraries(pulso_ai PUBLIC CURL::libcurl)
     endif()
 endif()
 

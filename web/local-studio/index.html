@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PULSO — estudio local</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>PULSO</span></div><span class="top-label">ESTUDIO LOCAL <span class="dot">●</span> DESARROLLO</span></header>
+    <main>
+      <section class="intro"><div class="eyebrow">COMPOSICIÓN · MIDI · ITERACIÓN</div><h1>Tu estudio de<br><em>ideas musicales.</em></h1><p>Probá el generador real desde el navegador. Cada obra conserva su prompt, semilla y archivos MIDI para que podamos escucharla, compararla y mejorarla.</p></section>
+      <div id="health" class="health" role="status">Comprobando el motor local…</div>
+      <div class="workspace">
+        <section class="panel compose"><div class="section-head"><span>01 / DIRECCIÓN</span><span>UNA OBRA A LA VEZ</span></div><h2>Componer una obra</h2><form id="compose-form">
+          <label for="prompt">Tu idea musical</label><textarea id="prompt" maxlength="600" rows="7" placeholder="Describí el carácter, el viaje y la instrumentación que imaginás…" required></textarea><div class="character-count"><span id="prompt-count">0</span> / 600</div>
+          <div class="fields"><div><label for="duration">Duración</label><select id="duration"><option value="60">1 minuto</option><option value="120">2 minutos</option><option value="180">3 minutos</option><option value="300">5 minutos</option><option value="390">6 min 30 s</option><option value="600">10 minutos</option><option value="900">15 minutos</option></select></div><div><label for="bpm">Tempo / BPM</label><input id="bpm" type="number" min="60" max="180" step="1" value="120" required></div></div>
+          <label for="behavior">Enfoque compositivo</label><select id="behavior"><option value="adaptive">Adaptativo — interpreta la dirección</option><option value="hypnotic">Hipnótico — evolución sostenida</option><option value="narrative">Narrativo — arco y contrastes</option></select>
+          <label for="seed">Semilla <span class="optional">opcional · para comparar</span></label><input id="seed" type="text" inputmode="numeric" pattern="[1-9][0-9]*" placeholder="Automática si queda vacía"><p class="field-note">Misma semilla y prompt permiten comparar cambios del motor. La respuesta de IA puede variar entre ejecuciones.</p>
+          <button id="submit" class="primary" type="submit"><span>COMENZAR COMPOSICIÓN</span><span aria-hidden="true">↗</span></button><p class="cost-note">La composición inicia una solicitud real a la API y puede tener costo. No hay reintentos automáticos desde esta pantalla.</p>
+        </form></section>
+        <section class="panel results"><div class="section-head"><span>02 / OBRAS</span><span id="job-count">0 SESIONES</span></div><div class="results-title"><div><h2>Exploraciones</h2><p>Los MIDI permanecen en este equipo para su análisis.</p></div><button id="refresh" class="secondary" type="button">ACTUALIZAR ↻</button></div><div id="notice" class="notice" role="alert" hidden></div><div id="jobs" class="jobs"><div class="empty"><span class="empty-mark">◌</span><h3>El lienzo está listo.</h3><p>Cuando compongas, tus obras aparecerán aquí con su progreso y pistas exportables.</p></div></div></section>
+      </div>
+      <footer><span>PULSO / LOCAL STUDIO</span><span>127.0.0.1 · SIN DESPLIEGUE · SIN VST</span></footer>
+    </main>
+  </div>
+</body>
+</html>

@@ -453,6 +453,20 @@ void runGeneratorTests() {
                 hypnoticFloorContract.minimumNotes == adaptiveFloorContract.minimumNotes &&
                 hypnoticFloorContract.minimumPhrases == adaptiveFloorContract.minimumPhrases,
             "A style preference must not silently weaken the established musical viability contract");
+    auto shortWork = texturePlan;
+    shortWork.targetSeconds = 30;
+    shortWork.totalBars = 16;
+    InstrumentAssignment shortLead;
+    shortLead.id = "short_lead";
+    shortLead.instrumentId = "mono_synth";
+    shortLead.sourceVoice = VoiceId::Lead;
+    shortWork.narrativeSpine.protagonistInstrumentId = shortLead.id;
+    require(TrackViability::contractFor(shortLead, shortWork).minimumPhrases == 2,
+            "A sub-minute protagonist should satisfy a two-phrase short-form contract");
+    shortWork.targetSeconds = 390;
+    shortWork.totalBars = 192;
+    require(TrackViability::contractFor(shortLead, shortWork).minimumPhrases >= 3,
+            "Full-song protagonists must retain the long-form phrase contract");
     std::string textureCast;
     for (const auto& part : texturePlan.instruments) textureCast += part.instrumentId + ":" + std::to_string(static_cast<int>(part.sourceVoice)) + ",";
     require(std::none_of(texturePlan.instruments.begin(), texturePlan.instruments.end(), [](const auto& part) {

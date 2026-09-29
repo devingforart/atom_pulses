@@ -636,6 +636,12 @@ TrackViabilityContract TrackViability::contractFor(const InstrumentPart& part,
         result.minimumPhrases = std::max(result.minimumPhrases,
             static_cast<std::size_t>(std::max(1, layer->minimumPhrases)));
     }
+    // A sub-minute work cannot sustain the same number of independent phrase
+    // statements as a full song. Preserve the note/bar/section requirements,
+    // but avoid rejecting two genuinely developed phrases merely because the
+    // long-form contract asks for three or four.
+    if (!result.eventException && plan.targetSeconds > 0 && plan.targetSeconds <= 60)
+        result.minimumPhrases = std::min(result.minimumPhrases, std::size_t{2});
     return result;
 }
 

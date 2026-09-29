@@ -27,6 +27,8 @@ solicitudes reales.
 
 La ruta `/cloud` permite a una cuenta autorizada solicitar una composición en segundo plano, cerrar el navegador y volver a descargar cada pista MIDI no vacía. La API Rust guarda la cola, el estado, la idempotencia y el manifiesto en PostgreSQL. Un proceso C++ aislado reutiliza exactamente `AiComposer`, `SongComposer` y `MidiExporter` del VST. La salida MIDI permanece en el volumen persistente `pulso-cloud-jobs`.
 
+Desde 0.58.56, VST y Cloud también comparten `SongGenerationPipeline`: la preparación del prompt, el cálculo de duración en compases, la finalización del plan y el contexto del render. La prueba `pulso_pipeline_tests` comprueba sin llamadas pagas que una misma solicitud y un mismo plan rinden las mismas notas. La información de Live, cuando existe, es una entrada adicional del VST; y dos respuestas independientes de la IA no prometen un MIDI idéntico.
+
 Para probar la beta con licencias Studio, configura `OPENAI_API_KEY` exclusivamente en el entorno del servidor y `PULSO_CLOUD_BETA_STUDIO=true`. Por defecto la beta está cerrada y cada cuenta tiene dos trabajos por 24 horas y uno simultáneo. `PULSO_CLOUD_DAILY_JOBS` permite ajustar el límite. Los planes Cloud de Stripe continúan deshabilitados hasta fijar precios y presupuestos a partir de consumos medidos.
 
 Una interrupción del worker se marca como fallida; no se repite una solicitud de IA automáticamente porque ello podría duplicar el cobro. Los resultados terminados, el progreso y la solicitud idempotente sí sobreviven al cierre del navegador. La integración de activación del VST con esta cola y la reanudación interna de fases todavía son trabajo pendiente; no se debe comercializar Cloud como terminado hasta verificarlos.

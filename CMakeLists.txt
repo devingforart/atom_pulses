@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.58.55 LANGUAGES C CXX)
+project(Pulso VERSION 0.58.56 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -120,6 +120,7 @@ if(PULSO_BUILD_PLUGIN OR PULSO_BUILD_CLOUD_WORKER)
         src/plugin/AiComposer.cpp
         src/plugin/MidiExporter.cpp
         src/plugin/OperationalJournal.cpp
+        src/plugin/SongGenerationPipeline.cpp
     )
     target_include_directories(pulso_ai PUBLIC src)
     target_link_libraries(pulso_ai PUBLIC pulso_core juce::juce_core juce::juce_audio_basics)
@@ -135,6 +136,14 @@ if(PULSO_BUILD_PLUGIN OR PULSO_BUILD_CLOUD_WORKER)
         target_compile_definitions(pulso_ai PUBLIC JUCE_USE_CURL=1)
         find_package(CURL REQUIRED)
         target_link_libraries(pulso_ai PUBLIC CURL::libcurl)
+    endif()
+    if(PULSO_BUILD_TESTS)
+        add_executable(pulso_pipeline_tests tests/SongPipelineTests.cpp)
+        target_link_libraries(pulso_pipeline_tests PRIVATE pulso_ai)
+        if(MSVC)
+            target_compile_options(pulso_pipeline_tests PRIVATE /utf-8)
+        endif()
+        add_test(NAME pulso_pipeline_tests COMMAND pulso_pipeline_tests)
     endif()
 endif()
 
@@ -183,6 +192,7 @@ if(PULSO_BUILD_PLUGIN)
         src/plugin/Localization.h
         src/plugin/MidiExporter.h
         src/plugin/OperationalJournal.h
+        src/plugin/SongGenerationPipeline.h
         src/plugin/PatternView.cpp
         src/plugin/PatternView.h
         src/plugin/PluginEditor.cpp
@@ -240,6 +250,7 @@ if(PULSO_BUILD_CLOUD_WORKER)
     add_executable(pulso_cloud_worker tools/pulso_cloud_worker.cpp)
     target_include_directories(pulso_cloud_worker PRIVATE src)
     target_link_libraries(pulso_cloud_worker PRIVATE pulso_ai pulso_core juce::juce_audio_basics)
+    target_compile_definitions(pulso_cloud_worker PRIVATE PULSO_VERSION_STRING="${PROJECT_VERSION}")
     if(MSVC)
         target_compile_options(pulso_cloud_worker PRIVATE /utf-8)
     endif()

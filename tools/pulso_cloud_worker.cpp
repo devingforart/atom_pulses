@@ -1,6 +1,6 @@
 #include "plugin/AiComposer.h"
 #include "plugin/MidiExporter.h"
-#include "core/SongComposer.h"
+#include "plugin/SongGenerationPipeline.h"
 
 #include <juce_core/juce_core.h>
 
@@ -62,13 +62,15 @@ int main(int argc, char** argv) {
         return fail(output, "Invalid composition parameters");
     if (!pulso::plugin::AiComposer::hasApiKey())
         return fail(output, "Server OpenAI key is not configured");
-    const auto bars = pulso::SongComposer::phraseAlignedBars(
-        static_cast<int>(std::lround(duration * bpm / 60.0 / 4.0)));
+    pulso::plugin::SongGenerationRequest request;
+    request.direction = prompt;
+    request.targetSeconds = duration;
+    request.bpm = bpm;
+    request.seed = seed;
+    request.behavior = behaviorFrom(object->getProperty("behavior").toString());
     writeStatus(output, "running", "blueprint", 0, 1);
     juce::String error;
-    auto plan = pulso::plugin::AiComposer::planSong(
-        prompt, duration, bars, bpm, 4.0, seed,
-        behaviorFrom(object->getProperty("behavior").toString()),
+    auto plan = pulso::plugin::SongGenerationPipeline::plan(request,
         std::stop_token{}, error,
         [&output](const pulso::plugin::AiSongProgressUpdate& update) {
             const auto stage = update.stage == pulso::plugin::AiSongStage::Blueprint ? "blueprint" :
@@ -79,21 +81,10 @@ int main(int argc, char** argv) {
         });
     if (error.isNotEmpty() || plan.instruments.empty())
         return fail(output, error.isNotEmpty() ? error : "AI returned an empty score");
-    plan.compositionBehavior = behaviorFrom(object->getProperty("behavior").toString());
-    plan.seed = seed;
-    plan.targetSeconds = duration;
-    pulso::SongComposer::normalizePlan(plan);
+    pulso::plugin::SongGenerationPipeline::finalizePlan(plan, request);
 
     writeStatus(output, "running", "rendering", 0, static_cast<int>(plan.sections.size()));
-    pulso::GenerationContext context;
-    context.seed = seed;
-    context.bars = plan.totalBars;
-    context.beatsPerBar = plan.beatsPerBar;
-    context.rootPitchClass = plan.rootPitchClass;
-    context.scale = plan.scale;
-    context.humanize = 0.0; // Match exact-grid MIDI rendering in the VST.
-    pulso::SongComposer composer;
-    const auto song = composer.render(plan, context,
+    const auto song = pulso::plugin::SongGenerationPipeline::render(plan, request,
         [&output](std::size_t completed, std::size_t total, const pulso::SongSection&) {
             writeStatus(output, "running", "rendering", static_cast<int>(completed),
                         static_cast<int>(total));
@@ -138,6 +129,7 @@ int main(int argc, char** argv) {
     if (tracks.isEmpty()) return fail(output, "No nonempty MIDI tracks were produced");
     auto* manifest = new juce::DynamicObject();
     manifest->setProperty("schema_version", 1);
+    manifest->setProperty("engineVersion", PULSO_VERSION_STRING);
     manifest->setProperty("title", juce::String::fromUTF8(plan.title.c_str()));
     manifest->setProperty("key", juce::String::fromUTF8(plan.key.c_str()));
     manifest->setProperty("bpm", plan.bpm);

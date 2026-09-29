@@ -2,6 +2,13 @@
 
 ## Web comercial
 
+### 0.58.56 — un solo pipeline musical para VST y Cloud
+
+- VST y Cloud usan el mismo contrato para preparar la dirección musical, calcular compases, finalizar el plan y renderizar notas MIDI.
+- El render de canciones ya no hereda parámetros ocultos del host: con el mismo plan y la misma solicitud produce el mismo patrón MIDI.
+- Una prueba offline de paridad compila con el motor compartido y compara todas las notas generadas, sin gastar llamadas de IA.
+- El contexto de Live sigue siendo una entrada explícita sólo disponible cuando el VST la aporta; las llamadas independientes al modelo no garantizan respuestas idénticas.
+
 ### 0.58.55 — diagnóstico y recuperación del elenco AI
 
 - El registro operativo indica el fragmento del elenco que falló y si fue por tiempo, transporte, HTTP o validación estructural.

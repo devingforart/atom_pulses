@@ -2,6 +2,7 @@
 
 #include "OperationalJournal.h"
 #include "PluginEditor.h"
+#include "SongGenerationPipeline.h"
 #include "core/PerformanceTiming.h"
 #include "core/Scale.h"
 #include <algorithm>
@@ -1438,22 +1439,26 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     "ignored an internal diagnostic accidentally supplied as the creative direction");
             }
             const auto userSongDirection = songDirection;
-            if (const auto capabilities = readLiveNativeCapabilitiesSummary(); capabilities.isNotEmpty())
-                songDirection += "\n" + capabilities;
-            if (const auto audibleFeedback = readLiveAudibleExecutionFeedback(); audibleFeedback.isNotEmpty())
-                songDirection += "\n" + audibleFeedback;
-            if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::ClubElectronic))
-                songDirection += "\nProduction mode: club electronic. Think as a producer and DJ: build kick-bass interlock, evolving groove DNA, one foreground hook, subtractive arrangement, automation, spectral restraint and useful mix-in/mix-out energy. Do not add orchestral instruments unless explicitly requested.";
-            else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::DeepProduction))
-                songDirection += "\nOrchestration mode: deep production. Build a detailed hybrid acoustic/electronic ensemble with independent harmonic families, controlled counterpoint, automation and production-ready negative space.";
-            else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Symphonic))
-                songDirection += "\nOrchestration mode: symphonic. Treat the orchestra as multiple independent choirs with divisi strings, woodwind and brass dialogue, orchestral percussion, register-aware counterpoint, articulation contrast and a long-range chamber-to-tutti arc.";
             const auto selectedBehavior = static_cast<CompositionBehavior>(std::clamp(
                 static_cast<int>(newest.compositionBehavior), 0, 2));
             const auto requestedBehavior = selectedBehavior;
+            SongGenerationRequest songRequest;
+            songRequest.direction = userSongDirection;
+            songRequest.targetSeconds = newest.targetSongSeconds;
+            songRequest.bpm = currentTempo();
+            songRequest.beatsPerBar = newest.beatsPerBar;
+            songRequest.seed = newest.seed;
+            songRequest.variationIndex = newest.variationIndex;
+            songRequest.behavior = requestedBehavior;
+            songRequest.orchestration = static_cast<SongOrchestrationIntent>(std::clamp(
+                static_cast<int>(newest.orchestrationIntent), 0, 3));
+            songRequest.supportingContext = readLiveNativeCapabilitiesSummary();
+            if (const auto audibleFeedback = readLiveAudibleExecutionFeedback(); audibleFeedback.isNotEmpty()) {
+                if (songRequest.supportingContext.isNotEmpty()) songRequest.supportingContext += "\n";
+                songRequest.supportingContext += audibleFeedback;
+            }
+            songDirection = SongGenerationPipeline::aiDirection(songRequest);
             if (isSongRequest) {
-                const auto totalBars = SongComposer::phraseAlignedBars(static_cast<int>(std::lround(
-                    newest.targetSongSeconds * currentTempo() / 60.0 / newest.beatsPerBar)));
                 auto plan = SongPlan{};
                 juce::String aiError;
                 {
@@ -1462,9 +1467,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                     thinking->description = "Designing form, thematic DNA, harmonic narrative and dramatic curve.";
                     ideaMetadata.store(thinking, std::memory_order_release);
                     generationProgress.store(0.06f, std::memory_order_relaxed);
-                    plan = AiComposer::planSong(songDirection, newest.targetSongSeconds, totalBars,
-                        currentTempo(), newest.beatsPerBar, newest.seed, requestedBehavior,
-                        operationToken, aiError,
+                    plan = SongGenerationPipeline::plan(songRequest, operationToken, aiError,
                         [this, metadata](const AiSongProgressUpdate& update) {
                             auto progressMetadata = std::make_shared<IdeaMetadata>(*metadata);
                             OperationalJournal::write(
@@ -1544,50 +1547,14 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
                         continue;
                     }
                 }
-                plan.compositionBehavior = requestedBehavior;
-                plan.seed = newest.seed;
-                plan.targetSeconds = newest.targetSongSeconds;
-                const auto inferredProduction = ElectronicProductionDirector::infer(
-                    userSongDirection.toStdString());
-                if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::ClubElectronic)) {
-                    plan.productionLanguage = inferredProduction;
-                    plan.productionLanguage.domain = ProductionDomain::ClubElectronic;
-                    plan.productionLanguage.electronicIntent = 1.0;
-                    plan.productionLanguage.clubFocus = 1.0;
-                    plan.productionLanguage.orchestralAllowance = 0.0;
-                    plan.productionModeSource = "user_club_electronic";
-                } else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::DeepProduction)) {
-                    plan.productionLanguage.domain = ProductionDomain::Hybrid;
-                    plan.productionLanguage.electronicIntent = std::max(plan.productionLanguage.electronicIntent, 0.70);
-                    plan.productionLanguage.orchestralAllowance = std::max(plan.productionLanguage.orchestralAllowance, 0.55);
-                    plan.orchestrationLanguage.ensembleScale = std::max(plan.orchestrationLanguage.ensembleScale, 0.78);
-                    plan.orchestrationLanguage.harmonicDepth = std::max(plan.orchestrationLanguage.harmonicDepth, 0.84);
-                    plan.orchestrationLanguage.counterpointActivity = std::max(plan.orchestrationLanguage.counterpointActivity, 0.66);
-                    plan.orchestrationLanguage.familyDialogue = std::max(plan.orchestrationLanguage.familyDialogue, 0.78);
-                    plan.orchestrationLanguage.hybridProduction = std::max(plan.orchestrationLanguage.hybridProduction, 0.72);
-                    plan.productionModeSource = "user_deep_hybrid";
-                } else if (newest.orchestrationIntent == static_cast<std::uint8_t>(OrchestrationIntent::Symphonic)) {
-                    plan.productionLanguage.domain = ProductionDomain::Orchestral;
-                    plan.productionLanguage.orchestralAllowance = 1.0;
-                    plan.orchestrationLanguage.ensembleScale = std::max(plan.orchestrationLanguage.ensembleScale, 0.92);
-                    plan.orchestrationLanguage.harmonicDepth = std::max(plan.orchestrationLanguage.harmonicDepth, 0.92);
-                    plan.orchestrationLanguage.counterpointActivity = std::max(plan.orchestrationLanguage.counterpointActivity, 0.80);
-                    plan.orchestrationLanguage.divisiDepth = std::max(plan.orchestrationLanguage.divisiDepth, 0.84);
-                    plan.orchestrationLanguage.articulationContrast = std::max(plan.orchestrationLanguage.articulationContrast, 0.82);
-                    plan.orchestrationLanguage.familyDialogue = std::max(plan.orchestrationLanguage.familyDialogue, 0.88);
-                    plan.orchestrationLanguage.hybridProduction = std::min(plan.orchestrationLanguage.hybridProduction, 0.28);
-                    plan.productionModeSource = "user_symphonic";
-                }
-                SongComposer::normalizePlan(plan);
+                SongGenerationPipeline::finalizePlan(plan, songRequest);
                 songPlanSnapshot.store(std::make_shared<SongPlan>(plan), std::memory_order_release);
                 generationProgress.store(0.14f, std::memory_order_relaxed);
 
                 metadata->title = juce::String::fromUTF8(plan.title.c_str());
                 metadata->key = juce::String::fromUTF8(plan.key.c_str());
                 metadata->description = juce::String::fromUTF8(plan.summary.c_str());
-                auto songContext = context;
-                songContext.variationIndex = newest.variationIndex;
-                generated = songComposer.render(plan, songContext,
+                generated = SongGenerationPipeline::render(plan, songRequest,
                     [this, metadata](std::size_t completed, std::size_t total,
                                      const SongSection& section) {
                         const auto fraction = total == 0 ? 1.0f

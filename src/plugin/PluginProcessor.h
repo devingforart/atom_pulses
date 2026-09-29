@@ -4,6 +4,7 @@
 #include "core/SongComposer.h"
 #include "Localization.h"
 #include "AiComposer.h"
+#include "SongGenerationPipeline.h"
 #include "LiveDeployer.h"
 #include "PreviewSynth.h"
 
@@ -27,9 +28,7 @@ class PulsoAudioProcessor final : public juce::AudioProcessor,
     friend struct ProcessorTestAccess;
 public:
     enum class LiveDeploymentMode : std::uint8_t { FullOrchestration = 0, QuickThreeStem };
-    enum class OrchestrationIntent : std::uint8_t {
-        Adaptive = 0, DeepProduction, Symphonic, ClubElectronic
-    };
+    using OrchestrationIntent = SongOrchestrationIntent;
     PulsoAudioProcessor();
     ~PulsoAudioProcessor() override;
 
@@ -247,7 +246,6 @@ private:
     void parameterChanged(const juce::String&, float) override;
 
     Generator generator;
-    SongComposer songComposer;
     PreviewSynth previewSynth;
     juce::dsp::Limiter<float> previewLimiter;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> previewGain;

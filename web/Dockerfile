@@ -30,11 +30,13 @@ COPY CMakeLists.txt ./
 COPY cmake ./cmake
 COPY src ./src
 COPY tools ./tools
+COPY tests ./tests
 RUN --mount=type=cache,target=/source/build \
     cmake -S . -B /source/build -DCMAKE_BUILD_TYPE=Release \
-    -DPULSO_BUILD_PLUGIN=OFF -DPULSO_BUILD_TESTS=OFF -DPULSO_BUILD_CLI=OFF \
+    -DPULSO_BUILD_PLUGIN=OFF -DPULSO_BUILD_TESTS=ON -DPULSO_BUILD_CLI=OFF \
     -DPULSO_BUILD_CLOUD_WORKER=ON && \
-    cmake --build /source/build --target pulso_cloud_worker --parallel 2 && \
+    cmake --build /source/build --target pulso_cloud_worker pulso_tests pulso_pipeline_tests --parallel 2 && \
+    ctest --test-dir /source/build --output-on-failure && \
     cp /source/build/pulso_cloud_worker /tmp/pulso_cloud_worker
 
 FROM debian:bookworm-slim AS runtime

@@ -7,20 +7,35 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <stop_token>
 
 namespace {
 
 void writeStatus(const juce::File& output, const juce::String& state,
-                 const juce::String& stage, int completed, int total) {
+                 const juce::String& stage, int completed, int total,
+                 int attempt = 0, const juce::String& detail = {}) {
     auto* object = new juce::DynamicObject();
+    object->setProperty("at", juce::Time::getCurrentTime().toISO8601(true));
     object->setProperty("state", state);
     object->setProperty("stage", stage);
     object->setProperty("completed", completed);
     object->setProperty("total", total);
+    object->setProperty("attempt", attempt);
+    object->setProperty("detail", detail);
+    const auto serialized = juce::JSON::toString(juce::var(object), true);
     output.getChildFile("progress.json").replaceWithText(
-        juce::JSON::toString(juce::var(object), false), false, false, "\n");
+        serialized, false, false, "\n");
+    if (std::getenv("PULSO_TRACE_PATH") != nullptr) {
+        const auto trace = output.getChildFile("progress-events.jsonl");
+        juce::FileOutputStream stream(trace);
+        if (stream.openedOk()) {
+            stream.setPosition(trace.getSize());
+            stream.writeText(serialized + "\n", false, false, "\n");
+            stream.flush();
+        }
+    }
 }
 
 int fail(const juce::File& output, const juce::String& message) {
@@ -77,7 +92,7 @@ int main(int argc, char** argv) {
                 update.stage == pulso::plugin::AiSongStage::PerformanceBlock ? "writing" :
                 update.stage == pulso::plugin::AiSongStage::Recovery ? "recovery" : "validation";
             writeStatus(output, "running", stage, static_cast<int>(update.completed),
-                        static_cast<int>(update.total));
+                        static_cast<int>(update.total), update.attempt, update.detail);
         });
     if (error.isNotEmpty() || plan.instruments.empty())
         return fail(output, error.isNotEmpty() ? error : "AI returned an empty score");

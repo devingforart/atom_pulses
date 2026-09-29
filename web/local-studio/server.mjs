@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, createReadStream, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, createReadStream, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +28,47 @@ function readJson(file) {
   try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; }
 }
 
+function readJsonLines(file) {
+  try { return readFileSync(file, 'utf8').trim().split(/\r?\n(?=\{)/).filter(Boolean).slice(-2000).flatMap(record => { try { return [JSON.parse(record)]; } catch { return []; } }); }
+  catch { return []; }
+}
+
+function estimatedUsd(call) {
+  if (!call.usage_available || call.model !== 'gpt-5.6-terra') return null;
+  const input = Number(call.input_tokens) || 0;
+  const cached = Number(call.cached_input_tokens) || 0;
+  const writes = Number(call.cache_write_tokens) || 0;
+  const output = Number(call.output_tokens) || 0;
+  const ordinary = Math.max(0, input - cached - writes);
+  const longContext = input > 272000;
+  return ((ordinary * 2 + cached * 0.2 + writes * 2.5) * (longContext ? 2 : 1) + output * 12 * (longContext ? 1.5 : 1)) / 1000000;
+}
+
+function traceFor(id, createdAt, endedAt = Date.now()) {
+  const dir = jobDirectory(id);
+  const apiCalls = readJsonLines(path.join(dir, 'api-events.jsonl')).map(call => ({ ...call, estimatedUsd: estimatedUsd(call) }));
+  const progressEvents = readJsonLines(path.join(dir, 'progress-events.jsonl'));
+  const totals = { calls: apiCalls.length, callsWithUsage: 0, pricedCalls: 0, estimatedUsd: 0, priceAsOf: '2026-09-29', priceSource: 'https://developers.openai.com/api/docs/models/gpt-5.6-terra', inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, timedOutCalls: 0, incompleteCalls: 0, failedCalls: 0, recoveryEvents: progressEvents.filter(event => event.stage === 'recovery').length, summedApiMs: 0, model: apiCalls.find(call => call.model)?.model || null };
+  for (const call of apiCalls) {
+    totals.summedApiMs += Number(call.elapsed_ms) || 0;
+    if (call.estimatedUsd !== null) { totals.estimatedUsd += call.estimatedUsd; totals.pricedCalls++; }
+    if (call.timed_out) totals.timedOutCalls++;
+    if (call.remote_status === 'incomplete') totals.incompleteCalls++;
+    if (!call.connected || call.http_status < 200 || call.http_status >= 300 || call.timed_out || call.cancelled || ['failed', 'incomplete', 'cancelled'].includes(call.remote_status)) totals.failedCalls++;
+    if (!call.usage_available) continue;
+    totals.callsWithUsage++;
+    for (const [source, target] of [['input_tokens', 'inputTokens'], ['cached_input_tokens', 'cachedInputTokens'], ['cache_write_tokens', 'cacheWriteTokens'], ['output_tokens', 'outputTokens'], ['reasoning_tokens', 'reasoningTokens'], ['total_tokens', 'totalTokens']]) totals[target] += Number(call[source]) || 0;
+  }
+  const phaseMs = {};
+  for (let index = 0; index < progressEvents.length; index++) {
+    const current = progressEvents[index];
+    const next = progressEvents[index + 1];
+    const elapsed = Math.max(0, (next ? Date.parse(next.at) : endedAt) - Date.parse(current.at));
+    if (current.stage && Number.isFinite(elapsed)) phaseMs[current.stage] = (phaseMs[current.stage] || 0) + elapsed;
+  }
+  return { summary: { ...totals, phaseMs, wallMs: Math.max(0, endedAt - Date.parse(createdAt)) }, apiCalls, progressEvents };
+}
+
 function jobDirectory(id) {
   return jobIdPattern.test(id) ? path.join(jobsRoot, id) : null;
 }
@@ -43,7 +84,13 @@ function jobDetails(id) {
   const cancelled = existsSync(path.join(dir, 'cancelled.json'));
   let state = manifest ? 'completed' : cancelled ? 'cancelled' : failure ? 'failed' : progress?.state || 'queued';
   if (state === 'running' && active?.id !== id) state = 'interrupted';
-  return { id, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, error: state === 'cancelled' ? null : failure?.error || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
+  const terminalFile = state === 'completed' ? 'manifest.json' : state === 'failed' ? 'error.json' : state === 'cancelled' ? 'cancelled.json' : null;
+  let endedAt = Date.now();
+  if (terminalFile) {
+    try { endedAt = statSync(path.join(dir, terminalFile)).mtimeMs; } catch { /* Keep elapsed time. */ }
+  }
+  const trace = traceFor(id, request.created_at, endedAt);
+  return { id, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, telemetry: trace.summary, error: state === 'cancelled' ? null : failure?.error || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
 }
 
 function listJobs() {
@@ -79,13 +126,13 @@ function validate(input) {
   return { prompt, duration_seconds: duration, bpm, behavior, seed, created_at: new Date().toISOString() };
 }
 
-function childEnvironment() {
+function childEnvironment(dir) {
   const keys = ['OPENAI_API_KEY', 'PATH', 'Path', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData'];
-  return Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]]));
+  return { ...Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]])), PULSO_TRACE_PATH: path.join(dir, 'api-events.jsonl') };
 }
 
 function launch(id, dir) {
-  const child = spawn(worker, [path.join(dir, 'job.json'), dir], { env: childEnvironment(), windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+  const child = spawn(worker, [path.join(dir, 'job.json'), dir], { env: childEnvironment(dir), windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   active = { id, child, cancelled: false };
   let diagnostic = '';
   child.stderr.on('data', chunk => { diagnostic = (diagnostic + chunk.toString()).slice(-4000); });
@@ -139,6 +186,13 @@ const server = http.createServer(async (req, res) => {
       const job = jobDetails(detailMatch[1]);
       return job ? json(res, 200, { job }) : json(res, 404, { error: 'Composición no encontrada.' });
     }
+    const traceMatch = pathname.match(/^\/api\/jobs\/([0-9a-f-]+)\/trace$/i);
+    if (req.method === 'GET' && traceMatch) {
+      const job = jobDetails(traceMatch[1]);
+      if (!job) return json(res, 404, { error: 'Composición no encontrada.' });
+      if (url.searchParams.get('download') === '1') res.setHeader('Content-Disposition', `attachment; filename="pulso-trace-${job.id}.json"`);
+      return json(res, 200, { jobId: job.id, request: job.request, ...traceFor(job.id, job.request.created_at), summary: job.telemetry });
+    }
     const cancelMatch = pathname.match(/^\/api\/jobs\/([0-9a-f-]+)\/cancel$/i);
     if (req.method === 'POST' && cancelMatch) {
       if (active?.id !== cancelMatch[1]) return json(res, 409, { error: 'La composición ya no está activa.' });
@@ -161,6 +215,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && pathname === '/') return serveFile(res, path.join(here, 'index.html'), 'text/html; charset=utf-8');
     if (req.method === 'GET' && pathname === '/style.css') return serveFile(res, path.join(here, 'style.css'), 'text/css; charset=utf-8');
+    if (req.method === 'GET' && pathname === '/telemetry.css') return serveFile(res, path.join(here, 'telemetry.css'), 'text/css; charset=utf-8');
     if (req.method === 'GET' && pathname === '/app.js') return serveFile(res, path.join(here, 'app.js'), 'text/javascript; charset=utf-8');
     return json(res, 404, { error: 'Ruta no encontrada.' });
   } catch (error) {

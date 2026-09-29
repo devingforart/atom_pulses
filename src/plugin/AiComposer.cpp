@@ -15,10 +15,12 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <initializer_list>
 #include <future>
 #include <map>
 #include <limits>
+#include <mutex>
 #include <numeric>
 #include <regex>
 #include <set>
@@ -1827,6 +1829,81 @@ struct HttpResponse {
     unsigned long nativeError{};
 };
 
+void traceOpenAiRequest(const juce::String& requestBody, const HttpResponse& response,
+                        std::chrono::steady_clock::time_point started,
+                        const juce::String& knownResponseId) {
+    const auto* destination = std::getenv("PULSO_TRACE_PATH");
+    if (destination == nullptr || *destination == '\0') return;
+
+    const auto request = juce::JSON::parse(requestBody);
+    const auto* requestObject = request.getDynamicObject();
+    const auto remote = juce::JSON::parse(response.body);
+    const auto* remoteObject = remote.getDynamicObject();
+    const auto* usage = remoteObject == nullptr ? nullptr :
+        remoteObject->getProperty("usage").getDynamicObject();
+    const auto* inputDetails = usage == nullptr ? nullptr :
+        usage->getProperty("input_tokens_details").getDynamicObject();
+    const auto* outputDetails = usage == nullptr ? nullptr :
+        usage->getProperty("output_tokens_details").getDynamicObject();
+    const auto* reasoning = requestObject == nullptr ? nullptr :
+        requestObject->getProperty("reasoning").getDynamicObject();
+    const auto* text = requestObject == nullptr ? nullptr :
+        requestObject->getProperty("text").getDynamicObject();
+    const auto* format = text == nullptr ? nullptr :
+        text->getProperty("format").getDynamicObject();
+    const auto* incomplete = remoteObject == nullptr ? nullptr :
+        remoteObject->getProperty("incomplete_details").getDynamicObject();
+
+    auto* event = new juce::DynamicObject();
+    event->setProperty("schema_version", 1);
+    event->setProperty("event", "api_call");
+    event->setProperty("at", juce::Time::getCurrentTime().toISO8601(true));
+    event->setProperty("elapsed_ms", static_cast<juce::int64>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started).count()));
+    event->setProperty("model", requestObject == nullptr ? juce::String{} :
+        requestObject->getProperty("model").toString());
+    event->setProperty("effort", reasoning == nullptr ? juce::String{} :
+        reasoning->getProperty("effort").toString());
+    event->setProperty("phase", format == nullptr ? juce::String{} :
+        format->getProperty("name").toString());
+    event->setProperty("max_output_tokens", requestObject == nullptr ? 0 :
+        static_cast<int>(requestObject->getProperty("max_output_tokens")));
+    event->setProperty("response_id", remoteObject == nullptr ? knownResponseId :
+        remoteObject->getProperty("id").toString());
+    event->setProperty("remote_status", remoteObject == nullptr ? juce::String{} :
+        remoteObject->getProperty("status").toString());
+    event->setProperty("http_status", response.status);
+    event->setProperty("timed_out", response.timedOut);
+    event->setProperty("cancelled", response.cancelled);
+    event->setProperty("connected", response.connected);
+    event->setProperty("incomplete_reason", incomplete == nullptr ? juce::String{} :
+        incomplete->getProperty("reason").toString());
+    event->setProperty("usage_available", usage != nullptr);
+    event->setProperty("input_tokens", usage == nullptr ? 0 :
+        static_cast<int>(usage->getProperty("input_tokens")));
+    event->setProperty("cached_input_tokens", inputDetails == nullptr ? 0 :
+        static_cast<int>(inputDetails->getProperty("cached_tokens")));
+    event->setProperty("cache_write_tokens", inputDetails == nullptr ? 0 :
+        static_cast<int>(inputDetails->getProperty("cache_write_tokens")));
+    event->setProperty("output_tokens", usage == nullptr ? 0 :
+        static_cast<int>(usage->getProperty("output_tokens")));
+    event->setProperty("reasoning_tokens", outputDetails == nullptr ? 0 :
+        static_cast<int>(outputDetails->getProperty("reasoning_tokens")));
+    event->setProperty("total_tokens", usage == nullptr ? 0 :
+        static_cast<int>(usage->getProperty("total_tokens")));
+
+    static std::mutex traceMutex;
+    const std::scoped_lock lock(traceMutex);
+    const juce::File file(juce::String::fromUTF8(destination));
+    (void) file.getParentDirectory().createDirectory();
+    juce::FileOutputStream stream(file);
+    if (!stream.openedOk()) return;
+    stream.setPosition(file.getSize());
+    stream.writeText(juce::JSON::toString(juce::var(event), true) + "\n", false, false, "\n");
+    stream.flush();
+}
+
 #if JUCE_WINDOWS
 HttpResponse performSingleRequest(const wchar_t* method, const juce::String& path,
                                   const juce::String& body, const juce::String& apiKey,
@@ -2011,6 +2088,11 @@ void cancelBackgroundResponse(const juce::String& responseId, const juce::String
 HttpResponse performRequest(const juce::String& body, const juce::String& apiKey,
                             std::stop_token token, std::chrono::milliseconds budget) {
     const auto started = std::chrono::steady_clock::now();
+    juce::String knownResponseId;
+    const auto finish = [&](HttpResponse result) {
+        traceOpenAiRequest(body, result, started, knownResponseId);
+        return result;
+    };
     const auto deadline = started + budget;
     const auto initialBudget = std::min(budget, std::chrono::duration_cast<std::chrono::milliseconds>(
                                                    std::chrono::seconds(30)));
@@ -2018,11 +2100,12 @@ HttpResponse performRequest(const juce::String& body, const juce::String& apiKey
     const auto background = body.contains("\"background\":true");
     if (!background || !response.connected || response.status < 200 || response.status >= 300 ||
         response.cancelled || response.timedOut)
-        return response;
+        return finish(std::move(response));
 
     juce::String responseId;
     juce::String state;
-    if (!responseIdentity(response.body, responseId, state)) return response;
+    if (!responseIdentity(response.body, responseId, state)) return finish(std::move(response));
+    knownResponseId = responseId;
 
     int transientFailures{};
     while (state == "queued" || state == "in_progress") {
@@ -2030,12 +2113,12 @@ HttpResponse performRequest(const juce::String& body, const juce::String& apiKey
             if (token.stop_requested()) {
                 cancelBackgroundResponse(responseId, apiKey);
                 response.cancelled = true;
-                return response;
+                return finish(std::move(response));
             }
             if (std::chrono::steady_clock::now() >= deadline) {
                 cancelBackgroundResponse(responseId, apiKey);
                 response.timedOut = true;
-                return response;
+                return finish(std::move(response));
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(25));
         }
@@ -2045,26 +2128,26 @@ HttpResponse performRequest(const juce::String& body, const juce::String& apiKey
         if (remaining <= std::chrono::milliseconds::zero()) {
             cancelBackgroundResponse(responseId, apiKey);
             response.timedOut = true;
-            return response;
+            return finish(std::move(response));
         }
         const auto pollBudget = std::min(remaining, std::chrono::duration_cast<std::chrono::milliseconds>(
                                                        std::chrono::seconds(30)));
         auto polled = singleRequest(false, "/v1/responses/" + responseId, {}, apiKey, token, pollBudget);
         if (polled.cancelled) {
             cancelBackgroundResponse(responseId, apiKey);
-            return polled;
+            return finish(std::move(polled));
         }
         if (!polled.connected || polled.timedOut) {
             if (++transientFailures < 3) continue;
-            return polled;
+            return finish(std::move(polled));
         }
         transientFailures = 0;
         response = std::move(polled);
         if (response.status < 200 || response.status >= 300 ||
             !responseIdentity(response.body, responseId, state))
-            return response;
+            return finish(std::move(response));
     }
-    return response;
+    return finish(std::move(response));
 }
 
 juce::String apiErrorMessage(const HttpResponse& response) {

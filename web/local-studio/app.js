@@ -5,6 +5,9 @@ const submit = document.querySelector('#submit');
 const statusElement = document.querySelector('#health');
 const prompt = document.querySelector('#prompt');
 const statusNames = { queued: 'EN COLA', running: 'COMPONIENDO', completed: 'LISTA', failed: 'FALLIDA', interrupted: 'INTERRUMPIDA', cancelled: 'CANCELADA' };
+const phaseNames = { blueprint: 'Diseño', writing: 'Escritura', recovery: 'Recuperación', validation: 'Validación', rendering: 'MIDI', ready: 'Cierre' };
+function duration(ms) { const seconds = Math.max(0, Math.round((Number(ms) || 0) / 1000)); return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`; }
+function count(value) { return new Intl.NumberFormat('es-AR').format(Number(value) || 0); }
 
 function showNotice(message) { notice.textContent = message; notice.hidden = !message; }
 function element(tag, className, text) { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node; }
@@ -30,8 +33,34 @@ function renderJob(job) {
     bar.append(fill); card.append(bar);
   }
   if (job.error) card.append(element('p', 'notice', job.error));
+  if (job.telemetry) {
+    const stats = element('div', 'telemetry');
+    stats.append(element('div', 'telemetry-title', 'TRAZABILIDAD DE LA OBRA'));
+    const grid = element('div', 'telemetry-grid');
+    const values = [
+      ['Tiempo real', duration(job.telemetry.wallMs)],
+      ['Llamadas IA', String(job.telemetry.calls)],
+      ['Entrada', `${count(job.telemetry.inputTokens)} tokens`],
+      ['Salida', `${count(job.telemetry.outputTokens)} tokens`],
+      ['Razonamiento', `${count(job.telemetry.reasoningTokens)} tokens`],
+      ['Caché', `${count(job.telemetry.cachedInputTokens)} tokens`],
+      ['Costo estimado', job.telemetry.pricedCalls ? `USD ${Number(job.telemetry.estimatedUsd).toFixed(4)}` : 'sin datos'],
+      ['Incompletas', String(job.telemetry.incompleteCalls)],
+      ['Timeouts', String(job.telemetry.timedOutCalls)],
+      ['Recuperaciones', String(job.telemetry.recoveryEvents)],
+    ];
+    for (const [label, value] of values) { const item = element('div', 'telemetry-item'); item.append(element('span', '', label), element('strong', '', value)); grid.append(item); }
+    stats.append(grid);
+    const phases = Object.entries(job.telemetry.phaseMs || {});
+    if (phases.length) stats.append(element('p', 'telemetry-phases', phases.map(([name, ms]) => `${phaseNames[name] || name}: ${duration(ms)}`).join(' · ')));
+    if (!job.telemetry.calls) stats.append(element('p', 'telemetry-note', 'Sin métricas por llamada: esta obra pudo haber iniciado con el worker anterior.'));
+    else if (job.telemetry.callsWithUsage < job.telemetry.calls) stats.append(element('p', 'telemetry-note', `${job.telemetry.calls - job.telemetry.callsWithUsage} llamada(s) sin datos de uso devueltos por la API; los tokens mostrados son un mínimo medido.`));
+    if (job.telemetry.pricedCalls) stats.append(element('p', 'telemetry-note', 'Costo orientativo según tarifa Terra del 29/09/2026. Puede no incluir respuestas sin uso reportado ni ajustes de facturación.'));
+    card.append(stats);
+  }
   const actions = element('div', 'job-actions');
   actions.append(link(job.id, 'job.json', 'SOLICITUD JSON'));
+  const traceLink = element('a', 'download', '↓ TRAZA JSON'); traceLink.href = `/api/jobs/${job.id}/trace?download=1`; traceLink.download = `pulso-trace-${job.id}.json`; actions.append(traceLink);
   if (job.manifest) {
     actions.append(link(job.id, 'manifest.json', 'MANIFIESTO'));
     actions.append(link(job.id, job.manifest.fullFile, '↓ OBRA COMPLETA MIDI'));

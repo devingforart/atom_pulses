@@ -20,13 +20,17 @@ use crate::{
     error::{ApiError, ApiResult},
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateJob {
     prompt: String,
     duration_seconds: i32,
     bpm: f64,
     behavior: String,
+    #[serde(default)]
+    ai_sovereign: bool,
+    #[serde(default)]
+    seed: Option<String>,
     idempotency_key: String,
 }
 
@@ -38,6 +42,8 @@ pub struct CloudJob {
     duration_seconds: i32,
     bpm: f64,
     behavior: String,
+    ai_sovereign: bool,
+    seed: String,
     status: String,
     stage: String,
     completed_steps: i32,
@@ -58,6 +64,14 @@ fn valid_request(input: &CreateJob) -> bool {
             input.behavior.as_str(),
             "adaptive" | "hypnotic" | "narrative"
         )
+        && input
+            .seed
+            .as_ref()
+            .is_none_or(|seed| {
+                !seed.starts_with('0')
+                    && seed.bytes().all(|byte| byte.is_ascii_digit())
+                    && seed.parse::<i64>().is_ok_and(|value| value > 0)
+            })
         && input.idempotency_key.len() >= 8
         && input.idempotency_key.len() <= 100
         && input
@@ -107,12 +121,14 @@ pub async fn create(
         .execute(&mut *tx)
         .await?;
     if let Some(existing) = sqlx::query_as::<_, CloudJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at FROM cloud_jobs WHERE user_id=$1 AND idempotency_key=$2")
+        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at FROM cloud_jobs WHERE user_id=$1 AND idempotency_key=$2")
         .bind(user.id).bind(&input.idempotency_key).fetch_optional(&mut *tx).await? {
         if existing.prompt != input.prompt.trim()
             || existing.duration_seconds != input.duration_seconds
             || existing.bpm != input.bpm
-            || existing.behavior != input.behavior {
+            || existing.behavior != input.behavior
+            || existing.ai_sovereign != input.ai_sovereign
+            || input.seed.as_ref().is_some_and(|seed| seed != &existing.seed) {
             return Err(ApiError::public(StatusCode::CONFLICT,
                 "Esta clave de solicitud ya pertenece a otra composición."));
         }
@@ -137,14 +153,19 @@ pub async fn create(
             "Alcanzaste el límite de obras o ya tienes una composición en curso.",
         ));
     }
-    let mut seed_bytes = [0_u8; 8];
-    getrandom::fill(&mut seed_bytes).map_err(|error| ApiError::internal(error.to_string()))?;
-    let seed = (i64::from_le_bytes(seed_bytes) & i64::MAX).max(1);
+    let seed = if let Some(seed) = input.seed.as_ref() {
+        seed.parse::<i64>()
+            .map_err(|error| ApiError::internal(error.to_string()))?
+    } else {
+        let mut seed_bytes = [0_u8; 8];
+        getrandom::fill(&mut seed_bytes).map_err(|error| ApiError::internal(error.to_string()))?;
+        (i64::from_le_bytes(seed_bytes) & i64::MAX).max(1)
+    };
     let id = Uuid::new_v4();
     let now = unix_time();
-    sqlx::query("INSERT INTO cloud_jobs(id,user_id,idempotency_key,prompt,duration_seconds,bpm,behavior,seed,status,stage,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'queued','queued',$9,$9)")
+    sqlx::query("INSERT INTO cloud_jobs(id,user_id,idempotency_key,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign,status,stage,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued','queued',$10,$10)")
         .bind(id).bind(user.id).bind(&input.idempotency_key).bind(input.prompt.trim())
-        .bind(input.duration_seconds).bind(input.bpm).bind(&input.behavior).bind(seed)
+        .bind(input.duration_seconds).bind(input.bpm).bind(&input.behavior).bind(seed).bind(input.ai_sovereign)
         .bind(now).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok((
@@ -155,6 +176,8 @@ pub async fn create(
             duration_seconds: input.duration_seconds,
             bpm: input.bpm,
             behavior: input.behavior,
+            ai_sovereign: input.ai_sovereign,
+            seed: seed.to_string(),
             status: "queued".into(),
             stage: "queued".into(),
             completed_steps: 0,
@@ -173,7 +196,7 @@ pub async fn list(
 ) -> ApiResult<Json<Vec<CloudJob>>> {
     let user = require_user(&state, &headers).await?;
     let jobs = sqlx::query_as::<_, CloudJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at FROM cloud_jobs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 30")
+        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at FROM cloud_jobs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 30")
         .bind(user.id).fetch_all(&state.db).await?;
     Ok(Json(jobs))
 }
@@ -193,7 +216,7 @@ pub async fn get(
 ) -> ApiResult<Json<CloudJob>> {
     let user = require_user(&state, &headers).await?;
     let job = sqlx::query_as::<_, CloudJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at FROM cloud_jobs WHERE user_id=$1 AND id=$2")
+        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at FROM cloud_jobs WHERE user_id=$1 AND id=$2")
         .bind(user.id).bind(id).fetch_optional(&state.db).await?
         .ok_or_else(|| ApiError::public(StatusCode::NOT_FOUND, "Obra no encontrada."))?;
     Ok(Json(job))
@@ -270,12 +293,13 @@ struct ClaimedJob {
     bpm: f64,
     behavior: String,
     seed: i64,
+    ai_sovereign: bool,
 }
 
 async fn claim(state: &AppState) -> ApiResult<Option<ClaimedJob>> {
     let mut tx = state.db.begin().await?;
     let job = sqlx::query_as::<_, ClaimedJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,seed FROM cloud_jobs WHERE status='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED")
+        "SELECT id,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign FROM cloud_jobs WHERE status='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED")
         .fetch_optional(&mut *tx).await?;
     if let Some(job) = &job {
         sqlx::query("UPDATE cloud_jobs SET status='running',stage='starting',attempt=attempt+1,lease_until=$2,updated_at=$3 WHERE id=$1")
@@ -292,6 +316,7 @@ async fn run_one(state: &AppState, job: ClaimedJob) -> ApiResult<()> {
     let body = serde_json::json!({
         "prompt": job.prompt, "duration_seconds": job.duration_seconds,
         "bpm": job.bpm, "behavior": job.behavior, "seed": job.seed.to_string(),
+        "ai_sovereign": job.ai_sovereign,
     });
     tokio::fs::write(
         &input,
@@ -462,9 +487,23 @@ mod tests {
             duration_seconds: 390,
             bpm: 120.0,
             behavior: "hypnotic".into(),
+            ai_sovereign: true,
+            seed: Some("4403862266792290272".into()),
             idempotency_key: Uuid::new_v4().to_string(),
         };
         assert!(valid_request(&valid));
+        assert!(!valid_request(&CreateJob {
+            seed: Some("0".into()),
+            ..valid.clone()
+        }));
+        assert!(!valid_request(&CreateJob {
+            seed: Some("001".into()),
+            ..valid.clone()
+        }));
+        assert!(!valid_request(&CreateJob {
+            seed: Some("9223372036854775808".into()),
+            ..valid.clone()
+        }));
         assert!(!valid_request(&CreateJob {
             bpm: f64::NAN,
             ..valid

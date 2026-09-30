@@ -5,6 +5,7 @@ WORKDIR /source/frontend
 COPY web/frontend/package*.json ./
 RUN npm ci
 COPY web/frontend/ ./
+COPY web/shared/ /source/shared/
 RUN npm run build
 
 FROM rust:1-bookworm AS backend

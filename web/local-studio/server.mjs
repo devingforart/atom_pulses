@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
+const shared = path.resolve(here, '..', 'shared');
 const worker = process.env.PULSO_LOCAL_WORKER_PATH || path.join(root, 'build-cloud', 'Release', 'pulso_cloud_worker.exe');
 const dataRoot = process.env.PULSO_LOCAL_DATA_DIR || path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'Pulso', 'LocalStudio');
 const jobsRoot = path.join(dataRoot, 'jobs');
@@ -241,8 +242,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/style.css') return serveFile(res, path.join(here, 'style.css'), 'text/css; charset=utf-8');
     if (req.method === 'GET' && pathname === '/telemetry.css') return serveFile(res, path.join(here, 'telemetry.css'), 'text/css; charset=utf-8');
     if (req.method === 'GET' && pathname === '/app.js') return serveFile(res, path.join(here, 'app.js'), 'text/javascript; charset=utf-8');
-    if (req.method === 'GET' && pathname === '/midi.mjs') return serveFile(res, path.join(here, 'midi.mjs'), 'text/javascript; charset=utf-8');
-    if (req.method === 'GET' && pathname === '/audio-engine.mjs') return serveFile(res, path.join(here, 'audio-engine.mjs'), 'text/javascript; charset=utf-8');
+    if (req.method === 'GET' && pathname === '/midi.mjs') return serveFile(res, path.join(shared, 'midi.mjs'), 'text/javascript; charset=utf-8');
+    if (req.method === 'GET' && pathname === '/audio-engine.mjs') return serveFile(res, path.join(shared, 'audio-engine.mjs'), 'text/javascript; charset=utf-8');
     return json(res, 404, { error: 'Ruta no encontrada.' });
   } catch (error) {
     const isInput = /solicitud|duración|tempo|semilla|idea|enfoque/i.test(error.message);

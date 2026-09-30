@@ -55,6 +55,19 @@ Vite reenvía `/api` a `localhost:8080`.
 
 ## Despliegue en servidor
 
+La página autenticada `/cloud` incluye la misma vista de partitura y monitor
+senoidal que el estudio local. Ambos importan `web/shared/midi.mjs` y
+`web/shared/audio-engine.mjs`: una nueva versión del frontend debe copiar
+`web/shared` durante el build (incluido en `web/Dockerfile`). El navegador
+descarga cada MIDI exclusivamente por la ruta autenticada de su propietario;
+escuchar una obra guardada no crea otra composición ni consume la API de IA.
+
+El modo de autoría y la semilla se envían explícitamente al worker Cloud.
+La migración `0006_cloud_authorship.sql` conserva el render anterior para
+trabajos existentes y clientes antiguos; la nueva interfaz selecciona
+`IA soberana` por defecto, igual que el estudio local. Ningún cambio de
+sonido altera los MIDI exportados.
+
 `docker-compose.production.yml` mantiene PostgreSQL en una red interna y publica la API únicamente en `127.0.0.1:8188`. Copia `.env.production.example` como `.env`, completa los secretos en el servidor y coloca Nginx delante usando `nginx-pulso.conf.example` como base. No abras 8188 en el firewall.
 
 ```bash

@@ -1,4 +1,4 @@
-// Standard MIDI File reader shared by the suite and its offline tests.
+// Standard MIDI File reader shared by local and Cloud suites and their tests.
 // Times are kept in quarter-note beats; tempo events supply exact seconds.
 export function parseMidi(input) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);

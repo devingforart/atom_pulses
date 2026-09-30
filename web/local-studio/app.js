@@ -215,6 +215,20 @@ async function refresh() {
     ui.health.textContent = ready ? 'Motor local listo · Escuchar obras guardadas no consume API.' : `Composición no disponible: ${status.workerReady ? '' : 'falta el generador. '}${status.apiKeyConfigured ? '' : 'falta OPENAI_API_KEY en este proceso.'} Las obras guardadas siguen disponibles.`;
     ui.submit.disabled = Boolean(status.activeJobId) || !ready;
     $('#job-count').textContent = `${jobs.length} OBRAS`;
+    if (!jobs.length) {
+      if (selectedId || current) {
+        audio.stop(); current = null; playhead = null; loadedKey = null; ++loadVersion;
+        ui.play.disabled = true; setExport(null, null);
+        ui.session.replaceChildren(node('div', 'empty-session', 'El historial está vacío. Comienza una nueva obra para escucharla aquí.'));
+        ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Todavía no hay MIDI en el historial local.'));
+        $('#song-title').textContent = 'El estudio está listo';
+        $('#song-subtitle').textContent = 'Compón una obra para ver y escuchar sus pistas.';
+        $('#song-bpm').textContent = '— BPM'; $('#song-key').textContent = '—';
+        $('#song-stat').textContent = 'MIDI REAL · MONITOR SENOIDAL';
+        $('#track-summary').textContent = '0 pistas';
+      }
+      selectedId = null; renderHistory(); return;
+    }
     if (!selectedId || !jobs.some(job => job.id === selectedId))
       selectedId = (jobs.find(job => job.state === 'running') || jobs.find(job => job.manifest?.tracks?.length) || jobs.find(job => job.checkpoint?.file) || jobs[0])?.id || null;
     renderHistory(); showSelected();

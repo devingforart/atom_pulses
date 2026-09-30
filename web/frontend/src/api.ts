@@ -28,6 +28,7 @@ export type CloudTrack = { filename: string; name: string; notes: number }
 export type CloudJob = {
   id: string; prompt: string; durationSeconds: number; bpm: number
   behavior: 'adaptive' | 'hypnotic' | 'narrative'
+  aiSovereign: boolean; seed: string
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
   stage: string; completedSteps: number; totalSteps: number
   resultManifest: { title: string; key: string; bpm: number; bars: number; fullFile: string; tracks: CloudTrack[] } | null
@@ -88,7 +89,7 @@ export const api = {
   cloudJobs: () => request<CloudJob[]>('/api/cloud/jobs'),
   cloudStatus: () => request<{ available: boolean; dailyJobLimit: number }>('/api/cloud/status'),
   cloudJob: (id: string) => request<CloudJob>(`/api/cloud/jobs/${id}`),
-  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; behavior: CloudJob['behavior']; idempotencyKey: string }) =>
+  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; behavior: CloudJob['behavior']; aiSovereign: boolean; seed?: string; idempotencyKey: string }) =>
     request<CloudJob>('/api/cloud/jobs', { method: 'POST', body: JSON.stringify(input) }),
   cancelCloudJob: (id: string) => request<void>(`/api/cloud/jobs/${id}`, { method: 'DELETE' }),
 }

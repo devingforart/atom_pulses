@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseMidi } from '../web/local-studio/midi.mjs';
-import { instrumentFor } from '../web/local-studio/audio-engine.mjs';
+import { parseMidi } from '../web/shared/midi.mjs';
+import { instrumentFor } from '../web/shared/audio-engine.mjs';
 
 const u16 = number => [(number >> 8) & 255, number & 255];
 const u32 = number => [(number >>> 24) & 255, (number >>> 16) & 255, (number >>> 8) & 255, number & 255];

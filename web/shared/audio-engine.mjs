@@ -1,4 +1,4 @@
-// Neutral sine-wave audition. Sound categories only identify percussion; every
+// Shared neutral sine-wave audition. Sound categories only identify percussion; every
 // pitched part uses the same oscillator/envelope, without timbral presets.
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const frequency = pitch => 440 * 2 ** ((pitch - 69) / 12);

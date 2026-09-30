@@ -1,0 +1,59 @@
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Cloud } from './Cloud'
+
+const mock = vi.hoisted(() => ({
+  cloudJobs: vi.fn(), cloudStatus: vi.fn(), createCloudJob: vi.fn(), cancelCloudJob: vi.fn(),
+}))
+vi.mock('../api', () => ({ api: mock }))
+vi.mock('../auth', () => ({ useAuth: () => ({ user: { id: 'user-1', email: 'test@example.com' }, loading: false }) }))
+
+const u16 = (value: number) => [(value >> 8) & 255, value & 255]
+const u32 = (value: number) => [(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255]
+const midi = () => {
+  const track = [0, 0x90, 60, 100, 0x83, 0x60, 0x80, 60, 0, 0, 0xff, 0x2f, 0]
+  return Uint8Array.from([...new TextEncoder().encode('MThd'), ...u32(6), ...u16(0), ...u16(1), ...u16(480),
+    ...new TextEncoder().encode('MTrk'), ...u32(track.length), ...track]).buffer
+}
+
+const job = {
+  id: '6ce76fbb-bafd-440b-9d13-2e89c8910fac', prompt: 'Una melodía que responde a un acorde',
+  durationSeconds: 60, bpm: 120, behavior: 'adaptive', aiSovereign: true, seed: '12345',
+  status: 'completed', stage: 'ready', completedSteps: 1, totalSteps: 1, errorCode: null,
+  createdAt: 1_800_000_000, updatedAt: 1_800_000_000,
+  resultManifest: { title: 'Obra de prueba', key: 'C major', bpm: 120, bars: 1,
+    fullFile: 'full-song.mid', tracks: [{ filename: 'track-01.mid', name: 'Protagonist lead', notes: 1 }] },
+}
+
+beforeEach(() => {
+  mock.cloudJobs.mockReset().mockResolvedValue([job])
+  mock.cloudStatus.mockReset().mockResolvedValue({ available: true, dailyJobLimit: 3 })
+  mock.createCloudJob.mockReset().mockResolvedValue({ ...job, id: 'new-job', status: 'queued', resultManifest: null })
+  mock.cancelCloudJob.mockReset()
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(midi(), { status: 200, headers: { 'Content-Type': 'audio/midi' } })))
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ scale() {}, fillRect() {}, set fillStyle(_value: string) {}, set globalAlpha(_value: number) {} } as unknown as CanvasRenderingContext2D)
+})
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
+
+describe('Cloud Suite', () => {
+  it('reads the authenticated MIDI and exposes real transport, solo and download controls', async () => {
+    render(<Cloud />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reproducir' })).not.toBeDisabled())
+    expect(screen.getByText('Protagonist lead')).toBeInTheDocument()
+    expect(screen.getByText('Seno · melodía')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '↓ Exportar obra MIDI' })).toHaveAttribute('href', `/api/cloud/jobs/${job.id}/tracks/full-song.mid`)
+    expect(screen.getByRole('button', { name: 'Escuchar solo Protagonist lead' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('sends the selected authorship mode and exact seed with a new Cloud request', async () => {
+    render(<Cloud />)
+    fireEvent.change(screen.getByLabelText(/Idea musical/), { target: { value: 'Una obra nueva' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: /Componer obra/ })).not.toBeDisabled())
+    fireEvent.change(screen.getByLabelText('Autoría del MIDI'), { target: { value: 'standard' } })
+    fireEvent.change(screen.getByLabelText(/Semilla/), { target: { value: '1234567890123456789' } })
+    fireEvent.click(screen.getByRole('button', { name: /Componer obra/ }))
+    await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'Una obra nueva', aiSovereign: false, seed: '1234567890123456789',
+    })))
+  })
+})

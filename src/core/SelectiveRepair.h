@@ -151,10 +151,15 @@ public:
         bool explicitCastCommitment);
     [[nodiscard]] static bool requiresReplacement(
         const PerformanceCoverageDeficit&) noexcept;
+    // One missing conjunct interval in an otherwise complete protagonist is an
+    // editorial observation until the full ensemble can be auditioned. It must
+    // not trigger repeated whole-track rewrites during protagonist-first writing.
+    [[nodiscard]] static bool deferableMarginalMelodicSpeech(
+        const SongPlan&, const PerformanceCoverageDeficit&) noexcept;
     // A substantial protagonist whose only outstanding obligation is a modest
     // active-bar shortfall may continue to the complete-score audition if a
-    // focused additive recovery fails. Missing identity, coda or musical speech
-    // never qualify for this early-stage deferral.
+    // focused additive recovery fails. Missing identity or coda never qualify;
+    // melodic speech has the separate one-interval exception above.
     [[nodiscard]] static bool deferableProtagonistCoverage(
         const SongPlan&, const PerformanceCoverageDeficit&) noexcept;
     [[nodiscard]] static std::vector<std::size_t> incompleteTargets(

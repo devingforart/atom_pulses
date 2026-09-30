@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, createReadStream, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, createReadStream, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, appendFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +28,13 @@ function readJson(file) {
   try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; }
 }
 
+function explainJobFailure(message) {
+  if (!message) return null;
+  if (/no credits remaining|insufficient_quota/i.test(message))
+    return 'OpenAI rechazó la solicitud porque este proyecto no tiene créditos disponibles. Revisá la facturación o cargá créditos antes de volver a componer; no se generó ningún MIDI.';
+  return message;
+}
+
 function readJsonLines(file) {
   try { return readFileSync(file, 'utf8').trim().split(/\r?\n(?=\{)/).filter(Boolean).slice(-2000).flatMap(record => { try { return [JSON.parse(record)]; } catch { return []; } }); }
   catch { return []; }
@@ -48,7 +55,7 @@ function traceFor(id, createdAt, endedAt = Date.now()) {
   const dir = jobDirectory(id);
   const apiCalls = readJsonLines(path.join(dir, 'api-events.jsonl')).map(call => ({ ...call, estimatedUsd: estimatedUsd(call) }));
   const progressEvents = readJsonLines(path.join(dir, 'progress-events.jsonl'));
-  const totals = { calls: apiCalls.length, callsWithUsage: 0, pricedCalls: 0, estimatedUsd: 0, priceAsOf: '2026-09-29', priceSource: 'https://developers.openai.com/api/docs/models/gpt-5.6-terra', inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, timedOutCalls: 0, incompleteCalls: 0, failedCalls: 0, recoveryEvents: progressEvents.filter(event => event.stage === 'recovery').length, summedApiMs: 0, model: apiCalls.find(call => call.model)?.model || null };
+  const totals = { calls: apiCalls.length, callsWithUsage: 0, pricedCalls: 0, estimatedUsd: 0, priceAsOf: '2026-09-29', priceSource: 'https://developers.openai.com/api/docs/models/gpt-5.6-terra', inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, timedOutCalls: 0, incompleteCalls: 0, failedCalls: 0, recoveryEvents: progressEvents.filter(event => event.stage === 'recovery').length, summedApiMs: 0, model: apiCalls.find(call => call.model)?.model || null, effort: apiCalls.find(call => call.effort)?.effort || null };
   for (const call of apiCalls) {
     totals.summedApiMs += Number(call.elapsed_ms) || 0;
     if (call.estimatedUsd !== null) { totals.estimatedUsd += call.estimatedUsd; totals.pricedCalls++; }
@@ -79,6 +86,18 @@ function jobDetails(id) {
   const request = readJson(path.join(dir, 'job.json'));
   if (!request) return null;
   const manifest = readJson(path.join(dir, 'manifest.json'));
+  // MIDI sidecars are produced by the existing exporter. Read them server-side
+  // so older jobs also get sound-role metadata without rebuilding the worker.
+  if (manifest?.tracks) manifest.tracks = manifest.tracks.map(track => {
+    if (!/^track-[0-9]+\.mid$/i.test(track.filename || '')) return track;
+    const sidecar = readJson(path.join(dir, track.filename.replace(/\.mid$/i, '.pulso.json')));
+    const part = sidecar?.parts?.[0];
+    return part ? { ...track, instrument: {
+      catalog_id: part.catalog_id, department: part.department,
+      source_voice: part.source_voice, role: part.role,
+    } } : track;
+  });
+  const checkpoint = readJson(path.join(dir, 'checkpoint.json'));
   const progress = readJson(path.join(dir, 'progress.json'));
   const failure = readJson(path.join(dir, 'error.json'));
   const cancelled = existsSync(path.join(dir, 'cancelled.json'));
@@ -90,7 +109,7 @@ function jobDetails(id) {
     try { endedAt = statSync(path.join(dir, terminalFile)).mtimeMs; } catch { /* Keep elapsed time. */ }
   }
   const trace = traceFor(id, request.created_at, endedAt);
-  return { id, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, telemetry: trace.summary, error: state === 'cancelled' ? null : failure?.error || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
+  return { id, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, checkpoint, telemetry: trace.summary, error: state === 'cancelled' ? null : explainJobFailure(failure?.error) || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
 }
 
 function listJobs() {
@@ -116,19 +135,24 @@ function validate(input) {
   const duration = input.duration_seconds;
   const bpm = input.bpm;
   const behavior = input.behavior || 'adaptive';
+  const renderMode = input.render_mode || 'ai_sovereign';
   const suppliedSeed = input.seed === undefined || input.seed === '' ? null : String(input.seed);
   if (!prompt || prompt.length > 600) throw new Error('La idea debe contener entre 1 y 600 caracteres.');
   if (!Number.isInteger(duration) || duration < 30 || duration > 900) throw new Error('La duración debe estar entre 30 y 900 segundos.');
   if (!Number.isFinite(bpm) || bpm < 60 || bpm > 180) throw new Error('El tempo debe estar entre 60 y 180 BPM.');
   if (!['adaptive', 'hypnotic', 'narrative'].includes(behavior)) throw new Error('El enfoque musical no es válido.');
+  if (!['ai_sovereign', 'standard'].includes(renderMode)) throw new Error('El modo de render no es válido.');
   if (suppliedSeed !== null && (!/^[1-9][0-9]{0,18}$/.test(suppliedSeed) || BigInt(suppliedSeed) > 9223372036854775807n)) throw new Error('La semilla debe ser un entero positivo de 64 bits.');
   const seed = suppliedSeed || String((randomBytes(8).readBigUInt64LE() & 9223372036854775807n) || 1n);
-  return { prompt, duration_seconds: duration, bpm, behavior, seed, created_at: new Date().toISOString() };
+  return { prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', created_at: new Date().toISOString() };
 }
 
 function childEnvironment(dir) {
   const keys = ['OPENAI_API_KEY', 'PATH', 'Path', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData'];
-  return { ...Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]])), PULSO_TRACE_PATH: path.join(dir, 'api-events.jsonl') };
+  // Local Studio advertises and checks its environment key. Force the worker to
+  // use that same key instead of silently preferring a different VST credential
+  // stored in Windows Credential Manager.
+  return { ...Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]])), PULSO_DISABLE_SECURE_CREDENTIALS: '1', PULSO_TRACE_PATH: path.join(dir, 'api-events.jsonl') };
 }
 
 function launch(id, dir) {
@@ -206,7 +230,7 @@ const server = http.createServer(async (req, res) => {
       const job = jobDetails(fileMatch[1]);
       if (!job) return json(res, 404, { error: 'Composición no encontrada.' });
       const filename = decodeURIComponent(fileMatch[2]);
-      const allowed = new Set(['job.json', 'manifest.json', job.manifest?.fullFile, ...(job.manifest?.tracks || []).map(track => track.filename)]);
+      const allowed = new Set(['job.json', 'manifest.json', 'checkpoint.json', job.checkpoint?.file, job.manifest?.planFile, job.manifest?.fullFile, job.manifest?.comparisonFile, ...(job.manifest?.tracks || []).map(track => track.filename)]);
       if (!allowed.has(filename) || !/^[a-zA-Z0-9._-]+$/.test(filename)) return json(res, 404, { error: 'Archivo no disponible.' });
       const file = path.join(jobDirectory(job.id), filename);
       if (!existsSync(file)) return json(res, 404, { error: 'Archivo no disponible.' });
@@ -217,10 +241,22 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/style.css') return serveFile(res, path.join(here, 'style.css'), 'text/css; charset=utf-8');
     if (req.method === 'GET' && pathname === '/telemetry.css') return serveFile(res, path.join(here, 'telemetry.css'), 'text/css; charset=utf-8');
     if (req.method === 'GET' && pathname === '/app.js') return serveFile(res, path.join(here, 'app.js'), 'text/javascript; charset=utf-8');
+    if (req.method === 'GET' && pathname === '/midi.mjs') return serveFile(res, path.join(here, 'midi.mjs'), 'text/javascript; charset=utf-8');
+    if (req.method === 'GET' && pathname === '/audio-engine.mjs') return serveFile(res, path.join(here, 'audio-engine.mjs'), 'text/javascript; charset=utf-8');
     return json(res, 404, { error: 'Ruta no encontrada.' });
   } catch (error) {
     const isInput = /solicitud|duración|tempo|semilla|idea|enfoque/i.test(error.message);
-    return json(res, isInput ? 400 : 500, { error: isInput ? error.message : 'Error interno del estudio local.' });
+    if (isInput) return json(res, 400, { error: error.message });
+    const diagnosticId = randomUUID();
+    const safeMessage = String(error.message || error.name || 'Unknown error')
+      .replace(/sk-(?:proj-)?[A-Za-z0-9_-]+/g, '[redacted]');
+    try {
+      appendFileSync(path.join(dataRoot, 'server-errors.jsonl'), JSON.stringify({
+        id: diagnosticId, at: new Date().toISOString(), method: req.method,
+        route: pathname, name: error.name, message: safeMessage,
+      }) + '\n');
+    } catch { /* The response still carries the diagnostic ID. */ }
+    return json(res, 500, { error: `Error interno del estudio local (diagnóstico ${diagnosticId}).` });
   }
 });
 

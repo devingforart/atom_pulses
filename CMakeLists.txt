@@ -30,6 +30,8 @@ add_library(pulso_core STATIC
     src/core/ElectronicRoleContract.h
     src/core/ElectronicSoundscape.cpp
     src/core/ElectronicSoundscape.h
+    src/core/EnsembleReference.cpp
+    src/core/EnsembleReference.h
     src/core/Generator.cpp
     src/core/Generator.h
     src/core/HarmonyEngine.cpp
@@ -72,6 +74,8 @@ add_library(pulso_core STATIC
     src/core/SelectiveRepair.h
     src/core/SongComposer.cpp
     src/core/SongComposer.h
+    src/core/SovereignScoreRenderer.cpp
+    src/core/SovereignScoreRenderer.h
     src/core/TonalContract.cpp
     src/core/TonalContract.h
     src/core/TrackViability.cpp

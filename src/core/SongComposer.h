@@ -141,6 +141,9 @@ struct SongPlan {
     // cast is authoritative per voice: missing ownership is critic feedback, not permission
     // to inject generic instruments behind the composer's back.
     bool instrumentCastAuthored{};
+    // Local A/B mode: render only AI-authored performance cells and their declared
+    // placements. Auditors may report defects but must not compose or reshape MIDI.
+    bool aiSovereign{};
     std::vector<SongSection> sections;
     PerformanceScore performanceScore;
     std::size_t implicitVoicesPruned{};

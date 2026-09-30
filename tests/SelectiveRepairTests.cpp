@@ -2,9 +2,11 @@
 
 #include "core/ElectronicRoleContract.h"
 #include "core/ElectronicCompositionFabric.h"
+#include "core/EnsembleReference.h"
 #include "core/ArrangementDensityPlanner.h"
 #include "core/AttentionDirector.h"
 #include "core/SelectiveRepair.h"
+#include "core/SovereignScoreRenderer.h"
 #include "core/TrackViability.h"
 
 #include <algorithm>
@@ -14,6 +16,119 @@
 using namespace pulso;
 
 void runSelectiveRepairTests() {
+    {
+        SongPlan authored;
+        authored.totalBars = 8;
+        authored.beatsPerBar = 4.0;
+        authored.instrumentCastAuthored = true;
+        authored.aiSovereign = true;
+        SongSection section;
+        section.name = "A";
+        section.bars = 8;
+        authored.sections.push_back(section);
+        InstrumentAssignment lead;
+        lead.id = "lead";
+        lead.name = "Authored lead";
+        lead.instrumentId = "lead_synth";
+        lead.sourceVoice = VoiceId::Lead;
+        lead.minimumPitch = 48;
+        lead.maximumPitch = 84;
+        InstrumentAssignment emptyPad;
+        emptyPad.id = "pad";
+        emptyPad.name = "Silent pad";
+        emptyPad.instrumentId = "analog_pad";
+        emptyPad.sourceVoice = VoiceId::HarmonicFoundation;
+        authored.instruments = {lead, emptyPad};
+        PerformanceCell cell;
+        cell.id = "one_phrase";
+        cell.lengthBeats = 4.0;
+        cell.ownedVoices = {VoiceId::Lead};
+        cell.notes.push_back({1.0, .5, 67, 80, VoiceId::Lead,
+                              MetricIntent::StrictGrid, "lead"});
+        authored.performanceScore.cells.push_back(cell);
+        PerformancePlacement placement;
+        placement.cellId = cell.id;
+        placement.sectionIndex = 0;
+        placement.startBeat = 0.0;
+        placement.fragmentEnd = 4.0;
+        authored.performanceScore.placements.push_back(placement);
+        CompositionRenderReport observation;
+        const auto rendered = SovereignScoreRenderer::render(authored, {}, &observation);
+        require(rendered.notes.size() == 1 && rendered.parts.size() == 2 &&
+                    rendered.notes.front().startBeat == 1.0 &&
+                    rendered.notes.front().pitch == 67 &&
+                    rendered.notes.front().origin == NoteOrigin::AiAuthored &&
+                    rendered.notes.front().partId == 1,
+                "Sovereign rendering must preserve one AI note and its silence without filler");
+        require(rendered.aiAuthoredNoteRatio == 1.0 &&
+                    observation.trackViability.notesCreated == 0,
+                "Sovereign audit must not add notes to a sparse AI score");
+        GenerationContext context;
+        context.role = Role::Ensemble;
+        const auto throughPipeline = SongComposer{}.render(authored, context);
+        require(throughPipeline.notes.size() == 1 &&
+                    throughPipeline.notes.front().pitch == 67 &&
+                    throughPipeline.notes.front().startBeat == 1.0,
+                "The shared SongComposer entry point must honor AI-sovereign mode");
+    }
+    {
+        SongPlan referencePlan;
+        referencePlan.totalBars = 16;
+        referencePlan.beatsPerBar = 4.0;
+        referencePlan.narrativeSpine.protagonistInstrumentId = "speaker";
+        for (auto index = 0; index < 2; ++index) {
+            SongSection section;
+            section.name = "Act " + std::to_string(index + 1);
+            section.startBar = index * 8;
+            section.bars = 8;
+            referencePlan.sections.push_back(section);
+        }
+        InstrumentAssignment speaker;
+        speaker.id = "speaker";
+        speaker.instrumentId = "lead_synth";
+        speaker.sourceVoice = VoiceId::Lead;
+        InstrumentAssignment bed;
+        bed.id = "bed";
+        bed.instrumentId = "analog_pad";
+        bed.sourceVoice = VoiceId::HarmonicFoundation;
+        bed.role = "primary_chord_bed";
+        referencePlan.instruments = {speaker, bed};
+        PerformanceScore accepted;
+        PerformanceCell speech;
+        speech.id = "speech";
+        speech.lengthBeats = 4.0;
+        speech.ownedVoices = {VoiceId::Lead};
+        speech.notes.push_back({0.0, 1.0, 69, 78, VoiceId::Lead,
+                                MetricIntent::StrictGrid, "speaker"});
+        PerformanceCell chord;
+        chord.id = "chord";
+        chord.lengthBeats = 4.0;
+        chord.ownedVoices = {VoiceId::HarmonicFoundation};
+        chord.notes.push_back({0.0, 3.0, 62, 65, VoiceId::HarmonicFoundation,
+                               MetricIntent::StrictGrid, "bed"});
+        accepted.cells = {speech, chord};
+        for (auto section = 0; section < 2; ++section) {
+            for (const auto* id : {"speech", "chord"}) {
+                PerformancePlacement placement;
+                placement.cellId = id;
+                placement.sectionIndex = section;
+                placement.repeats = 8;
+                placement.fragmentEnd = 4.0;
+                accepted.placements.push_back(placement);
+            }
+        }
+        const auto reference = EnsembleReference::summarize(
+            referencePlan, accepted, {"bed"}, 6);
+        require(reference.find("speaker role=") != std::string::npos &&
+                    reference.find("bed role=") == std::string::npos &&
+                    reference.find("[0.00,69,1.00]") != std::string::npos &&
+                    reference.find("[32.00,69,1.00]") != std::string::npos &&
+                    reference.find("SECTION 1") != std::string::npos,
+                "The next AI block must see bounded real MIDI from earlier sections, excluding its target");
+        require(EnsembleReference::summarize(referencePlan, {}, {}).empty(),
+                "An empty accepted score must not invent an ensemble reference");
+    }
+
     SongPlan plan;
     plan.totalBars = 128;
     plan.beatsPerBar = 4.0;
@@ -402,6 +517,33 @@ void runSelectiveRepairTests() {
                 hypnoticPatient.front().missingCodaResolution &&
                 hypnoticPatient.front().missingThematicDevelopment,
             "Hypnotic states may contain patient melodic statements while coda and development stay independent obligations");
+
+    PerformanceCoverageDeficit marginalSpeech;
+    marginalSpeech.instrumentId = longLead.id;
+    marginalSpeech.notes = marginalSpeech.authoredNotes = 112;
+    marginalSpeech.minimumNotes = marginalSpeech.minimumAuthoredNotes = 18;
+    marginalSpeech.activeBars = 56;
+    marginalSpeech.minimumActiveBars = 12;
+    marginalSpeech.phrases = 7;
+    marginalSpeech.minimumPhrases = 4;
+    marginalSpeech.sections = 7;
+    marginalSpeech.minimumSections = 2;
+    marginalSpeech.sectionalStates = 7;
+    marginalSpeech.minimumSectionalStates = 5;
+    marginalSpeech.narrativePhraseWindows = 7;
+    marginalSpeech.minimumNarrativePhraseWindows = 3;
+    marginalSpeech.melodicIntervals = 111;
+    marginalSpeech.melodicStepRatio = 27.0 / 111.0;
+    marginalSpeech.missingMelodicSpeech = true;
+    require(SelectiveRepair::deferableMarginalMelodicSpeech(longNarrative, marginalSpeech),
+            "One missing melodic step in a complete protagonist should wait for full-score audition");
+    marginalSpeech.melodicStepRatio = 26.0 / 111.0;
+    require(!SelectiveRepair::deferableMarginalMelodicSpeech(longNarrative, marginalSpeech),
+            "Two missing melodic steps must not be treated as a marginal observation");
+    marginalSpeech.melodicStepRatio = 27.0 / 111.0;
+    marginalSpeech.missingCodaResolution = true;
+    require(!SelectiveRepair::deferableMarginalMelodicSpeech(longNarrative, marginalSpeech),
+            "A weak coda cannot be hidden by the melodic-step exception");
 
     auto weaklyConnectedLead = literalLead;
     weaklyConnectedLead.cells.front().id = "weakly_connected_lead";

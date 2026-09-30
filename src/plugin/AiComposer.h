@@ -33,6 +33,7 @@ struct AiSongProgressUpdate {
 };
 
 using AiSongProgress = std::function<void(const AiSongProgressUpdate&)>;
+using AiSongCheckpoint = std::function<void(const SongPlan&, std::size_t, bool)>;
 
 class AiComposer final {
 public:
@@ -88,7 +89,9 @@ public:
                                            double beatsPerBar, std::uint64_t seed,
                                            CompositionBehavior behavior,
                                            std::stop_token, juce::String& error,
-                                           const AiSongProgress& progress = {});
+                                           const AiSongProgress& progress = {},
+                                           const AiSongCheckpoint& checkpoint = {},
+                                           bool aiSovereign = false);
     [[nodiscard]] static bool parseSongPlanJson(const juce::String&, int targetSeconds,
                                                 int requestedBars, double bpm,
                                                 double beatsPerBar, std::uint64_t seed,

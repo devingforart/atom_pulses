@@ -3,29 +3,44 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PULSO — estudio local</title>
+  <title>PULSO Suite · Estudio local</title>
   <link rel="stylesheet" href="/style.css">
-  <link rel="stylesheet" href="/telemetry.css">
-  <script src="/app.js" defer></script>
+  <script type="module" src="/app.js"></script>
 </head>
 <body>
-  <div class="shell">
-    <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>PULSO</span></div><span class="top-label">ESTUDIO LOCAL <span class="dot">●</span> DESARROLLO</span></header>
-    <main>
-      <section class="intro"><div class="eyebrow">COMPOSICIÓN · MIDI · ITERACIÓN</div><h1>Tu estudio de<br><em>ideas musicales.</em></h1><p>Probá el generador real desde el navegador. Cada obra conserva su prompt, semilla y archivos MIDI para que podamos escucharla, compararla y mejorarla.</p></section>
-      <div id="health" class="health" role="status">Comprobando el motor local…</div>
-      <div class="workspace">
-        <section class="panel compose"><div class="section-head"><span>01 / DIRECCIÓN</span><span>UNA OBRA A LA VEZ</span></div><h2>Componer una obra</h2><form id="compose-form">
-          <label for="prompt">Tu idea musical</label><textarea id="prompt" maxlength="600" rows="7" placeholder="Describí el carácter, el viaje y la instrumentación que imaginás…" required></textarea><div class="character-count"><span id="prompt-count">0</span> / 600</div>
-          <div class="fields"><div><label for="duration">Duración</label><select id="duration"><option value="60">1 minuto</option><option value="120">2 minutos</option><option value="180">3 minutos</option><option value="300">5 minutos</option><option value="390">6 min 30 s</option><option value="600">10 minutos</option><option value="900">15 minutos</option></select></div><div><label for="bpm">Tempo / BPM</label><input id="bpm" type="number" min="60" max="180" step="1" value="120" required></div></div>
-          <label for="behavior">Enfoque compositivo</label><select id="behavior"><option value="adaptive">Adaptativo — interpreta la dirección</option><option value="hypnotic">Hipnótico — evolución sostenida</option><option value="narrative">Narrativo — arco y contrastes</option></select>
-          <label for="seed">Semilla <span class="optional">opcional · para comparar</span></label><input id="seed" type="text" inputmode="numeric" pattern="[1-9][0-9]*" placeholder="Automática si queda vacía"><p class="field-note">Misma semilla y prompt permiten comparar cambios del motor. La respuesta de IA puede variar entre ejecuciones.</p>
-          <button id="submit" class="primary" type="submit"><span>COMENZAR COMPOSICIÓN</span><span aria-hidden="true">↗</span></button><p class="cost-note">La composición inicia una solicitud real a la API y puede tener costo. No hay reintentos automáticos desde esta pantalla.</p>
-        </form></section>
-        <section class="panel results"><div class="section-head"><span>02 / OBRAS</span><span id="job-count">0 SESIONES</span></div><div class="results-title"><div><h2>Exploraciones</h2><p>Los MIDI permanecen en este equipo para su análisis.</p></div><button id="refresh" class="secondary" type="button">ACTUALIZAR ↻</button></div><div id="notice" class="notice" role="alert" hidden></div><div id="jobs" class="jobs"><div class="empty"><span class="empty-mark">◌</span><h3>El lienzo está listo.</h3><p>Cuando compongas, tus obras aparecerán aquí con su progreso y pistas exportables.</p></div></div></section>
-      </div>
-      <footer><span>PULSO / LOCAL STUDIO</span><span>127.0.0.1 · SIN DESPLIEGUE · SIN VST</span></footer>
+  <div class="suite">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><strong>PULSO</strong><span class="brand-divider"></span><span class="brand-subtitle">SUITE</span></div>
+      <div class="top-actions"><span class="local-pill"><span></span> ESTUDIO LOCAL</span><button id="history-toggle" class="ghost-button" type="button" aria-controls="history-panel">Historial</button><a id="export-all" class="dark-button disabled" aria-disabled="true">↓ <span>Exportar obra MIDI</span></a></div>
+    </header>
+    <div id="health" class="health" role="status">Conectando con el motor local…</div>
+    <main class="workspace">
+      <aside class="sidebar">
+        <div class="sidebar-scroll">
+          <section class="compose-section">
+            <div class="section-kicker"><span>01 / DIRECCIÓN</span><span>CREACIÓN</span></div>
+            <h1>Tu próxima<br><em>obra.</em></h1>
+            <p class="intro-copy">Describe el carácter, el movimiento y la instrumentación. PULSO escribe la obra y la trae aquí para escucharla pista por pista.</p>
+            <form id="compose-form">
+              <label for="prompt">Idea musical <span id="prompt-count">0 / 600</span></label>
+              <textarea id="prompt" maxlength="600" rows="5" placeholder="Una historia electrónica profunda, con armonías que evolucionan y un motivo que regresa transformado…" required></textarea>
+              <div class="field-pair"><div><label for="duration">Duración</label><select id="duration"><option value="60">1 minuto</option><option value="120">2 minutos</option><option value="180">3 minutos</option><option value="300">5 minutos</option><option value="390" selected>6 min 30 s</option><option value="600">10 minutos</option><option value="900">15 minutos</option></select></div><div><label for="bpm">Tempo</label><div class="input-unit"><input id="bpm" type="number" min="60" max="180" value="120" required><span>BPM</span></div></div></div>
+              <details class="advanced"><summary>Dirección avanzada <span>＋</span></summary><div class="advanced-content"><label for="behavior">Enfoque</label><select id="behavior"><option value="adaptive">Adaptativo</option><option value="hypnotic">Hipnótico</option><option value="narrative">Narrativo</option></select><label for="render-mode">Autoría del MIDI</label><select id="render-mode"><option value="ai_sovereign" selected>IA soberana</option><option value="standard">Motor anterior · referencia A/B</option></select><label for="seed">Semilla <small>opcional</small></label><input id="seed" type="text" inputmode="numeric" pattern="[1-9][0-9]*" placeholder="Automática"><p>Una semilla fija facilita comparar versiones. La IA todavía puede variar su respuesta.</p></div></details>
+              <button id="submit" class="compose-button" type="submit">✦ <span>Componer obra</span><span aria-hidden="true">↗</span></button>
+              <p class="cost-note">La composición consulta la API y puede generar cargos. Escuchar una obra guardada no consume créditos.</p>
+            </form>
+          </section>
+          <section class="session-section"><div class="section-kicker"><span>02 / SESIÓN</span><span id="job-count">0 OBRAS</span></div><div id="notice" class="notice" role="alert" hidden></div><div id="session-content" class="session-content"><div class="empty-session">Selecciona una obra del historial o crea una nueva para ver su partitura.</div></div></section>
+        </div>
+      </aside>
+      <section class="arrangement" aria-label="Arreglo MIDI">
+        <div class="transport"><div class="transport-left"><button id="back" type="button" class="icon-button" title="Volver al inicio" aria-label="Volver al inicio">⏮</button><button id="play" type="button" class="play-button" aria-label="Reproducir">▶</button><button id="stop" type="button" class="icon-button" title="Detener" aria-label="Detener">■</button><span id="time-display" class="time-display">00:00 / 00:00</span></div><div class="transport-right"><span id="song-bpm">— BPM</span><span class="transport-separator"></span><span id="song-key">—</span><label class="volume-label" for="volume">Volumen</label><input id="volume" type="range" min="0" max="100" value="68" aria-label="Volumen de escucha"></div></div>
+        <div class="arrangement-head"><div><div class="section-kicker">03 / PARTITURA</div><h2 id="song-title">El estudio está listo</h2><p id="song-subtitle">Elige una obra para explorar sus pistas con un monitor senoidal neutro.</p></div><span id="song-stat" class="song-stat">MIDI REAL · MONITOR SENOIDAL</span></div>
+        <div id="timeline" class="timeline empty-timeline"><div class="timeline-empty"><span class="timeline-empty-mark">◫</span><h3>Una vista para escuchar la composición.</h3><p>Las notas, silencios y duraciones aparecerán aquí tal como están en los archivos MIDI exportados.</p></div></div>
+        <div class="arrangement-foot"><span>Una misma onda seno para todas las notas tonales; percusión con pulsos senoidales. El MIDI no cambia.</span><span id="track-summary">0 pistas</span></div>
+      </section>
     </main>
+    <aside id="history-panel" class="history-panel" aria-label="Historial de composiciones" hidden><div class="history-head"><div><span class="section-kicker">BIBLIOTECA LOCAL</span><h2>Tus obras</h2></div><button id="history-close" class="icon-button" type="button" aria-label="Cerrar historial">×</button></div><button id="refresh" class="ghost-button" type="button">↻ Actualizar</button><div id="jobs" class="history-list"></div></aside>
   </div>
 </body>
 </html>

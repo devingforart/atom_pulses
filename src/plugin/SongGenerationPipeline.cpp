@@ -34,10 +34,11 @@ int SongGenerationPipeline::targetBars(const SongGenerationRequest& request) {
 
 SongPlan SongGenerationPipeline::plan(const SongGenerationRequest& request,
                                       std::stop_token token, juce::String& error,
-                                      const AiSongProgress& progress) {
+                                      const AiSongProgress& progress,
+                                      const AiSongCheckpoint& checkpoint) {
     return AiComposer::planSong(aiDirection(request), request.targetSeconds,
         targetBars(request), request.bpm, request.beatsPerBar, request.seed,
-        request.behavior, token, error, progress);
+        request.behavior, token, error, progress, checkpoint, request.aiSovereign);
 }
 
 void SongGenerationPipeline::finalizePlan(SongPlan& plan,
@@ -45,6 +46,7 @@ void SongGenerationPipeline::finalizePlan(SongPlan& plan,
     plan.compositionBehavior = request.behavior;
     plan.seed = request.seed;
     plan.targetSeconds = request.targetSeconds;
+    plan.aiSovereign = request.aiSovereign;
     const auto inferredProduction = ElectronicProductionDirector::infer(
         request.direction.toStdString());
     switch (request.orchestration) {

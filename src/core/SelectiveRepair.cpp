@@ -396,11 +396,13 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
     const auto performanceFindings = performanceDeficits(
         plan, plan.performanceScore, allInstruments);
     const auto hasBlockingMusicalEvidence = std::any_of(
-        performanceFindings.begin(), performanceFindings.end(), [](const auto& finding) {
+        performanceFindings.begin(), performanceFindings.end(), [&plan](const auto& finding) {
             return finding.missingCodaResolution || finding.duplicatedIndependentLine ||
                 finding.missingAuthoredDevelopment ||
                 finding.missingSectionalEvolution || finding.missingNarrativePresence ||
-                finding.missingThematicDevelopment || finding.missingMelodicSpeech ||
+                finding.missingThematicDevelopment ||
+                (finding.missingMelodicSpeech &&
+                 !deferableMarginalMelodicSpeech(plan, finding)) ||
                 finding.missingCentralChordBed || finding.missingChordBedBreath ||
                 finding.missingChordBedNarrativeArc;
         });
@@ -453,7 +455,8 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
         if (finding.missingThematicDevelopment)
             add(finding.instrumentIndex, 14.0,
                 "replace literal thematic copies with audible transformed returns");
-        if (finding.missingMelodicSpeech)
+        if (finding.missingMelodicSpeech &&
+            !deferableMarginalMelodicSpeech(plan, finding))
             add(finding.instrumentIndex, 13.0,
                 "rewrite disconnected leaps or scalar filler as singable phrase contour");
         if (finding.missingCentralChordBed)
@@ -1869,6 +1872,32 @@ bool SelectiveRepair::requiresReplacement(
     return deficit.minimumPhrases > 0 && deficit.phrases < deficit.minimumPhrases &&
         deficit.notes >= deficit.minimumNotes &&
         deficit.activeBars >= deficit.minimumActiveBars;
+}
+
+bool SelectiveRepair::deferableMarginalMelodicSpeech(
+    const SongPlan& plan, const PerformanceCoverageDeficit& deficit) noexcept {
+    if (deficit.instrumentId.empty() ||
+        deficit.instrumentId != plan.narrativeSpine.protagonistInstrumentId ||
+        !deficit.missingMelodicSpeech || deficit.melodicIntervals < 32 ||
+        deficit.melodicStepRatio >= .25 || deficit.melodicStepRatio < .24)
+        return false;
+    const auto observedSteps = static_cast<std::size_t>(std::lround(
+        deficit.melodicStepRatio * static_cast<double>(deficit.melodicIntervals)));
+    const auto requiredSteps = static_cast<std::size_t>(std::ceil(
+        .25 * static_cast<double>(deficit.melodicIntervals)));
+    if (requiredSteps != observedSteps + 1) return false;
+    return deficit.notes >= deficit.minimumNotes &&
+        deficit.authoredNotes >= deficit.minimumAuthoredNotes &&
+        deficit.activeBars >= deficit.minimumActiveBars &&
+        deficit.phrases >= deficit.minimumPhrases &&
+        deficit.sections >= deficit.minimumSections &&
+        deficit.sectionalStates >= deficit.minimumSectionalStates &&
+        deficit.narrativePhraseWindows >= deficit.minimumNarrativePhraseWindows &&
+        !deficit.missingCodaResolution && !deficit.missingThematicRelationship &&
+        !deficit.missingAuthoredDevelopment && !deficit.duplicatedIndependentLine &&
+        !deficit.missingSectionalEvolution && !deficit.missingNarrativePresence &&
+        !deficit.missingThematicDevelopment && !deficit.missingCentralChordBed &&
+        !deficit.missingChordBedBreath && !deficit.missingChordBedNarrativeArc;
 }
 
 bool SelectiveRepair::deferableProtagonistCoverage(

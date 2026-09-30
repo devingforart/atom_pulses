@@ -13,6 +13,7 @@
 #include "PhraseComposer.h"
 #include "RhythmEngine.h"
 #include "Scale.h"
+#include "SovereignScoreRenderer.h"
 #include "TonalContract.h"
 
 #include <algorithm>
@@ -2170,6 +2171,9 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
                              CompositionRenderReport* renderReport) const {
     auto plan = sourcePlan;
     normalizePlan(plan);
+    if (plan.aiSovereign && plan.instrumentCastAuthored &&
+        !plan.performanceScore.empty())
+        return SovereignScoreRenderer::render(plan, progress, renderReport);
     const auto noPercussionIntent = noPercussionRequested(plan);
     Pattern song;
     song.lengthBeats = plan.totalBars * plan.beatsPerBar;

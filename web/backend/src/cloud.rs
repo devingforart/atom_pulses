@@ -64,14 +64,11 @@ fn valid_request(input: &CreateJob) -> bool {
             input.behavior.as_str(),
             "adaptive" | "hypnotic" | "narrative"
         )
-        && input
-            .seed
-            .as_ref()
-            .is_none_or(|seed| {
-                !seed.starts_with('0')
-                    && seed.bytes().all(|byte| byte.is_ascii_digit())
-                    && seed.parse::<i64>().is_ok_and(|value| value > 0)
-            })
+        && input.seed.as_ref().is_none_or(|seed| {
+            !seed.starts_with('0')
+                && seed.bytes().all(|byte| byte.is_ascii_digit())
+                && seed.parse::<i64>().is_ok_and(|value| value > 0)
+        })
         && input.idempotency_key.len() >= 8
         && input.idempotency_key.len() <= 100
         && input

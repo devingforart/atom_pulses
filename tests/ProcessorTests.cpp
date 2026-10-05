@@ -905,6 +905,12 @@ int main(int argc, char** argv) {
                 pulso::plugin::AiComposer::requestedInstrumentCount(
                     "at least 40 MIDI tracks, with 8 percussion tracks") == 40 &&
                 pulso::plugin::AiComposer::requestedInstrumentCount(
+                    "Seis pistas MIDI independientes: un colchon, bajo y melodia") == 6 &&
+                pulso::plugin::AiComposer::requestedInstrumentCount(
+                    "six independent tracks with two atmospheric parts") == 6 &&
+                pulso::plugin::AiComposer::requestedInstrumentCount(
+                    "Dark electronic narrative. LOCAL MUSICAL COHERENCE PROOF: exactly 3 instrument tracks") == 3 &&
+                pulso::plugin::AiComposer::requestedInstrumentCount(
                     "deep electronic music for 390 seconds") == 0,
             "Large casts and selective repairs must use deterministic bounded shards");
     require(pulso::plugin::AiComposer::defaultModel() == "gpt-5.6-terra" &&
@@ -1118,6 +1124,62 @@ int main(int argc, char** argv) {
                 idempotentReport, matrixError) && idempotentMatrix == matrixManifest &&
                 idempotentReport.contains("coverage links added=0"),
             "A reconciled orchestration matrix must remain stable on repeated validation");
+    const auto compactMacro = juce::String(R"json({"sections":[
+      {"name":"Opening","density":0.2,"energy":0.2},
+      {"name":"Development","density":0.9,"energy":0.8},
+      {"name":"Closing","density":0.25,"energy":0.2}
+    ]})json");
+    const auto compactManifest = juce::String(R"json({"instruments":[
+      {"id":"chords","source_voice":"harmonic_foundation","role":"primary_chord_bed","active_sections":["Opening"]},
+      {"id":"bass","source_voice":"movement_bass","active_sections":["Development"]},
+      {"id":"melody","source_voice":"lead","active_sections":["Closing"]}
+    ]})json");
+    juce::String compactReconciled;
+    juce::String compactReport;
+    juce::String compactError;
+    require(pulso::plugin::AiComposer::reconcileOrchestrationMatrix(
+                compactMacro, compactManifest, compactReconciled,
+                compactReport, compactError),
+            "Three-track proof must accept one chord bed, one bass and one lead without requiring a second pad");
+    const auto compactJson = juce::JSON::parse(compactReconciled);
+    const auto* compactOwners = compactJson.getDynamicObject()->getProperty("instruments").getArray();
+    require(compactOwners != nullptr && compactOwners->size() == 3,
+            "Compact matrix reconciliation must preserve exactly the three authored identities");
+    for (const auto& sectionName : {"Opening", "Development", "Closing"}) {
+        auto active = 0;
+        auto chordBedActive = false;
+        for (const auto& owner : *compactOwners) {
+            const auto* object = owner.getDynamicObject();
+            const auto* sections = object->getProperty("active_sections").getArray();
+            const auto present = sections != nullptr &&
+                std::any_of(sections->begin(), sections->end(), [&](const auto& section) {
+                    return section.toString() == sectionName;
+                });
+            if (present) ++active;
+            if (present && object->getProperty("id").toString() == "chords") chordBedActive = true;
+        }
+        require(active >= (juce::String(sectionName) == "Development" ? 3 : 2) && chordBedActive,
+                "Compact matrix must cover each section with the chord bed and two or three total owners");
+    }
+    juce::String compactAgain;
+    require(pulso::plugin::AiComposer::reconcileOrchestrationMatrix(
+                compactMacro, compactReconciled, compactAgain,
+                compactReport, compactError) && compactAgain == compactReconciled,
+            "Compact matrix reconciliation must be idempotent");
+    require(!pulso::plugin::AiComposer::reconcileOrchestrationMatrix(
+                compactMacro, compactManifest.replace("harmonic_foundation", "lead"),
+                compactAgain, compactReport, compactError),
+            "Compact matrix must still reject a cast with no harmonic foundation");
+    const auto fourWithOneHarmonic = juce::String(R"json({"instruments":[
+      {"id":"chords","source_voice":"harmonic_foundation"},
+      {"id":"bass","source_voice":"movement_bass"},
+      {"id":"melody","source_voice":"lead"},
+      {"id":"reply","source_voice":"countermelody"}
+    ]})json");
+    require(!pulso::plugin::AiComposer::reconcileOrchestrationMatrix(
+                compactMacro, fourWithOneHarmonic, compactAgain,
+                compactReport, compactError),
+            "Larger casts must retain the two-harmonic-owner requirement");
     pulso::SongPlan routingPlan;
     routingPlan.beatsPerBar = 4.0;
     routingPlan.totalBars = 4;
@@ -1177,6 +1239,119 @@ int main(int argc, char** argv) {
     require(!pulso::plugin::AiComposer::parsePerformanceBlockJson(
                 foreignOnlyBlock, routingPlan, {0}, routedScore, routingError),
             "A shard containing no assigned instrument notes must fail instead of passing as an empty repair");
+    pulso::SongPlan proofPlan;
+    proofPlan.totalBars = 3;
+    proofPlan.beatsPerBar = 4;
+    proofPlan.sections.resize(3);
+    for (int index = 0; index < 3; ++index) {
+        proofPlan.sections[static_cast<std::size_t>(index)].name = "Act " + std::to_string(index);
+        proofPlan.sections[static_cast<std::size_t>(index)].function = "statement";
+        proofPlan.sections[static_cast<std::size_t>(index)].startBar = index;
+        proofPlan.sections[static_cast<std::size_t>(index)].bars = 1;
+    }
+    pulso::InstrumentAssignment proofBed;
+    proofBed.id = "bed";
+    proofBed.role = "primary_chord_bed";
+    proofBed.sourceVoice = pulso::VoiceId::HarmonicFoundation;
+    proofBed.minimumPitch = 48;
+    proofBed.maximumPitch = 84;
+    pulso::InstrumentAssignment proofBass;
+    proofBass.id = "bass";
+    proofBass.sourceVoice = pulso::VoiceId::SubBass;
+    proofBass.minimumPitch = 24;
+    proofBass.maximumPitch = 60;
+    pulso::InstrumentAssignment proofLead;
+    proofLead.id = "lead";
+    proofLead.sourceVoice = pulso::VoiceId::Lead;
+    proofLead.minimumPitch = 48;
+    proofLead.maximumPitch = 96;
+    proofPlan.instruments = {proofBed, proofBass, proofLead};
+    proofPlan.narrativeSpine.protagonistInstrumentId = "lead";
+    const auto proofJson = juce::String(R"json({"parts":[
+      {"instrument_id":"bed","notes":[
+        {"beat":0,"duration_beats":3,"pitch":60,"velocity":72},
+        {"beat":0,"duration_beats":3,"pitch":64,"velocity":70},
+        {"beat":0,"duration_beats":3,"pitch":67,"velocity":68},
+        {"beat":4,"duration_beats":3,"pitch":60,"velocity":72},
+        {"beat":4,"duration_beats":3,"pitch":64,"velocity":70},
+        {"beat":4,"duration_beats":3,"pitch":67,"velocity":68},
+        {"beat":8,"duration_beats":3,"pitch":60,"velocity":72},
+        {"beat":8,"duration_beats":3,"pitch":64,"velocity":70},
+        {"beat":8,"duration_beats":3,"pitch":67,"velocity":68}]},
+      {"instrument_id":"bass","notes":[
+        {"beat":0,"duration_beats":2,"pitch":36,"velocity":90},
+        {"beat":2,"duration_beats":1,"pitch":43,"velocity":86},
+        {"beat":4,"duration_beats":3,"pitch":36,"velocity":90},
+        {"beat":8,"duration_beats":3,"pitch":36,"velocity":90}]},
+      {"instrument_id":"lead","notes":[
+        {"beat":0,"duration_beats":1,"pitch":72,"velocity":85},
+        {"beat":2,"duration_beats":1,"pitch":74,"velocity":85},
+        {"beat":4,"duration_beats":1,"pitch":76,"velocity":85},
+        {"beat":6,"duration_beats":1,"pitch":74,"velocity":85},
+        {"beat":8,"duration_beats":1,"pitch":72,"velocity":85},
+        {"beat":10,"duration_beats":1,"pitch":72,"velocity":85}]}]})json");
+    pulso::PerformanceScore proofScore;
+    juce::String proofError;
+    require(pulso::plugin::AiComposer::parseCoherentProofJson(
+                proofJson, proofPlan, proofScore, proofError) &&
+                proofScore.cells.size() == 9 && proofScore.placements.size() == 9,
+            "Absolute-time proof should route all three AI-authored parts into their exact sections");
+    const std::vector<pulso::CoherentRevisionWindow> proofWindows{{1, 0.0, 4.0, 3.0}};
+    const auto proofPatch = juce::String(R"json({"patches":[
+      {"instrument_id":"bed","start_beat":0,"end_beat":4,"notes":[
+        {"beat":0,"duration_beats":3,"pitch":60,"velocity":72},
+        {"beat":0,"duration_beats":3,"pitch":64,"velocity":70},
+        {"beat":0,"duration_beats":3,"pitch":69,"velocity":68}]}]})json");
+    pulso::PerformanceScore patchedProof;
+    require(pulso::plugin::AiComposer::applyCoherentProofRevisionJson(
+                proofJson, proofPatch, proofPlan, proofWindows, patchedProof, proofError),
+            "A bounded AI patch should validate as a complete coherent score");
+    auto patchedPlan = proofPlan;
+    patchedPlan.performanceScore = patchedProof;
+    patchedPlan.aiSovereign = true;
+    patchedPlan.instrumentCastAuthored = true;
+    pulso::GenerationContext patchContext;
+    patchContext.role = pulso::Role::Ensemble;
+    const auto patchedMidi = pulso::SongComposer{}.render(patchedPlan, patchContext);
+    auto originalProofPlan = proofPlan;
+    originalProofPlan.performanceScore = proofScore;
+    originalProofPlan.aiSovereign = true;
+    originalProofPlan.instrumentCastAuthored = true;
+    const auto originalMidi = pulso::SongComposer{}.render(originalProofPlan, patchContext);
+    const auto untouched = [](const pulso::Pattern& pattern) {
+        std::vector<pulso::NoteEvent> notes;
+        for (const auto& note : pattern.notes)
+            if (note.voice != pulso::VoiceId::HarmonicFoundation || note.startBeat >= 4.0)
+                notes.push_back(note);
+        return notes;
+    };
+    require(patchedMidi.notes.size() == 19 &&
+        untouched(patchedMidi) == untouched(originalMidi) &&
+        std::any_of(patchedMidi.notes.begin(), patchedMidi.notes.end(),
+            [](const auto& note) { return note.startBeat == 0.0 &&
+                note.pitch == 69; }) &&
+        std::any_of(patchedMidi.notes.begin(), patchedMidi.notes.end(),
+            [](const auto& note) { return note.startBeat == 4.0 &&
+                note.pitch == 67; }),
+        "A patch must alter only its requested window and preserve later MIDI exactly");
+    require(!pulso::plugin::AiComposer::applyCoherentProofRevisionJson(
+                proofJson, proofPatch.replace("\"beat\":0,\"duration_beats\":3,\"pitch\":69",
+                    "\"beat\":4,\"duration_beats\":3,\"pitch\":69"),
+                proofPlan, proofWindows, patchedProof, proofError),
+            "The model must not write notes outside the requested window");
+    proofPlan.performanceScore = proofScore;
+    proofPlan.aiSovereign = true;
+    proofPlan.instrumentCastAuthored = true;
+    pulso::GenerationContext proofContext;
+    proofContext.role = pulso::Role::Ensemble;
+    const auto proofRender = pulso::SongComposer{}.render(proofPlan, proofContext);
+    require(proofRender.notes.size() == 19 && proofRender.aiAuthoredNoteRatio > 0.999,
+            "AI-sovereign publication must preserve every proof note without procedural additions");
+    const auto crossingProof = proofJson.replace("\"beat\":10,\"duration_beats\":1",
+        "\"beat\":11,\"duration_beats\":2");
+    require(!pulso::plugin::AiComposer::parseCoherentProofJson(
+                crossingProof, proofPlan, proofScore, proofError),
+            "Absolute-time proof must reject notes crossing authored sections");
     require(pulso::plugin::AiComposer::parseCompositionJson(structuredExample, 1,
                                                              parsedComposition, parseError),
             "Structured GPT output must validate into a playable composition");

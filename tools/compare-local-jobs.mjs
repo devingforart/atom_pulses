@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { jobDirectory } from '../web/local-studio/storage.mjs';
 
 const [beforeId, afterId] = process.argv.slice(2);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -8,10 +8,8 @@ if (!uuid.test(beforeId || '') || !uuid.test(afterId || '')) {
   console.error('Uso: node tools/compare-local-jobs.mjs <job-anterior> <job-nuevo>');
   process.exitCode = 2;
 } else {
-  const root = process.env.PULSO_LOCAL_DATA_DIR ||
-    path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'Pulso', 'LocalStudio');
   const read = (id, filename) => {
-    try { return JSON.parse(readFileSync(path.join(root, 'jobs', id, filename), 'utf8')); }
+    try { return JSON.parse(readFileSync(path.join(jobDirectory(id), filename), 'utf8')); }
     catch { return null; }
   };
   const jobs = [beforeId, afterId].map(id => {

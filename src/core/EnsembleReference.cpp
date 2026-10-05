@@ -100,4 +100,59 @@ std::string EnsembleReference::summarize(const SongPlan& plan,
     return emitted == 0 ? std::string{} : out.str();
 }
 
+std::string EnsembleReference::harmonicLedger(
+    const SongPlan& plan, const PerformanceScore& accepted,
+    const std::set<std::string>& excludedInstrumentIds, std::size_t maximumGroups) {
+    if (accepted.empty() || maximumGroups == 0) return {};
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(2);
+    std::size_t emitted = 0;
+    for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+        const auto& section = plan.sections[sectionIndex];
+        const auto sectionBeats = section.bars * plan.beatsPerBar;
+        if (sectionBeats <= 0.0) continue;
+        Pattern rendered;
+        rendered.lengthBeats = sectionBeats;
+        PerformanceScoreEngine::replaceChunk(rendered, accepted,
+            static_cast<int>(sectionIndex), 0.0, sectionBeats, plan.instruments);
+        using GroupKey = std::tuple<std::uint16_t, long long, long long>;
+        std::map<GroupKey, std::vector<int>> groups;
+        for (const auto& note : rendered.notes) {
+            if (note.partId == 0 || note.partId > plan.instruments.size()) continue;
+            const auto& instrument = plan.instruments[note.partId - 1];
+            if (excludedInstrumentIds.contains(instrument.id)) continue;
+            if (instrument.role.find("primary_chord_bed") == std::string::npos &&
+                instrument.sourceVoice != VoiceId::HarmonicFoundation &&
+                instrument.sourceVoice != VoiceId::SubBass &&
+                instrument.sourceVoice != VoiceId::MovementBass &&
+                instrument.id != plan.narrativeSpine.protagonistInstrumentId) continue;
+            const auto start = note.startBeat + section.startBar * plan.beatsPerBar;
+            const auto end = start + note.durationBeats;
+            groups[{note.partId, std::llround(start * 1000.0),
+                    std::llround(end * 1000.0)}].push_back(note.pitch);
+        }
+        if (groups.empty()) continue;
+        out << "SECTION " << sectionIndex << " " << section.name << "\n";
+        for (auto& [key, pitches] : groups) {
+            if (emitted >= maximumGroups) {
+                out << "TRUNCATED after " << maximumGroups
+                    << " complete attack/release groups; use the local MIDI audit for omitted events.\n";
+                return out.str();
+            }
+            std::sort(pitches.begin(), pitches.end());
+            pitches.erase(std::unique(pitches.begin(), pitches.end()), pitches.end());
+            const auto [partId, start, end] = key;
+            out << "  " << plan.instruments[partId - 1].id << " ["
+                << start / 1000.0 << "-" << end / 1000.0 << ":";
+            for (std::size_t i = 0; i < pitches.size(); ++i) {
+                if (i) out << ',';
+                out << pitches[i];
+            }
+            out << "]\n";
+            ++emitted;
+        }
+    }
+    return emitted == 0 ? std::string{} : out.str();
+}
+
 } // namespace pulso

@@ -105,6 +105,14 @@ struct NarrativeSpine {
     std::vector<NarrativeAct> acts;
 };
 
+struct CoherentReviewTrace {
+    bool attempted{};
+    bool accepted{};
+    int targetedWindows{};
+    double riskBefore{};
+    double riskAfter{};
+};
+
 struct SongPlan {
     std::string title{"Untitled Song"};
     std::string key{"C minor"};
@@ -144,6 +152,7 @@ struct SongPlan {
     // Local A/B mode: render only AI-authored performance cells and their declared
     // placements. Auditors may report defects but must not compose or reshape MIDI.
     bool aiSovereign{};
+    CoherentReviewTrace coherentReview;
     std::vector<SongSection> sections;
     PerformanceScore performanceScore;
     std::size_t implicitVoicesPruned{};

@@ -36,6 +36,10 @@ try {
   let tracks = 0;
   for (let i = 0; i < 80; i++) { tracks = await evaluate("document.querySelectorAll('.track-row').length"); if (tracks) break; await wait(100); }
   if (!tracks) throw new Error('No se dibujaron pistas MIDI.');
+  const durationDefault = await evaluate("document.querySelector('#duration').value");
+  if (durationDefault !== '32') throw new Error(`La prueba corta no es la seleccion predeterminada: ${durationDefault}`);
+  const proofDefault = await evaluate("document.querySelector('#proof-mode').checked");
+  if (!proofDefault) throw new Error('La prueba de tres pistas no esta activa por defecto.');
   const before = await evaluate("document.querySelector('#time-display').textContent");
   await evaluate("document.querySelector('#play').click()");
   await wait(1400);
@@ -51,7 +55,7 @@ try {
   const stopped = await evaluate("document.querySelector('#time-display').textContent");
   if (!stopped.startsWith('00:00')) throw new Error(`Stop no volvió al inicio: ${stopped}`);
   if (exceptions.length) throw new Error(`Excepción del navegador: ${exceptions[0]}`);
-  console.log(JSON.stringify({ tracks, before, after, muted, soloed, stopped, browserExceptions: 0 }));
+  console.log(JSON.stringify({ tracks, durationDefault, proofDefault, before, after, muted, soloed, stopped, browserExceptions: 0 }));
 } finally {
   socket?.close();
   child.kill();

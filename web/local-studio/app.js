@@ -2,7 +2,27 @@ import { parseMidi } from './midi.mjs';
 import { SuiteAudio, instrumentFor } from './audio-engine.mjs';
 
 const $ = selector => document.querySelector(selector);
+// A short, affordable proof of musical coherence is the safest default while
+// the full-length writer is being evaluated. At 120 BPM, 32 s is ~16 bars.
+$('#duration').add(new Option('Prueba corta · ~16 compases (120 BPM)', '32', true, true), 0);
 const ui = { form: $('#compose-form'), prompt: $('#prompt'), submit: $('#submit'), notice: $('#notice'), health: $('#health'), jobs: $('#jobs'), session: $('#session-content'), timeline: $('#timeline'), play: $('#play'), stop: $('#stop'), back: $('#back'), export: $('#export-all'), history: $('#history-panel') };
+ui.prompt.placeholder = 'Prueba corta: una melodía protagonista, un bajo y acordes que evolucionan con una resolución clara.';
+const proofLabel = document.createElement('label');
+proofLabel.className = 'proof-option';
+const proofInput = document.createElement('input');
+proofInput.type = 'checkbox'; proofInput.id = 'proof-mode'; proofInput.checked = true;
+const proofText = document.createElement('span');
+proofText.textContent = 'Prueba de coherencia · 3 pistas: acordes, bajo y melodía';
+proofLabel.append(proofInput, proofText);
+$('#compose-form .field-pair').after(proofLabel);
+const syncProofMode = () => {
+  proofInput.disabled = Number($('#duration').value) > 60 || $('#render-mode').value !== 'ai_sovereign';
+  if (proofInput.disabled) proofInput.checked = false;
+  proofLabel.classList.toggle('disabled', proofInput.disabled);
+};
+$('#duration').addEventListener('change', syncProofMode);
+$('#render-mode').addEventListener('change', syncProofMode);
+syncProofMode();
 const states = { queued: 'EN COLA', running: 'COMPONIENDO', completed: 'LISTA', failed: 'FALLIDA', interrupted: 'INTERRUMPIDA', cancelled: 'CANCELADA' };
 const palette = { pad: '#dfb64e', bass: '#71a1d0', keys: '#8b9dca', pluck: '#cc8b6e', lead: '#d84f2b', drums: '#75b57c', synth: '#a899c7' };
 const names = { pad: 'Seno · armonía', bass: 'Seno · bajo', keys: 'Seno · teclas', pluck: 'Seno · arpegio', lead: 'Seno · melodía', drums: 'Seno · percusión', synth: 'Seno · pista' };
@@ -11,7 +31,7 @@ const node = (tag, className, value) => { const el = document.createElement(tag)
 const fileUrl = (job, filename) => `/api/jobs/${job.id}/files/${encodeURIComponent(filename)}`;
 const download = (job, filename, label, className = '') => { const a = node('a', className, label); a.href = fileUrl(job, filename); a.download = filename; return a; };
 const number = value => new Intl.NumberFormat('es-AR').format(Number(value) || 0);
-let jobs = [], selectedId = null, loadedKey = null, loadVersion = 0, current = null, barPx = 22, playhead = null;
+let jobs = [], selectedId = null, loadedKey = null, loadVersion = 0, current = null, barPx = 22, playhead = null, previewDiagnostic = false;
 const audio = new SuiteAudio(updatePosition, () => { ui.play.textContent = '▶'; ui.play.setAttribute('aria-label', 'Reproducir'); });
 
 async function api(url, options = {}) { const response = await fetch(url, { cache: 'no-store', ...options }); const result = await response.json(); if (!response.ok) throw new Error(result.error || `Error HTTP ${response.status}`); return result; }
@@ -34,9 +54,12 @@ function actionButton(label, callback, className = '') { const button = node('bu
 function reuse(job) {
   ui.prompt.value = job.request.prompt;
   $('#duration').value = String(job.request.duration_seconds);
+  proofInput.checked = Boolean(job.request.proof_mode);
+  syncProofMode();
   $('#bpm').value = String(job.request.bpm);
   $('#behavior').value = job.request.behavior || 'adaptive';
   $('#render-mode').value = job.request.ai_sovereign ? 'ai_sovereign' : 'standard';
+  syncProofMode();
   $('#seed').value = job.request.seed;
   $('#prompt-count').textContent = `${ui.prompt.value.length} / 600`;
   ui.history.hidden = true;
@@ -51,6 +74,7 @@ function renderSession(job) {
   ui.session.append(node('p', 'session-prompt', job.request.prompt));
   const date = new Date(job.request.created_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
   ui.session.append(node('p', 'session-meta', `${date} · ${fmt(job.request.duration_seconds)} · ${job.request.bpm} BPM · semilla ${job.request.seed}`));
+  if (job.request.editorial_profile === 'ai-only-v2') ui.session.append(node('p', 'session-note', 'Perfil editorial local IA v2 · cada nota es autoría IA.'));
   if (job.state === 'running' || job.state === 'queued') {
     const elapsed = Math.max(0, (Date.now() - Date.parse(job.request.created_at)) / 1000);
     ui.session.append(node('p', 'session-note', `${job.stage || 'Iniciando'} · ${fmt(elapsed)}${job.total ? ` · ${job.completed}/${job.total}` : ''}`));
@@ -59,19 +83,32 @@ function renderSession(job) {
   if (job.error) ui.session.append(node('p', 'notice', job.error));
   if (job.checkpoint?.file && !job.manifest) ui.session.append(node('p', 'session-note', `Hay MIDI provisional: ${job.checkpoint.parts || 0} pistas con notas y ${job.checkpoint.notes || 0} notas. No es una obra terminada ni auditada.`));
   if (job.manifest?.editorial) {
-    const q = job.manifest.editorial, ready = q.creative_ready && q.narrative_ready && q.soundscape_ready && q.track_viability_ready;
+    const q = job.manifest.editorial, ready = q.creative_ready && q.narrative_ready && q.soundscape_ready && q.track_viability_ready && !q.musical_review_required;
     const box = node('div', `editorial ${ready ? 'complete' : ''}`);
     box.append(node('strong', '', ready ? 'Partitura lista para audición' : 'Partitura exportable · revisión musical pendiente'));
     box.append(node('span', '', `Resolución ${Math.round((q.resolution_score || 0) * 100)}% · diálogos ${q.dialogue_lines ?? 0} · compases bajo objetivo ${q.underfilled_bars ?? 0}`));
     if (!q.technical_ready) box.append(node('div', '', 'La integridad técnica MIDI requiere revisión.'));
+    if (q.musical_review_required) box.append(node('div', '', `Revisión musical sugerida: ${q.harmonic_conflicts ?? 0} tensiones verticales y ${q.low_register_conflicts ?? 0} cruces graves. El MIDI es íntegro; escuchá el contexto antes de decidir.`));
+    if (q.review_attempted) box.append(node('div', '', q.review_accepted
+      ? `La IA revisó ${q.review_windows ?? 0} pasajes; riesgo contextual ${Number(q.contextual_risk_before ?? 0).toFixed(1)} → ${Number(q.contextual_risk_after ?? 0).toFixed(1)}. Las demás notas quedaron intactas.`
+      : `La IA revisó ${q.review_windows ?? 0} pasajes, pero se conservó la partitura original porque la alternativa no mejoró con seguridad.`));
+    if (q.underwritten_roles_advisory) box.append(node('div', '', `Alguna función musical quedó poco desarrollada; el colchón presenta acordes polifónicos en ${q.chord_bed_polyphonic_stages ?? 0} de 3 tramos.`));
+    if (q.uniform_activity_advisory) box.append(node('div', '', 'Las entradas de melodía y acordes se repiten con la misma frecuencia en cada compás: escuchá si la hipnosis evoluciona lo suficiente.'));
     ui.session.append(box);
   }
   const actions = node('div', 'session-actions');
   actions.append(actionButton('Repetir ajustes', () => reuse(job)));
   if (job.manifest?.fullFile) actions.append(download(job, job.manifest.fullFile, '↓ Obra completa MIDI', 'primary-link'));
   if (job.checkpoint?.file && !job.manifest) actions.append(download(job, job.checkpoint.file, '↓ MIDI provisional'));
+  if (job.diagnostic?.file && !job.manifest) actions.append(download(job, job.diagnostic.file, '↓ MIDI rechazado (diagnóstico)'));
+  if (job.diagnostic?.planFile && !job.manifest) actions.append(download(job, job.diagnostic.planFile, 'Plan del candidato'));
+  if (job.diagnostic?.auditFile && !job.manifest) actions.append(download(job, job.diagnostic.auditFile, 'Auditoría del candidato'));
+  if (job.diagnostic?.file && !job.manifest) actions.append(actionButton(previewDiagnostic ? 'Escuchar último aceptado' : 'Escuchar candidato rechazado', () => {
+    previewDiagnostic = !previewDiagnostic; loadedKey = null; showSelected();
+  }));
   if (job.manifest?.comparisonFile) actions.append(download(job, job.manifest.comparisonFile, 'Referencia A/B'));
   if (job.manifest?.planFile) actions.append(download(job, job.manifest.planFile, 'Plan compositivo'));
+  if (job.manifest?.auditFile) actions.append(download(job, job.manifest.auditFile, 'Auditoría musical'));
   if (job.manifest) actions.append(download(job, 'manifest.json', 'Manifiesto'));
   actions.append(download(job, 'job.json', 'Solicitud JSON'));
   const trace = node('a', '', '↓ Traza JSON'); trace.href = `/api/jobs/${job.id}/trace?download=1`; trace.download = `pulso-trace-${job.id}.json`; actions.append(trace);
@@ -98,7 +135,7 @@ function renderHistory() {
     button.append(node('strong', '', job.manifest?.title || job.request.prompt.slice(0, 68)));
     button.append(node('span', 'status ' + job.state, states[job.state] || job.state));
     button.append(node('span', '', `${new Date(job.request.created_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt(job.request.duration_seconds)} · ${job.manifest?.tracks?.length || job.checkpoint?.parts || 0} pistas`));
-    button.addEventListener('click', () => { selectedId = job.id; loadedKey = null; ui.history.hidden = true; showSelected(); renderHistory(); });
+    button.addEventListener('click', () => { selectedId = job.id; loadedKey = null; previewDiagnostic = false; ui.history.hidden = true; showSelected(); renderHistory(); });
     ui.jobs.append(button);
   }
 }
@@ -111,14 +148,14 @@ function mergedMidi(parts, manifest) {
   const timing = parts[0].midi;
   return { ...timing, lengthBeats: Math.max(Number(manifest?.bars || 0) * timing.beatsPerBar, ...parts.map(part => part.midi.lengthBeats)) };
 }
-async function loadSong(job) {
+async function loadSong(job, diagnostic = false) {
   const version = ++loadVersion;
   audio.stop(); current = null; playhead = null;
   ui.play.disabled = true;
   ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Leyendo las notas MIDI de esta obra…'));
-  $('#song-title').textContent = job.manifest?.title || 'MIDI provisional';
+  $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
   $('#song-subtitle').textContent = 'Preparando partitura y monitor senoidal…';
-  const sourceTracks = job.manifest?.tracks?.length ? job.manifest.tracks : job.checkpoint?.file ? [{ filename: job.checkpoint.file, name: 'MIDI provisional' }] : [];
+  const sourceTracks = diagnostic && job.diagnostic?.file ? [{ filename: job.diagnostic.file, name: 'MIDI rechazado' }] : job.manifest?.tracks?.length ? job.manifest.tracks : job.checkpoint?.file ? [{ filename: job.checkpoint.file, name: 'MIDI provisional' }] : [];
   if (!sourceTracks.length) { ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Esta sesión todavía no tiene MIDI para escuchar.')); $('#song-subtitle').textContent = job.stage || job.error || 'Esperando una obra.'; setExport(job, null); return; }
   try {
     const parts = [];
@@ -142,20 +179,20 @@ async function loadSong(job) {
     current = { job, midi: timing, tracks };
     audio.setSong(timing, tracks);
     renderTimeline();
-    $('#song-title').textContent = job.manifest?.title || 'MIDI provisional';
-    $('#song-subtitle').textContent = job.manifest ? `${job.manifest.key || 'Tonalidad no declarada'} · ${job.manifest.bars || Math.ceil(timing.lengthBeats / timing.beatsPerBar)} compases · ${tracks.length} pistas con notas` : `Escucha provisional · ${tracks.length} pistas con notas · sin aprobación musical final`;
+    $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
+    $('#song-subtitle').textContent = diagnostic ? `Candidato rechazado · ${tracks.length} pistas con notas · NO aprobado` : job.manifest ? `${job.manifest.key || 'Tonalidad no declarada'} · ${job.manifest.bars || Math.ceil(timing.lengthBeats / timing.beatsPerBar)} compases · ${tracks.length} pistas con notas` : `Escucha provisional · ${tracks.length} pistas con notas · sin aprobación musical final`;
     $('#song-bpm').textContent = `${Math.round(job.manifest?.bpm || 60e6 / timing.tempos[0].microseconds)} BPM`;
     $('#song-key').textContent = job.manifest?.key || 'MIDI provisional';
     $('#song-stat').textContent = `${number(tracks.reduce((sum, track) => sum + track.notes.length, 0))} NOTAS · ${tracks.length} PISTAS`;
     $('#track-summary').textContent = `${tracks.length} pistas · ${fmt(audio.duration)}`;
     ui.play.disabled = false;
-    setExport(job, job.manifest?.fullFile || job.checkpoint?.file);
+    setExport(job, diagnostic ? job.diagnostic?.file : job.manifest?.fullFile || job.checkpoint?.file);
     updatePosition(0);
   } catch (error) {
     if (version !== loadVersion) return;
     ui.timeline.replaceChildren(node('div', 'timeline-empty', `No se pudo abrir el MIDI: ${error.message}`));
     $('#song-subtitle').textContent = 'La exportación MIDI sigue disponible si el archivo existe.';
-    setExport(job, job.manifest?.fullFile || job.checkpoint?.file);
+    setExport(job, diagnostic ? job.diagnostic?.file : job.manifest?.fullFile || job.checkpoint?.file);
   }
 }
 function renderTimeline() {
@@ -203,8 +240,8 @@ function showSelected() {
   const job = jobs.find(item => item.id === selectedId);
   if (!job) return;
   renderSession(job);
-  const key = `${job.id}:${job.manifest?.fullFile || job.checkpoint?.file || job.state}`;
-  if (key !== loadedKey) { loadedKey = key; loadSong(job); }
+  const key = `${job.id}:${previewDiagnostic && job.diagnostic?.file ? job.diagnostic.file : job.manifest?.fullFile || job.checkpoint?.file || job.state}`;
+  if (key !== loadedKey) { loadedKey = key; loadSong(job, previewDiagnostic && Boolean(job.diagnostic?.file)); }
 }
 async function refresh() {
   try {
@@ -212,7 +249,7 @@ async function refresh() {
     jobs = listing.jobs;
     const ready = status.workerReady && status.apiKeyConfigured;
     ui.health.className = `health ${ready ? '' : 'warn'}`;
-    ui.health.textContent = ready ? 'Motor local listo · Escuchar obras guardadas no consume API.' : `Composición no disponible: ${status.workerReady ? '' : 'falta el generador. '}${status.apiKeyConfigured ? '' : 'falta OPENAI_API_KEY en este proceso.'} Las obras guardadas siguen disponibles.`;
+    ui.health.textContent = ready ? `Perfil editorial local ${status.editorialProfile === 'ai-only-v2' ? 'IA v2' : 'anterior'} listo · Escuchar obras guardadas no consume API.` : `Composición no disponible: ${status.workerReady ? '' : 'falta el generador. '}${status.apiKeyConfigured ? '' : 'falta OPENAI_API_KEY en este proceso.'} Las obras guardadas siguen disponibles.`;
     ui.submit.disabled = Boolean(status.activeJobId) || !ready;
     $('#job-count').textContent = `${jobs.length} OBRAS`;
     if (!jobs.length) {
@@ -236,8 +273,8 @@ async function refresh() {
 }
 ui.form.addEventListener('submit', async event => {
   event.preventDefault(); showNotice(''); ui.submit.disabled = true;
-  const payload = { prompt: ui.prompt.value, duration_seconds: Number($('#duration').value), bpm: Number($('#bpm').value), behavior: $('#behavior').value, render_mode: $('#render-mode').value, seed: $('#seed').value.trim() };
-  try { const result = await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Pulso-Local': '1' }, body: JSON.stringify(payload) }); selectedId = result.job.id; loadedKey = null; await refresh(); }
+  const payload = { prompt: ui.prompt.value, duration_seconds: Number($('#duration').value), bpm: Number($('#bpm').value), behavior: $('#behavior').value, render_mode: $('#render-mode').value, seed: $('#seed').value.trim(), proof_mode: proofInput.checked && !proofInput.disabled };
+  try { const result = await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Pulso-Local': '1' }, body: JSON.stringify(payload) }); selectedId = result.job.id; loadedKey = null; previewDiagnostic = false; await refresh(); }
   catch (error) { showNotice(error.message); ui.submit.disabled = false; }
 });
 ui.prompt.addEventListener('input', () => { $('#prompt-count').textContent = `${ui.prompt.value.length} / 600`; });

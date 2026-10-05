@@ -95,19 +95,37 @@ struct PerformanceScoreReport {
     std::size_t narrativeCells{};
 };
 
+// Reports how much authored material can actually reach a named DAW part after
+// placements, fragments and voice maps are applied. Source-note counts alone do
+// not prove that a part is audible.
+struct PerformanceRealizationReport {
+    std::size_t placedSourceNotes{};
+    std::size_t unplacedSourceNotes{};
+    std::size_t realizableNotes{};
+    std::size_t excludedByFragment{};
+    std::size_t excludedBySection{};
+    std::size_t incompatibleVoiceMap{};
+};
+
 class PerformanceScoreEngine final {
 public:
     static constexpr std::size_t maximumGlobalCells = 512;
     static constexpr std::size_t maximumGlobalPlacements = 4096;
     static PerformanceScoreReport normalize(PerformanceScore&, std::size_t sectionCount,
-                                            const std::vector<double>& sectionLengths);
+                                            const std::vector<double>& sectionLengths,
+                                            bool preserveAuthoredPitch = false);
     [[nodiscard]] static std::array<bool, static_cast<std::size_t>(VoiceId::Count)>
         ownedVoicesForSection(const PerformanceScore&, int sectionIndex) noexcept;
     [[nodiscard]] static std::set<std::string>
         ownedInstrumentIdsForSection(const PerformanceScore&, int sectionIndex);
     static void replaceChunk(Pattern&, const PerformanceScore&, int sectionIndex,
                              double chunkStartInSection, double chunkLength,
-                             std::span<const InstrumentAssignment> instruments = {});
+                             std::span<const InstrumentAssignment> instruments = {},
+                             bool preserveAuthoredPitch = false);
+    [[nodiscard]] static PerformanceRealizationReport auditRealization(
+        const PerformanceScore&, std::string_view instrumentId,
+        std::span<const InstrumentAssignment> instruments,
+        std::span<const double> sectionLengths);
     [[nodiscard]] static std::uint64_t fingerprint(const PerformanceCell&) noexcept;
 };
 

@@ -333,6 +333,361 @@ bool SelectiveRepair::safeWithEditorialObservations(
     return narrativeSafe && soundscapeSafe && tracksSafe && deficit(report) <= 1.0;
 }
 
+bool SelectiveRepair::preservesNarrative(
+    const CompositionRenderReport& before,
+    const CompositionRenderReport& after) noexcept {
+    return after.narrative.score + .02 >= before.narrative.score &&
+        after.narrative.resolutionScore + .02 >= before.narrative.resolutionScore &&
+        after.narrative.motifClosure + .02 >= before.narrative.motifClosure &&
+        after.narrative.causalNarrative + .02 >= before.narrative.causalNarrative;
+}
+
+bool SelectiveRepair::improvedTonalCheckpoint(
+    const CompositionRenderReport& before,
+    const CompositionRenderReport& after,
+    double aiAuthoredNoteRatio) noexcept {
+    const auto technical = [](const CompositionRenderReport& report) {
+        return report.production.unsupportedChromaticNotes +
+            report.production.metricViolations + report.production.unsafeDurations +
+            report.production.orphanEvents;
+    };
+    const auto tonal = [](const CompositionRenderReport& report) {
+        return report.production.invalidSustains +
+            report.production.unintendedHarshOverlaps +
+            report.production.lowRegisterVerticalClashes;
+    };
+    // An overlap counter is an observation, not a musical objective. A rewrite
+    // that resolves a few overlaps but loses the ending or thematic return is
+    // not an improvement of the composition.
+    return aiAuthoredNoteRatio >= .999 && technical(after) <= technical(before) &&
+        after.production.invalidSustains <= before.production.invalidSustains &&
+        after.production.lowRegisterVerticalClashes <=
+            before.production.lowRegisterVerticalClashes &&
+        tonal(after) < tonal(before) && preservesNarrative(before, after);
+}
+
+std::vector<TonalConflictGroup> SelectiveRepair::tonalConflictGroups(
+    const SongPlan& plan, const TonalAuditReport& audit) {
+    std::map<std::tuple<std::size_t, std::size_t, int>, TonalConflictGroup> grouped;
+    const auto beatsPerBar = std::max(1.0, plan.beatsPerBar);
+    for (const auto& issue : audit.issues) {
+        if (issue.kind != "harsh_overlap" || issue.partId == 0 ||
+            issue.otherPartId == 0 || issue.partId > plan.instruments.size() ||
+            issue.otherPartId > plan.instruments.size())
+            continue;
+        const auto first = std::min<std::size_t>(issue.partId, issue.otherPartId) - 1;
+        const auto second = std::max<std::size_t>(issue.partId, issue.otherPartId) - 1;
+        const auto bar = std::max(0, static_cast<int>(std::floor(
+            issue.beat / beatsPerBar)));
+        auto& group = grouped[{first, second, bar}];
+        if (group.events == 0) {
+            group.firstInstrument = first;
+            group.secondInstrument = second;
+            group.bar = bar;
+            if (first == second) {
+                group.exampleFirstPitch = std::min(issue.pitch, issue.otherPitch);
+                group.exampleSecondPitch = std::max(issue.pitch, issue.otherPitch);
+            } else {
+                group.exampleFirstPitch = issue.partId - 1 == first
+                    ? issue.pitch : issue.otherPitch;
+                group.exampleSecondPitch = issue.partId - 1 == second
+                    ? issue.pitch : issue.otherPitch;
+            }
+        }
+        ++group.events;
+        group.overlapBeats += std::max(0.0, issue.overlapBeats);
+        group.longestOverlapBeats = std::max(group.longestOverlapBeats,
+                                            issue.overlapBeats);
+    }
+    std::vector<TonalConflictGroup> result;
+    result.reserve(grouped.size());
+    for (const auto& [key, group] : grouped) result.push_back(group);
+    std::stable_sort(result.begin(), result.end(), [](const auto& left, const auto& right) {
+        if (left.events != right.events) return left.events > right.events;
+        if (left.overlapBeats != right.overlapBeats)
+            return left.overlapBeats > right.overlapBeats;
+        return std::tie(left.bar, left.firstInstrument, left.secondInstrument) <
+            std::tie(right.bar, right.firstInstrument, right.secondInstrument);
+    });
+    return result;
+}
+
+std::vector<TonalIssue> SelectiveRepair::sustainedLowChordBedSeconds(
+    const SongPlan& plan, const TonalAuditReport& audit) {
+    std::vector<TonalIssue> result;
+    for (const auto& issue : audit.issues) {
+        if (issue.kind != "harsh_overlap" || issue.partId == 0 ||
+            issue.partId != issue.otherPartId ||
+            issue.partId > plan.instruments.size() ||
+            issue.overlapBeats < 2.0 ||
+            std::min(issue.pitch, issue.otherPitch) >= 55 ||
+            std::abs(issue.pitch - issue.otherPitch) > 2) continue;
+        const auto& instrument = plan.instruments[issue.partId - 1];
+        if (instrument.sourceVoice == VoiceId::HarmonicFoundation ||
+            instrument.role.find("primary_chord_bed") != std::string::npos)
+            result.push_back(issue);
+    }
+    return result;
+}
+
+std::vector<ChordVoicingTarget> SelectiveRepair::chordVoicingTargets(
+    const SongPlan& plan, const Pattern& pattern, const TonalAuditReport& audit,
+    std::size_t instrumentIndex, std::size_t maximumTargets) {
+    std::vector<ChordVoicingTarget> result;
+    if (instrumentIndex >= plan.instruments.size() || maximumTargets == 0 ||
+        plan.beatsPerBar <= 0.0) return result;
+    using Key = std::tuple<int, long long, long long>;
+    std::map<Key, ChordVoicingTarget> found;
+    const auto partId = static_cast<std::uint16_t>(instrumentIndex + 1);
+    for (const auto& issue : audit.issues) {
+        if (issue.kind != "harsh_overlap" ||
+            (issue.partId != partId && issue.otherPartId != partId)) continue;
+        const auto targetPitch = issue.partId == partId ? issue.pitch : issue.otherPitch;
+        for (const auto& note : pattern.notes) {
+            if (note.partId != partId || note.pitch != targetPitch ||
+                note.startBeat > issue.beat + .001 ||
+                note.endBeat() <= issue.beat + .001) continue;
+            for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+                const auto& section = plan.sections[sectionIndex];
+                const auto sectionStart = section.startBar * plan.beatsPerBar;
+                const auto sectionEnd = sectionStart + section.bars * plan.beatsPerBar;
+                if (note.startBeat < sectionStart - .001 ||
+                    note.startBeat >= sectionEnd - .001) continue;
+                const auto sectionBeat = note.startBeat - sectionStart;
+                const Key key{static_cast<int>(sectionIndex),
+                    std::llround(sectionBeat * 1000000.0),
+                    std::llround(note.durationBeats * 1000000.0)};
+                auto& target = found[key];
+                target.sectionIndex = static_cast<int>(sectionIndex);
+                target.sectionBeat = sectionBeat;
+                target.durationBeats = note.durationBeats;
+                ++target.conflictEvents;
+                break;
+            }
+            break;
+        }
+    }
+    for (auto& [key, target] : found) {
+        const auto sectionStart = plan.sections[target.sectionIndex].startBar * plan.beatsPerBar;
+        const auto absoluteStart = sectionStart + target.sectionBeat;
+        for (const auto& note : pattern.notes)
+            if (note.partId == partId &&
+                std::abs(note.startBeat - absoluteStart) < .001 &&
+                std::abs(note.durationBeats - target.durationBeats) < .001)
+                target.pitches.push_back(note.pitch);
+        std::sort(target.pitches.begin(), target.pitches.end());
+        target.pitches.erase(std::unique(target.pitches.begin(), target.pitches.end()),
+                             target.pitches.end());
+        if (target.pitches.size() >= 2) result.push_back(std::move(target));
+    }
+    std::stable_sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
+        if (a.conflictEvents != b.conflictEvents)
+            return a.conflictEvents > b.conflictEvents;
+        return std::tie(a.sectionIndex, a.sectionBeat) <
+            std::tie(b.sectionIndex, b.sectionBeat);
+    });
+    if (result.size() > maximumTargets) result.resize(maximumTargets);
+    std::sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
+        return std::tie(a.sectionIndex, a.sectionBeat) <
+            std::tie(b.sectionIndex, b.sectionBeat);
+    });
+    return result;
+}
+
+bool SelectiveRepair::applyChordVoicingPatches(
+    const SongPlan& plan, const PerformanceScore& original,
+    std::size_t instrumentIndex, const std::vector<ChordVoicingPatch>& patches,
+    PerformanceScore& output, std::string& error) {
+    error.clear();
+    if (instrumentIndex >= plan.instruments.size() || patches.empty()) {
+        error = "No valid chord-bed patch target";
+        return false;
+    }
+    const auto& owner = plan.instruments[instrumentIndex];
+    if (owner.sourceVoice != VoiceId::HarmonicFoundation) {
+        error = "Voicing patches require a harmonic-foundation owner";
+        return false;
+    }
+    using Key = std::tuple<int, long long, long long>;
+    const auto keyOf = [](int section, double beat, double duration) -> Key {
+        return {section, std::llround(beat * 1000000.0),
+            std::llround(duration * 1000000.0)};
+    };
+    std::map<Key, std::vector<int>> replacements;
+    for (const auto& patch : patches) {
+        if (patch.sectionIndex < 0 ||
+            static_cast<std::size_t>(patch.sectionIndex) >= plan.sections.size() ||
+            !std::isfinite(patch.sectionBeat) ||
+            !std::isfinite(patch.durationBeats) ||
+            patch.sectionBeat < 0.0 || patch.durationBeats < .01 ||
+            patch.sectionBeat + patch.durationBeats >
+                plan.sections[patch.sectionIndex].bars * plan.beatsPerBar + .001 ||
+            patch.pitches.size() < 2 || patch.pitches.size() > 6) {
+            error = "Voicing patch has invalid location, duration or chord size";
+            return false;
+        }
+        auto pitches = patch.pitches;
+        std::sort(pitches.begin(), pitches.end());
+        if (std::adjacent_find(pitches.begin(), pitches.end()) != pitches.end() ||
+            std::any_of(pitches.begin(), pitches.end(), [&](int pitch) {
+                return pitch < owner.minimumPitch || pitch > owner.maximumPitch;
+            }) || !replacements.emplace(keyOf(patch.sectionIndex,
+                patch.sectionBeat, patch.durationBeats), std::move(pitches)).second) {
+            error = "Voicing patch duplicates a pitch or target, or leaves the instrument register";
+            return false;
+        }
+    }
+
+    struct OriginalGroup {
+        std::vector<NoteEvent> notes;
+    };
+    std::map<Key, OriginalGroup> groups;
+    std::vector<std::pair<int, ControlEvent>> controls;
+    const auto partId = static_cast<std::uint16_t>(instrumentIndex + 1);
+    for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+        const auto& section = plan.sections[sectionIndex];
+        Pattern chunk;
+        const auto sectionBeats = section.bars * plan.beatsPerBar;
+        PerformanceScoreEngine::replaceChunk(chunk, original,
+            static_cast<int>(sectionIndex), 0.0, sectionBeats, plan.instruments);
+        for (const auto& note : chunk.notes) {
+            if (note.partId != partId) continue;
+            if (note.durationBeats > 64.0 ||
+                note.startBeat + note.durationBeats > sectionBeats + .001) {
+                error = "Original chord note cannot be represented without changing its duration";
+                return false;
+            }
+            groups[keyOf(static_cast<int>(sectionIndex), note.startBeat,
+                note.durationBeats)].notes.push_back(note);
+        }
+        for (const auto& control : chunk.controls)
+            if (control.partId == partId)
+                controls.emplace_back(static_cast<int>(sectionIndex), control);
+    }
+    for (const auto& [key, pitches] : replacements) {
+        const auto found = groups.find(key);
+        if (found == groups.end() || found->second.notes.size() < 2) {
+            error = "Voicing patch does not match a complete rendered chord attack";
+            return false;
+        }
+    }
+
+    output = original;
+    std::set<std::string> emptied;
+    for (auto& cell : output.cells) {
+        cell.notes.erase(std::remove_if(cell.notes.begin(), cell.notes.end(),
+            [&](const auto& note) { return note.instrumentId == owner.id; }), cell.notes.end());
+        cell.controls.erase(std::remove_if(cell.controls.begin(), cell.controls.end(),
+            [&](const auto& control) { return control.instrumentId == owner.id; }), cell.controls.end());
+        if (cell.notes.empty() && cell.controls.empty()) emptied.insert(cell.id);
+    }
+    output.cells.erase(std::remove_if(output.cells.begin(), output.cells.end(),
+        [&](const auto& cell) { return emptied.contains(cell.id); }), output.cells.end());
+    output.placements.erase(std::remove_if(output.placements.begin(), output.placements.end(),
+        [&](const auto& placement) { return emptied.contains(placement.cellId); }),
+        output.placements.end());
+    std::size_t serial = 0;
+    for (const auto& [key, group] : groups) {
+        const auto [sectionIndex, microbeat, microduration] = key;
+        const auto duration = microduration / 1000000.0;
+        PerformanceCell cell;
+        cell.id = "ai_voicing_" + owner.id + "_" + std::to_string(serial++);
+        cell.lengthBeats = std::max(.25, duration);
+        cell.themeId = owner.id + "_voicing";
+        cell.narrativeFunction = "harmony";
+        cell.ownedVoices = {owner.sourceVoice};
+        const auto replacement = replacements.find(key);
+        if (replacement == replacements.end()) {
+            for (const auto& note : group.notes)
+                cell.notes.push_back({0.0, note.durationBeats, note.pitch,
+                    note.velocity, note.voice, note.authoredTiming
+                        ? MetricIntent::DeliberateDisplacement : MetricIntent::StrictGrid,
+                    owner.id});
+        } else {
+            const auto velocity = group.notes.front().velocity;
+            for (const auto pitch : replacement->second)
+                cell.notes.push_back({0.0, duration, pitch, velocity,
+                    owner.sourceVoice, MetricIntent::StrictGrid, owner.id});
+        }
+        PerformancePlacement placement;
+        placement.cellId = cell.id;
+        placement.sectionIndex = sectionIndex;
+        placement.startBeat = microbeat / 1000000.0;
+        if (std::any_of(group.notes.begin(), group.notes.end(),
+                [](const auto& note) { return note.authoredTiming; }))
+            placement.metricIntent = MetricIntent::DeliberateDisplacement;
+        placement.fragmentEnd = cell.lengthBeats;
+        output.cells.push_back(std::move(cell));
+        output.placements.push_back(std::move(placement));
+    }
+    for (const auto& [sectionIndex, control] : controls) {
+        PerformanceCell cell;
+        cell.id = "ai_voicing_ctl_" + owner.id + "_" + std::to_string(serial++);
+        cell.lengthBeats = .25;
+        cell.ownedVoices = {control.voice};
+        cell.controls.push_back({0.0, control.controller, control.value,
+            control.voice, owner.id});
+        PerformancePlacement placement;
+        placement.cellId = cell.id;
+        placement.sectionIndex = sectionIndex;
+        placement.startBeat = control.beat;
+        placement.fragmentEnd = cell.lengthBeats;
+        output.cells.push_back(std::move(cell));
+        output.placements.push_back(std::move(placement));
+    }
+    if (output.cells.size() > PerformanceScoreEngine::maximumGlobalCells ||
+        output.placements.size() > PerformanceScoreEngine::maximumGlobalPlacements) {
+        error = "Voicing patch would exceed performance capacity";
+        output = {};
+        return false;
+    }
+    return true;
+}
+
+bool SelectiveRepair::preservesUntouchedMidi(
+    const SongPlan& plan, const Pattern& before, const Pattern& after,
+    std::size_t instrumentIndex, const std::vector<ChordVoicingPatch>& patches) {
+    if (instrumentIndex >= plan.instruments.size()) return false;
+    using NoteSignature = std::tuple<std::uint16_t, long long, long long, int, int>;
+    const auto signatures = [&](const Pattern& song) {
+        std::vector<NoteSignature> result;
+        for (const auto& note : song.notes) {
+            auto edited = false;
+            if (note.partId == instrumentIndex + 1)
+                for (const auto& patch : patches) {
+                    if (patch.sectionIndex < 0 ||
+                        static_cast<std::size_t>(patch.sectionIndex) >= plan.sections.size())
+                        continue;
+                    const auto start = plan.sections[patch.sectionIndex].startBar *
+                        plan.beatsPerBar + patch.sectionBeat;
+                    if (std::abs(note.startBeat - start) < .001 &&
+                        std::abs(note.durationBeats - patch.durationBeats) < .001) {
+                        edited = true;
+                        break;
+                    }
+                }
+            if (!edited) result.emplace_back(note.partId,
+                std::llround(note.startBeat * 1000000.0),
+                std::llround(note.durationBeats * 1000000.0),
+                note.pitch, note.velocity);
+        }
+        std::sort(result.begin(), result.end());
+        return result;
+    };
+    using ControlSignature = std::tuple<std::uint16_t, long long, int, int>;
+    const auto controls = [](const Pattern& song) {
+        std::vector<ControlSignature> result;
+        for (const auto& control : song.controls)
+            result.emplace_back(control.partId,
+                std::llround(control.beat * 1000000.0),
+                control.controller, control.value);
+        std::sort(result.begin(), result.end());
+        return result;
+    };
+    return signatures(before) == signatures(after) &&
+        controls(before) == controls(after);
+}
+
 double SelectiveRepair::deficit(const CompositionRenderReport& report) noexcept {
     auto value = report.production.ready ? 0.0 : 5.0;
     if (report.narrative.active && !report.narrative.creativeReady)
@@ -468,6 +823,27 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
         if (finding.missingChordBedNarrativeArc)
             add(finding.instrumentIndex, 17.0,
                 "extend the central chord bed through premise, development, climax and the audible final stage");
+    }
+
+    // Continuity is an ensemble-level musical obligation, not a note-count
+    // quota for one lane. When the declared electronic floor is absent, ask
+    // the AI to revisit the two harmonic responsibilities together while
+    // preserving breakdowns and authored rests.
+    if (report.soundscape.active && report.soundscape.harmonicFloorCoverage < .70) {
+        const auto bed = centralChordBedOwner(plan);
+        if (bed) add(*bed, 20.0,
+            "develop the authored chord-bed arc so harmony carries through the form with intentional breaths");
+        const auto companion = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+            [&](const auto& instrument) {
+                const auto index = static_cast<std::size_t>(
+                    &instrument - plan.instruments.data());
+                return (!bed || index != *bed) &&
+                    (isVoiceInFamily(instrument.sourceVoice, VoiceFamily::Harmony) ||
+                     instrument.sourceVoice == VoiceId::Atmosphere);
+            });
+        if (companion != plan.instruments.end())
+            add(static_cast<std::size_t>(std::distance(plan.instruments.begin(), companion)),
+                12.0, "write an independent harmonic memory that supports the chord bed during its chosen breaths");
     }
 
     // Token and underwritten tracks are the cheapest, most deterministic repairs.
@@ -1232,11 +1608,13 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
             if (protagonist) {
                 const auto narrativeWindowBars =
                     plan.compositionBehavior == CompositionBehavior::Hypnotic ? 16 : 8;
+                auto eligibleNarrativeSections = std::size_t{};
                 for (const auto& section : plan.sections) {
                     const auto active = instrument.activeSections.empty() ||
                         std::find(instrument.activeSections.begin(), instrument.activeSections.end(),
                                   section.name) != instrument.activeSections.end();
                     if (!active) continue;
+                    ++eligibleNarrativeSections;
                     for (auto localBar = 0; localBar < section.bars;
                          localBar += narrativeWindowBars) {
                         ++deficit.minimumNarrativePhraseWindows;
@@ -1272,14 +1650,17 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                             section.startBar + localBar);
                     }
                 }
-                // A protagonist is a dramatic speaker, not an always-on density
-                // layer. Forty percent of eligible long-form windows is enough when
-                // section coverage, thematic development and the coda are validated
-                // independently. This preserves anticipation and negative space.
+                // A dramatic speaker need not appear at a fixed rate for the
+                // entire duration of a long work. Scale its obligation with the
+                // authored sections, while the other gates independently check
+                // active bars, development, thematic identity and final closure.
                 deficit.minimumNarrativePhraseWindows = std::min(
                     deficit.minimumNarrativePhraseWindows,
                     std::max<std::size_t>(3, static_cast<std::size_t>(std::ceil(
                         static_cast<double>(deficit.minimumNarrativePhraseWindows) * .40))));
+                deficit.minimumNarrativePhraseWindows = std::min(
+                    deficit.minimumNarrativePhraseWindows,
+                    std::max<std::size_t>(3, eligibleNarrativeSections));
                 if (deficit.narrativePhraseWindows < deficit.minimumNarrativePhraseWindows) {
                     deficit.missingNarrativePresence = true;
                     incomplete = true;
@@ -1898,6 +2279,157 @@ bool SelectiveRepair::deferableMarginalMelodicSpeech(
         !deficit.missingSectionalEvolution && !deficit.missingNarrativePresence &&
         !deficit.missingThematicDevelopment && !deficit.missingCentralChordBed &&
         !deficit.missingChordBedBreath && !deficit.missingChordBedNarrativeArc;
+}
+
+bool SelectiveRepair::acceptsFocusedProtagonistCompletion(
+    const PerformanceCoverageDeficit& before,
+    const PerformanceCoverageDeficit* after,
+    std::span<const int> requestedWindowStartBars,
+    bool codaOnly,
+    std::size_t realizableNotesBefore,
+    std::size_t realizableNotesAfter) noexcept {
+    if (realizableNotesAfter <= realizableNotesBefore) return false;
+    const auto complete = after == nullptr;
+    if (codaOnly)
+        return before.missingCodaResolution &&
+            (complete || !after->missingCodaResolution);
+    if (requestedWindowStartBars.empty()) return false;
+    const auto narrativeImproved = complete ||
+        after->narrativePhraseWindows > before.narrativePhraseWindows;
+    if (!narrativeImproved) return false;
+    return std::any_of(requestedWindowStartBars.begin(),
+        requestedWindowStartBars.end(), [&](const auto bar) {
+            return complete || std::find(
+                after->missingNarrativeWindowStartBars.begin(),
+                after->missingNarrativeWindowStartBars.end(), bar) ==
+                after->missingNarrativeWindowStartBars.end();
+        });
+}
+
+bool SelectiveRepair::focusedProtagonistAdditionInScope(
+    const SongPlan& plan, const PerformanceScore& addition,
+    std::size_t instrumentIndex,
+    std::span<const int> requestedWindowStartBars,
+    bool codaOnly) {
+    if (instrumentIndex >= plan.instruments.size() || plan.sections.empty() ||
+        plan.beatsPerBar <= 0.0 || (!codaOnly && requestedWindowStartBars.empty()))
+        return false;
+    std::vector<double> sectionLengths;
+    sectionLengths.reserve(plan.sections.size());
+    for (const auto& section : plan.sections)
+        sectionLengths.push_back(section.bars * plan.beatsPerBar);
+    const auto audit = PerformanceScoreEngine::auditRealization(
+        addition, plan.instruments[instrumentIndex].id,
+        plan.instruments, sectionLengths);
+    if (audit.placedSourceNotes == 0 || audit.realizableNotes == 0 ||
+        audit.unplacedSourceNotes > 0 || audit.excludedByFragment > 0 ||
+        audit.excludedBySection > 0 || audit.incompatibleVoiceMap > 0)
+        return false;
+    const auto windowBars = plan.compositionBehavior ==
+        CompositionBehavior::Hypnotic ? 16 : 8;
+    auto renderedNotes = std::size_t{};
+    for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size();
+         ++sectionIndex) {
+        Pattern chunk;
+        PerformanceScoreEngine::replaceChunk(chunk, addition,
+            static_cast<int>(sectionIndex), 0.0, sectionLengths[sectionIndex],
+            plan.instruments);
+        for (const auto& note : chunk.notes) {
+            if (note.partId != instrumentIndex + 1) continue;
+            const auto absoluteBeat =
+                plan.sections[sectionIndex].startBar * plan.beatsPerBar +
+                note.startBeat;
+            const auto withinScope = codaOnly
+                ? absoluteBeat >= std::max(0.0,
+                    (plan.totalBars - 8) * plan.beatsPerBar) &&
+                    absoluteBeat < plan.totalBars * plan.beatsPerBar
+                : std::any_of(requestedWindowStartBars.begin(),
+                    requestedWindowStartBars.end(), [&](const auto startBar) {
+                        return absoluteBeat >= startBar * plan.beatsPerBar &&
+                            absoluteBeat < (startBar + windowBars) * plan.beatsPerBar;
+                    });
+            if (!withinScope) return false;
+            ++renderedNotes;
+        }
+    }
+    return renderedNotes > 0 && renderedNotes == audit.realizableNotes;
+}
+
+std::optional<std::size_t> SelectiveRepair::centralChordBedOwner(
+    const SongPlan& plan) {
+    return centralChordBedIndex(plan);
+}
+
+ChordBedFormCoverage SelectiveRepair::chordBedFormCoverage(
+    const SongPlan& plan, const PerformanceScore& score,
+    std::size_t instrumentIndex) {
+    ChordBedFormCoverage coverage;
+    if (instrumentIndex >= plan.instruments.size() || plan.sections.empty() ||
+        plan.totalBars <= 0 || plan.beatsPerBar <= 0.0)
+        return coverage;
+    std::map<std::pair<int, std::int64_t>, std::set<int>> attacks;
+    const auto songBeats = plan.totalBars * plan.beatsPerBar;
+    for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size();
+         ++sectionIndex) {
+        const auto& section = plan.sections[sectionIndex];
+        Pattern chunk;
+        PerformanceScoreEngine::replaceChunk(chunk, score,
+            static_cast<int>(sectionIndex), 0.0,
+            section.bars * plan.beatsPerBar, plan.instruments);
+        for (const auto& note : chunk.notes) {
+            if (note.partId != instrumentIndex + 1) continue;
+            const auto absoluteBeat =
+                section.startBar * plan.beatsPerBar + note.startBeat;
+            const auto stage = std::clamp(static_cast<int>(
+                std::floor(absoluteBeat * 3.0 / songBeats)), 0, 2);
+            const auto attack = static_cast<std::int64_t>(
+                std::llround(absoluteBeat * 8.0));
+            attacks[{stage, attack}].insert(note.pitch);
+        }
+    }
+    for (const auto& [key, pitches] : attacks) {
+        if (pitches.size() < 3) continue;
+        if (key.first == 0) coverage.opening = true;
+        if (key.first == 1) coverage.development = true;
+        if (key.first == 2) coverage.closing = true;
+    }
+    return coverage;
+}
+
+long long SelectiveRepair::measuredTonalDebt(
+    const CompositionRenderReport& report) noexcept {
+    return static_cast<long long>(report.production.unintendedHarshOverlaps) +
+        static_cast<long long>(report.production.invalidSustains) +
+        static_cast<long long>(report.production.lowRegisterVerticalClashes);
+}
+
+bool SelectiveRepair::deferableLocalProtagonistEditorial(
+    const SongPlan& plan, const PerformanceCoverageDeficit& deficit) noexcept {
+    if (deficit.instrumentId.empty() ||
+        deficit.instrumentId != plan.narrativeSpine.protagonistInstrumentId ||
+        deficit.notes == 0 ||
+        deficit.notes < deficit.minimumNotes ||
+        deficit.authoredNotes < deficit.minimumAuthoredNotes ||
+        deficit.activeBars < deficit.minimumActiveBars ||
+        deficit.phrases < deficit.minimumPhrases ||
+        deficit.sections < deficit.minimumSections ||
+        deficit.sectionalStates < deficit.minimumSectionalStates ||
+        deficit.missingCodaResolution ||
+        deficit.missingThematicRelationship ||
+        deficit.missingAuthoredDevelopment ||
+        deficit.duplicatedIndependentLine ||
+        deficit.missingSectionalEvolution ||
+        deficit.missingThematicDevelopment ||
+        deficit.missingCentralChordBed ||
+        deficit.missingChordBedBreath ||
+        deficit.missingChordBedNarrativeArc)
+        return false;
+    if (deficit.missingNarrativePresence &&
+        deficit.narrativePhraseWindows <
+            std::max<std::size_t>(2,
+                (deficit.minimumNarrativePhraseWindows + 1) / 2))
+        return false;
+    return deficit.missingNarrativePresence || deficit.missingMelodicSpeech;
 }
 
 bool SelectiveRepair::deferableProtagonistCoverage(

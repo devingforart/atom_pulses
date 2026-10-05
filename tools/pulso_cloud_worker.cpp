@@ -1,6 +1,9 @@
 #include "plugin/AiComposer.h"
 #include "plugin/MidiExporter.h"
 #include "plugin/SongGenerationPipeline.h"
+#include "core/CoherentProofGate.h"
+#include "core/CoherentProofRevision.h"
+#include "core/EditorialSafety.h"
 #include "core/PerformanceScore.h"
 
 #include <juce_core/juce_core.h>
@@ -11,6 +14,8 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
+#include <numeric>
+#include <optional>
 #include <stop_token>
 
 namespace {
@@ -56,8 +61,203 @@ pulso::CompositionBehavior behaviorFrom(const juce::String& value) {
     return pulso::CompositionBehavior::Adaptive;
 }
 
+juce::var planAuditFor(const pulso::SongPlan& plan) {
+    auto* root = new juce::DynamicObject();
+    root->setProperty("schema_version", 2);
+    root->setProperty("title", juce::String::fromUTF8(plan.title.c_str()));
+    root->setProperty("key", juce::String::fromUTF8(plan.key.c_str()));
+    root->setProperty("root_pitch_class", plan.rootPitchClass);
+    root->setProperty("tonal_policy", juce::String(pulso::tonalPolicyKey(
+        plan.harmonicLanguage.tonalPolicy).data()));
+    root->setProperty("total_bars", plan.totalBars);
+    root->setProperty("beats_per_bar", plan.beatsPerBar);
+    root->setProperty("protagonist_id",
+        juce::String::fromUTF8(plan.narrativeSpine.protagonistInstrumentId.c_str()));
+    root->setProperty("motif_identity",
+        juce::String::fromUTF8(plan.narrativeSpine.motifIdentity.c_str()));
+    root->setProperty("harmonic_debt",
+        juce::String::fromUTF8(plan.narrativeSpine.harmonicDebt.c_str()));
+    root->setProperty("resolution_intent",
+        juce::String::fromUTF8(plan.narrativeSpine.resolution.c_str()));
+    juce::Array<juce::var> narrativeActs;
+    for (const auto& act : plan.narrativeSpine.acts) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("section", juce::String::fromUTF8(act.sectionName.c_str()));
+        item->setProperty("stage", juce::String(pulso::narrativeStageKey(act.stage).data()));
+        item->setProperty("cause", juce::String::fromUTF8(act.cause.c_str()));
+        item->setProperty("consequence", juce::String::fromUTF8(act.consequence.c_str()));
+        item->setProperty("unresolved", juce::String::fromUTF8(act.unresolvedElement.c_str()));
+        item->setProperty("resolution_target",
+            juce::String::fromUTF8(act.resolutionTarget.c_str()));
+        narrativeActs.add(juce::var(item));
+    }
+    root->setProperty("narrative_acts", narrativeActs);
+    juce::Array<juce::var> palette;
+    for (const auto& chord : plan.chordPalette) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("id", juce::String::fromUTF8(chord.id.c_str()));
+        item->setProperty("label", juce::String::fromUTF8(chord.label.c_str()));
+        item->setProperty("root_pitch_class", chord.rootPitchClass);
+        item->setProperty("bass_pitch_class", chord.bassPitchClass);
+        item->setProperty("function", juce::String(pulso::harmonicFunctionKey(chord.function).data()));
+        item->setProperty("voicing", juce::String(pulso::voicingStrategyKey(chord.voicing).data()));
+        item->setProperty("tension", chord.tension);
+        juce::Array<juce::var> pitches;
+        for (const auto pitch : chord.pitchClasses) pitches.add(pitch);
+        item->setProperty("pitch_classes", pitches);
+        palette.add(juce::var(item));
+    }
+    root->setProperty("chord_palette", palette);
+    juce::Array<juce::var> sections;
+    for (const auto& section : plan.sections) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("name", juce::String::fromUTF8(section.name.c_str()));
+        item->setProperty("function", juce::String::fromUTF8(section.function.c_str()));
+        item->setProperty("harmonic_direction",
+            juce::String::fromUTF8(section.harmonicDirection.c_str()));
+        item->setProperty("motif_treatment",
+            juce::String::fromUTF8(section.motifTreatment.c_str()));
+        item->setProperty("start_bar", section.startBar);
+        item->setProperty("bars", section.bars);
+        item->setProperty("energy", section.energy);
+        item->setProperty("tension", section.tension);
+        item->setProperty("density", section.density);
+        juce::Array<juce::var> harmony;
+        for (const auto& event : section.harmonicEvents) {
+            auto* point = new juce::DynamicObject();
+            point->setProperty("bar_offset", event.barOffset);
+            point->setProperty("beat_offset", event.beatOffset);
+            point->setProperty("absolute_beat", (section.startBar + event.barOffset) *
+                plan.beatsPerBar + event.beatOffset);
+            point->setProperty("chord_id", juce::String::fromUTF8(event.chordId.c_str()));
+            point->setProperty("purpose", juce::String::fromUTF8(event.purpose.c_str()));
+            harmony.add(juce::var(point));
+        }
+        item->setProperty("harmonic_events", harmony);
+        sections.add(juce::var(item));
+    }
+    root->setProperty("sections", sections);
+    juce::Array<juce::var> cast;
+    for (const auto& part : plan.instruments) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("id", juce::String::fromUTF8(part.id.c_str()));
+        item->setProperty("name", juce::String::fromUTF8(part.name.c_str()));
+        item->setProperty("role", juce::String::fromUTF8(part.role.c_str()));
+        item->setProperty("minimum_pitch", part.minimumPitch);
+        item->setProperty("maximum_pitch", part.maximumPitch);
+        item->setProperty("content_lane_id", juce::String::fromUTF8(part.contentLaneId.c_str()));
+        item->setProperty("line_relationship", juce::String::fromUTF8(part.lineRelationship.c_str()));
+        juce::Array<juce::var> active;
+        for (const auto& section : part.activeSections)
+            active.add(juce::String::fromUTF8(section.c_str()));
+        item->setProperty("active_sections", active);
+        cast.add(juce::var(item));
+    }
+    root->setProperty("cast", cast);
+    root->setProperty("performance_cells", static_cast<int>(plan.performanceScore.cells.size()));
+    root->setProperty("performance_placements",
+        static_cast<int>(plan.performanceScore.placements.size()));
+    return juce::var(root);
+}
+
+juce::var proofAuditFor(const pulso::CoherentProofGateReport& report) {
+    auto* root = new juce::DynamicObject();
+    root->setProperty("schema_version", 1);
+    root->setProperty("exact_ai_notes", report.exactAiNotes);
+    root->setProperty("technical_ready", report.technicalReady);
+    root->setProperty("publishable", report.ready);
+    root->setProperty("musical_review_required", report.musicalReviewRequired);
+    root->setProperty("contextual_risk", pulso::CoherentProofRevision::risk(report));
+    root->setProperty("uniform_activity_advisory", report.uniformActivity);
+    root->setProperty("underwritten_roles_advisory", report.underwrittenRoles);
+    root->setProperty("chord_bed_polyphonic_stages", report.chordBedPolyphonicStages);
+    auto* integrity = new juce::DynamicObject();
+    integrity->setProperty("metric_violations", static_cast<int>(report.metricViolations));
+    integrity->setProperty("unsafe_durations", static_cast<int>(report.unsafeDurations));
+    integrity->setProperty("orphan_events", static_cast<int>(report.orphanEvents));
+    root->setProperty("integrity", juce::var(integrity));
+    auto* musical = new juce::DynamicObject();
+    musical->setProperty("unsupported_chromatic", report.unsupportedChromaticNotes);
+    musical->setProperty("strong_non_chord", report.strongNonChordNotes);
+    musical->setProperty("invalid_sustains", report.invalidSustains);
+    musical->setProperty("harsh_overlaps", report.unintendedHarshOverlaps);
+    musical->setProperty("low_register_clashes",
+        static_cast<int>(report.lowRegisterVerticalClashes));
+    root->setProperty("musical_observations", juce::var(musical));
+    juce::Array<juce::var> evidence;
+    for (const auto& issue : report.issues) {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("kind", juce::String::fromUTF8(issue.kind.c_str()));
+        item->setProperty("assessment", juce::String::fromUTF8(issue.assessment.c_str()));
+        item->setProperty("register", juce::String::fromUTF8(issue.registerName.c_str()));
+        item->setProperty("beat", issue.beat);
+        item->setProperty("overlap_beats", issue.overlapBeats);
+        item->setProperty("note_duration_beats", issue.noteDurationBeats);
+        item->setProperty("pitch", issue.pitch);
+        item->setProperty("other_pitch", issue.otherPitch);
+        item->setProperty("part_id", static_cast<int>(issue.partId));
+        item->setProperty("other_part_id", static_cast<int>(issue.otherPartId));
+        item->setProperty("chord_id", juce::String::fromUTF8(issue.chordId.c_str()));
+        item->setProperty("chord_function", juce::String::fromUTF8(issue.chordFunction.c_str()));
+        item->setProperty("pitch_declared", issue.pitchDeclared);
+        item->setProperty("other_pitch_declared", issue.otherPitchDeclared);
+        item->setProperty("possible_resolution", issue.resolutionObserved);
+        item->setProperty("review_priority", pulso::CoherentProofRevision::issuePriority(issue));
+        evidence.add(juce::var(item));
+    }
+    root->setProperty("issues", evidence);
+    return juce::var(root);
+}
+
+juce::var musicalAuditFor(const pulso::Pattern& song,
+                          const pulso::CompositionRenderReport& audit) {
+    auto* result = new juce::DynamicObject();
+    result->setProperty("schema_version", 1);
+    result->setProperty("technical_ready",
+        pulso::EditorialSafety::technicallySafeAiScore(song, audit));
+    result->setProperty("narrative_ready", audit.narrative.narrativeSpineReady);
+    result->setProperty("motif_closure", audit.narrative.motifClosure);
+    result->setProperty("tonal_closure", audit.narrative.tonalClosure);
+    result->setProperty("register_release", audit.narrative.registerRelease);
+    result->setProperty("density_release", audit.narrative.densityRelease);
+    result->setProperty("resolution_score", audit.narrative.resolutionScore);
+    result->setProperty("causal_narrative", audit.narrative.causalNarrative);
+    result->setProperty("soundscape_ready", audit.soundscape.ready);
+    result->setProperty("declared_layers", static_cast<int>(audit.soundscape.declaredLayers));
+    result->setProperty("meaningful_layers", static_cast<int>(audit.soundscape.meaningfulLayers));
+    result->setProperty("harmonic_floor_coverage", audit.soundscape.harmonicFloorCoverage);
+    result->setProperty("harmonic_conflicts", audit.production.unintendedHarshOverlaps);
+    result->setProperty("low_register_conflicts",
+        static_cast<int>(audit.production.lowRegisterVerticalClashes));
+    result->setProperty("unsupported_chromatic", audit.production.unsupportedChromaticNotes);
+    result->setProperty("invalid_sustains", audit.production.invalidSustains);
+    juce::Array<juce::var> narrativeIssues;
+    for (const auto& issue : audit.narrative.issues)
+        narrativeIssues.add(juce::String::fromUTF8(issue.c_str()));
+    result->setProperty("narrative_issues", narrativeIssues);
+    juce::Array<juce::var> soundscapeIssues;
+    for (const auto& issue : audit.soundscape.issues)
+        soundscapeIssues.add(juce::String::fromUTF8(issue.c_str()));
+    result->setProperty("soundscape_issues", soundscapeIssues);
+    juce::Array<juce::var> tonalIssues;
+    for (const auto& issue : audit.finalTonalPass.after.issues) {
+        if (tonalIssues.size() >= 64) break;
+        auto* item = new juce::DynamicObject();
+        item->setProperty("kind", juce::String::fromUTF8(issue.kind.c_str()));
+        item->setProperty("beat", issue.beat);
+        item->setProperty("overlap_beats", issue.overlapBeats);
+        item->setProperty("pitch", issue.pitch);
+        item->setProperty("other_pitch", issue.otherPitch);
+        item->setProperty("part_id", static_cast<int>(issue.partId));
+        item->setProperty("other_part_id", static_cast<int>(issue.otherPartId));
+        tonalIssues.add(juce::var(item));
+    }
+    result->setProperty("tonal_issue_examples", tonalIssues);
+    return juce::var(result);
+}
+
 void writeProvisionalMidi(const juce::File& output, const pulso::SongPlan& plan,
-                          std::size_t checkpointNumber) {
+                          std::size_t checkpointNumber, bool diagnostic, bool proofMode) {
     if (plan.performanceScore.empty() || plan.sections.empty()) return;
     pulso::Pattern song;
     song.lengthBeats = plan.totalBars * plan.beatsPerBar;
@@ -79,7 +279,8 @@ void writeProvisionalMidi(const juce::File& output, const pulso::SongPlan& plan,
         pulso::Pattern chunk;
         const auto sectionBeats = section.bars * plan.beatsPerBar;
         pulso::PerformanceScoreEngine::replaceChunk(chunk, plan.performanceScore,
-            static_cast<int>(sectionIndex), 0.0, sectionBeats, plan.instruments);
+            static_cast<int>(sectionIndex), 0.0, sectionBeats, plan.instruments,
+            plan.aiSovereign);
         const auto offset = section.startBar * plan.beatsPerBar;
         for (auto note : chunk.notes) {
             note.startBeat += offset;
@@ -91,7 +292,7 @@ void writeProvisionalMidi(const juce::File& output, const pulso::SongPlan& plan,
         }
     }
     if (song.notes.empty()) return;
-    const auto filename = "partial-" +
+    const auto filename = juce::String(diagnostic ? "diagnostic-" : "partial-") +
         juce::String(static_cast<int>(checkpointNumber)).paddedLeft('0', 2) + ".mid";
     pulso::plugin::MidiExportOptions options;
     options.bpm = plan.bpm;
@@ -112,7 +313,37 @@ void writeProvisionalMidi(const juce::File& output, const pulso::SongPlan& plan,
                 return note.partId == part.id;
             });
         })));
-    output.getChildFile("checkpoint.json").replaceWithText(
+    const auto stem = filename.upToLastOccurrenceOf(".mid", false, false);
+    const auto planFile = stem + "-plan.json";
+    if (output.getChildFile(planFile).replaceWithText(
+            juce::JSON::toString(planAuditFor(plan), false), false, false, "\n"))
+        checkpoint->setProperty("planFile", planFile);
+    pulso::GenerationContext foundation;
+    foundation.role = pulso::Role::Ensemble;
+    foundation.rootPitchClass = plan.rootPitchClass;
+    foundation.scale = plan.scale;
+    foundation.beatsPerBar = plan.beatsPerBar;
+    foundation.seed = plan.seed;
+    foundation.humanize = 0.0;
+    pulso::CompositionRenderReport audit;
+    const auto rendered = pulso::SongComposer{}.render(plan, foundation, {}, &audit);
+    const auto musicalFile = stem + "-musical-audit.json";
+    if (output.getChildFile(musicalFile).replaceWithText(
+            juce::JSON::toString(musicalAuditFor(rendered, audit), false),
+            false, false, "\n"))
+        checkpoint->setProperty("musicalAuditFile", musicalFile);
+    if (diagnostic && proofMode) {
+        const auto authoredNotes = std::accumulate(plan.performanceScore.cells.begin(),
+            plan.performanceScore.cells.end(), std::size_t{},
+            [](std::size_t count, const auto& cell) { return count + cell.notes.size(); });
+        const auto gate = pulso::CoherentProofGate::evaluate(
+            plan, rendered, audit, authoredNotes);
+        const auto auditFile = stem + "-audit.json";
+        if (output.getChildFile(auditFile).replaceWithText(
+                juce::JSON::toString(proofAuditFor(gate), false), false, false, "\n"))
+            checkpoint->setProperty("auditFile", auditFile);
+    }
+    output.getChildFile(diagnostic ? "diagnostic.json" : "checkpoint.json").replaceWithText(
         juce::JSON::toString(juce::var(checkpoint), false), false, false, "\n");
 }
 
@@ -141,6 +372,21 @@ int main(int argc, char** argv) {
         return fail(output, "Server OpenAI key is not configured");
     pulso::plugin::SongGenerationRequest request;
     request.direction = prompt;
+    const auto proofMode = object->getProperty("proof_mode") == juce::var(true);
+    if (proofMode) {
+        if (duration > 60) return fail(output, "Proof mode requires at most 60 seconds");
+        const auto explicitCount = pulso::plugin::AiComposer::requestedInstrumentCount(prompt);
+        if (explicitCount != 0 && explicitCount != 3)
+            return fail(output, "Proof mode requires exactly 3 instruments; disable it for a different cast");
+        request.direction +=
+            "\nLOCAL MUSICAL COHERENCE PROOF: Compose exactly 3 instrument tracks: "
+            "one polyphonic central chord bed, one bass that carries grounded motion, "
+            "and one melodic protagonist with a clear phrase and resolution. "
+            "Coordinate their pitches and rests against the same harmony. "
+            "Do not add drums or decorative extra tracks unless the user explicitly "
+            "requests them; if they do, ask for proof mode to be disabled. "
+            "The short work must have an opening, development and closing. ";
+    }
     request.targetSeconds = duration;
     request.bpm = bpm;
     request.seed = seed;
@@ -157,9 +403,9 @@ int main(int argc, char** argv) {
                 update.stage == pulso::plugin::AiSongStage::Recovery ? "recovery" : "validation";
             writeStatus(output, "running", stage, static_cast<int>(update.completed),
                         static_cast<int>(update.total), update.attempt, update.detail);
-        }, [&output, &checkpointNumber](const pulso::SongPlan& partial,
-                                        std::size_t, bool) {
-            writeProvisionalMidi(output, partial, ++checkpointNumber);
+        }, [&output, &checkpointNumber, proofMode](const pulso::SongPlan& partial,
+                                        std::size_t, bool, bool diagnostic) {
+            writeProvisionalMidi(output, partial, ++checkpointNumber, diagnostic, proofMode);
         });
     if (error.isNotEmpty() || plan.instruments.empty())
         return fail(output, error.isNotEmpty() ? error : "AI returned an empty score");
@@ -169,73 +415,18 @@ int main(int argc, char** argv) {
     if (request.aiSovereign && plan.implicitPerformanceNotesPruned > 0)
         return fail(output, "AI-sovereign plan contains notes without an authored instrument owner; publication stopped");
 
-    // Keep the AI's musical decisions beside the MIDI. A later audit can then
-    // distinguish a weak blueprint from a weak performance or post-render edit.
-    auto* planAudit = new juce::DynamicObject();
-    planAudit->setProperty("title", juce::String::fromUTF8(plan.title.c_str()));
-    planAudit->setProperty("key", juce::String::fromUTF8(plan.key.c_str()));
-    planAudit->setProperty("root_pitch_class", plan.rootPitchClass);
-    planAudit->setProperty("total_bars", plan.totalBars);
-    planAudit->setProperty("beats_per_bar", plan.beatsPerBar);
-    planAudit->setProperty("protagonist_id",
-        juce::String::fromUTF8(plan.narrativeSpine.protagonistInstrumentId.c_str()));
-    planAudit->setProperty("motif_identity",
-        juce::String::fromUTF8(plan.narrativeSpine.motifIdentity.c_str()));
-    planAudit->setProperty("harmonic_debt",
-        juce::String::fromUTF8(plan.narrativeSpine.harmonicDebt.c_str()));
-    planAudit->setProperty("resolution_intent",
-        juce::String::fromUTF8(plan.narrativeSpine.resolution.c_str()));
-    juce::Array<juce::var> sectionsAudit;
-    for (const auto& section : plan.sections) {
-        auto* item = new juce::DynamicObject();
-        item->setProperty("name", juce::String::fromUTF8(section.name.c_str()));
-        item->setProperty("function", juce::String::fromUTF8(section.function.c_str()));
-        item->setProperty("start_bar", section.startBar);
-        item->setProperty("bars", section.bars);
-        item->setProperty("energy", section.energy);
-        item->setProperty("tension", section.tension);
-        item->setProperty("density", section.density);
-        juce::Array<juce::var> harmony;
-        for (const auto& event : section.harmonicEvents) {
-            auto* chord = new juce::DynamicObject();
-            chord->setProperty("bar_offset", event.barOffset);
-            chord->setProperty("beat_offset", event.beatOffset);
-            chord->setProperty("chord_id", juce::String::fromUTF8(event.chordId.c_str()));
-            harmony.add(juce::var(chord));
-        }
-        item->setProperty("harmonic_events", harmony);
-        sectionsAudit.add(juce::var(item));
-    }
-    planAudit->setProperty("sections", sectionsAudit);
-    juce::Array<juce::var> castAudit;
-    for (const auto& part : plan.instruments) {
-        auto* item = new juce::DynamicObject();
-        item->setProperty("id", juce::String::fromUTF8(part.id.c_str()));
-        item->setProperty("name", juce::String::fromUTF8(part.name.c_str()));
-        item->setProperty("role", juce::String::fromUTF8(part.role.c_str()));
-        item->setProperty("content_lane_id", juce::String::fromUTF8(part.contentLaneId.c_str()));
-        item->setProperty("line_relationship", juce::String::fromUTF8(part.lineRelationship.c_str()));
-        juce::Array<juce::var> active;
-        for (const auto& section : part.activeSections)
-            active.add(juce::String::fromUTF8(section.c_str()));
-        item->setProperty("active_sections", active);
-        castAudit.add(juce::var(item));
-    }
-    planAudit->setProperty("cast", castAudit);
-    planAudit->setProperty("performance_cells",
-        static_cast<int>(plan.performanceScore.cells.size()));
-    planAudit->setProperty("performance_placements",
-        static_cast<int>(plan.performanceScore.placements.size()));
+    // The same versioned musical context is saved for completed and rejected works.
     if (!output.getChildFile("composition-plan.json").replaceWithText(
-            juce::JSON::toString(juce::var(planAudit), false), false, false, "\n"))
+            juce::JSON::toString(planAuditFor(plan), false), false, false, "\n"))
         return fail(output, "Could not save composition plan audit");
 
     writeStatus(output, "running", "rendering", 0, static_cast<int>(plan.sections.size()));
+    pulso::CompositionRenderReport finalAudit;
     const auto song = pulso::plugin::SongGenerationPipeline::render(plan, request,
         [&output](std::size_t completed, std::size_t total, const pulso::SongSection&) {
             writeStatus(output, "running", "rendering", static_cast<int>(completed),
                         static_cast<int>(total));
-        });
+        }, &finalAudit);
     if (song.notes.empty()) return fail(output, "Rendered score has no MIDI notes");
     const auto aiNotes = static_cast<std::size_t>(std::count_if(song.notes.begin(), song.notes.end(),
         [](const auto& note) {
@@ -244,6 +435,30 @@ int main(int argc, char** argv) {
         }));
     if (request.aiSovereign && aiNotes != song.notes.size())
         return fail(output, "AI-sovereign render produced non-AI notes; publication stopped");
+    if (!output.getChildFile("musical-audit.json").replaceWithText(
+            juce::JSON::toString(musicalAuditFor(song, finalAudit), false),
+            false, false, "\n"))
+        return fail(output, "Could not save musical audit");
+    std::optional<pulso::CoherentProofGateReport> proofGate;
+    if (proofMode) {
+        const auto authoredNotes = std::accumulate(plan.performanceScore.cells.begin(),
+            plan.performanceScore.cells.end(), std::size_t{},
+            [](std::size_t count, const auto& cell) { return count + cell.notes.size(); });
+        proofGate = pulso::CoherentProofGate::evaluate(plan, song, finalAudit, authoredNotes);
+        if (!output.getChildFile("coherence-audit.json").replaceWithText(
+                juce::JSON::toString(proofAuditFor(*proofGate), false), false, false, "\n"))
+            return fail(output, "Could not save coherent proof audit");
+        if (!proofGate->ready) {
+            return fail(output, "Coherent proof failed final MIDI audit: authored=" +
+                juce::String(static_cast<int>(authoredNotes)) + " rendered=" +
+                juce::String(static_cast<int>(song.notes.size())) + " exact_ai=" +
+                juce::String(proofGate->exactAiNotes ? 1 : 0) + " technical_ready=" +
+                juce::String(proofGate->technicalReady ? 1 : 0) +
+                " [metric=" + juce::String(static_cast<int>(proofGate->metricViolations)) +
+                " duration=" + juce::String(static_cast<int>(proofGate->unsafeDurations)) +
+                " orphan=" + juce::String(static_cast<int>(proofGate->orphanEvents)) + "]");
+        }
+    }
 
     pulso::plugin::MidiExportOptions fullOptions;
     fullOptions.bpm = plan.bpm;
@@ -323,9 +538,13 @@ int main(int argc, char** argv) {
     manifest->setProperty("bars", plan.totalBars);
     manifest->setProperty("fullFile", "full-song.mid");
     manifest->setProperty("planFile", "composition-plan.json");
+    manifest->setProperty("musicalAuditFile", "musical-audit.json");
+    if (proofGate) manifest->setProperty("auditFile", "coherence-audit.json");
     manifest->setProperty("tracks", tracks);
     auto* editorial = new juce::DynamicObject();
-    editorial->setProperty("technical_ready", song.productionReady);
+    editorial->setProperty("technical_ready", request.aiSovereign ?
+        pulso::EditorialSafety::technicallySafeAiScore(song, finalAudit) : song.productionReady);
+    if (request.aiSovereign) editorial->setProperty("legacy_production_ready", song.productionReady);
     editorial->setProperty("creative_ready", song.creativeReady);
     editorial->setProperty("narrative_ready", song.narrativeSpineReady);
     editorial->setProperty("soundscape_ready", song.soundscapeReady);
@@ -334,6 +553,28 @@ int main(int argc, char** argv) {
     editorial->setProperty("dialogue_lines", static_cast<int>(song.dialogueMusicalLines));
     editorial->setProperty("underfilled_bars", static_cast<int>(song.underfilledBarsAfter));
     editorial->setProperty("ai_authored_note_ratio", song.aiAuthoredNoteRatio);
+    if (request.aiSovereign && !proofGate) {
+        editorial->setProperty("musical_review_required", !song.productionReady ||
+            !song.narrativeSpineReady || !song.soundscapeReady || !song.trackViabilityReady);
+        editorial->setProperty("harmonic_conflicts", finalAudit.production.unintendedHarshOverlaps);
+        editorial->setProperty("low_register_conflicts",
+            static_cast<int>(finalAudit.production.lowRegisterVerticalClashes));
+    }
+    if (proofGate) {
+        editorial->setProperty("review_attempted", plan.coherentReview.attempted);
+        editorial->setProperty("review_accepted", plan.coherentReview.accepted);
+        editorial->setProperty("review_windows", plan.coherentReview.targetedWindows);
+        editorial->setProperty("contextual_risk_before", plan.coherentReview.riskBefore);
+        editorial->setProperty("contextual_risk_after", plan.coherentReview.riskAfter);
+        editorial->setProperty("uniform_activity_advisory", proofGate->uniformActivity);
+        editorial->setProperty("musical_review_required", proofGate->musicalReviewRequired);
+        editorial->setProperty("underwritten_roles_advisory", proofGate->underwrittenRoles);
+        editorial->setProperty("chord_bed_polyphonic_stages",
+            proofGate->chordBedPolyphonicStages);
+        editorial->setProperty("harmonic_conflicts", proofGate->unintendedHarshOverlaps);
+        editorial->setProperty("low_register_conflicts",
+            static_cast<int>(proofGate->lowRegisterVerticalClashes));
+    }
     manifest->setProperty("editorial", juce::var(editorial));
     if (!output.getChildFile("manifest.json").replaceWithText(
             juce::JSON::toString(juce::var(manifest), false), false, false, "\n"))

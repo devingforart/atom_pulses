@@ -68,6 +68,21 @@ std::size_t phraseCount(std::vector<const NoteEvent*> notes, double beatsPerBar)
     return phrases;
 }
 
+std::size_t distinctSectionalColours(const std::vector<const NoteEvent*>& notes,
+                                     const SongPlan& plan) {
+    std::set<std::set<int>> colours;
+    for (const auto& section : plan.sections) {
+        const auto start = section.startBar * plan.beatsPerBar;
+        const auto end = (section.startBar + section.bars) * plan.beatsPerBar;
+        std::set<int> pitchClasses;
+        for (const auto* note : notes)
+            if (note->startBeat < end && note->endBeat() > start)
+                pitchClasses.insert(positiveModulo(note->pitch, 12));
+        if (!pitchClasses.empty()) colours.insert(std::move(pitchClasses));
+    }
+    return colours.size();
+}
+
 std::size_t longestStaticRun(const std::vector<const NoteEvent*>& notes,
                              double beatsPerBar, int totalBars) {
     std::vector<std::vector<const NoteEvent*>> byBar(static_cast<std::size_t>(std::max(0, totalBars)));
@@ -234,18 +249,33 @@ ElectronicSoundscapeReport ElectronicSoundscapeDirector::audit(const Pattern& pa
         const auto& notes = notesFound->second;
         const auto bars = activeBars(notes, plan.beatsPerBar, plan.totalBars);
         const auto phrases = phraseCount(notes, plan.beatsPerBar);
+        const auto sectionalColours = distinctSectionalColours(notes, plan);
         const auto staticRun = longestStaticRun(notes, plan.beatsPerBar, plan.totalBars);
         const auto staticEnough = staticRun <= static_cast<std::size_t>(layer.maximumStaticBars);
+        const auto assignment = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+            [&](const auto& item) { return item.id == layer.instrumentId; });
+        const auto continuousSupport = assignment != plan.instruments.end() &&
+            (assignment->sourceVoice == VoiceId::HarmonicFoundation ||
+             assignment->sourceVoice == VoiceId::HarmonicPulse ||
+             assignment->sourceVoice == VoiceId::HarmonicUpper ||
+             isVoiceInFamily(assignment->sourceVoice, VoiceFamily::Bass) ||
+             assignment->sourceVoice == VoiceId::Atmosphere);
+        // A sustained bed or evolving bass can form one uninterrupted phrase
+        // across the work. Its sectional pitch material, not forced rests,
+        // proves development. Foreground melodies still need actual phrases.
+        const auto phraseOrEvolution =
+            phrases >= static_cast<std::size_t>(layer.minimumPhrases) ||
+            (continuousSupport && sectionalColours >= 2);
         bool meaningful{};
         switch (layer.kind) {
             case SoundscapeLayerKind::Voice:
                 meaningful = notes.size() >= 6 && bars >= static_cast<std::size_t>(layer.minimumActiveBars) &&
-                    phrases >= static_cast<std::size_t>(layer.minimumPhrases) && staticEnough;
+                    phraseOrEvolution && staticEnough;
                 if (!meaningful) ++report.underdevelopedVoices;
                 break;
             case SoundscapeLayerKind::Environment:
                 meaningful = bars >= static_cast<std::size_t>(layer.minimumActiveBars) &&
-                    phrases >= static_cast<std::size_t>(layer.minimumPhrases) && staticEnough;
+                    phraseOrEvolution && staticEnough;
                 if (!meaningful) ++report.underdevelopedEnvironments;
                 break;
             case SoundscapeLayerKind::Transition:
@@ -312,7 +342,12 @@ ElectronicSoundscapeReport ElectronicSoundscapeDirector::audit(const Pattern& pa
     report.score = std::clamp(report.meaningfulCoverage * .42 + densityFit * .12 +
                               declarationFit * .08 + lineFit * .16 + floorFit * .14 +
                               narrativeFit * .08, 0.0, 1.0);
-    report.ready = report.declaredLayers >= (report.percussionFree ? 10U : 6U) &&
+    // A percussion-free score is not obliged to invent four extra tracks to
+    // satisfy a fixed ten-layer target. Judge the layers it actually declares
+    // and their audible relationships; an explicit smaller cast remains valid.
+    const auto minimumDeclaredLayers = std::min<std::size_t>(6,
+        plan.requestedCastCount > 0 ? plan.requestedCastCount : plan.instruments.size());
+    report.ready = report.declaredLayers >= minimumDeclaredLayers &&
         report.meaningfulCoverage >= .78 && report.underdevelopedVoices == 0 &&
         report.underdevelopedEnvironments == 0 && report.missingTransitionEvents == 0 &&
         report.staticLayerRuns == 0 && report.undeclaredPopulatedParts == 0 && densityFit >= .75 &&
@@ -320,7 +355,7 @@ ElectronicSoundscapeReport ElectronicSoundscapeDirector::audit(const Pattern& pa
         report.medianHarmonicFloorLayers >= 2.0 &&
         report.protagonistPhraseWindows >= std::max<std::size_t>(3, plan.totalBars / 24) &&
         report.arpeggioNoteCount >= requiredMotionNotes && report.dialogueMusicalLines >= 1;
-    if (report.declaredLayers < (report.percussionFree ? 10U : 6U))
+    if (report.declaredLayers < minimumDeclaredLayers)
         report.issues.push_back("electronic_scene_has_too_few_declared_layers");
     if (report.underdevelopedVoices > 0)
         report.issues.push_back("soundscape_voices_are_only_token_tracks");

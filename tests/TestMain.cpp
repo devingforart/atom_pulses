@@ -5,13 +5,19 @@
 #include <vector>
 
 void runScaleTests();
+void runCoherentProofGateTests();
+void runCoherentProofRevisionTests();
+void runEditorialSafetyTests();
 void runGeneratorTests();
 void runSelectiveRepairTests();
 
 int main() {
     const std::vector<std::pair<std::string_view, void (*)()>> suites{
         {"Scale", runScaleTests}, {"Selective repair", runSelectiveRepairTests},
-        {"Generator", runGeneratorTests}};
+        {"Generator", runGeneratorTests},
+        {"Coherent proof gate", runCoherentProofGateTests},
+        {"Coherent proof revision", runCoherentProofRevisionTests},
+        {"Editorial safety", runEditorialSafetyTests}};
     auto failures = 0;
     for (const auto& [name, suite] : suites) {
         try {

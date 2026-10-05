@@ -312,6 +312,7 @@ void auditClubContinuity(const Pattern& pattern, const SongPlan& plan,
 
 struct ActEvidence {
     NarrativeStage stage{NarrativeStage::Transformation};
+    double tensionTarget{};
     bool audible{};
     double meanPitch{};
     double noteRate{};
@@ -323,6 +324,7 @@ ActEvidence evidenceFor(const Pattern& pattern, const SongPlan& plan,
                         const NarrativeAct& act) {
     ActEvidence result;
     result.stage = act.stage;
+    result.tensionTarget = act.tensionTarget;
     const auto section = std::find_if(plan.sections.begin(), plan.sections.end(), [&](const auto& item) {
         return item.name == act.sectionName;
     });
@@ -395,10 +397,31 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
     const ActEvidence* premise = nullptr;
     const ActEvidence* climax = nullptr;
     const ActEvidence* resolution = nullptr;
-    for (const auto& item : evidence) {
+    std::size_t premiseIndex = evidence.size();
+    std::size_t resolutionIndex = evidence.size();
+    for (std::size_t index = 0; index < evidence.size(); ++index) {
+        const auto& item = evidence[index];
         if (item.stage == NarrativeStage::Premise && premise == nullptr) premise = &item;
         if (item.stage == NarrativeStage::Climax) climax = &item;
-        if (item.stage == NarrativeStage::Resolution) resolution = &item;
+        if (item.stage == NarrativeStage::Premise && premiseIndex == evidence.size())
+            premiseIndex = index;
+        if (item.stage == NarrativeStage::Resolution) {
+            resolution = &item;
+            resolutionIndex = index;
+        }
+    }
+    // A restrained arc need not name its peak "climax". Use the highest
+    // declared, audible tension between premise and resolution, but only when
+    // it genuinely rises above the premise. This changes the audit, not MIDI.
+    if (climax == nullptr && premise != nullptr && resolution != nullptr) {
+        for (auto index = premiseIndex + 1; index < resolutionIndex; ++index) {
+            const auto& candidate = evidence[index];
+            if (!candidate.audible ||
+                candidate.tensionTarget < premise->tensionTarget + .10)
+                continue;
+            if (climax == nullptr || candidate.tensionTarget > climax->tensionTarget)
+                climax = &candidate;
+        }
     }
     std::set<std::uint16_t> protagonistParts;
     const auto protagonist = std::find_if(plan.instruments.begin(), plan.instruments.end(),

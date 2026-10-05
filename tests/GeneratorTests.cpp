@@ -828,6 +828,45 @@ void runGeneratorTests() {
     require(oneShotAudit.meaningfulLayers == 1 && oneShotAudit.underdevelopedVoices == 0,
             "A declared singular FX event needs a different contract from a musical voice");
 
+    SongPlan continuousPlan;
+    continuousPlan.totalBars = 8;
+    continuousPlan.beatsPerBar = 4.0;
+    continuousPlan.productionLanguage.domain = ProductionDomain::ClubElectronic;
+    continuousPlan.productionLanguage.electronicIntent = 1.0;
+    continuousPlan.soundscape.active = true;
+    continuousPlan.soundscape.layers.push_back({"continuous_pad",
+        SoundscapeLayerKind::Voice, SoundscapeTimeScale::Slow,
+        "harmonic ground", "supports the story", "changes colour across acts", 8, 2, 4, .5});
+    InstrumentAssignment continuousPad;
+    continuousPad.id = "continuous_pad";
+    continuousPad.sourceVoice = VoiceId::HarmonicFoundation;
+    continuousPlan.instruments.push_back(continuousPad);
+    continuousPlan.sections = {{"A", "opening", "home", "establish", 0, 4},
+                               {"B", "development", "away", "transform", 4, 4}};
+    Pattern continuousMidi;
+    continuousMidi.lengthBeats = 32.0;
+    InstrumentPart continuousPart;
+    continuousPart.id = 1;
+    continuousPart.sourceVoice = VoiceId::HarmonicFoundation;
+    continuousMidi.parts.push_back(continuousPart);
+    for (auto bar = 0; bar < 8; ++bar)
+        continuousMidi.notes.push_back({bar * 4.0, 4.0,
+            bar < 4 ? (bar % 2 ? 64 : 60) : (bar % 2 ? 65 : 62),
+            64, 2, VoiceId::HarmonicFoundation, 1});
+    const auto evolvingPadAudit = ElectronicSoundscapeDirector::audit(
+        continuousMidi, continuousPlan);
+    require(evolvingPadAudit.meaningfulLayers == 1 &&
+                evolvingPadAudit.underdevelopedVoices == 0,
+            "An evolving uninterrupted chord bed must not be forced to insert rests");
+    for (auto& note : continuousMidi.notes)
+        if (note.startBeat >= 16.0)
+            note.pitch = (static_cast<int>(note.startBeat / 4.0) % 2) ? 64 : 60;
+    const auto unchangedPadAudit = ElectronicSoundscapeDirector::audit(
+        continuousMidi, continuousPlan);
+    require(unchangedPadAudit.meaningfulLayers == 0 &&
+                unchangedPadAudit.underdevelopedVoices == 1,
+            "An unchanging support lane must not pass merely because it stays active");
+
     const auto percussionFreeNarrative = NarrativeScoreGate::audit(renderedTexture, texturePlan);
     require(std::find(percussionFreeNarrative.issues.begin(), percussionFreeNarrative.issues.end(),
                       "club_pulse_absent_too_long") == percussionFreeNarrative.issues.end() &&
@@ -1741,6 +1780,263 @@ void runGeneratorTests() {
                 exactRepair.after.productionReady(),
             "The tonal contract must cut incompatible sustains at the exact sub-bar chord boundary");
 
+    Pattern declaredMajorSeventh;
+    declaredMajorSeventh.lengthBeats = 4.0;
+    declaredMajorSeventh.notes = {
+        {0.0, 2.0, 60, 72, 3, VoiceId::HarmonicFoundation},
+        {0.0, 2.0, 71, 68, 3, VoiceId::HarmonicFoundation}
+    };
+    const std::vector<HarmonicWindow> majorSeventhWindow{
+        {0.0, 4.0, 0, 0, {0, 4, 7, 11}, HarmonicFunction::Tonic,
+         VoicingStrategy::Open, 0.35, "cmaj7", "Cmaj7"}
+    };
+    const auto majorSeventhAudit = auditTonalContract(
+        declaredMajorSeventh, 0, ScaleKind::Major, 4.0, majorSeventhWindow);
+    require(majorSeventhAudit.unintendedHarshOverlaps == 0 &&
+                majorSeventhAudit.intentionalClusters == 1,
+            "A registered, explicitly declared major seventh must not be treated as a generic collision");
+    auto preservedMajorSeventh = declaredMajorSeventh;
+    const auto preservedSeventhRepair = repairTonalContract(
+        preservedMajorSeventh, 0, ScaleKind::Major, 4.0, majorSeventhWindow);
+    require(preservedSeventhRepair.verticalCollisionsRepaired == 0 &&
+                preservedMajorSeventh.notes[0].pitch == 60 &&
+                preservedMajorSeventh.notes[1].pitch == 71,
+            "Repair must preserve a valid AI-authored major-seventh voicing unchanged");
+    auto lowMajorSeventh = declaredMajorSeventh;
+    lowMajorSeventh.notes[0].pitch = 48;
+    lowMajorSeventh.notes[1].pitch = 59;
+    require(auditTonalContract(lowMajorSeventh, 0, ScaleKind::Major, 4.0,
+                              majorSeventhWindow).unintendedHarshOverlaps == 1,
+            "The same major-seventh voicing in the low register must remain a measured risk");
+    auto openBassMajorSeventh = declaredMajorSeventh;
+    openBassMajorSeventh.notes[0].pitch = 36;
+    openBassMajorSeventh.notes[1].pitch = 71;
+    require(auditTonalContract(openBassMajorSeventh, 0, ScaleKind::Major, 4.0,
+                              majorSeventhWindow).unintendedHarshOverlaps == 0,
+            "An explicitly declared major seventh well above its bass root is an open voicing, not a low cluster");
+    auto mediumOpenBassMajorSeventh = declaredMajorSeventh;
+    mediumOpenBassMajorSeventh.notes[0].pitch = 36;
+    mediumOpenBassMajorSeventh.notes[1].pitch = 59;
+    require(auditTonalContract(mediumOpenBassMajorSeventh, 0, ScaleKind::Major, 4.0,
+                              majorSeventhWindow).unintendedHarshOverlaps == 0,
+            "C2-B3 is an open major-seventh voicing even though the upper note is below middle C");
+    const std::vector<HarmonicWindow> bFlatMajorSeventhWindow{
+        {0.0, 4.0, 10, 10, {10, 2, 5, 9}, HarmonicFunction::Tonic,
+         VoicingStrategy::Open, 0.35, "bbmaj7", "Bbmaj7"}
+    };
+    auto midMajorSeventh = declaredMajorSeventh;
+    midMajorSeventh.notes[0].pitch = 58;  // Bb3
+    midMajorSeventh.notes[1].pitch = 69;  // A4
+    require(auditTonalContract(midMajorSeventh, 10, ScaleKind::Major, 4.0,
+                              bFlatMajorSeventhWindow).unintendedHarshOverlaps == 0,
+            "Bb3-A4 is a declared major seventh in the middle register, not a low cluster");
+    auto wideInvertedMajorSeventh = declaredMajorSeventh;
+    wideInvertedMajorSeventh.notes[0].pitch = 57;  // A3
+    wideInvertedMajorSeventh.notes[1].pitch = 82;  // Bb5
+    require(auditTonalContract(wideInvertedMajorSeventh, 10, ScaleKind::Major, 4.0,
+                              bFlatMajorSeventhWindow).unintendedHarshOverlaps == 0,
+            "A3-Bb5 is a widely registered inversion of a declared major seventh");
+    const std::vector<HarmonicWindow> fMajorSeventhWindow{
+        {0.0, 4.0, 5, 9, {5, 9, 0, 4}, HarmonicFunction::Tonic,
+         VoicingStrategy::Open, 0.35, "fmaj7_a", "Fmaj7/A"}
+    };
+    auto lowerMidMajorSeventh = declaredMajorSeventh;
+    lowerMidMajorSeventh.notes[0].pitch = 53;  // F3
+    lowerMidMajorSeventh.notes[1].pitch = 64;  // E4
+    require(auditTonalContract(lowerMidMajorSeventh, 5, ScaleKind::Major, 4.0,
+                              fMajorSeventhWindow).unintendedHarshOverlaps == 0,
+            "F3-E4 is a declared major-seventh shell above the low register");
+    lowerMidMajorSeventh.notes[0].pitch = 41;  // F2
+    lowerMidMajorSeventh.notes[1].pitch = 52;  // E3
+    require(auditTonalContract(lowerMidMajorSeventh, 5, ScaleKind::Major, 4.0,
+                              fMajorSeventhWindow).unintendedHarshOverlaps == 1,
+            "F2-E3 remains an unsafe low-register seventh");
+    auto undeclaredMajorSeventh = majorSeventhWindow;
+    undeclaredMajorSeventh.front().pitchClasses = {0, 4, 7};
+    require(auditTonalContract(declaredMajorSeventh, 0, ScaleKind::Major, 4.0,
+                              undeclaredMajorSeventh).unintendedHarshOverlaps == 1,
+            "A seventh absent from the harmonic ledger must not be excused by interval alone");
+    Pattern dominantGuideTones;
+    dominantGuideTones.lengthBeats = 4.0;
+    dominantGuideTones.notes = {
+        {0.0, 2.0, 64, 72, 3, VoiceId::HarmonicFoundation},
+        {0.0, 2.0, 70, 68, 3, VoiceId::HarmonicFoundation}
+    };
+    const std::vector<HarmonicWindow> dominantWindow{
+        {0.0, 4.0, 0, 0, {0, 4, 7, 10}, HarmonicFunction::Dominant,
+         VoicingStrategy::Open, 0.50, "c7", "C7"}
+    };
+    const auto dominantGuideAudit = auditTonalContract(
+        dominantGuideTones, 5, ScaleKind::Major, 4.0, dominantWindow);
+    require(dominantGuideAudit.unintendedHarshOverlaps == 0 &&
+                dominantGuideAudit.unsupportedChromaticNotes == 0,
+            "The declared third/seventh of a dominant chord must remain a functional guide-tone pair");
+    auto chromaticDominantWindow = dominantWindow;
+    chromaticDominantWindow.front().function = HarmonicFunction::Chromatic;
+    require(auditTonalContract(dominantGuideTones, 5, ScaleKind::Major, 4.0,
+                              chromaticDominantWindow).unintendedHarshOverlaps == 0,
+            "A declared dominant guide-tone pair must not depend on the AI's function label");
+    auto lowDominantGuideTones = dominantGuideTones;
+    lowDominantGuideTones.notes[0].pitch -= 12;
+    lowDominantGuideTones.notes[1].pitch -= 12;
+    require(auditTonalContract(lowDominantGuideTones, 5, ScaleKind::Major, 4.0,
+                              dominantWindow).unintendedHarshOverlaps == 1,
+            "Dominant guide tones must still be rejected when voiced too low");
+    const std::vector<HarmonicWindow> aFlatNineWindow{
+        {0.0, 4.0, 9, 9, {9, 1, 4, 7, 10}, HarmonicFunction::Dominant,
+         VoicingStrategy::Open, 0.72, "a7b9", "A7(b9)"}
+    };
+    auto flatNineUpper = dominantGuideTones;
+    flatNineUpper.notes[0].pitch = 64;  // E4, the fifth
+    flatNineUpper.notes[1].pitch = 70;  // Bb4, the flat ninth
+    require(auditTonalContract(flatNineUpper, 9, ScaleKind::Minor, 4.0,
+                              aFlatNineWindow).unintendedHarshOverlaps == 0,
+            "The declared fifth/flat-ninth tritone is valid above the low register");
+    auto flatNineLow = flatNineUpper;
+    for (auto& note : flatNineLow.notes) note.pitch -= 12;
+    require(auditTonalContract(flatNineLow, 9, ScaleKind::Minor, 4.0,
+                              aFlatNineWindow).unintendedHarshOverlaps == 1,
+            "The same flat-ninth tritone must remain risky in the low register");
+    auto upperDominantFlatNine = flatNineUpper;
+    upperDominantFlatNine.notes[0].pitch = 70;  // Bb4
+    upperDominantFlatNine.notes[1].pitch = 81;  // A5
+    require(auditTonalContract(upperDominantFlatNine, 9, ScaleKind::Minor, 4.0,
+                              aFlatNineWindow).unintendedHarshOverlaps == 0,
+            "A5-Bb4 is an opened, explicitly declared dominant flat-ninth colour");
+    for (auto& note : upperDominantFlatNine.notes) note.pitch -= 24;
+    require(auditTonalContract(upperDominantFlatNine, 9, ScaleKind::Minor, 4.0,
+                              aFlatNineWindow).unintendedHarshOverlaps == 1,
+            "The same root/flat-ninth voicing in the bass must remain unsafe");
+
+    Pattern minorNinthExcerpt;
+    minorNinthExcerpt.lengthBeats = 12.0;
+    for (const auto pitch : {55, 58, 62, 65, 69})
+        minorNinthExcerpt.notes.push_back(
+            {8.0, 4.0, pitch, 68, 3, VoiceId::HarmonicFoundation});
+    minorNinthExcerpt.notes.push_back(
+        {8.5, 1.0, 79, 86, 2, VoiceId::Lead});
+    minorNinthExcerpt.notes.push_back(
+        {9.5, 1.0, 81, 86, 2, VoiceId::Lead});
+    minorNinthExcerpt.notes.push_back(
+        {10.5, 1.5, 77, 86, 2, VoiceId::Lead});
+    const std::vector<HarmonicWindow> minorNinthWindow{
+        {8.0, 12.0, 7, 7, {7, 10, 2, 5, 9}, HarmonicFunction::Predominant,
+         VoicingStrategy::Open, 0.44, "gm9", "Gm9"}
+    };
+    const auto minorNinthAudit = auditTonalContract(
+        minorNinthExcerpt, 2, ScaleKind::Minor, 4.0, minorNinthWindow);
+    require(minorNinthAudit.unintendedHarshOverlaps == 0 &&
+                minorNinthAudit.strongNonChordNotes == 0,
+            "A complete declared Gm9 and its melodic ninth must not be rejected as pairwise dissonance");
+    auto preservedMinorNinth = minorNinthExcerpt;
+    const auto minorNinthRepair = repairTonalContract(
+        preservedMinorNinth, 2, ScaleKind::Minor, 4.0, minorNinthWindow);
+    require(minorNinthRepair.verticalCollisionsRepaired == 0 &&
+                preservedMinorNinth.notes.size() == minorNinthExcerpt.notes.size(),
+            "Tonal repair must preserve all notes of a valid AI-authored Gm9 excerpt");
+    auto lowMinorNinth = minorNinthExcerpt;
+    lowMinorNinth.notes[1].pitch = 46;
+    lowMinorNinth.notes[4].pitch = 57;  // Crowded Bb2-A3, not the open Bb2-A4 colour.
+    require(auditTonalContract(lowMinorNinth, 2, ScaleKind::Minor, 4.0,
+                              minorNinthWindow).unintendedHarshOverlaps > 0,
+            "A crowded minor ninth moved into the bass must remain a real conflict");
+    Pattern openMinorAddNine;
+    openMinorAddNine.lengthBeats = 4.0;
+    openMinorAddNine.notes = {
+        {0.0, 2.0, 53, 75, 3, VoiceId::HarmonicFoundation},
+        {0.0, 2.0, 76, 72, 3, VoiceId::HarmonicUpper}
+    };
+    const std::vector<HarmonicWindow> openMinorAddNineWindow{
+        {0.0, 4.0, 2, 2, {2, 5, 9, 4}, HarmonicFunction::Tonic,
+         VoicingStrategy::Open, .25, "dm_add9", "Dm(add9)"}
+    };
+    require(auditTonalContract(openMinorAddNine, 2, ScaleKind::Minor, 4.0,
+                              openMinorAddNineWindow).unintendedHarshOverlaps == 0,
+            "A declared minor third and ninth separated by two octaves are an open voicing");
+    auto midMinorAddNine = openMinorAddNine;
+    midMinorAddNine.notes[1].pitch = 64;  // F3-E4 in Dm(add9)
+    require(auditTonalContract(midMinorAddNine, 2, ScaleKind::Minor, 4.0,
+                              openMinorAddNineWindow).unintendedHarshOverlaps == 0,
+            "A declared add-nine shell with its fifth is valid in the middle register");
+    auto bassToUpperAddNine = openMinorAddNine;
+    bassToUpperAddNine.notes[0].pitch = 41;  // F2, a true bass note
+    bassToUpperAddNine.notes[0].voice = VoiceId::MovementBass;
+    bassToUpperAddNine.notes[1].pitch = 64;  // E4, almost two octaves higher
+    require(auditTonalContract(bassToUpperAddNine, 2, ScaleKind::Minor, 4.0,
+                              openMinorAddNineWindow).unintendedHarshOverlaps == 0,
+            "F2-E4 is a widely spaced declared minor-third/ninth colour, not a low semitone cluster");
+    bassToUpperAddNine.notes[1].pitch = 52;  // E3 crowds the bass
+    require(auditTonalContract(bassToUpperAddNine, 2, ScaleKind::Minor, 4.0,
+                              openMinorAddNineWindow).unintendedHarshOverlaps == 1,
+            "F2-E3 remains an unsafe low-register major seventh");
+    Pattern chromaticBassApproach;
+    chromaticBassApproach.lengthBeats = 4.0;
+    chromaticBassApproach.notes = {
+        {1.5, .5, 44, 72, 3, VoiceId::MovementBass},
+        {2.0, 1.0, 45, 78, 3, VoiceId::MovementBass}
+    };
+    const std::vector<HarmonicWindow> bassApproachWindow{
+        {0.0, 4.0, 2, 9, {2, 5, 9, 4}, HarmonicFunction::Pedal,
+         VoicingStrategy::Open, .35, "dm_a", "Dm/A"}
+    };
+    require(auditTonalContract(chromaticBassApproach, 2, ScaleKind::Minor, 4.0,
+                              bassApproachWindow,
+                              TonalPolicy::Consolidated).unsupportedChromaticNotes == 0,
+            "A short chromatic bass approach resolving by semitone onto the declared bass is intentional");
+    auto unresolvedBassApproach = chromaticBassApproach;
+    unresolvedBassApproach.notes[1].pitch = 47;
+    require(auditTonalContract(unresolvedBassApproach, 2, ScaleKind::Minor, 4.0,
+                              bassApproachWindow,
+                              TonalPolicy::Consolidated).unsupportedChromaticNotes >= 1,
+            "A chromatic bass note without a semitone arrival must remain unsupported");
+
+    Pattern resolvingNinthExcerpt;
+    resolvingNinthExcerpt.lengthBeats = 64.0;
+    for (const auto pitch : {50, 57, 62, 65, 69})
+        resolvingNinthExcerpt.notes.push_back(
+            {60.0, 4.0, pitch, 68, 3, VoiceId::HarmonicFoundation});
+    resolvingNinthExcerpt.notes.push_back(
+        {60.0, 1.0, 74, 86, 2, VoiceId::Lead});
+    resolvingNinthExcerpt.notes.push_back(
+        {61.0, .75, 77, 86, 2, VoiceId::Lead});
+    resolvingNinthExcerpt.notes.push_back(
+        {62.0, .75, 76, 86, 2, VoiceId::Lead});
+    resolvingNinthExcerpt.notes.push_back(
+        {63.0, 1.0, 74, 86, 2, VoiceId::Lead});
+    const std::vector<HarmonicWindow> closingMinorWindow{
+        {60.0, 64.0, 2, 2, {2, 5, 9}, HarmonicFunction::Tonic,
+         VoicingStrategy::Open, 0.18, "dm", "Dm"}
+    };
+    const auto resolvingNinthAudit = auditTonalContract(
+        resolvingNinthExcerpt, 2, ScaleKind::Minor, 4.0, closingMinorWindow);
+    require(resolvingNinthAudit.unintendedHarshOverlaps == 0 &&
+                resolvingNinthAudit.strongNonChordNotes == 0,
+            "A lead ninth approached from the third and resolving to the tonic must be valid over Dm");
+    auto preservedResolution = resolvingNinthExcerpt;
+    const auto resolvingNinthRepair = repairTonalContract(
+        preservedResolution, 2, ScaleKind::Minor, 4.0, closingMinorWindow);
+    require(resolvingNinthRepair.verticalCollisionsRepaired == 0 &&
+                preservedResolution.notes[preservedResolution.notes.size() - 2].pitch == 76,
+            "Repair must not erase a valid AI-authored melodic ninth and resolution");
+    auto unresolvedNinth = resolvingNinthExcerpt;
+    unresolvedNinth.notes.back().pitch = 72;
+    const auto unresolvedNinthAudit = auditTonalContract(
+        unresolvedNinth, 2, ScaleKind::Minor, 4.0, closingMinorWindow);
+    require(unresolvedNinthAudit.strongNonChordNotes > 0 &&
+                unresolvedNinthAudit.unintendedHarshOverlaps > 0,
+            "The same ninth without stepwise resolution must still fail the tonal contract");
+    auto adjacentNinth = resolvingNinthExcerpt;
+    adjacentNinth.notes.push_back(
+        {62.0, .75, 77, 70, 3, VoiceId::HarmonicFoundation});
+    std::sort(adjacentNinth.notes.begin(), adjacentNinth.notes.end(),
+              [](const auto& left, const auto& right) {
+                  return left.startBeat < right.startBeat ||
+                      (left.startBeat == right.startBeat && left.pitch < right.pitch);
+              });
+    require(auditTonalContract(adjacentNinth, 2, ScaleKind::Minor, 4.0,
+                              closingMinorWindow).unintendedHarshOverlaps > 0,
+            "An adjacent semitone against the resolved ninth must remain audible as a conflict");
+
     Pattern forbiddenCluster;
     forbiddenCluster.lengthBeats = 2.0;
     forbiddenCluster.notes = {
@@ -1814,6 +2110,28 @@ void runGeneratorTests() {
                 resolvedColourRepair.outOfScaleRepaired == 0 &&
                 resolvedColourRepair.after.productionReady(),
             "Consolidated tonality must preserve a sparse declared colour that resolves into the home scale");
+
+    Pattern repeatedDominantDebt;
+    repeatedDominantDebt.lengthBeats = 12.0;
+    repeatedDominantDebt.notes = {
+        {0.0, 1.0, 61, 78, 3, VoiceId::HarmonicUpper},
+        {4.0, 1.0, 61, 78, 3, VoiceId::HarmonicUpper},
+        {8.0, 1.0, 62, 78, 3, VoiceId::HarmonicUpper}
+    };
+    const std::vector<HarmonicWindow> repeatedDominantWindows{
+        {0.0, 4.0, 9, 9, {9, 1, 4, 7, 10}, HarmonicFunction::Dominant,
+         VoicingStrategy::Open, .72, "a7_first", "A7(b9)"},
+        {4.0, 8.0, 9, 9, {9, 1, 4, 7, 10}, HarmonicFunction::Dominant,
+         VoicingStrategy::Open, .72, "a7_repeated", "A7(b9)"},
+        {8.0, 12.0, 2, 2, {2, 5, 9}, HarmonicFunction::Tonic,
+         VoicingStrategy::Open, .20, "dm_resolution", "D minor"}
+    };
+    const auto repeatedDominantAudit = auditTonalContract(
+        repeatedDominantDebt, 2, ScaleKind::Minor, 4.0, repeatedDominantWindows,
+        TonalPolicy::Consolidated);
+    require(repeatedDominantAudit.strongNonChordNotes == 0 &&
+                repeatedDominantAudit.unsupportedChromaticNotes == 0,
+            "Repeated dominant events must not falsely reject their declared leading tone before tonic resolution");
 
     SongPlan normalizedColourPlan;
     normalizedColourPlan.rootPitchClass = 2;
@@ -1970,6 +2288,30 @@ void runGeneratorTests() {
     require(authoredReport.cellsAccepted == 2 && authoredReport.exactDuplicateCells == 1 &&
                 authoredReport.novelty < 0.51,
             "Performance fingerprints must expose renamed duplicate musical cells");
+
+    PerformanceScore longFormCell;
+    PerformanceCell longPhrase;
+    longPhrase.id = "long_form_phrase";
+    longPhrase.lengthBeats = 160.0;
+    longPhrase.ownedVoices = {VoiceId::Lead};
+    longPhrase.notes = {
+        {4.0, 1.0, 64, 76, VoiceId::Lead, MetricIntent::StrictGrid, "lead_owner"},
+        {100.0, 1.0, 67, 74, VoiceId::Lead, MetricIntent::StrictGrid, "lead_owner"},
+        {150.0, 4.0, 64, 72, VoiceId::Lead, MetricIntent::StrictGrid, "lead_owner"},
+    };
+    longFormCell.cells.push_back(longPhrase);
+    PerformancePlacement longPlacement;
+    longPlacement.cellId = longPhrase.id;
+    longPlacement.sectionIndex = 0;
+    longPlacement.fragmentEnd = 160.0;
+    longFormCell.placements.push_back(longPlacement);
+    const auto longFormReport = PerformanceScoreEngine::normalize(
+        longFormCell, 1, {160.0});
+    require(longFormReport.notesAccepted == 3 && longFormReport.notesRejected == 0 &&
+                longFormCell.cells.front().lengthBeats == 160.0 &&
+                longFormCell.cells.front().notes.size() == 3 &&
+                longFormCell.placements.front().fragmentEnd == 160.0,
+            "Long-form cell normalization must not silently erase late authored phrases");
 
     PerformanceScore largeCastScore;
     for (auto instrument = 0; instrument < 50; ++instrument) {
@@ -2221,6 +2563,20 @@ void runGeneratorTests() {
             "The final MIDI must prove causal acts and repay its tonal debt: causal=" +
                 std::to_string(causalAudit.causalNarrative) + " resolution=" +
                 std::to_string(causalAudit.resolutionScore));
+    auto restrainedArcPlan = causalPlan;
+    restrainedArcPlan.narrativeSpine.acts[3].stage = NarrativeStage::Transformation;
+    const auto restrainedArcAudit = NarrativeScoreGate::audit(causalMidi, restrainedArcPlan);
+    require(restrainedArcAudit.narrativeSpineReady &&
+                restrainedArcAudit.registerRelease > 0.0 &&
+                restrainedArcAudit.densityRelease > 0.0,
+            "An audible high-tension transformation must count as the peak of a restrained arc");
+    for (auto& act : restrainedArcPlan.narrativeSpine.acts)
+        if (act.stage != NarrativeStage::Premise &&
+            act.stage != NarrativeStage::Resolution)
+            act.tensionTarget = .35;
+    const auto flatArcAudit = NarrativeScoreGate::audit(causalMidi, restrainedArcPlan);
+    require(!flatArcAudit.narrativeSpineReady,
+            "An undeclared rise must not masquerade as a narrative peak");
     auto unresolvedMidi = causalMidi;
     unresolvedMidi.notes.erase(std::remove_if(unresolvedMidi.notes.begin(), unresolvedMidi.notes.end(),
         [&](const auto& note) {

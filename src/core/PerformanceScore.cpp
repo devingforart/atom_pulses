@@ -73,8 +73,12 @@ std::uint64_t PerformanceScoreEngine::fingerprint(const PerformanceCell& cell) n
 }
 
 PerformanceScoreReport PerformanceScoreEngine::normalize(
-    PerformanceScore& score, std::size_t sectionCount, const std::vector<double>& sectionLengths) {
+    PerformanceScore& score, std::size_t sectionCount,
+    const std::vector<double>& sectionLengths, bool preserveAuthoredPitch) {
     PerformanceScoreReport report;
+    const auto longestSection = sectionLengths.empty() ? 0.0 :
+        *std::max_element(sectionLengths.begin(), sectionLengths.end());
+    const auto maximumCellBeats = std::clamp(longestSection, 64.0, 512.0);
     if (score.cells.size() > PerformanceScoreEngine::maximumGlobalCells) {
         report.cellsDroppedByCapacity =
             score.cells.size() - PerformanceScoreEngine::maximumGlobalCells;
@@ -89,7 +93,10 @@ PerformanceScoreReport PerformanceScoreEngine::normalize(
             ++report.cellsRejected;
             return true;
         }
-        cell.lengthBeats = std::clamp(cell.lengthBeats, 0.25, 64.0);
+        // A long-form section may be many more than sixteen bars. The old
+        // fixed 64-beat ceiling silently deleted valid AI-authored notes later
+        // in that section, making a ten-minute work sound inexplicably empty.
+        cell.lengthBeats = std::clamp(cell.lengthBeats, 0.25, maximumCellBeats);
         if (cell.themeId.empty()) cell.themeId = cell.id;
         if (cell.themeId.size() > 80) cell.themeId.resize(80);
         if (cell.narrativeFunction.empty()) cell.narrativeFunction = "support";
@@ -114,8 +121,14 @@ PerformanceScoreReport PerformanceScoreEngine::normalize(
                 owned[static_cast<std::size_t>(note.voice)] = true;
             }
             const auto& definition = voiceDefinition(note.voice);
-            note.pitch = std::clamp(note.pitch, isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ? 0 : definition.minimumPitch,
-                                    isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ? 127 : definition.maximumPitch);
+            if (preserveAuthoredPitch && (note.pitch < 0 || note.pitch > 127)) {
+                ++report.notesRejected;
+                return true;
+            }
+            if (!preserveAuthoredPitch)
+                note.pitch = std::clamp(note.pitch,
+                    isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ? 0 : definition.minimumPitch,
+                    isVoiceInFamily(note.voice, VoiceFamily::Rhythm) ? 127 : definition.maximumPitch);
             note.velocity = std::clamp(note.velocity, 1, 127);
             if (note.metricIntent == MetricIntent::StrictGrid)
                 note.beat = std::round(note.beat * 4.0) / 4.0;
@@ -239,7 +252,8 @@ std::set<std::string> PerformanceScoreEngine::ownedInstrumentIdsForSection(
 void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore& score,
                                           int sectionIndex, double chunkStartInSection,
                                           double chunkLength,
-                                          std::span<const InstrumentAssignment> instruments) {
+                                          std::span<const InstrumentAssignment> instruments,
+                                          bool preserveAuthoredPitch) {
     struct OwnershipSpan {
         double start{};
         double end{};
@@ -308,8 +322,10 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
                 const auto rhythmic = isVoiceInFamily(voice, VoiceFamily::Rhythm);
                 const auto transformedPitch = placement.invertContour
                     ? placement.inversionAxis * 2 - authored.pitch : authored.pitch;
-                const auto pitch = rhythmic ? authored.pitch : std::clamp(transformedPitch + placement.transpose,
-                    definition.minimumPitch, definition.maximumPitch);
+                const auto pitch = preserveAuthoredPitch || rhythmic
+                    ? transformedPitch + placement.transpose
+                    : std::clamp(transformedPitch + placement.transpose,
+                        definition.minimumPitch, definition.maximumPitch);
                 auto partId = std::uint16_t{};
                 if (!authored.instrumentId.empty()) {
                     const auto owner = std::find_if(instruments.begin(), instruments.end(), [&](const auto& item) {
@@ -353,6 +369,58 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
             }
         }
     }
+}
+
+PerformanceRealizationReport PerformanceScoreEngine::auditRealization(
+    const PerformanceScore& score, std::string_view instrumentId,
+    std::span<const InstrumentAssignment> instruments,
+    std::span<const double> sectionLengths) {
+    PerformanceRealizationReport report;
+    const auto owner = std::find_if(instruments.begin(), instruments.end(),
+        [&](const auto& instrument) { return instrument.id == instrumentId; });
+    if (owner == instruments.end()) return report;
+    std::set<std::string> placedCells;
+    for (const auto& placement : score.placements) placedCells.insert(placement.cellId);
+    for (const auto& cell : score.cells)
+        for (const auto& note : cell.notes)
+            if (note.instrumentId == instrumentId) {
+                if (placedCells.contains(cell.id)) ++report.placedSourceNotes;
+                else ++report.unplacedSourceNotes;
+            }
+    for (const auto& placement : score.placements) {
+        const auto* cell = findCell(score, placement.cellId);
+        if (cell == nullptr) continue;
+        const auto validSection = placement.sectionIndex >= 0 &&
+            static_cast<std::size_t>(placement.sectionIndex) < sectionLengths.size();
+        const auto sectionLength = validSection
+            ? sectionLengths[static_cast<std::size_t>(placement.sectionIndex)] : 0.0;
+        const auto iterationLength = cell->lengthBeats * placement.timeScale;
+        for (auto repeat = 0; repeat < placement.repeats; ++repeat) {
+            const auto origin = placement.startBeat + repeat * iterationLength;
+            for (const auto& note : cell->notes) {
+                if (note.instrumentId != instrumentId) continue;
+                if (note.beat < placement.fragmentStart ||
+                    note.beat >= placement.fragmentEnd) {
+                    ++report.excludedByFragment;
+                    continue;
+                }
+                const auto transformedBeat = placement.retrograde
+                    ? std::max(0.0, cell->lengthBeats - note.beat - note.durationBeats)
+                    : note.beat;
+                const auto sectionBeat = origin + transformedBeat * placement.timeScale;
+                if (!validSection || sectionBeat < 0.0 || sectionBeat >= sectionLength) {
+                    ++report.excludedBySection;
+                    continue;
+                }
+                if (remappedVoice(placement, note.voice) != owner->sourceVoice) {
+                    ++report.incompatibleVoiceMap;
+                    continue;
+                }
+                ++report.realizableNotes;
+            }
+        }
+    }
+    return report;
 }
 
 } // namespace pulso

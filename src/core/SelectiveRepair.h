@@ -3,6 +3,8 @@
 #include "SongComposer.h"
 
 #include <cstddef>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -104,6 +106,47 @@ struct EnsembleContinuityReport {
     double longestGlobalSilenceBeats{};
 };
 
+// Three structural checkpoints for the primary polyphonic chord bed. This
+// protects a developing harmonic floor without imposing constant notes.
+struct ChordBedFormCoverage {
+    bool opening{};
+    bool development{};
+    bool closing{};
+    [[nodiscard]] bool ready() const noexcept {
+        return opening && development && closing;
+    }
+};
+
+// Exact pair/window evidence for AI-only editorial repair. Each harsh interval
+// remains a pair event; it is not mistaken for an independent bad MIDI note.
+struct TonalConflictGroup {
+    std::size_t firstInstrument{};
+    std::size_t secondInstrument{};
+    int bar{};
+    std::size_t events{};
+    double overlapBeats{};
+    double longestOverlapBeats{};
+    int exampleFirstPitch{};
+    int exampleSecondPitch{};
+};
+
+// An actual rendered chord attack selected from measured conflicts. Beats are
+// section-relative so a compact AI voicing reply cannot edit another passage.
+struct ChordVoicingTarget {
+    int sectionIndex{};
+    double sectionBeat{};
+    double durationBeats{};
+    std::vector<int> pitches;
+    std::size_t conflictEvents{};
+};
+
+struct ChordVoicingPatch {
+    int sectionIndex{};
+    double sectionBeat{};
+    double durationBeats{};
+    std::vector<int> pitches;
+};
+
 [[nodiscard]] std::string_view constraintAuthorityKey(ConstraintAuthority) noexcept;
 [[nodiscard]] std::string_view performanceRepairOperationKey(
     PerformanceRepairOperation) noexcept;
@@ -121,6 +164,34 @@ public:
     [[nodiscard]] static bool safeWithEditorialObservations(
         const CompositionRenderReport&) noexcept;
     [[nodiscard]] static double deficit(const CompositionRenderReport&) noexcept;
+    // Keeps an AI-authored editorial rewrite that measurably reduces tonal collisions
+    // without worsening hard MIDI invariants, even before the complete score is ready.
+    // This is a checkpoint decision, never permission to publish an unsafe song.
+    [[nodiscard]] static bool improvedTonalCheckpoint(
+        const CompositionRenderReport& before,
+        const CompositionRenderReport& after,
+        double aiAuthoredNoteRatio) noexcept;
+    // A whole-score rewrite must not trade its narrative arc for a lower
+    // dissonance counter. Called for every transactional editorial candidate.
+    [[nodiscard]] static bool preservesNarrative(
+        const CompositionRenderReport& before,
+        const CompositionRenderReport& after) noexcept;
+    [[nodiscard]] static std::vector<TonalConflictGroup> tonalConflictGroups(
+        const SongPlan&, const TonalAuditReport&);
+    // Sustained close intervals inside one low chord-bed voicing cannot be
+    // repaired by writing later instruments. Diagnose them at the block boundary.
+    [[nodiscard]] static std::vector<TonalIssue> sustainedLowChordBedSeconds(
+        const SongPlan&, const TonalAuditReport&);
+    [[nodiscard]] static std::vector<ChordVoicingTarget> chordVoicingTargets(
+        const SongPlan&, const Pattern&, const TonalAuditReport&,
+        std::size_t instrumentIndex, std::size_t maximumTargets = 24);
+    [[nodiscard]] static bool applyChordVoicingPatches(
+        const SongPlan&, const PerformanceScore&, std::size_t instrumentIndex,
+        const std::vector<ChordVoicingPatch>&, PerformanceScore& output,
+        std::string& error);
+    [[nodiscard]] static bool preservesUntouchedMidi(
+        const SongPlan&, const Pattern& before, const Pattern& after,
+        std::size_t instrumentIndex, const std::vector<ChordVoicingPatch>&);
     [[nodiscard]] static bool editoriallyAcceptable(
         const CompositionRenderReport& before, const CompositionRenderReport& after,
         std::size_t completedRepairs) noexcept;
@@ -156,6 +227,31 @@ public:
     // not trigger repeated whole-track rewrites during protagonist-first writing.
     [[nodiscard]] static bool deferableMarginalMelodicSpeech(
         const SongPlan&, const PerformanceCoverageDeficit&) noexcept;
+    // Local AI-only studio: a fully authored protagonist may carry editorial
+    // narrative/speech findings into the complete-score audition. An empty,
+    // incomplete or structurally unsafe protagonist never qualifies.
+    [[nodiscard]] static bool deferableLocalProtagonistEditorial(
+        const SongPlan&, const PerformanceCoverageDeficit&) noexcept;
+    // A null `after` means every measured deficit was resolved. This is a
+    // successful focused repair, not an invalid validator response.
+    [[nodiscard]] static bool acceptsFocusedProtagonistCompletion(
+        const PerformanceCoverageDeficit& before,
+        const PerformanceCoverageDeficit* after,
+        std::span<const int> requestedWindowStartBars,
+        bool codaOnly,
+        std::size_t realizableNotesBefore,
+        std::size_t realizableNotesAfter) noexcept;
+    [[nodiscard]] static bool focusedProtagonistAdditionInScope(
+        const SongPlan&, const PerformanceScore& addition,
+        std::size_t instrumentIndex,
+        std::span<const int> requestedWindowStartBars,
+        bool codaOnly);
+    [[nodiscard]] static std::optional<std::size_t> centralChordBedOwner(
+        const SongPlan&);
+    [[nodiscard]] static ChordBedFormCoverage chordBedFormCoverage(
+        const SongPlan&, const PerformanceScore&, std::size_t instrumentIndex);
+    [[nodiscard]] static long long measuredTonalDebt(
+        const CompositionRenderReport&) noexcept;
     // A substantial protagonist whose only outstanding obligation is a modest
     // active-bar shortfall may continue to the complete-score audition if a
     // focused additive recovery fails. Missing identity or coda never qualify;

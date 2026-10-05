@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(Pulso VERSION 0.58.56 LANGUAGES C CXX)
+project(Pulso VERSION 0.58.57 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -20,6 +20,12 @@ add_library(pulso_core STATIC
     src/core/ArrangementDensityPlanner.h
     src/core/CompositionModel.cpp
     src/core/CompositionModel.h
+    src/core/CoherentProofGate.cpp
+    src/core/CoherentProofGate.h
+    src/core/CoherentProofRevision.cpp
+    src/core/CoherentProofRevision.h
+    src/core/EditorialSafety.cpp
+    src/core/EditorialSafety.h
     src/core/CreativeAuthority.cpp
     src/core/CreativeAuthority.h
     src/core/ElectronicCompositionFabric.cpp
@@ -103,6 +109,9 @@ if(PULSO_BUILD_TESTS)
     add_executable(pulso_tests
         tests/TestMain.cpp
         tests/GeneratorTests.cpp
+        tests/CoherentProofGateTests.cpp
+        tests/CoherentProofRevisionTests.cpp
+        tests/EditorialSafetyTests.cpp
         tests/ScaleTests.cpp
         tests/SelectiveRepairTests.cpp
     )

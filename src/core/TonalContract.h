@@ -32,6 +32,9 @@ struct TonalIssue {
     int pitch{};
     int otherPitch{};
     std::string kind;
+    std::uint16_t partId{};
+    std::uint16_t otherPartId{};
+    double overlapBeats{};
 };
 
 struct TonalAuditReport {

@@ -1,5 +1,12 @@
 # PULSO
 
+### 0.58.57 — composición AI soberana y estudio local
+
+- El generador conserva y valida las notas escritas por IA por ventanas, con revisiones puntuales de alturas cuando quedan conflictos armónicos concretos.
+- El estudio local permite auditar progreso, costes aproximados, MIDI provisional y diagnóstico final sin recompilar el VST.
+- Las pruebas de paridad y de seguridad editorial siguen ejecutándose antes de publicar el worker Cloud.
+- Una composición técnicamente válida puede requerir revisión musical: el informe distingue ambas condiciones.
+
 ## Web comercial
 
 ### 0.58.56 — un solo pipeline musical para VST y Cloud

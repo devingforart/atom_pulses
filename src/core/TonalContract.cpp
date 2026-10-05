@@ -115,6 +115,12 @@ bool resolvedDeclaredColour(std::span<const HarmonicWindow> windows,
     const HarmonicWindow* next = nullptr;
     for (const auto& candidate : windows) {
         if (candidate.startBeat <= window->startBeat + timingTolerance) continue;
+        // Rearticulating the same harmony does not discharge a chromatic debt.
+        // Look through repeated harmonic events to the actual next function.
+        if (candidate.rootPitchClass == window->rootPitchClass &&
+            candidate.bassPitchClass == window->bassPitchClass &&
+            candidate.function == window->function &&
+            candidate.pitchClasses == window->pitchClasses) continue;
         next = &candidate;
         break;
     }
@@ -160,6 +166,56 @@ bool intentionalVerticalColour(const NoteEvent& left, const NoteEvent& right,
         !containsPitchClass(window->pitchClasses, right.pitch)) return false;
     const auto distance = std::abs(left.pitch - right.pitch);
     const auto interval = positiveModulo(distance, 12);
+    const auto root = positiveModulo(window->rootPitchClass, 12);
+    const auto leftClass = positiveModulo(left.pitch, 12);
+    const auto rightClass = positiveModulo(right.pitch, 12);
+    const auto chordHasPair = [&](int first, int second) {
+        return (leftClass == first && rightClass == second) ||
+            (leftClass == second && rightClass == first);
+    };
+    // A declared major-seventh chord is not a random vertical collision. A
+    // close low-register pair remains risky, but a seventh nearly two or more
+    // octaves above its bass root is an ordinary open jazz/electronic voicing.
+    if ((interval == 11 || (interval == 1 && distance >= 13)) &&
+        (std::min(left.pitch, right.pitch) >= 52 ||
+         distance >= 23) &&
+        chordHasPair(root, positiveModulo(root + 11, 12))) return true;
+    // In a declared minor add-nine or minor ninth, the third and ninth form a
+    // major-seventh interval. Preserve the pair when it is voiced openly;
+    // a closer pair needs the complete minor-ninth colour and a high register.
+    if (interval == 11 &&
+        (std::min(left.pitch, right.pitch) >= 52 ||
+         (distance >= 23 && std::max(left.pitch, right.pitch) >= 60)) &&
+        chordHasPair(positiveModulo(root + 3, 12),
+                     positiveModulo(root + 2, 12)) &&
+        containsPitchClass(window->pitchClasses, root) &&
+        (distance >= 23 ||
+         containsPitchClass(window->pitchClasses, root + 7))) return true;
+    // The third/seventh tritone is the defining guide-tone pair of a dominant
+    // seventh. Other tritones still need an explicit colour function below.
+    if (interval == 6 &&
+        std::min(left.pitch, right.pitch) >= 55 &&
+        containsPitchClass(window->pitchClasses, root) &&
+        containsPitchClass(window->pitchClasses, root + 4) &&
+        containsPitchClass(window->pitchClasses, root + 10) &&
+        chordHasPair(positiveModulo(root + 4, 12),
+                     positiveModulo(root + 10, 12))) return true;
+    // The fifth and flat ninth are another explicit dominant-b9 colour.
+    // Permit them in the middle/upper register only, not as a low cluster.
+    if (interval == 6 && std::min(left.pitch, right.pitch) >= 60 &&
+        containsPitchClass(window->pitchClasses, root) &&
+        containsPitchClass(window->pitchClasses, root + 7) &&
+        containsPitchClass(window->pitchClasses, root + 1) &&
+        chordHasPair(positiveModulo(root + 7, 12),
+                     positiveModulo(root + 1, 12))) return true;
+    // An upper-register root against its explicitly declared flat ninth is
+    // part of a dominant-b9 sonority. The adjacent semitone and low-register
+    // versions still need revision; only an opened voicing is intentional.
+    if ((interval == 1 || interval == 11) && distance >= 11 &&
+        std::min(left.pitch, right.pitch) >= 60 &&
+        containsPitchClass(window->pitchClasses, root) &&
+        containsPitchClass(window->pitchClasses, root + 1) &&
+        chordHasPair(root, positiveModulo(root + 1, 12))) return true;
     const auto structuralColour = window->function == HarmonicFunction::Dominant ||
                                   window->function == HarmonicFunction::Chromatic ||
                                   window->function == HarmonicFunction::Colour;
@@ -202,9 +258,20 @@ bool overlaps(const NoteEvent& left, const NoteEvent& right) noexcept {
 
 void addIssue(TonalAuditReport& report, double beat, VoiceId voice, int pitch,
               std::string kind, VoiceId otherVoice = VoiceId::Unspecified,
-              int otherPitch = 0) {
-    if (report.issues.size() < 16)
-        report.issues.push_back({beat, voice, otherVoice, pitch, otherPitch, std::move(kind)});
+              int otherPitch = 0, const NoteEvent* note = nullptr,
+              const NoteEvent* other = nullptr) {
+    // Preserve enough exact evidence for the local editorial repair. The count is
+    // always complete; the bounded evidence list prevents pathological memory use.
+    if (report.issues.size() < 4096) {
+        TonalIssue issue{beat, voice, otherVoice, pitch, otherPitch, std::move(kind)};
+        if (note != nullptr) issue.partId = note->partId;
+        if (other != nullptr) issue.otherPartId = other->partId;
+        if (note != nullptr && other != nullptr)
+            issue.overlapBeats = std::max(0.0,
+                std::min(note->endBeat(), other->endBeat()) -
+                std::max(note->startBeat, other->startBeat));
+        report.issues.push_back(std::move(issue));
+    }
 }
 
 std::vector<HarmonicWindow> legacyWindows(std::span<const std::vector<int>> harmonyByBar,
@@ -252,6 +319,72 @@ bool validPassingTone(const Pattern& pattern, std::size_t index, int rootPitchCl
            std::abs(next->pitch - note.pitch) == 1;
 }
 
+bool validResolvedMelodicNinth(const Pattern& pattern, std::size_t index,
+                               int rootPitchClass, ScaleKind scale,
+                               std::span<const HarmonicWindow> harmony) {
+    if (index >= pattern.notes.size()) return false;
+    const auto& note = pattern.notes[index];
+    if (!melodicVoice(note.voice) || note.pitch < 60 ||
+        note.durationBeats > 1.0 ||
+        !isPitchClassInScale(note.pitch, rootPitchClass, scale)) return false;
+    const auto* window = windowAt(harmony, note.startBeat);
+    if (window == nullptr || note.endBeat() > window->endBeat + timingTolerance)
+        return false;
+    const auto root = positiveModulo(window->rootPitchClass, 12);
+    const auto third = positiveModulo(root + 3, 12);
+    const auto majorThird = positiveModulo(root + 4, 12);
+    if (positiveModulo(note.pitch, 12) != positiveModulo(root + 2, 12) ||
+        !containsPitchClass(window->pitchClasses, root) ||
+        !containsPitchClass(window->pitchClasses, root + 7) ||
+        (!containsPitchClass(window->pitchClasses, third) &&
+         !containsPitchClass(window->pitchClasses, majorThird))) return false;
+    const NoteEvent* previous = nullptr;
+    const NoteEvent* next = nullptr;
+    for (auto before = index; before-- > 0;)
+        if (pattern.notes[before].voice == note.voice &&
+            pattern.notes[before].partId == note.partId) {
+            previous = &pattern.notes[before];
+            break;
+        }
+    for (auto after = index + 1; after < pattern.notes.size(); ++after)
+        if (pattern.notes[after].voice == note.voice &&
+            pattern.notes[after].partId == note.partId) {
+            next = &pattern.notes[after];
+            break;
+        }
+    if (previous == nullptr || next == nullptr ||
+        previous->pitch - note.pitch < 1 || previous->pitch - note.pitch > 2 ||
+        (!containsPitchClass(window->pitchClasses, previous->pitch) ||
+         (positiveModulo(previous->pitch, 12) != third &&
+          positiveModulo(previous->pitch, 12) != majorThird)) ||
+        note.startBeat - previous->endBeat() < -timingTolerance ||
+        note.startBeat - previous->endBeat() > .50 ||
+        next->pitch != note.pitch - 2 ||
+        positiveModulo(next->pitch, 12) != root ||
+        next->startBeat - note.endBeat() < -timingTolerance ||
+        next->startBeat - note.endBeat() > .50 ||
+        next->startBeat >= window->endBeat + timingTolerance) return false;
+    return true;
+}
+
+bool intentionalResolvedNinthCollision(const Pattern& pattern,
+                                       std::size_t melodicIndex,
+                                       const NoteEvent& companion,
+                                       int rootPitchClass, ScaleKind scale,
+                                       std::span<const HarmonicWindow> harmony) {
+    if (!validResolvedMelodicNinth(pattern, melodicIndex, rootPitchClass,
+                                  scale, harmony) ||
+        !harmonicNote(pattern, companion)) return false;
+    const auto& melody = pattern.notes[melodicIndex];
+    const auto* window = windowAt(harmony, melody.startBeat);
+    const auto companionClass = positiveModulo(companion.pitch, 12);
+    const auto root = positiveModulo(window->rootPitchClass, 12);
+    return (companionClass == positiveModulo(root + 3, 12) ||
+            companionClass == positiveModulo(root + 4, 12)) &&
+        std::min(melody.pitch, companion.pitch) >= 60 &&
+        std::abs(melody.pitch - companion.pitch) >= 11;
+}
+
 bool validResolvedLeadingTone(const Pattern& pattern, std::size_t index, int rootPitchClass,
                               ScaleKind scale, double beatsPerBar,
                               std::span<const HarmonicWindow> harmony) {
@@ -274,6 +407,27 @@ bool validResolvedLeadingTone(const Pattern& pattern, std::size_t index, int roo
         return false;
     return next->pitch - note.pitch == 1 &&
            positiveModulo(next->pitch, 12) == positiveModulo(rootPitchClass, 12);
+}
+
+bool validChromaticBassApproach(const Pattern& pattern, std::size_t index,
+                               std::span<const HarmonicWindow> harmony) {
+    if (index >= pattern.notes.size()) return false;
+    const auto& note = pattern.notes[index];
+    if (!bassVoice(note.voice) || note.durationBeats > .50) return false;
+    for (auto after = index + 1; after < pattern.notes.size(); ++after) {
+        const auto& next = pattern.notes[after];
+        if (next.voice != note.voice || next.partId != note.partId) continue;
+        if (next.startBeat - note.startBeat > .75 ||
+            next.startBeat - note.endBeat() < -timingTolerance ||
+            next.startBeat - note.endBeat() > .25 ||
+            std::abs(next.pitch - note.pitch) != 1) return false;
+        const auto* arrival = windowAt(harmony, next.startBeat);
+        return arrival != nullptr &&
+            positiveModulo(next.pitch, 12) ==
+                positiveModulo(arrival->bassPitchClass, 12) &&
+            containsPitchClass(arrival->pitchClasses, next.pitch);
+    }
+    return false;
 }
 
 bool intentionalPassingCollision(const Pattern& pattern, std::size_t passingIndex,
@@ -359,16 +513,24 @@ TonalAuditReport auditTonalContract(const Pattern& pattern, int rootPitchClass, 
             resolvedDeclaredColour(harmony, window, note.pitch, rootPitchClass, scale);
         const auto resolvedLeadingTone = validResolvedLeadingTone(
             pattern, noteIndex, rootPitchClass, scale, beatsPerBar, harmony);
+        const auto resolvedNinth = validResolvedMelodicNinth(
+            pattern, noteIndex, rootPitchClass, scale, harmony);
+        const auto resolvedBassApproach = validChromaticBassApproach(
+            pattern, noteIndex, harmony);
         const auto structural = harmonicNote(pattern, note) ||
             ((bassVoice(note.voice) || melodicVoice(note.voice)) && strong);
-        if (!resolvedLeadingTone && !declaredColour && structural &&
+        if (!resolvedLeadingTone && !resolvedNinth && !resolvedBassApproach &&
+            !declaredColour && structural &&
             (!inChord || (policy == TonalPolicy::Consolidated && !inScale))) {
             ++report.strongNonChordNotes;
-            addIssue(report, note.startBeat, note.voice, note.pitch, "strong_non_chord");
-        } else if (!resolvedLeadingTone && !declaredColour && !inScale && (policy == TonalPolicy::Consolidated ||
+            addIssue(report, note.startBeat, note.voice, note.pitch, "strong_non_chord",
+                     VoiceId::Unspecified, 0, &note);
+        } else if (!resolvedLeadingTone && !resolvedNinth && !resolvedBassApproach &&
+                   !declaredColour && !inScale && (policy == TonalPolicy::Consolidated ||
                    (!inChord && !validPassingTone(pattern, noteIndex, rootPitchClass, scale, 0.36)))) {
             ++report.unsupportedChromaticNotes;
-            addIssue(report, note.startBeat, note.voice, note.pitch, "unsupported_chromatic");
+            addIssue(report, note.startBeat, note.voice, note.pitch, "unsupported_chromatic",
+                     VoiceId::Unspecified, 0, &note);
         }
         if (sustainedVoice(note.voice) || harmonicNote(pattern, note)) {
             for (const auto& next : harmony) {
@@ -376,7 +538,8 @@ TonalAuditReport auditTonalContract(const Pattern& pattern, int rootPitchClass, 
                     next.startBeat >= note.endBeat() - timingTolerance) continue;
                 if (!containsPitchClass(next.pitchClasses, note.pitch)) {
                     ++report.invalidSustains;
-                    addIssue(report, next.startBeat, note.voice, note.pitch, "invalid_sustain");
+                    addIssue(report, next.startBeat, note.voice, note.pitch, "invalid_sustain",
+                             VoiceId::Unspecified, 0, &note);
                     break;
                 }
             }
@@ -395,6 +558,13 @@ TonalAuditReport auditTonalContract(const Pattern& pattern, int rootPitchClass, 
                 ++report.intentionalClusters;
                 continue;
             }
+            if (intentionalResolvedNinthCollision(pattern, leftIndex, right,
+                    rootPitchClass, scale, harmony) ||
+                intentionalResolvedNinthCollision(pattern, rightIndex, left,
+                    rootPitchClass, scale, harmony)) {
+                ++report.intentionalClusters;
+                continue;
+            }
             if (intentionalPassingCollision(pattern, leftIndex, rightIndex, rootPitchClass, scale,
                                             beatsPerBar, harmony) ||
                 intentionalPassingCollision(pattern, rightIndex, leftIndex, rootPitchClass, scale,
@@ -402,7 +572,7 @@ TonalAuditReport auditTonalContract(const Pattern& pattern, int rootPitchClass, 
                 continue;
             ++report.unintendedHarshOverlaps;
             addIssue(report, conflictBeat, right.voice, right.pitch, "harsh_overlap",
-                     left.voice, left.pitch);
+                     left.voice, left.pitch, &right, &left);
         }
     }
     return report;
@@ -449,9 +619,18 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
         const auto strong = strongMetricPosition(note.startBeat, beatsPerBar, window);
         const auto resolvedLeadingTone = validResolvedLeadingTone(
             pattern, index, rootPitchClass, scale, beatsPerBar, harmony);
+        const auto resolvedNinth = validResolvedMelodicNinth(
+            pattern, index, rootPitchClass, scale, harmony);
+        const auto resolvedBassApproach = validChromaticBassApproach(
+            pattern, index, harmony);
         const auto passingDuration = policy == TonalPolicy::Consolidated ? 0.25 : 0.36;
         if (resolvedLeadingTone && acceptedChromatic < maximumChromatic) {
             ++acceptedChromatic;
+            ++report.intentionalChromaticNotes;
+            continue;
+        }
+        if (resolvedNinth) continue;
+        if (resolvedBassApproach) {
             ++report.intentionalChromaticNotes;
             continue;
         }
@@ -524,6 +703,13 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
                     ++report.intentionalClusters;
                     continue;
                 }
+                if (intentionalResolvedNinthCollision(pattern, leftIndex, right,
+                        rootPitchClass, scale, harmony) ||
+                    intentionalResolvedNinthCollision(pattern, rightIndex, left,
+                        rootPitchClass, scale, harmony)) {
+                    ++report.intentionalClusters;
+                    continue;
+                }
                 if (intentionalPassingCollision(pattern, leftIndex, rightIndex, rootPitchClass, scale,
                                                 beatsPerBar, harmony) ||
                     intentionalPassingCollision(pattern, rightIndex, leftIndex, rootPitchClass, scale,
@@ -565,13 +751,24 @@ TonalRepairReport repairTonalContract(Pattern& pattern, int rootPitchClass, Scal
                 auto bestDistance = std::numeric_limits<int>::max();
                 for (auto candidate = minimumPitch; candidate <= maximumPitch; ++candidate) {
                     if (!containsPitchClass(allowed, candidate)) continue;
+                    auto candidateNote = target;
+                    candidateNote.pitch = candidate;
                     auto safe = true;
                     for (std::size_t check = 0; check < pattern.notes.size(); ++check) {
                         if (pattern.notes[check].startBeat >= target.endBeat() - timingTolerance) break;
                         if (check == targetIndex || removed[check] ||
                             collisionPriority(pattern.notes[check].voice) < collisionPriority(target.voice) ||
                             !overlaps(target, pattern.notes[check])) continue;
-                        if (harshInterval(candidate, pattern.notes[check].pitch)) { safe = false; break; }
+                        const auto& companion = pattern.notes[check];
+                        if (harshInterval(candidate, companion.pitch) &&
+                            !intentionalVerticalColour(candidateNote, companion,
+                                windowAt(harmony, std::max(candidateNote.startBeat,
+                                                           companion.startBeat)), policy) &&
+                            !intentionalResolvedNinthCollision(pattern, check,
+                                candidateNote, rootPitchClass, scale, harmony)) {
+                            safe = false;
+                            break;
+                        }
                     }
                     const auto distance = std::abs(candidate - target.pitch);
                     if (safe && distance < bestDistance) { replacement = candidate; bestDistance = distance; }

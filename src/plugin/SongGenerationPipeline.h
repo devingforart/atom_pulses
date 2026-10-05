@@ -41,7 +41,8 @@ public:
     static void finalizePlan(SongPlan& plan, const SongGenerationRequest& request);
     [[nodiscard]] static Pattern render(const SongPlan& plan,
         const SongGenerationRequest& request,
-        const std::function<void(std::size_t, std::size_t, const SongSection&)>& progress = {});
+        const std::function<void(std::size_t, std::size_t, const SongSection&)>& progress = {},
+        CompositionRenderReport* report = nullptr);
 };
 
 } // namespace pulso::plugin

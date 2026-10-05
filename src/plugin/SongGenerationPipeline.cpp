@@ -90,7 +90,8 @@ void SongGenerationPipeline::finalizePlan(SongPlan& plan,
 Pattern SongGenerationPipeline::render(const SongPlan& plan,
                                       const SongGenerationRequest& request,
                                       const std::function<void(std::size_t, std::size_t,
-                                                               const SongSection&)>& progress) {
+                                                               const SongSection&)>& progress,
+                                      CompositionRenderReport* report) {
     GenerationContext context;
     context.role = Role::Ensemble;
     context.seed = request.seed;
@@ -103,7 +104,7 @@ Pattern SongGenerationPipeline::render(const SongPlan& plan,
     const auto third = plan.scale == ScaleKind::Minor || plan.scale == ScaleKind::Dorian ? 3 : 4;
     context.chordPitchClasses = {plan.rootPitchClass,
         (plan.rootPitchClass + third) % 12, (plan.rootPitchClass + 7) % 12};
-    return SongComposer{}.render(plan, context, progress);
+    return SongComposer{}.render(plan, context, progress, report);
 }
 
 } // namespace pulso::plugin

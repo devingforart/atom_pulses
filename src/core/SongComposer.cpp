@@ -2122,7 +2122,8 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     sectionLengths.reserve(plan.sections.size());
     for (const auto& section : plan.sections)
         sectionLengths.push_back(section.bars * plan.beatsPerBar);
-    PerformanceScoreEngine::normalize(plan.performanceScore, plan.sections.size(), sectionLengths);
+    PerformanceScoreEngine::normalize(plan.performanceScore, plan.sections.size(),
+                                      sectionLengths, plan.aiSovereign);
     // A voice-map is audible orchestration, not metadata. Its destination must participate
     // in expression, register realization and authorship coverage even when the section's
     // original active_voices list mentioned only the source voice.

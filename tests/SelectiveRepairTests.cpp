@@ -10,12 +10,329 @@
 #include "core/TrackViability.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
 using namespace pulso;
 
 void runSelectiveRepairTests() {
+    {
+        InstrumentAssignment lead;
+        lead.id = "lead";
+        lead.sourceVoice = VoiceId::Lead;
+        PerformanceScore score;
+        PerformanceCell cell;
+        cell.id = "written_phrase";
+        cell.lengthBeats = 4.0;
+        cell.ownedVoices = {VoiceId::Lead};
+        cell.notes.push_back({.5, .5, 60, 90, VoiceId::Lead,
+                              MetricIntent::StrictGrid, "lead"});
+        cell.notes.push_back({2.0, .5, 62, 90, VoiceId::Lead,
+                              MetricIntent::StrictGrid, "lead"});
+        score.cells.push_back(cell);
+        PerformancePlacement placement;
+        placement.cellId = cell.id;
+        placement.sectionIndex = 0;
+        placement.fragmentStart = 3.0;
+        placement.fragmentEnd = 4.0;
+        score.placements.push_back(placement);
+        const std::vector<InstrumentAssignment> instruments{lead};
+        const std::vector<double> lengths{32.0};
+        const auto clipped = PerformanceScoreEngine::auditRealization(
+            score, "lead", instruments, lengths);
+        require(clipped.placedSourceNotes == 2 && clipped.realizableNotes == 0 &&
+                    clipped.excludedByFragment == 2,
+                "Placed source notes clipped out by a fragment must not be reported as audible");
+        score.placements.front().fragmentStart = 0.0;
+        score.placements.front().voiceMap = {{VoiceId::Lead, VoiceId::Countermelody}};
+        const auto misrouted = PerformanceScoreEngine::auditRealization(
+            score, "lead", instruments, lengths);
+        require(misrouted.realizableNotes == 0 && misrouted.incompatibleVoiceMap == 2,
+                "Voice-map output routed away from its named instrument must be diagnosed");
+        Pattern misroutedChunk;
+        misroutedChunk.lengthBeats = 32.0;
+        PerformanceScoreEngine::replaceChunk(misroutedChunk, score, 0,
+                                             0.0, 32.0, instruments);
+        require(std::none_of(misroutedChunk.notes.begin(), misroutedChunk.notes.end(),
+                    [](const auto& note) { return note.partId == 1; }),
+                "Realization diagnostics must agree with actual named-part rendering");
+        score.placements.front().voiceMap.clear();
+        score.placements.front().startBeat = 31.0;
+        const auto outside = PerformanceScoreEngine::auditRealization(
+            score, "lead", instruments, lengths);
+        require(outside.realizableNotes == 1 && outside.excludedBySection == 1,
+                "Section-relative placements must count only notes inside the section");
+    }
+    {
+        PerformanceCoverageDeficit before;
+        before.narrativePhraseWindows = 2;
+        before.minimumNarrativePhraseWindows = 5;
+        before.missingNarrativeWindowStartBars = {12, 20, 32};
+        before.missingCodaResolution = true;
+        const std::vector<int> requested{12, 20};
+        require(SelectiveRepair::acceptsFocusedProtagonistCompletion(
+                    before, nullptr, requested, false, 83, 95),
+                "A focused AI reply that fully resolves all deficits must be accepted");
+        auto after = before;
+        after.narrativePhraseWindows = 3;
+        after.missingNarrativeWindowStartBars = {12, 32};
+        require(SelectiveRepair::acceptsFocusedProtagonistCompletion(
+                    before, &after, requested, false, 83, 88),
+                "A rendered phrase in a requested missing window must be preserved");
+        require(!SelectiveRepair::acceptsFocusedProtagonistCompletion(
+                    before, &after, std::vector<int>{32}, false, 83, 88),
+                "Improvement outside the requested windows must not validate a targeted reply");
+        require(!SelectiveRepair::acceptsFocusedProtagonistCompletion(
+                    before, nullptr, requested, false, 83, 83),
+                "Source cells without new realizable MIDI must not validate a completion");
+        after.missingCodaResolution = false;
+        require(SelectiveRepair::acceptsFocusedProtagonistCompletion(
+                    before, &after, {}, true, 83, 89),
+                "An independently rendered coda must be accepted without a phrase-window prerequisite");
+    }
+    {
+        SongPlan plan;
+        plan.totalBars = 16;
+        plan.beatsPerBar = 4.0;
+        SongSection section;
+        section.startBar = 0;
+        section.bars = 16;
+        plan.sections.push_back(section);
+        InstrumentAssignment lead;
+        lead.id = "lead";
+        lead.sourceVoice = VoiceId::Lead;
+        plan.instruments.push_back(lead);
+        PerformanceScore addition;
+        PerformanceCell cell;
+        cell.id = "new_phrase";
+        cell.lengthBeats = 4.0;
+        cell.ownedVoices = {VoiceId::Lead};
+        for (auto beat = 0; beat < 4; ++beat)
+            cell.notes.push_back({static_cast<double>(beat), .5, 60 + beat,
+                                  90, VoiceId::Lead, MetricIntent::StrictGrid, "lead"});
+        addition.cells.push_back(cell);
+        PerformancePlacement placement;
+        placement.cellId = cell.id;
+        placement.sectionIndex = 0;
+        placement.startBeat = 32.0;
+        placement.fragmentStart = 0.0;
+        placement.fragmentEnd = 4.0;
+        addition.placements.push_back(placement);
+        const std::vector<int> target{8};
+        require(SelectiveRepair::focusedProtagonistAdditionInScope(
+                    plan, addition, 0, target, false),
+                "A complete phrase placed in its requested window must be renderable");
+        addition.placements.front().startBeat = 0.0;
+        require(!SelectiveRepair::focusedProtagonistAdditionInScope(
+                    plan, addition, 0, target, false),
+                "A phrase placed outside its requested window must be rejected");
+        addition.placements.front().startBeat = 32.0;
+        addition.placements.front().fragmentEnd = 2.0;
+        require(!SelectiveRepair::focusedProtagonistAdditionInScope(
+                    plan, addition, 0, target, false),
+                "A clipped placement must not masquerade as a complete AI phrase");
+        addition.placements.front().fragmentEnd = 4.0;
+        addition.cells.push_back(cell);
+        addition.cells.back().id = "orphan_phrase";
+        require(!SelectiveRepair::focusedProtagonistAdditionInScope(
+                    plan, addition, 0, target, false),
+                "Unplaced AI notes must not validate a focused completion");
+        addition.cells.pop_back();
+        addition.placements.front().startBeat = 60.0;
+        require(SelectiveRepair::focusedProtagonistAdditionInScope(
+                    plan, addition, 0, {}, true),
+                "A resolved final-eight-bar phrase must be eligible as a separate coda");
+    }
+    {
+        SongPlan plan;
+        plan.totalBars = 16;
+        plan.beatsPerBar = 4.0;
+        SongSection section;
+        section.startBar = 0;
+        section.bars = 16;
+        plan.sections.push_back(section);
+        InstrumentAssignment bed;
+        bed.id = "central_bed";
+        bed.sourceVoice = VoiceId::HarmonicFoundation;
+        bed.role = "primary_chord_bed";
+        plan.instruments.push_back(bed);
+        require(SelectiveRepair::centralChordBedOwner(plan) == 0,
+                "The primary chord bed must be selected as the form owner");
+        PerformanceScore score;
+        PerformanceCell chord;
+        chord.id = "evolving_chord";
+        chord.lengthBeats = 4.0;
+        chord.ownedVoices = {VoiceId::HarmonicFoundation};
+        for (const auto pitch : {60, 64, 67})
+            chord.notes.push_back({0.0, 3.0, pitch, 80,
+                VoiceId::HarmonicFoundation, MetricIntent::StrictGrid, bed.id});
+        score.cells.push_back(chord);
+        for (const auto beat : {0.0, 24.0, 48.0}) {
+            PerformancePlacement placement;
+            placement.cellId = chord.id;
+            placement.sectionIndex = 0;
+            placement.startBeat = beat;
+            placement.fragmentStart = 0.0;
+            placement.fragmentEnd = 4.0;
+            score.placements.push_back(placement);
+        }
+        require(SelectiveRepair::chordBedFormCoverage(plan, score, 0).ready(),
+                "A real chord attack in each structural third must satisfy the harmonic floor");
+        score.placements.pop_back();
+        const auto sparse = SelectiveRepair::chordBedFormCoverage(plan, score, 0);
+        require(sparse.opening && sparse.development && !sparse.closing,
+                "An introductory bed without a closing return must be detected");
+        CompositionRenderReport report;
+        require(SelectiveRepair::measuredTonalDebt(report) == 0,
+                "A clean complete-score checkpoint must have no tonal debt");
+        report.production.unintendedHarshOverlaps = 1;
+        require(SelectiveRepair::measuredTonalDebt(report) == 1,
+                "Even one unresolved harsh overlap must not be silently accumulated");
+    }
+    {
+        SongPlan plan;
+        plan.beatsPerBar = 4.0;
+        InstrumentAssignment pad;
+        pad.id = "pad";
+        InstrumentAssignment lead;
+        lead.id = "lead";
+        plan.instruments = {pad, lead};
+        Pattern pattern;
+        NoteEvent chord;
+        chord.startBeat = 8.0;
+        chord.durationBeats = 2.0;
+        chord.pitch = 60;
+        chord.voice = VoiceId::HarmonicFoundation;
+        chord.partId = 1;
+        NoteEvent melody = chord;
+        melody.startBeat = 8.5;
+        melody.durationBeats = 1.0;
+        melody.pitch = 61;
+        melody.voice = VoiceId::Lead;
+        melody.partId = 2;
+        pattern.notes = {chord, melody};
+        HarmonicWindow harmony;
+        harmony.startBeat = 0.0;
+        harmony.endBeat = 12.0;
+        harmony.pitchClasses = {0, 4, 7};
+        const auto audit = auditTonalContract(pattern, 0, ScaleKind::Major, 4.0,
+                                              std::span<const HarmonicWindow>(&harmony, 1));
+        const auto groups = SelectiveRepair::tonalConflictGroups(plan, audit);
+        require(audit.unintendedHarshOverlaps == 1 && groups.size() == 1 &&
+                    groups.front().firstInstrument == 0 &&
+                    groups.front().secondInstrument == 1 &&
+                    groups.front().bar == 2 && groups.front().events == 1 &&
+                    groups.front().exampleFirstPitch == 60 &&
+                    groups.front().exampleSecondPitch == 61 &&
+                    std::abs(groups.front().overlapBeats - 1.0) < .001,
+                "Tonal conflict evidence must identify exact instrument pair, bar and overlap duration");
+        TonalAuditReport internalChordConflict;
+        TonalIssue internalIssue;
+        internalIssue.kind = "harsh_overlap";
+        internalIssue.beat = 8.0;
+        internalIssue.partId = internalIssue.otherPartId = 1;
+        internalIssue.pitch = 67;
+        internalIssue.otherPitch = 56;
+        internalIssue.overlapBeats = 2.0;
+        internalChordConflict.issues.push_back(internalIssue);
+        const auto internalGroups = SelectiveRepair::tonalConflictGroups(
+            plan, internalChordConflict);
+        require(internalGroups.size() == 1 &&
+                    internalGroups.front().exampleFirstPitch == 56 &&
+                    internalGroups.front().exampleSecondPitch == 67,
+                "An internal chord collision must report both real pitches, not the same pitch twice");
+        Pattern repeated;
+        for (int bar = 0; bar < 24; ++bar) {
+            auto padNote = chord;
+            padNote.startBeat = bar * 4.0;
+            auto leadNote = melody;
+            leadNote.startBeat = bar * 4.0 + .5;
+            repeated.notes.push_back(padNote);
+            repeated.notes.push_back(leadNote);
+        }
+        harmony.endBeat = 100.0;
+        const auto longAudit = auditTonalContract(repeated, 0, ScaleKind::Major, 4.0,
+                                                  std::span<const HarmonicWindow>(&harmony, 1));
+        require(longAudit.unintendedHarshOverlaps == 24 &&
+                    SelectiveRepair::tonalConflictGroups(plan, longAudit).size() == 24,
+                "A long song must retain conflict evidence beyond the old first-16-event cap");
+        plan.instruments.front().sourceVoice = VoiceId::HarmonicFoundation;
+        TonalAuditReport lowVoicing;
+        TonalIssue heldSecond;
+        heldSecond.kind = "harsh_overlap";
+        heldSecond.partId = heldSecond.otherPartId = 1;
+        heldSecond.pitch = 46;
+        heldSecond.otherPitch = 45;
+        heldSecond.overlapBeats = 16.0;
+        lowVoicing.issues.push_back(heldSecond);
+        require(SelectiveRepair::sustainedLowChordBedSeconds(plan, lowVoicing).size() == 1,
+                "A four-bar bass-register semitone within one chord bed must be caught before later blocks");
+        lowVoicing.issues.front().overlapBeats = .5;
+        require(SelectiveRepair::sustainedLowChordBedSeconds(plan, lowVoicing).empty(),
+                "Brief passing tensions must not trigger the sustained-voicing gate");
+        lowVoicing.issues.front().overlapBeats = 16.0;
+        lowVoicing.issues.front().otherPartId = 2;
+        require(SelectiveRepair::sustainedLowChordBedSeconds(plan, lowVoicing).empty(),
+                "A cross-instrument collision must not be misdiagnosed as an internal chord voicing");
+    }
+    {
+        CompositionRenderReport rejected;
+        rejected.production.unintendedHarshOverlaps = 169;
+        rejected.production.invalidSustains = 2;
+        rejected.production.lowRegisterVerticalClashes = 2;
+        rejected.narrative.score = .770;
+        auto partialRewrite = rejected;
+        partialRewrite.production.unintendedHarshOverlaps = 164;
+        partialRewrite.narrative.score = .767;
+        require(SelectiveRepair::improvedTonalCheckpoint(
+                    rejected, partialRewrite, 1.0),
+                "The September 30 AI repair must survive as an improved checkpoint, not publication");
+        partialRewrite.production.metricViolations = 1;
+        require(!SelectiveRepair::improvedTonalCheckpoint(
+                    rejected, partialRewrite, 1.0),
+                "A tonal improvement must not introduce invalid MIDI timing");
+        partialRewrite.production.metricViolations = 0;
+        require(!SelectiveRepair::improvedTonalCheckpoint(
+                    rejected, partialRewrite, .95),
+                "A local editorial checkpoint must keep full AI note authorship");
+        partialRewrite.production.invalidSustains = 3;
+        require(!SelectiveRepair::improvedTonalCheckpoint(
+                    rejected, partialRewrite, 1.0),
+                "A reduction in overlaps must not introduce a new harmonic sustain fault");
+        partialRewrite.production.invalidSustains = 2;
+        partialRewrite.narrative.resolutionScore = .46;
+        rejected.narrative.resolutionScore = .57;
+        require(!SelectiveRepair::improvedTonalCheckpoint(
+                    rejected, partialRewrite, 1.0),
+                "A tonal rewrite must not discard the resolution of the original score");
+        require(!SelectiveRepair::preservesNarrative(rejected, partialRewrite),
+                "Whole-score editorial acceptance must protect the same musical ending");
+    }
+    {
+        SongPlan floorPlan;
+        floorPlan.totalBars = 32;
+        floorPlan.beatsPerBar = 4.0;
+        InstrumentAssignment bed;
+        bed.id = "bed";
+        bed.role = "primary_chord_bed";
+        bed.sourceVoice = VoiceId::HarmonicFoundation;
+        InstrumentAssignment memory;
+        memory.id = "memory";
+        memory.sourceVoice = VoiceId::Atmosphere;
+        floorPlan.instruments = {bed, memory};
+        Pattern floorPattern;
+        floorPattern.lengthBeats = 128.0;
+        CompositionRenderReport floorReport;
+        floorReport.soundscape.active = true;
+        floorReport.soundscape.harmonicFloorCoverage = .31;
+        const auto diagnosis = SelectiveRepair::diagnose(
+            floorPlan, floorPattern, floorReport, 2);
+        require(diagnosis.needed && diagnosis.instrumentIndices.size() == 2 &&
+                    diagnosis.instrumentIndices.front() == 0 &&
+                    diagnosis.instrumentIndices.back() == 1,
+                "A sparse electronic floor must return its authored bed and harmonic companion to AI review");
+    }
     {
         SongPlan authored;
         authored.totalBars = 8;
@@ -106,6 +423,9 @@ void runSelectiveRepairTests() {
         chord.ownedVoices = {VoiceId::HarmonicFoundation};
         chord.notes.push_back({0.0, 3.0, 62, 65, VoiceId::HarmonicFoundation,
                                MetricIntent::StrictGrid, "bed"});
+        chord.notes.push_back({0.0, 3.0, 63, 65, VoiceId::HarmonicFoundation,
+                               MetricIntent::StrictGrid, "bed"});
+        chord.controls.push_back({1.0, 11, 88, VoiceId::HarmonicFoundation, "bed"});
         accepted.cells = {speech, chord};
         for (auto section = 0; section < 2; ++section) {
             for (const auto* id : {"speech", "chord"}) {
@@ -127,6 +447,81 @@ void runSelectiveRepairTests() {
                 "The next AI block must see bounded real MIDI from earlier sections, excluding its target");
         require(EnsembleReference::summarize(referencePlan, {}, {}).empty(),
                 "An empty accepted score must not invent an ensemble reference");
+        const auto ledger = EnsembleReference::harmonicLedger(
+            referencePlan, accepted, {"speaker"});
+        require(ledger.find("bed [0.00-3.00:62,63]") != std::string::npos &&
+                    ledger.find("bed [32.00-35.00:62,63]") != std::string::npos &&
+                    ledger.find("speaker") == std::string::npos,
+                "The harmonic ledger must preserve every simultaneous chord pitch in each section");
+        require(EnsembleReference::harmonicLedger(referencePlan, {}, {}).empty(),
+                "No accepted MIDI must yield no invented harmonic context");
+        Pattern before;
+        before.lengthBeats = 64.0;
+        PerformanceScoreEngine::replaceChunk(before, accepted, 0, 0.0, 32.0,
+                                              referencePlan.instruments);
+        TonalAuditReport conflicts;
+        TonalIssue issue;
+        issue.kind = "harsh_overlap";
+        issue.beat = 0.0;
+        issue.partId = 2;
+        issue.otherPartId = 1;
+        issue.pitch = 63;
+        issue.otherPitch = 69;
+        issue.overlapBeats = 1.0;
+        conflicts.issues.push_back(issue);
+        const auto targets = SelectiveRepair::chordVoicingTargets(
+            referencePlan, before, conflicts, 1);
+        require(targets.size() == 1 && targets.front().pitches == std::vector<int>({62, 63}) &&
+                    targets.front().sectionIndex == 0 && targets.front().sectionBeat == 0.0,
+                "Chord repair must target a complete rendered attack, not one sampled note");
+        PerformanceScore patched;
+        std::string patchError;
+        require(SelectiveRepair::applyChordVoicingPatches(referencePlan, accepted, 1,
+                    {{0, 0.0, 3.0, {62, 65}}}, patched, patchError),
+                "A compact AI chord reply must splice into the accepted score");
+        const auto normalizedPatch = PerformanceScoreEngine::normalize(
+            patched, 2, {32.0, 32.0});
+        require(normalizedPatch.cellsRejected == 0 &&
+                    normalizedPatch.placementsRejected == 0,
+                "A compact voicing splice must survive score normalization intact");
+        Pattern after;
+        after.lengthBeats = 64.0;
+        PerformanceScoreEngine::replaceChunk(after, patched, 0, 0.0, 32.0,
+                                              referencePlan.instruments);
+        const auto pitchesAt = [](const Pattern& song, std::uint16_t part, double beat) {
+            std::vector<int> pitches;
+            for (const auto& note : song.notes)
+                if (note.partId == part && std::abs(note.startBeat - beat) < .001)
+                    pitches.push_back(note.pitch);
+            std::sort(pitches.begin(), pitches.end());
+            return pitches;
+        };
+        const auto controlSignature = [](const Pattern& song) {
+            std::vector<std::tuple<double, std::uint16_t, int, int>> values;
+            for (const auto& control : song.controls)
+                values.emplace_back(control.beat, control.partId,
+                    control.controller, control.value);
+            std::sort(values.begin(), values.end());
+            return values;
+        };
+        require(pitchesAt(after, 2, 0.0) == std::vector<int>({62, 65}) &&
+                    pitchesAt(after, 2, 4.0) == pitchesAt(before, 2, 4.0) &&
+                    pitchesAt(after, 1, 0.0) == pitchesAt(before, 1, 0.0) &&
+                    after.notes.size() == before.notes.size() &&
+                    controlSignature(after) == controlSignature(before),
+                "Only the selected chord attack may change; later chords and the lead stay identical");
+        require(SelectiveRepair::preservesUntouchedMidi(referencePlan, before, after,
+                    1, {{0, 0.0, 3.0, {62, 65}}}),
+                "The transaction must verify every untargeted MIDI note and controller");
+        auto damaged = after;
+        for (auto& note : damaged.notes)
+            if (note.partId == 1) { ++note.pitch; break; }
+        require(!SelectiveRepair::preservesUntouchedMidi(referencePlan, before, damaged,
+                    1, {{0, 0.0, 3.0, {62, 65}}}),
+                "A repair that alters another instrument must never be accepted");
+        require(!SelectiveRepair::applyChordVoicingPatches(referencePlan, accepted, 1,
+                    {{0, 1.0, 3.0, {62, 65}}}, patched, patchError),
+                "An AI reply must not invent a new edit location");
     }
 
     SongPlan plan;
@@ -490,7 +885,7 @@ void runSelectiveRepairTests() {
     require(literalLeadFindings.size() == 1 &&
                 !literalLeadFindings.front().missingNarrativePresence &&
                 literalLeadFindings.front().narrativePhraseWindows == 8 &&
-                literalLeadFindings.front().minimumNarrativePhraseWindows == 7 &&
+                literalLeadFindings.front().minimumNarrativePhraseWindows == 4 &&
                 literalLeadFindings.front().missingThematicDevelopment &&
                 literalLeadFindings.front().literalPlacementRatio > .99 &&
                 literalLeadFindings.front().missingMelodicSpeech,
@@ -508,15 +903,15 @@ void runSelectiveRepairTests() {
     const auto hypnoticPatient = SelectiveRepair::performanceDeficits(
         hypnoticPlan, patientLead, {0});
     require(narrativePatient.size() == 1 && hypnoticPatient.size() == 1 &&
-                narrativePatient.front().missingNarrativePresence &&
+                !narrativePatient.front().missingNarrativePresence &&
                 narrativePatient.front().narrativePhraseWindows == 4 &&
-                narrativePatient.front().minimumNarrativePhraseWindows == 7 &&
+                narrativePatient.front().minimumNarrativePhraseWindows == 4 &&
                 !hypnoticPatient.front().missingNarrativePresence &&
                 hypnoticPatient.front().narrativePhraseWindows == 4 &&
                 hypnoticPatient.front().minimumNarrativePhraseWindows == 4 &&
                 hypnoticPatient.front().missingCodaResolution &&
                 hypnoticPatient.front().missingThematicDevelopment,
-            "Hypnotic states may contain patient melodic statements while coda and development stay independent obligations");
+            "One connected statement per authored act can suffice; coda and development remain independent obligations");
 
     PerformanceCoverageDeficit marginalSpeech;
     marginalSpeech.instrumentId = longLead.id;
@@ -544,6 +939,33 @@ void runSelectiveRepairTests() {
     marginalSpeech.missingCodaResolution = true;
     require(!SelectiveRepair::deferableMarginalMelodicSpeech(longNarrative, marginalSpeech),
             "A weak coda cannot be hidden by the melodic-step exception");
+
+    // The local AI-only profile must not discard a complete authored lead solely
+    // because the fixed narrative-window or step ratio targets disagree with it.
+    auto localLead = marginalSpeech;
+    localLead.missingCodaResolution = false;
+    localLead.narrativePhraseWindows = 4;
+    localLead.minimumNarrativePhraseWindows = 6;
+    localLead.missingNarrativePresence = true;
+    localLead.melodicStepRatio = 3.0 / 45.0;
+    localLead.melodicIntervals = 45;
+    require(SelectiveRepair::deferableLocalProtagonistEditorial(longNarrative, localLead),
+            "A complete AI-authored lead must reach whole-score audition despite editorial phrase and step metrics");
+    localLead.narrativePhraseWindows = 0;
+    require(!SelectiveRepair::deferableLocalProtagonistEditorial(longNarrative, localLead),
+            "An entirely absent narrative voice is not a marginal editorial observation");
+    localLead.narrativePhraseWindows = 4;
+    localLead.missingCodaResolution = true;
+    require(!SelectiveRepair::deferableLocalProtagonistEditorial(longNarrative, localLead),
+            "The local editorial exception must not hide a missing protagonist coda");
+    localLead.missingCodaResolution = false;
+    localLead.notes = 0;
+    require(!SelectiveRepair::deferableLocalProtagonistEditorial(longNarrative, localLead),
+            "An empty protagonist cannot be accepted as an editorial observation");
+    localLead.notes = 82;
+    localLead.missingAuthoredDevelopment = true;
+    require(!SelectiveRepair::deferableLocalProtagonistEditorial(longNarrative, localLead),
+            "The local exception must not hide underwritten source material");
 
     auto weaklyConnectedLead = literalLead;
     weaklyConnectedLead.cells.front().id = "weakly_connected_lead";

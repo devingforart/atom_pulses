@@ -2,6 +2,7 @@
 
 #include "core/MusicTypes.h"
 #include "core/SongComposer.h"
+#include "core/CoherentProofRevision.h"
 
 #include <juce_core/juce_core.h>
 
@@ -33,7 +34,9 @@ struct AiSongProgressUpdate {
 };
 
 using AiSongProgress = std::function<void(const AiSongProgressUpdate&)>;
-using AiSongCheckpoint = std::function<void(const SongPlan&, std::size_t, bool)>;
+// The final flag marks a rejected diagnostic candidate. It must never replace
+// the last accepted checkpoint or be presented as an approved composition.
+using AiSongCheckpoint = std::function<void(const SongPlan&, std::size_t, bool, bool)>;
 
 class AiComposer final {
 public:
@@ -48,6 +51,13 @@ public:
     [[nodiscard]] static bool incrementalSchemasAreValid();
     [[nodiscard]] static juce::String performanceSchemaFor(
         const SongPlan&, const std::vector<std::size_t>& assignedInstruments);
+    [[nodiscard]] static juce::String directWindowSchemaFor(
+        const SongPlan&, const std::vector<std::size_t>& assignedInstruments);
+    [[nodiscard]] static bool parseDirectWindowJson(
+        const juce::String&, const SongPlan&,
+        const std::vector<std::size_t>& assignedInstruments,
+        std::size_t sectionIndex, int firstBar, int bars,
+        PerformanceScore&, juce::String& error);
     [[nodiscard]] static std::size_t maximumSongInstruments() noexcept;
     [[nodiscard]] static std::size_t castDetailShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t selectiveRepairShardCount(std::size_t instruments) noexcept;
@@ -83,6 +93,13 @@ public:
                                                    AiComposition&, juce::String& error);
     [[nodiscard]] static bool parsePerformanceBlockJson(
         const juce::String&, const SongPlan&, const std::vector<std::size_t>& assignedInstruments,
+        PerformanceScore&, juce::String& error);
+    // Local short-form proof: one absolute-time, jointly authored score.
+    [[nodiscard]] static bool parseCoherentProofJson(
+        const juce::String&, const SongPlan&, PerformanceScore&, juce::String& error);
+    [[nodiscard]] static bool applyCoherentProofRevisionJson(
+        const juce::String& original, const juce::String& revision,
+        const SongPlan&, const std::vector<CoherentRevisionWindow>&,
         PerformanceScore&, juce::String& error);
     [[nodiscard]] static SongPlan planSong(const juce::String& creativeDirection,
                                            int targetSeconds, int totalBars, double bpm,

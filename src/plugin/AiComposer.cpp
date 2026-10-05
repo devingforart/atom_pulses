@@ -95,10 +95,14 @@ std::size_t requestedInstrumentCountFromDirection(const juce::String& direction)
             {"four", 4}, {"five", 5}, {"six", 6}, {"seven", 7},
             {"eight", 8}, {"nine", 9}, {"ten", 10}, {"twelve", 12}}};
         for (const auto& [word, count] : spelledCounts) {
-            const std::regex pattern(std::string(R"(\b)") + word +
+            const std::regex directPattern(std::string(R"(\b)") + word +
                 R"(\s+(?:midi\s+)?(?:tracks?|pistas?|instrumentos?|instruments?)\b)",
                 std::regex::icase);
-            if (std::regex_search(text, pattern))
+            const std::regex qualifiedPattern(std::string(R"(\b)") + word +
+                R"((?:\s+[a-z-]+){1,3}\s+(?:midi\s+)?(?:tracks?|pistas?|instrumentos?|instruments?)\b)",
+                std::regex::icase);
+            if (std::regex_search(text, directPattern) ||
+                std::regex_search(text, qualifiedPattern))
                 requested = std::max(requested, static_cast<std::size_t>(count));
         }
         return std::min(requested, maximumInstruments);

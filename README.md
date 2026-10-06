@@ -1,5 +1,12 @@
 # PULSO
 
+### 1.0.0 — PULSO Studio y Cloud
+
+- PULSO Cloud ofrece una dirección directa para músicos: idea, duración y tempo.
+- Cloud compone siempre con enfoque adaptativo y autoría MIDI soberana de la IA, fijados por el servidor.
+- El estudio local conserva las pruebas y controles avanzados para desarrollo y auditoría musical.
+- VST, estudio local y Cloud comparten el mismo núcleo generador y la misma exportación MIDI.
+
 ### 0.58.57 — composición AI soberana y estudio local
 
 - El generador conserva y valida las notas escritas por IA por ventanas, con revisiones puntuales de alturas cuando quedan conflictos armónicos concretos.

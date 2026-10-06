@@ -45,15 +45,20 @@ describe('Cloud Suite', () => {
     expect(screen.getByRole('button', { name: 'Escuchar solo Protagonist lead' })).toHaveAttribute('aria-pressed', 'false')
   })
 
-  it('sends the selected authorship mode and exact seed with a new Cloud request', async () => {
+  it('sends only the musician-facing parameters with a new Cloud request', async () => {
     render(<Cloud />)
     fireEvent.change(screen.getByLabelText(/Idea musical/), { target: { value: 'Una obra nueva' } })
     await waitFor(() => expect(screen.getByRole('button', { name: /Componer obra/ })).not.toBeDisabled())
-    fireEvent.change(screen.getByLabelText('Autoría del MIDI'), { target: { value: 'standard' } })
-    fireEvent.change(screen.getByLabelText(/Semilla/), { target: { value: '1234567890123456789' } })
+    expect(screen.queryByText(/Dirección avanzada/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Autoría del MIDI/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Semilla/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Componer obra/ }))
-    await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalledWith(expect.objectContaining({
-      prompt: 'Una obra nueva', aiSovereign: false, seed: '1234567890123456789',
-    })))
+    await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalled())
+    const request = mock.createCloudJob.mock.calls[0][0]
+    expect(request).toMatchObject({ prompt: 'Una obra nueva', durationSeconds: 390, bpm: 120 })
+    expect(request).toHaveProperty('idempotencyKey')
+    expect(request).not.toHaveProperty('behavior')
+    expect(request).not.toHaveProperty('aiSovereign')
+    expect(request).not.toHaveProperty('seed')
   })
 })

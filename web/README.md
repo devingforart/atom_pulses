@@ -62,11 +62,10 @@ senoidal que el estudio local. Ambos importan `web/shared/midi.mjs` y
 descarga cada MIDI exclusivamente por la ruta autenticada de su propietario;
 escuchar una obra guardada no crea otra composición ni consume la API de IA.
 
-El modo de autoría y la semilla se envían explícitamente al worker Cloud.
-La migración `0006_cloud_authorship.sql` conserva el render anterior para
-trabajos existentes y clientes antiguos; la nueva interfaz selecciona
-`IA soberana` por defecto, igual que el estudio local. Ningún cambio de
-sonido altera los MIDI exportados.
+PULSO Cloud expone solamente idea musical, duración y tempo. El servidor fija
+el enfoque `adaptive`, genera una semilla privada por obra y exige autoría
+MIDI soberana de la IA. El estudio local conserva los controles avanzados de
+diagnóstico y comparación. Ningún cambio de sonido altera los MIDI exportados.
 
 `docker-compose.production.yml` mantiene PostgreSQL en una red interna y publica la API únicamente en `127.0.0.1:8188`. Copia `.env.production.example` como `.env`, completa los secretos en el servidor y coloca Nginx delante usando `nginx-pulso.conf.example` como base. No abras 8188 en el firewall.
 

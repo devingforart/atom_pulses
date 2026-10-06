@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: PULSO Web API
-  version: 0.1.0
+  version: 1.0.0
 servers:
   - url: /api
 security: []
@@ -236,7 +236,7 @@ paths:
       security: [{ cookieSession: [] }]
       responses: { "200": { description: Recent Cloud jobs } }
     post:
-      summary: Queue one AI composition with an idempotency key
+      summary: Queue one adaptive, AI-authored composition with an idempotency key
       security: [{ cookieSession: [] }]
       requestBody:
         required: true
@@ -244,12 +244,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [prompt, durationSeconds, bpm, behavior, idempotencyKey]
+              required: [prompt, durationSeconds, bpm, idempotencyKey]
               properties:
                 prompt: { type: string, minLength: 1, maxLength: 600 }
                 durationSeconds: { type: integer, minimum: 30, maximum: 900 }
                 bpm: { type: number, minimum: 60, maximum: 180 }
-                behavior: { type: string, enum: [adaptive, hypnotic, narrative] }
                 idempotencyKey: { type: string, minLength: 8, maxLength: 100 }
       responses:
         "201": { description: Job queued }

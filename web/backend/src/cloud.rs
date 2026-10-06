@@ -20,17 +20,15 @@ use crate::{
     error::{ApiError, ApiResult},
 };
 
+const CLOUD_BEHAVIOR: &str = "adaptive";
+const CLOUD_AI_SOVEREIGN: bool = true;
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateJob {
     prompt: String,
     duration_seconds: i32,
     bpm: f64,
-    behavior: String,
-    #[serde(default)]
-    ai_sovereign: bool,
-    #[serde(default)]
-    seed: Option<String>,
     idempotency_key: String,
 }
 
@@ -60,15 +58,6 @@ fn valid_request(input: &CreateJob) -> bool {
         && (30..=900).contains(&input.duration_seconds)
         && input.bpm.is_finite()
         && (60.0..=180.0).contains(&input.bpm)
-        && matches!(
-            input.behavior.as_str(),
-            "adaptive" | "hypnotic" | "narrative"
-        )
-        && input.seed.as_ref().is_none_or(|seed| {
-            !seed.starts_with('0')
-                && seed.bytes().all(|byte| byte.is_ascii_digit())
-                && seed.parse::<i64>().is_ok_and(|value| value > 0)
-        })
         && input.idempotency_key.len() >= 8
         && input.idempotency_key.len() <= 100
         && input
@@ -122,10 +111,7 @@ pub async fn create(
         .bind(user.id).bind(&input.idempotency_key).fetch_optional(&mut *tx).await? {
         if existing.prompt != input.prompt.trim()
             || existing.duration_seconds != input.duration_seconds
-            || existing.bpm != input.bpm
-            || existing.behavior != input.behavior
-            || existing.ai_sovereign != input.ai_sovereign
-            || input.seed.as_ref().is_some_and(|seed| seed != &existing.seed) {
+            || existing.bpm != input.bpm {
             return Err(ApiError::public(StatusCode::CONFLICT,
                 "Esta clave de solicitud ya pertenece a otra composición."));
         }
@@ -150,19 +136,14 @@ pub async fn create(
             "Alcanzaste el límite de obras o ya tienes una composición en curso.",
         ));
     }
-    let seed = if let Some(seed) = input.seed.as_ref() {
-        seed.parse::<i64>()
-            .map_err(|error| ApiError::internal(error.to_string()))?
-    } else {
-        let mut seed_bytes = [0_u8; 8];
-        getrandom::fill(&mut seed_bytes).map_err(|error| ApiError::internal(error.to_string()))?;
-        (i64::from_le_bytes(seed_bytes) & i64::MAX).max(1)
-    };
+    let mut seed_bytes = [0_u8; 8];
+    getrandom::fill(&mut seed_bytes).map_err(|error| ApiError::internal(error.to_string()))?;
+    let seed = (i64::from_le_bytes(seed_bytes) & i64::MAX).max(1);
     let id = Uuid::new_v4();
     let now = unix_time();
     sqlx::query("INSERT INTO cloud_jobs(id,user_id,idempotency_key,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign,status,stage,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued','queued',$10,$10)")
         .bind(id).bind(user.id).bind(&input.idempotency_key).bind(input.prompt.trim())
-        .bind(input.duration_seconds).bind(input.bpm).bind(&input.behavior).bind(seed).bind(input.ai_sovereign)
+        .bind(input.duration_seconds).bind(input.bpm).bind(CLOUD_BEHAVIOR).bind(seed).bind(CLOUD_AI_SOVEREIGN)
         .bind(now).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok((
@@ -172,8 +153,8 @@ pub async fn create(
             prompt: input.prompt.trim().to_owned(),
             duration_seconds: input.duration_seconds,
             bpm: input.bpm,
-            behavior: input.behavior,
-            ai_sovereign: input.ai_sovereign,
+            behavior: CLOUD_BEHAVIOR.into(),
+            ai_sovereign: CLOUD_AI_SOVEREIGN,
             seed: seed.to_string(),
             status: "queued".into(),
             stage: "queued".into(),
@@ -483,22 +464,15 @@ mod tests {
             prompt: "Una obra con desarrollo".into(),
             duration_seconds: 390,
             bpm: 120.0,
-            behavior: "hypnotic".into(),
-            ai_sovereign: true,
-            seed: Some("4403862266792290272".into()),
             idempotency_key: Uuid::new_v4().to_string(),
         };
         assert!(valid_request(&valid));
         assert!(!valid_request(&CreateJob {
-            seed: Some("0".into()),
+            duration_seconds: 29,
             ..valid.clone()
         }));
         assert!(!valid_request(&CreateJob {
-            seed: Some("001".into()),
-            ..valid.clone()
-        }));
-        assert!(!valid_request(&CreateJob {
-            seed: Some("9223372036854775808".into()),
+            bpm: 181.0,
             ..valid.clone()
         }));
         assert!(!valid_request(&CreateJob {

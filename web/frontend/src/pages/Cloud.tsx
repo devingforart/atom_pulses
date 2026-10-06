@@ -82,9 +82,6 @@ export function Cloud() {
   const [prompt, setPrompt] = useState('')
   const [durationSeconds, setDurationSeconds] = useState(390)
   const [bpm, setBpm] = useState(120)
-  const [behavior, setBehavior] = useState<CloudJob['behavior']>('adaptive')
-  const [aiSovereign, setAiSovereign] = useState(true)
-  const [seed, setSeed] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [cloudStatus, setCloudStatus] = useState<{ available: boolean; dailyJobLimit: number } | null>(null)
@@ -151,7 +148,7 @@ export function Cloud() {
     event.preventDefault(); setError(''); setBusy(true)
     try {
       const job = await api.createCloudJob({ prompt: prompt.trim(), durationSeconds,
-        bpm, behavior, aiSovereign, ...(seed.trim() ? { seed: seed.trim() } : {}), idempotencyKey: crypto.randomUUID() })
+        bpm, idempotencyKey: crypto.randomUUID() })
       setJobs(previous => [job, ...previous.filter(item => item.id !== job.id)])
       setSelectedId(job.id); setPrompt('')
     } catch (problem) { setError(problem instanceof Error ? problem.message : 'No pudimos comenzar la composición.') }
@@ -185,14 +182,13 @@ export function Cloud() {
         <textarea id="cloud-prompt" value={prompt} maxLength={600} required rows={5} onChange={event => setPrompt(event.target.value)} placeholder="Una historia electrónica profunda, con armonías que evolucionan y un motivo que regresa transformado…" />
         <div className="cloud-suite-field-pair"><div><label htmlFor="cloud-duration">Duración</label><select id="cloud-duration" value={durationSeconds} onChange={event => setDurationSeconds(Number(event.target.value))}>{[[60, '1 minuto'], [120, '2 minutos'], [180, '3 minutos'], [300, '5 minutos'], [390, '6 min 30 s'], [600, '10 minutos'], [900, '15 minutos']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
           <div><label htmlFor="cloud-bpm">Tempo</label><div className="cloud-suite-unit"><input id="cloud-bpm" type="number" min="60" max="180" value={bpm} onChange={event => setBpm(Number(event.target.value))} /><span>BPM</span></div></div></div>
-        <details className="cloud-suite-advanced"><summary>Dirección avanzada <span>＋</span></summary><label htmlFor="cloud-behavior">Enfoque</label><select id="cloud-behavior" value={behavior} onChange={event => setBehavior(event.target.value as CloudJob['behavior'])}><option value="adaptive">Adaptativo</option><option value="hypnotic">Hipnótico</option><option value="narrative">Narrativo</option></select><label htmlFor="cloud-authorship">Autoría del MIDI</label><select id="cloud-authorship" value={aiSovereign ? 'ai_sovereign' : 'standard'} onChange={event => setAiSovereign(event.target.value === 'ai_sovereign')}><option value="ai_sovereign">IA soberana · como el estudio local</option><option value="standard">Motor anterior · referencia A/B</option></select><label htmlFor="cloud-seed">Semilla <small>opcional para comparar</small></label><input id="cloud-seed" type="text" inputMode="numeric" pattern="[1-9][0-9]*" value={seed} onChange={event => setSeed(event.target.value)} placeholder="Automática si queda vacía" /></details>
         <button className="cloud-suite-compose-button" disabled={busy || !prompt.trim() || cloudStatus?.available !== true}>{busy ? 'Enviando…' : '✦  Componer obra ↗'}</button>
         <p className="cloud-suite-cost">{cloudStatus?.available ? `Beta: ${cloudStatus.dailyJobLimit} obras cada 24 horas por cuenta.` : 'Cloud no está habilitado para esta cuenta.'} Escuchar obras guardadas no consume créditos. La composición continúa aunque cierres la página.</p>
         {error && <p className="cloud-suite-error" role="alert">{error}</p>}
       </form></div>
       <div className="cloud-suite-session"><div className="cloud-suite-kicker"><span>02 / SESIÓN</span><span>{jobs.length} OBRAS</span></div>
         {selected ? <><h3>{selected.resultManifest?.title || 'Composición en curso'}</h3><strong className="cloud-suite-status">{status}</strong><p className="cloud-suite-session-prompt">{selected.prompt}</p>
-          <small>{new Date(selected.createdAt * 1000).toLocaleString()} · {fmt(selected.durationSeconds)} · {selected.bpm} BPM · {selected.aiSovereign ? 'IA soberana' : 'Motor anterior'} · semilla {selected.seed}</small>
+          <small>{new Date(selected.createdAt * 1000).toLocaleString()} · {fmt(selected.durationSeconds)} · {selected.bpm} BPM</small>
           {(selected.status === 'running' || selected.status === 'queued') && <div className="cloud-suite-progress"><progress value={selected.completedSteps} max={Math.max(selected.totalSteps, 1)} /><span>{stageText[selected.stage] || 'Componiendo'} · {selected.completedSteps}/{selected.totalSteps}</span><button type="button" onClick={async () => { try { await api.cancelCloudJob(selected.id); setJobs(await api.cloudJobs()) } catch (problem) { setError(problem instanceof Error ? problem.message : 'No se pudo cancelar.') } }}>Cancelar</button></div>}
           {selected.status === 'completed' && selected.resultManifest && <div className="cloud-suite-session-actions"><a href={trackUrl(selected.id, selected.resultManifest.fullFile)}>↓ Obra completa MIDI</a><span>{selected.resultManifest.tracks.length} pistas · {selected.resultManifest.key}</span></div>}
           {selected.status === 'failed' && <p className="cloud-suite-error">La composición no se completó. No se publicó una obra incompleta.</p>}</> : <p className="cloud-suite-empty-copy">Tus obras aparecerán aquí cuando empieces a componer.</p>}</div>

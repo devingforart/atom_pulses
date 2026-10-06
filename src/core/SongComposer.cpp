@@ -465,7 +465,14 @@ void appendShifted(Pattern& destination, Pattern&& source, double beatOffset,
                    double songLength) {
     for (auto& note : source.notes) {
         note.startBeat += beatOffset;
-        if (note.startBeat < songLength) destination.notes.push_back(note);
+        if (note.startBeat >= songLength) continue;
+        // A placement is allowed to sustain across an internal render chunk, but the
+        // final chunk has no following timeline. Keep the authored attack and pitch and
+        // trim only the release at the absolute song boundary. Without this invariant a
+        // perfectly valid final-section phrase could make the whole AI score fail for a
+        // single note ending a fraction of a beat beyond the requested work.
+        note.durationBeats = std::min(note.durationBeats, songLength - note.startBeat);
+        if (note.durationBeats > 0.0) destination.notes.push_back(note);
     }
     for (auto& control : source.controls) {
         control.beat += beatOffset;

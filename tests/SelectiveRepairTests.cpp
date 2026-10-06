@@ -183,6 +183,38 @@ void runSelectiveRepairTests() {
         const auto sparse = SelectiveRepair::chordBedFormCoverage(plan, score, 0);
         require(sparse.opening && sparse.development && !sparse.closing,
                 "An introductory bed without a closing return must be detected");
+
+        SongPlan sectionalPlan = plan;
+        sectionalPlan.totalBars = 24;
+        sectionalPlan.sections.clear();
+        for (auto index = 0; index < 3; ++index) {
+            SongSection scene;
+            scene.name = "Scene " + std::to_string(index + 1);
+            scene.startBar = index * 8;
+            scene.bars = 8;
+            sectionalPlan.sections.push_back(scene);
+        }
+        PerformanceScore sectionalScore;
+        sectionalScore.cells = {chord};
+        for (const auto [sectionIndex, beat] :
+             std::array<std::pair<int, double>, 3>{{{0, 0.0}, {1, 0.0}, {1, 28.0}}}) {
+            PerformancePlacement placement;
+            placement.cellId = chord.id;
+            placement.sectionIndex = sectionIndex;
+            placement.startBeat = beat;
+            placement.fragmentEnd = 4.0;
+            sectionalScore.placements.push_back(placement);
+        }
+        const auto climaxOnlyClosing = SelectiveRepair::chordBedFormCoverage(
+            sectionalPlan, sectionalScore, 0);
+        require(climaxOnlyClosing.opening && climaxOnlyClosing.development &&
+                    !climaxOnlyClosing.closing,
+                "A late-climax chord must not masquerade as an audible chord-bed coda");
+        sectionalScore.placements.back().sectionIndex = 2;
+        sectionalScore.placements.back().startBeat = 0.0;
+        require(SelectiveRepair::chordBedFormCoverage(
+                    sectionalPlan, sectionalScore, 0).ready(),
+                "A multi-section chord bed must sound in the actual final scene");
         CompositionRenderReport report;
         require(SelectiveRepair::measuredTonalDebt(report) == 0,
                 "A clean complete-score checkpoint must have no tonal debt");
@@ -275,6 +307,12 @@ void runSelectiveRepairTests() {
         lowVoicing.issues.front().otherPartId = 2;
         require(SelectiveRepair::sustainedLowChordBedSeconds(plan, lowVoicing).empty(),
                 "A cross-instrument collision must not be misdiagnosed as an internal chord voicing");
+        lowVoicing.issues.front().otherPartId = 1;
+        lowVoicing.issues.front().pitch = 64;
+        lowVoicing.issues.front().otherPitch = 63;
+        lowVoicing.issues.front().overlapBeats = 16.0;
+        require(SelectiveRepair::sustainedLowChordBedSeconds(plan, lowVoicing).size() == 1,
+                "A sustained upper-register semitone inside the primary chord bed must be repaired");
     }
     {
         CompositionRenderReport rejected;
@@ -332,6 +370,48 @@ void runSelectiveRepairTests() {
                     diagnosis.instrumentIndices.front() == 0 &&
                     diagnosis.instrumentIndices.back() == 1,
                 "A sparse electronic floor must return its authored bed and harmonic companion to AI review");
+    }
+    {
+        SongPlan tonalPriority;
+        tonalPriority.totalBars = 8;
+        tonalPriority.beatsPerBar = 4.0;
+        InstrumentAssignment lead;
+        lead.id = "lead";
+        lead.sourceVoice = VoiceId::Lead;
+        lead.prominence = .9;
+        InstrumentAssignment texture;
+        texture.id = "texture";
+        texture.sourceVoice = VoiceId::HarmonicUpper;
+        texture.prominence = .4;
+        tonalPriority.instruments = {lead, texture};
+        Pattern pattern;
+        pattern.lengthBeats = 32.0;
+        CompositionRenderReport report;
+        report.production.unsupportedChromaticNotes = 2;
+        for (auto beat : {2.0, 6.0}) {
+            TonalIssue issue;
+            issue.beat = beat;
+            issue.pitch = 66;
+            issue.kind = "unsupported_chromatic";
+            issue.partId = 1;
+            report.finalTonalPass.after.issues.push_back(issue);
+        }
+        for (auto index = 0; index < 24; ++index) {
+            TonalIssue issue;
+            issue.beat = static_cast<double>(index);
+            issue.pitch = 96;
+            issue.otherPitch = 49;
+            issue.kind = "harsh_overlap";
+            issue.partId = 2;
+            issue.otherPartId = 1;
+            issue.overlapBeats = 2.0;
+            report.finalTonalPass.after.issues.push_back(issue);
+        }
+        const auto diagnosis = SelectiveRepair::diagnose(
+            tonalPriority, pattern, report, 1);
+        require(diagnosis.instrumentIndices.size() == 1 &&
+                    diagnosis.instrumentIndices.front() == 0,
+                "Unsupported chromatic owners must be repaired before noisy overlap counts");
     }
     {
         SongPlan authored;
@@ -913,6 +993,20 @@ void runSelectiveRepairTests() {
                 hypnoticPatient.front().missingThematicDevelopment,
             "One connected statement per authored act can suffice; coda and development remain independent obligations");
 
+    auto lateEntranceLead = literalLead;
+    std::erase_if(lateEntranceLead.placements,
+        [](const auto& placement) { return placement.sectionIndex == 0; });
+    const auto lateEntranceFindings = SelectiveRepair::performanceDeficits(
+        longNarrative, lateEntranceLead, {0});
+    require(lateEntranceFindings.size() == 1 &&
+                lateEntranceFindings.front().narrativePhraseWindows >=
+                    lateEntranceFindings.front().minimumNarrativePhraseWindows &&
+                lateEntranceFindings.front().missingNarrativePresence &&
+                std::find(lateEntranceFindings.front().missingNarrativeWindowStartBars.begin(),
+                          lateEntranceFindings.front().missingNarrativeWindowStartBars.end(), 0) !=
+                    lateEntranceFindings.front().missingNarrativeWindowStartBars.end(),
+            "A protagonist cannot satisfy narrative presence statistically while skipping the premise");
+
     PerformanceCoverageDeficit marginalSpeech;
     marginalSpeech.instrumentId = longLead.id;
     marginalSpeech.notes = marginalSpeech.authoredNotes = 112;
@@ -1273,13 +1367,22 @@ void runSelectiveRepairTests() {
         placement.fragmentEnd = polyphonicBed.lengthBeats;
         incompleteChordArc.placements.push_back(placement);
     }
+    for (auto sectionIndex : {0, 3}) {
+        PerformancePlacement silentPlacement;
+        silentPlacement.cellId = polyphonicBed.id;
+        silentPlacement.sectionIndex = sectionIndex;
+        silentPlacement.repeats = 1;
+        silentPlacement.fragmentStart = 1.0;
+        silentPlacement.fragmentEnd = 2.0;
+        incompleteChordArc.placements.push_back(silentPlacement);
+    }
     const auto chordArcDeficits = SelectiveRepair::performanceDeficits(
         chordArcPlan, incompleteChordArc, {0});
     require(chordArcDeficits.size() == 1 &&
                 chordArcDeficits.front().missingChordBedNarrativeArc &&
                 chordArcDeficits.front().chordBedNarrativeStages <
                     chordArcDeficits.front().minimumChordBedNarrativeStages,
-            "A central chord bed confined to middle scenes must not pass the narrative-arc contract");
+            "Silent or clipped placements must not make a middle-only chord bed pass the audible narrative arc");
 
     auto unresolvedBedPlan = chordBedPlan;
     unresolvedBedPlan.rootPitchClass = 6; // F-sharp

@@ -630,6 +630,10 @@ void runGeneratorTests() {
                 ElectronicRoleContract::motionOwnerCount(motionContract) == 1 &&
                 !ElectronicRoleContract::motionOwner(transitionPulse),
             "A transition label cannot satisfy the percussion-free electronic motion contract");
+    motionContract.percussionFreeIntent = false;
+    require(ElectronicRoleContract::requiresMotionOwner(motionContract),
+            "An authored electronic sequence remains a motion contract when drums are present");
+    motionContract.percussionFreeIntent = true;
     std::vector<InstrumentAssignment> motionEnsemble;
     for (int index = 0; index < 5; ++index) {
         auto candidate = sequenceOwner;
@@ -1436,6 +1440,10 @@ void runGeneratorTests() {
             std::to_string(deepReport.orchestration.familyBalance));
     require(deepReport.production.ready && longSong.productionAuditPerformed &&
                 longSong.productionReady && deepReport.production.metricViolations == 0 &&
+                std::all_of(longSong.notes.begin(), longSong.notes.end(), [&](const auto& note) {
+                    return note.durationBeats > 0.0 &&
+                           note.endBeat() <= longSong.lengthBeats + 0.000001;
+                }) &&
                 deepReport.production.expressionEventsPerNote <= 12.0 &&
                 deepReport.expression.controlsAfter < deepReport.expression.controlsBefore,
             "Only a metrically exact, tonally valid and expression-efficient score may be published: ready=" +
@@ -2448,6 +2456,39 @@ void runGeneratorTests() {
     Pattern dialogueChunk;
     dialogueChunk.lengthBeats = 4.0;
     PerformanceScoreEngine::replaceChunk(dialogueChunk, dialogueScore, 0, 0.0, 4.0);
+
+    PerformanceScore retrogradeGridScore;
+    PerformanceCell retrogradeGridCell;
+    retrogradeGridCell.id = "strict_retrograde_decimal_release";
+    retrogradeGridCell.themeId = "strict_retrograde_decimal_release";
+    retrogradeGridCell.narrativeFunction = "develop";
+    retrogradeGridCell.lengthBeats = 4.0;
+    retrogradeGridCell.ownedVoices = {VoiceId::HarmonicUpper};
+    retrogradeGridCell.notes = {
+        {0.0, .55, 72, 84, VoiceId::HarmonicUpper, MetricIntent::StrictGrid, "arp_owner"},
+        {1.25, .30, 76, 80, VoiceId::HarmonicUpper, MetricIntent::StrictGrid, "arp_owner"}
+    };
+    retrogradeGridScore.cells.push_back(retrogradeGridCell);
+    PerformancePlacement retrogradeGridPlacement;
+    retrogradeGridPlacement.cellId = retrogradeGridCell.id;
+    retrogradeGridPlacement.sectionIndex = 0;
+    retrogradeGridPlacement.startBeat = 0.0;
+    retrogradeGridPlacement.repeats = 1;
+    retrogradeGridPlacement.retrograde = true;
+    retrogradeGridPlacement.fragmentEnd = 4.0;
+    retrogradeGridPlacement.metricIntent = MetricIntent::StrictGrid;
+    retrogradeGridScore.placements.push_back(retrogradeGridPlacement);
+    PerformanceScoreEngine::normalize(retrogradeGridScore, 1, {4.0});
+    Pattern retrogradeGridChunk;
+    PerformanceScoreEngine::replaceChunk(retrogradeGridChunk, retrogradeGridScore,
+        0, 0.0, 4.0);
+    require(!retrogradeGridChunk.notes.empty() &&
+            std::all_of(retrogradeGridChunk.notes.begin(), retrogradeGridChunk.notes.end(),
+                [](const auto& note) {
+                    return std::abs(note.startBeat * 4.0 -
+                                    std::round(note.startBeat * 4.0)) < 0.000001;
+                }),
+        "Strict-grid retrograde must not turn expressive release lengths into off-grid attacks");
     require(std::any_of(dialogueChunk.notes.begin(), dialogueChunk.notes.end(), [](const auto& note) {
                 return note.voice == VoiceId::Countermelody && note.pitch == 66 &&
                        std::abs(note.startBeat - 3.0) < 0.001;
@@ -2872,7 +2913,14 @@ void runGeneratorTests() {
 
     SongPlan repairPlan;
     repairPlan.sections.resize(4);
-    repairPlan.sections.back().name = "Final arrival";
+    repairPlan.totalBars = 32;
+    repairPlan.beatsPerBar = 4.0;
+    for (auto sectionIndex = std::size_t{}; sectionIndex < repairPlan.sections.size(); ++sectionIndex) {
+        repairPlan.sections[sectionIndex].name = sectionIndex + 1 == repairPlan.sections.size()
+            ? "Final arrival" : "Repair scene " + std::to_string(sectionIndex + 1);
+        repairPlan.sections[sectionIndex].startBar = static_cast<int>(sectionIndex * 8);
+        repairPlan.sections[sectionIndex].bars = 8;
+    }
     InstrumentAssignment dominantArp;
     dominantArp.id = "dominant_arp";
     dominantArp.instrumentId = "hypnotic_arp";
@@ -3079,8 +3127,14 @@ void runGeneratorTests() {
 
     PerformanceScore partialRepair;
     partialRepair.cells.push_back(repairPlan.performanceScore.cells.front());
-    partialRepair.placements.push_back({partialRepair.cells.front().id, 0});
-    partialRepair.placements.push_back({partialRepair.cells.front().id, 3});
+    PerformancePlacement partialOpening;
+    partialOpening.cellId = partialRepair.cells.front().id;
+    partialOpening.sectionIndex = 0;
+    partialOpening.fragmentEnd = partialRepair.cells.front().lengthBeats;
+    partialRepair.placements.push_back(partialOpening);
+    auto partialClosing = partialOpening;
+    partialClosing.sectionIndex = 3;
+    partialRepair.placements.push_back(partialClosing);
     const auto incompleteRepairTargets = SelectiveRepair::incompleteTargets(
         repairPlan, partialRepair, {0, 1});
     require(incompleteRepairTargets.size() == 1 && incompleteRepairTargets.front() == 1,

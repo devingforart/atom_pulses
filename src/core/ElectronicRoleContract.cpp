@@ -234,7 +234,10 @@ ElectronicRoleContract::reconcileAuthoredPrimaryMotionOwner(SongPlan& plan) {
 }
 
 bool ElectronicRoleContract::requiresMotionOwner(const SongPlan& plan) {
-    return electronic(plan) && plan.percussionFreeIntent && !staticWork(plan);
+    const auto authoredMotion = std::any_of(plan.instruments.begin(), plan.instruments.end(),
+        [](const auto& part) { return motionCandidate(part); });
+    return electronic(plan) && !staticWork(plan) &&
+        (plan.percussionFreeIntent || authoredMotion);
 }
 
 std::size_t ElectronicRoleContract::motionOwnerCount(const SongPlan& plan) noexcept {

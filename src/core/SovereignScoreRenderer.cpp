@@ -3,6 +3,7 @@
 #include "ArrangementDensityPlanner.h"
 #include "ElectronicCompositionFabric.h"
 #include "ElectronicProductionDirector.h"
+#include "ElectronicRoleContract.h"
 #include "ElectronicSoundscape.h"
 #include "MusicalCritic.h"
 #include "NarrativeScore.h"
@@ -90,6 +91,7 @@ Pattern SovereignScoreRenderer::render(const SongPlan& plan,
         ? "orchestral" : "adaptive";
     song.productionModeSource = "ai_sovereign_local";
     song.percussionFreeArrangement = plan.percussionFreeIntent;
+    song.electronicMotionRequired = ElectronicRoleContract::requiresMotionOwner(plan);
     song.soundscapeScene = plan.soundscape.scene;
     song.soundscapeSpatialNarrative = plan.soundscape.spatialNarrative;
     song.parts.reserve(plan.instruments.size());

@@ -314,7 +314,17 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
                 const auto transformedBeat = placement.retrograde
                     ? std::max(0.0, cell->lengthBeats - authored.beat - authored.durationBeats)
                     : authored.beat;
-                const auto sectionBeat = origin + transformedBeat * placement.timeScale;
+                auto sectionBeat = origin + transformedBeat * placement.timeScale;
+                // Retrograde derives the new onset from the authored release. A strict-grid
+                // note may legitimately have an expressive decimal duration (for example
+                // 0.55 beats), so the derived onset can otherwise become 3.45 even though
+                // both the note and placement explicitly promise strict-grid source MIDI.
+                // Quantize the transformed onset at the final realization boundary; this
+                // preserves every AI-authored pitch, duration and transformation while
+                // keeping the exported/dragged MIDI on the declared quarter-beat grid.
+                if (authored.metricIntent == MetricIntent::StrictGrid &&
+                    placement.metricIntent == MetricIntent::StrictGrid)
+                    sectionBeat = std::round(sectionBeat * 4.0) / 4.0;
                 if (sectionBeat < chunkStartInSection || sectionBeat >= chunkEnd) continue;
                 const auto voice = remappedVoice(placement, authored.voice);
                 if (!validVoice(voice)) continue;

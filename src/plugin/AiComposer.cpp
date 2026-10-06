@@ -2466,6 +2466,64 @@ juce::String performanceBlockPrompt(const juce::String& direction,
                                     std::size_t blockIndex, int attempt,
                                     bool localEditorial = false) {
     if (localEditorial) {
+        juce::String compactBlueprint;
+        compactBlueprint << "title=" << juce::String::fromUTF8(plan.title.c_str())
+                         << " | key=" << juce::String::fromUTF8(plan.key.c_str())
+                         << " | bars=" << plan.totalBars
+                         << " | beats_per_bar=" << plan.beatsPerBar
+                         << " | protagonist="
+                         << juce::String::fromUTF8(
+                                plan.narrativeSpine.protagonistInstrumentId.c_str())
+                         << "\nMOTIF="
+                         << juce::String::fromUTF8(plan.narrativeSpine.motifIdentity.c_str())
+                         << "\nHARMONIC_DEBT="
+                         << juce::String::fromUTF8(plan.narrativeSpine.harmonicDebt.c_str())
+                         << "\nRESOLUTION="
+                         << juce::String::fromUTF8(plan.narrativeSpine.resolution.c_str())
+                         << "\nCHORD_PALETTE:\n";
+        for (const auto& chord : plan.chordPalette) {
+            compactBlueprint << juce::String::fromUTF8(chord.id.c_str()) << "="
+                             << juce::String::fromUTF8(chord.label.c_str())
+                             << " root_pc=" << chord.rootPitchClass
+                             << " bass_pc=" << chord.bassPitchClass << " pcs=";
+            for (const auto pitchClass : chord.pitchClasses)
+                compactBlueprint << pitchClass << ",";
+            compactBlueprint << " function="
+                             << juce::String(harmonicFunctionKey(chord.function).data())
+                             << "\n";
+        }
+        compactBlueprint << "FORM_AND_HARMONY:\n";
+        for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+            const auto& section = plan.sections[sectionIndex];
+            compactBlueprint << "section=" << static_cast<int>(sectionIndex) << " "
+                             << juce::String::fromUTF8(section.name.c_str())
+                             << " start_bar=" << section.startBar << " bars=" << section.bars
+                             << " function=" << juce::String::fromUTF8(section.function.c_str())
+                             << " harmonic_direction="
+                             << juce::String::fromUTF8(section.harmonicDirection.c_str())
+                             << " motif="
+                             << juce::String::fromUTF8(section.motifTreatment.c_str())
+                             << " energy=" << juce::String(section.energy, 2)
+                             << " tension=" << juce::String(section.tension, 2)
+                             << " density=" << juce::String(section.density, 2) << "\n";
+            for (const auto& event : section.harmonicEvents)
+                compactBlueprint << "  chord bar=" << event.barOffset
+                                 << " beat=" << juce::String(event.beatOffset, 2)
+                                 << " id=" << juce::String::fromUTF8(event.chordId.c_str())
+                                 << " purpose="
+                                 << juce::String::fromUTF8(event.purpose.c_str()) << "\n";
+        }
+        compactBlueprint << "NARRATIVE_CAUSALITY:\n";
+        for (const auto& act : plan.narrativeSpine.acts)
+            compactBlueprint << juce::String::fromUTF8(act.sectionName.c_str())
+                             << " stage=" << juce::String(narrativeStageKey(act.stage).data())
+                             << " cause=" << juce::String::fromUTF8(act.cause.c_str())
+                             << " consequence="
+                             << juce::String::fromUTF8(act.consequence.c_str())
+                             << " unresolved="
+                             << juce::String::fromUTF8(act.unresolvedElement.c_str())
+                             << " target="
+                             << juce::String::fromUTF8(act.resolutionTarget.c_str()) << "\n";
         juce::String prompt;
         prompt << "You are the sole composer of every MIDI note in this PULSO block. "
                "The shared blueprint fixes the song's form, harmony, cast and narrative, but you decide the "
@@ -2519,7 +2577,7 @@ juce::String performanceBlockPrompt(const juce::String& direction,
                << compositionBehaviorBrief(plan.compositionBehavior)
                << "\nINSTRUMENTS IN THIS BLOCK:\n" << instrumentBlockBrief(plan, indices, false)
                << "\nSHARED ORCHESTRATION:\n" << orchestrationMatrixBrief(plan, false)
-               << "\nIMMUTABLE SHARED BLUEPRINT:\n" << blueprintJson;
+               << "\nIMMUTABLE COMPACT BLUEPRINT:\n" << compactBlueprint;
         std::set<std::string> targets;
         for (const auto index : indices)
             if (index < plan.instruments.size()) targets.insert(plan.instruments[index].id);
@@ -2529,7 +2587,7 @@ juce::String performanceBlockPrompt(const juce::String& direction,
                    << juce::String::fromUTF8(reference.c_str())
                    << "Compose in dialogue with these real notes, not just the role labels.\n";
         const auto ledger = EnsembleReference::harmonicLedger(
-            plan, acceptedScore, targets);
+            plan, acceptedScore, targets, 96);
         if (!ledger.empty())
             prompt << "\nACCEPTED HARMONIC SPINE (absolute beat start-end:MIDI pitches; "
                       "complete grouped note events for the principal voices):\n"
@@ -8051,10 +8109,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             if (++unusableVoicingReplies >= 2) break;
                         }
                     }
-                } else if (localBlockRewrites[selectedId] < 2) {
-                const std::vector<std::size_t> rewriteIndices{*selected};
-                const auto rewriteIds = instrumentIdsFor(result, rewriteIndices);
-                OperationalJournal::write("WARN", "EDITORIAL",
+                } else if (!aiSovereign && localBlockRewrites[selectedId] < 2) {
+                    const std::vector<std::size_t> rewriteIndices{*selected};
+                    const auto rewriteIds = instrumentIdsFor(result, rewriteIndices);
+                    OperationalJournal::write("WARN", "EDITORIAL",
                     "block " + juce::String(static_cast<int>(displayBlock + 1)) +
                     " introduced " + juce::String(introduced) +
                     " tonal conflicts; asking AI to revise only " +
@@ -8136,6 +8194,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         OperationalJournal::write("WARN", "EDITORIAL",
                             "block-only rewrite unavailable; retaining original AI block for final audition");
                     }
+                } else if (aiSovereign) {
+                    OperationalJournal::write("INFO", "EDITORIAL",
+                        "sovereign block retained for complete-score tonal review; "
+                        "no speculative mid-composition rewrite requested");
                 }
                 }
                 }

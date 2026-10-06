@@ -171,6 +171,14 @@ public:
         const CompositionRenderReport& before,
         const CompositionRenderReport& after,
         double aiAuthoredNoteRatio) noexcept;
+    // Accepts one isolated AI-authored editorial rewrite when it measurably
+    // improves creative/track evidence without worsening any hard MIDI or
+    // tonal invariant. This is intentionally evaluated per instrument so one
+    // unsafe rewrite cannot discard unrelated valid repairs.
+    [[nodiscard]] static bool improvedCreativeCheckpoint(
+        const CompositionRenderReport& before,
+        const CompositionRenderReport& after,
+        double aiAuthoredNoteRatio) noexcept;
     // A whole-score rewrite must not trade its narrative arc for a lower
     // dissonance counter. Called for every transactional editorial candidate.
     [[nodiscard]] static bool preservesNarrative(

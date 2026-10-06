@@ -916,6 +916,54 @@ int main(int argc, char** argv) {
     require(pulso::plugin::AiComposer::defaultModel() == "gpt-5.6-terra" &&
                 pulso::plugin::AiComposer::defaultReasoningEffort() == "medium",
             "PULSO composition must default to GPT-5.6 Terra at medium reasoning effort");
+    pulso::SongPlan writingOrderPlan;
+    const auto writingPart = [](std::string id, pulso::VoiceId voice,
+                                std::string role = {}) {
+        pulso::InstrumentAssignment part;
+        part.id = id;
+        part.instrumentId = id;
+        part.name = id;
+        part.sourceVoice = voice;
+        part.role = std::move(role);
+        part.contentLaneId = part.id;
+        part.lineRelationship = "independent";
+        return part;
+    };
+    writingOrderPlan.instruments = {
+        writingPart("central_bed", pulso::VoiceId::HarmonicFoundation,
+                    "primary_chord_bed"),
+        writingPart("sub_anchor", pulso::VoiceId::SubBass),
+        writingPart("moving_bass", pulso::VoiceId::MovementBass),
+        writingPart("speaker", pulso::VoiceId::Lead),
+        writingPart("horizon", pulso::VoiceId::Atmosphere)};
+    writingOrderPlan.narrativeSpine.protagonistInstrumentId = "speaker";
+    const auto editorialBlocks =
+        pulso::plugin::AiComposer::performanceWritingBlocks(writingOrderPlan, true);
+    require(editorialBlocks.size() == 4 &&
+                editorialBlocks[0] == std::vector<std::size_t>({0, 1}) &&
+                editorialBlocks[1] == std::vector<std::size_t>({2}) &&
+                editorialBlocks[2] == std::vector<std::size_t>({3}) &&
+                editorialBlocks[3] == std::vector<std::size_t>({4}),
+            "AI-only writing must co-author the central bed and primary bass before independent motion and melody");
+    const auto standardBlocks =
+        pulso::plugin::AiComposer::performanceWritingBlocks(writingOrderPlan, false);
+    require(!standardBlocks.empty() &&
+                standardBlocks.front() == std::vector<std::size_t>({3}),
+            "The established non-editorial writer must retain its protagonist-first order");
+    pulso::SongPlan markerPlan;
+    auto longMotionOwner = writingPart("long_motion", pulso::VoiceId::HarmonicPulse,
+        std::string(220, 'x') + " primary_motion_owner");
+    longMotionOwner.instrumentId = "hypnotic_arp";
+    markerPlan.instruments = {std::move(longMotionOwner)};
+    pulso::SongComposer::normalizePlan(markerPlan);
+    const auto retainedMotionOwner = std::find_if(markerPlan.instruments.begin(),
+        markerPlan.instruments.end(), [](const auto& instrument) {
+            return instrument.id == "long_motion";
+        });
+    require(retainedMotionOwner != markerPlan.instruments.end() &&
+                retainedMotionOwner->role.size() <= 180 &&
+                retainedMotionOwner->role.find("primary_motion_owner") != std::string::npos,
+            "Plan normalization must preserve structural role markers when descriptive prose is truncated");
     pulso::SongPlan identityContractPlan;
     pulso::InstrumentAssignment inventoryViolin;
     inventoryViolin.id = "violin_1_protagonist";
@@ -1239,6 +1287,24 @@ int main(int argc, char** argv) {
     require(!pulso::plugin::AiComposer::parsePerformanceBlockJson(
                 foreignOnlyBlock, routingPlan, {0}, routedScore, routingError),
             "A shard containing no assigned instrument notes must fail instead of passing as an empty repair");
+    pulso::SongPlan transformPlan = routingPlan;
+    transformPlan.instruments[0].id = "chords";
+    transformPlan.instruments[0].sourceVoice = pulso::VoiceId::HarmonicFoundation;
+    transformPlan.instruments[0].minimumPitch = 48;
+    transformPlan.instruments[0].maximumPitch = 84;
+    const auto impossibleTransformBlock = juce::String(R"json({"performance_score":{"cells":[{
+      "id":"b1_invalid_inversion","length_beats":4,"owned_voices":["harmonic_foundation"],
+      "theme_id":"foundation","narrative_function":"support","notes":[
+        {"beat":0,"duration":1,"pitch":60,"velocity":80,"voice":"harmonic_foundation","instrument_id":"chords","metric_intent":"strict_grid"}
+      ],"controls":[]}],"placements":[{
+        "cell_id":"b1_invalid_inversion","section_index":0,"start_beat":0,"repeats":1,
+        "transpose":0,"velocity_scale":1,"time_scale":1,"purpose":"invalid transformed pitch",
+        "voice_map":[],"retrograde":false,"invert_contour":true,"inversion_axis":0,
+        "fragment_start":0,"fragment_end":4,"metric_intent":"strict_grid"
+      }]}})json");
+    require(!pulso::plugin::AiComposer::parsePerformanceBlockJson(
+                impossibleTransformBlock, transformPlan, {0}, routedScore, routingError),
+            "AI transformations outside the concrete instrument register must fail before MIDI assembly");
     pulso::SongPlan proofPlan;
     proofPlan.totalBars = 3;
     proofPlan.beatsPerBar = 4;

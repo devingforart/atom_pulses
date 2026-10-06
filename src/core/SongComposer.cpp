@@ -1599,6 +1599,33 @@ void SongComposer::normalizePlan(SongPlan& plan) {
         *value = std::clamp(std::isfinite(*value) ? *value : 0.5, 0.0, 1.0);
     std::vector<std::string> instrumentIds;
     std::vector<std::string> instrumentNames;
+    const auto normalizeRole = [](std::string& role) {
+        constexpr std::array<std::string_view, 3> structuralMarkers{
+            "primary_chord_bed", "primary_motion_owner", "supporting_motion"};
+        std::vector<std::string_view> retained;
+        for (const auto marker : structuralMarkers) {
+            auto found = false;
+            for (auto position = role.find(marker); position != std::string::npos;
+                 position = role.find(marker)) {
+                role.erase(position, marker.size());
+                found = true;
+            }
+            if (found) retained.push_back(marker);
+        }
+        while (!role.empty() && std::isspace(static_cast<unsigned char>(role.front())))
+            role.erase(role.begin());
+        while (!role.empty() && std::isspace(static_cast<unsigned char>(role.back())))
+            role.pop_back();
+        std::string suffix;
+        for (const auto marker : retained)
+            suffix += (suffix.empty() ? " | " : " ") + std::string(marker);
+        constexpr auto maximumRoleBytes = std::size_t{180};
+        if (role.size() + suffix.size() > maximumRoleBytes)
+            role.resize(maximumRoleBytes - std::min(maximumRoleBytes, suffix.size()));
+        while (!role.empty() && std::isspace(static_cast<unsigned char>(role.back())))
+            role.pop_back();
+        role += suffix;
+    };
     for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
         auto& instrument = plan.instruments[index];
         const auto* definition = instrumentDefinition(instrument.instrumentId);
@@ -1617,7 +1644,7 @@ void SongComposer::normalizePlan(SongPlan& plan) {
         while (std::find(instrumentNames.begin(), instrumentNames.end(), instrument.name) != instrumentNames.end())
             instrument.name = baseName + " " + std::to_string(nameSuffix++);
         instrumentNames.push_back(instrument.name);
-        if (instrument.role.size() > 180) instrument.role.resize(180);
+        normalizeRole(instrument.role);
         if (instrument.sourceVoice == VoiceId::Unspecified || instrument.sourceVoice == VoiceId::Count)
             instrument.sourceVoice = definition->preferredVoice;
         const auto sourceFamily = voiceDefinition(instrument.sourceVoice).family;

@@ -2953,6 +2953,33 @@ void runGeneratorTests() {
                 SelectiveRepair::editoriallyAcceptable(editorialBefore, editorialAfter, 1) &&
                 !SelectiveRepair::editoriallyAcceptable(editorialBefore, editorialAfter, 0),
             "A bounded repair that measurably improves a safe score must publish with editorial observations");
+    CompositionRenderReport isolatedBefore = editorialBefore;
+    isolatedBefore.production.ready = false;
+    isolatedBefore.production.unintendedHarshOverlaps = 10;
+    isolatedBefore.soundscape.active = true;
+    isolatedBefore.soundscape.score = 0.78;
+    isolatedBefore.soundscape.meaningfulLayers = 7;
+    isolatedBefore.soundscape.underdevelopedVoices = 1;
+    isolatedBefore.trackViability.active = true;
+    isolatedBefore.trackViability.score = 0.92;
+    isolatedBefore.trackViability.tokenTracks = 1;
+    auto isolatedAfter = isolatedBefore;
+    isolatedAfter.narrative.score = 0.82;
+    isolatedAfter.narrative.resolutionScore = 0.68;
+    isolatedAfter.narrative.densityControl = 0.82;
+    isolatedAfter.narrative.issues = {"weak_harmonic_direction"};
+    isolatedAfter.soundscape.score = 0.88;
+    isolatedAfter.soundscape.meaningfulLayers = 8;
+    isolatedAfter.soundscape.underdevelopedVoices = 0;
+    isolatedAfter.trackViability.score = 1.0;
+    isolatedAfter.trackViability.tokenTracks = 0;
+    require(SelectiveRepair::improvedCreativeCheckpoint(
+                isolatedBefore, isolatedAfter, 1.0),
+            "An isolated AI rewrite that removes a token track without worsening MIDI must be checkpointed");
+    isolatedAfter.production.invalidSustains = 1;
+    require(!SelectiveRepair::improvedCreativeCheckpoint(
+                isolatedBefore, isolatedAfter, 1.0),
+            "A creative improvement must never checkpoint a new invalid sustain");
     CompositionRenderReport observedSafeFallback;
     observedSafeFallback.production.ready = true;
     observedSafeFallback.narrative.active = true;

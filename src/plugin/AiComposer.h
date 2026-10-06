@@ -62,6 +62,12 @@ public:
     [[nodiscard]] static std::size_t castDetailShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t selectiveRepairShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t performanceBlockCount(std::size_t instruments) noexcept;
+    // Build the ordered authoring transactions used by the incremental writer.
+    // In the AI-only editorial profile the central chord bed and its primary
+    // low foundation share one transaction, so their vertical harmony is
+    // composed together instead of discovered only by a later audit.
+    [[nodiscard]] static std::vector<std::vector<std::size_t>> performanceWritingBlocks(
+        const SongPlan&, bool localEditorial);
     [[nodiscard]] static bool castManifestUsesExactCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t requestedInstrumentCount(const juce::String& direction) noexcept;
     static void applyExplicitInstrumentCommitments(SongPlan&,

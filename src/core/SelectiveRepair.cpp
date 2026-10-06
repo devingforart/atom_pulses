@@ -366,6 +366,41 @@ bool SelectiveRepair::improvedTonalCheckpoint(
         tonal(after) < tonal(before) && preservesNarrative(before, after);
 }
 
+bool SelectiveRepair::improvedCreativeCheckpoint(
+    const CompositionRenderReport& before,
+    const CompositionRenderReport& after,
+    double aiAuthoredNoteRatio) noexcept {
+    const auto hardTechnical = [](const CompositionRenderReport& report) {
+        return report.production.unsupportedChromaticNotes +
+            report.production.metricViolations + report.production.unsafeDurations +
+            report.production.orphanEvents;
+    };
+    const auto tonal = [](const CompositionRenderReport& report) {
+        return report.production.invalidSustains +
+            report.production.unintendedHarshOverlaps +
+            report.production.lowRegisterVerticalClashes;
+    };
+    if (aiAuthoredNoteRatio < .999 ||
+        hardTechnical(after) > hardTechnical(before) ||
+        after.production.invalidSustains > before.production.invalidSustains ||
+        after.production.lowRegisterVerticalClashes >
+            before.production.lowRegisterVerticalClashes ||
+        tonal(after) > tonal(before) || !preservesNarrative(before, after))
+        return false;
+
+    const auto creativeImprovement = deficit(after) + .05 < deficit(before);
+    const auto viabilityImprovement =
+        after.trackViability.score > before.trackViability.score + .02 ||
+        after.trackViability.tokenTracks < before.trackViability.tokenTracks;
+    const auto soundscapeImprovement =
+        after.soundscape.score > before.soundscape.score + .02 ||
+        after.soundscape.meaningfulLayers > before.soundscape.meaningfulLayers ||
+        after.soundscape.underdevelopedVoices < before.soundscape.underdevelopedVoices ||
+        after.soundscape.underdevelopedEnvironments < before.soundscape.underdevelopedEnvironments ||
+        after.soundscape.staticLayerRuns < before.soundscape.staticLayerRuns;
+    return creativeImprovement && (viabilityImprovement || soundscapeImprovement);
+}
+
 std::vector<TonalConflictGroup> SelectiveRepair::tonalConflictGroups(
     const SongPlan& plan, const TonalAuditReport& audit) {
     std::map<std::tuple<std::size_t, std::size_t, int>, TonalConflictGroup> grouped;

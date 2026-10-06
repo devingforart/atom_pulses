@@ -3386,6 +3386,32 @@ bool parsePerformanceBlock(const juce::String& blockText, const SongPlan& bluepr
         sectionLengths.push_back(section.bars * blueprint.beatsPerBar);
     const auto report = PerformanceScoreEngine::normalize(
         score, blueprint.sections.size(), sectionLengths);
+    // Source notes can be valid while an AI-declared contour inversion turns
+    // their rendered pitches negative or pushes them outside the concrete
+    // instrument register. The sovereign renderer intentionally preserves AI
+    // transformations, so reject an impossible placement as a unit and let the
+    // bounded AI recovery author a playable replacement. Never clamp or rewrite
+    // the composer's pitches locally.
+    score.placements.erase(std::remove_if(score.placements.begin(), score.placements.end(),
+        [&](const auto& placement) {
+            const auto cell = std::find_if(score.cells.begin(), score.cells.end(),
+                [&](const auto& candidate) { return candidate.id == placement.cellId; });
+            if (cell == score.cells.end()) return true;
+            return std::any_of(cell->notes.begin(), cell->notes.end(), [&](const auto& note) {
+                const auto transformed = placement.invertContour
+                    ? placement.inversionAxis * 2 - note.pitch : note.pitch;
+                const auto renderedPitch = transformed + placement.transpose;
+                const auto owner = std::find_if(blueprint.instruments.begin(),
+                    blueprint.instruments.end(), [&](const auto& instrument) {
+                        return instrument.id == note.instrumentId;
+                    });
+                const auto minimum = owner == blueprint.instruments.end()
+                    ? 0 : std::max(0, owner->minimumPitch);
+                const auto maximum = owner == blueprint.instruments.end()
+                    ? 127 : std::min(127, owner->maximumPitch);
+                return renderedPitch < minimum || renderedPitch > maximum;
+            });
+        }), score.placements.end());
     std::map<std::string, std::size_t> normalizedAccepted;
     for (const auto& cell : score.cells)
         for (const auto& note : cell.notes)
@@ -4589,6 +4615,115 @@ std::size_t AiComposer::performanceBlockCount(std::size_t instruments) noexcept 
     instruments = std::min(instruments, maximumInstruments);
     return instruments == 0 ? 0 : (instruments + instrumentsPerPerformanceBlock - 1) /
         instrumentsPerPerformanceBlock;
+}
+
+std::vector<std::vector<std::size_t>> AiComposer::performanceWritingBlocks(
+    const SongPlan& plan, bool localEditorial) {
+    std::vector<std::vector<std::size_t>> blocks;
+    std::vector<std::size_t> orderedInstruments;
+    orderedInstruments.reserve(plan.instruments.size());
+    for (std::size_t index = 0; index < plan.instruments.size(); ++index)
+        if (!ElectronicCompositionFabric::rendererOwnedDestination(
+                plan, plan.instruments[index]))
+            orderedInstruments.push_back(index);
+
+    std::stable_sort(orderedInstruments.begin(), orderedInstruments.end(),
+        [&](auto left, auto right) {
+            const auto& a = plan.instruments[left];
+            const auto& b = plan.instruments[right];
+            const auto familyA = static_cast<int>(voiceDefinition(a.sourceVoice).family);
+            const auto familyB = static_cast<int>(voiceDefinition(b.sourceVoice).family);
+            if (familyA != familyB) return familyA < familyB;
+            return a.contentLaneId < b.contentLaneId;
+        });
+
+    const auto takeFirst = [&](const auto& predicate) -> std::optional<std::size_t> {
+        const auto owner = std::find_if(
+            orderedInstruments.begin(), orderedInstruments.end(), predicate);
+        if (owner == orderedInstruments.end()) return std::nullopt;
+        const auto index = *owner;
+        orderedInstruments.erase(owner);
+        return index;
+    };
+    const auto isolateProtagonist = [&] {
+        const auto owner = takeFirst([&](const auto index) {
+            return plan.instruments[index].id ==
+                plan.narrativeSpine.protagonistInstrumentId;
+        });
+        if (owner) blocks.push_back({*owner});
+    };
+
+    if (!localEditorial) {
+        isolateProtagonist();
+    } else {
+        // The explicit chord lane and the principal low anchor are one musical
+        // foundation. Asking for them in the same structured response gives the
+        // model both sides of every vertical decision. A secondary movement
+        // bass remains independent and writes afterwards against the accepted
+        // foundation ledger.
+        std::vector<std::size_t> foundationBlock;
+        if (const auto bed = takeFirst([&](const auto index) {
+                return plan.instruments[index].role.find("primary_chord_bed") !=
+                    std::string::npos;
+            }))
+            foundationBlock.push_back(*bed);
+
+        auto primaryBass = takeFirst([&](const auto index) {
+            return plan.instruments[index].sourceVoice == VoiceId::SubBass;
+        });
+        if (!primaryBass)
+            primaryBass = takeFirst([&](const auto index) {
+                return plan.instruments[index].sourceVoice == VoiceId::MovementBass;
+            });
+        if (primaryBass) foundationBlock.push_back(*primaryBass);
+        if (!foundationBlock.empty()) blocks.push_back(std::move(foundationBlock));
+
+        for (const auto voice : {VoiceId::SubBass, VoiceId::MovementBass}) {
+            const auto owner = takeFirst([&](const auto index) {
+                return plan.instruments[index].sourceVoice == voice;
+            });
+            if (owner) blocks.push_back({*owner});
+        }
+        isolateProtagonist();
+    }
+
+    const auto performanceShardSize = localEditorial ? std::size_t{2} :
+        plan.totalBars >= 128 ? std::size_t{6} : instrumentsPerPerformanceBlock;
+    const auto narrativeShardSize = std::min(performanceShardSize, std::size_t{8});
+    std::vector<std::size_t> narrativeOwners;
+    std::vector<std::size_t> supportingOwners;
+    for (const auto index : orderedInstruments) {
+        const auto& instrument = plan.instruments[index];
+        const auto narrative = instrument.lineRelationship == "call_response" ||
+            instrument.sourceVoice == VoiceId::MovementBass ||
+            instrument.role.find("primary_chord_bed") != std::string::npos ||
+            ElectronicRoleContract::motionOwner(instrument);
+        (narrative ? narrativeOwners : supportingOwners).push_back(index);
+    }
+    if (!narrativeOwners.empty()) {
+        const auto companions = std::min<std::size_t>(
+            supportingOwners.size(), narrativeOwners.size() < narrativeShardSize
+                ? narrativeShardSize - narrativeOwners.size() : 0);
+        narrativeOwners.insert(narrativeOwners.end(), supportingOwners.begin(),
+            supportingOwners.begin() + static_cast<std::ptrdiff_t>(companions));
+        supportingOwners.erase(supportingOwners.begin(),
+            supportingOwners.begin() + static_cast<std::ptrdiff_t>(companions));
+        for (std::size_t begin = 0; begin < narrativeOwners.size();
+             begin += performanceShardSize) {
+            const auto end = std::min(narrativeOwners.size(), begin + performanceShardSize);
+            blocks.emplace_back(
+                narrativeOwners.begin() + static_cast<std::ptrdiff_t>(begin),
+                narrativeOwners.begin() + static_cast<std::ptrdiff_t>(end));
+        }
+    }
+    for (std::size_t begin = 0; begin < supportingOwners.size();
+         begin += performanceShardSize) {
+        const auto end = std::min(supportingOwners.size(), begin + performanceShardSize);
+        blocks.emplace_back(
+            supportingOwners.begin() + static_cast<std::ptrdiff_t>(begin),
+            supportingOwners.begin() + static_cast<std::ptrdiff_t>(end));
+    }
+    return blocks;
 }
 
 bool AiComposer::castManifestUsesExactCount(std::size_t instruments) noexcept {
@@ -7218,111 +7353,19 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     // Phase two authors the concrete MIDI in bounded, independently retryable blocks.
     // A completed block is merged immediately, so a later transport failure never
     // discards already validated musical work.
-    std::vector<std::vector<std::size_t>> blocks;
-    std::vector<std::size_t> orderedInstruments;
-    orderedInstruments.reserve(result.instruments.size());
-    for (std::size_t index = 0; index < result.instruments.size(); ++index) {
-        const auto& instrument = result.instruments[index];
-        if (!ElectronicCompositionFabric::rendererOwnedDestination(result, instrument))
-            orderedInstruments.push_back(index);
-    }
-    const auto rendererDestinations = result.instruments.size() - orderedInstruments.size();
+    const auto authoredLaneOwners = static_cast<std::size_t>(std::count_if(
+        result.instruments.begin(), result.instruments.end(), [&](const auto& instrument) {
+            return !ElectronicCompositionFabric::rendererOwnedDestination(result, instrument);
+        }));
+    const auto rendererDestinations = result.instruments.size() - authoredLaneOwners;
     OperationalJournal::write("INFO", "WRITING",
         "content architecture | " +
-        juce::String(static_cast<int>(orderedInstruments.size())) +
+        juce::String(static_cast<int>(authoredLaneOwners)) +
         " authored lane owner(s) | " +
         juce::String(static_cast<int>(rendererDestinations)) +
         " renderer-owned timbral destination(s) | " +
         juce::String(static_cast<int>(result.instruments.size())) + " exported tracks");
-    std::stable_sort(orderedInstruments.begin(), orderedInstruments.end(), [&](auto left, auto right) {
-        const auto& a = result.instruments[left];
-        const auto& b = result.instruments[right];
-        const auto familyA = static_cast<int>(voiceDefinition(a.sourceVoice).family);
-        const auto familyB = static_cast<int>(voiceDefinition(b.sourceVoice).family);
-        if (familyA != familyB) return familyA < familyB;
-        return a.contentLaneId < b.contentLaneId;
-    });
-    const auto isolateProtagonist = [&] {
-        const auto owner = std::find_if(orderedInstruments.begin(),
-            orderedInstruments.end(), [&](const auto index) {
-                return result.instruments[index].id ==
-                    result.narrativeSpine.protagonistInstrumentId;
-            });
-        if (owner == orderedInstruments.end()) return;
-        blocks.push_back({*owner});
-        orderedInstruments.erase(owner);
-    };
-    // The standard writer keeps its protagonist-first contract. The sovereign
-    // score establishes its AI-authored harmonic foundation and bass first, so
-    // the dramatic speaker can phrase against actual chords instead of an empty
-    // arrangement. It remains a dedicated identity checkpoint, never a shard
-    // competing for output tokens with backing parts.
-    if (!localEditorial) isolateProtagonist();
-    if (localEditorial) {
-        // A simultaneous chord-bed + bass shard cannot use the other's actual
-        // MIDI as context. Commit these harmonic anchors in musical order so
-        // every subsequent writer sees the complete accepted voicing ledger.
-        for (const auto voice : {VoiceId::HarmonicFoundation,
-                                 VoiceId::SubBass, VoiceId::MovementBass}) {
-            const auto owner = std::find_if(orderedInstruments.begin(),
-                orderedInstruments.end(), [&](const auto index) {
-                    const auto& instrument = result.instruments[index];
-                    return voice == VoiceId::HarmonicFoundation
-                        ? instrument.role.find("primary_chord_bed") != std::string::npos
-                        : instrument.sourceVoice == voice;
-                });
-            if (owner == orderedInstruments.end()) continue;
-            blocks.push_back({*owner});
-            orderedInstruments.erase(owner);
-        }
-        isolateProtagonist();
-    }
-
-    // Long-form lanes need more source material per owner. Keep each request small
-    // enough to return complete phrases inside the existing output-token budget;
-    // otherwise a ten-owner block can spend its budget on four-note placeholders.
-    const auto performanceShardSize = localEditorial ? std::size_t{2} :
-        result.totalBars >= 128 ? std::size_t{6} : instrumentsPerPerformanceBlock;
-    const auto narrativeShardSize = std::min(performanceShardSize, std::size_t{8});
-    // Give answerers and pitched motion owners one compact shared context after the
-    // protagonist has independently converged.
-    std::vector<std::size_t> narrativeOwners;
-    std::vector<std::size_t> supportingOwners;
-    for (const auto index : orderedInstruments) {
-        const auto& instrument = result.instruments[index];
-        const auto narrative = instrument.lineRelationship == "call_response" ||
-            instrument.sourceVoice == VoiceId::MovementBass ||
-            instrument.role.find("primary_chord_bed") != std::string::npos ||
-            ElectronicRoleContract::motionOwner(instrument);
-        (narrative ? narrativeOwners : supportingOwners).push_back(index);
-    }
-    if (!narrativeOwners.empty()) {
-        // Fill the shared narrative shard only to its bounded owner capacity. This preserves room
-        // for a complete protagonist answer while normally keeping the same request
-        // count as the former ten-by-ten partition.
-        const auto companions = std::min<std::size_t>(
-            supportingOwners.size(), narrativeOwners.size() < narrativeShardSize
-                ? narrativeShardSize - narrativeOwners.size() : 0);
-        narrativeOwners.insert(narrativeOwners.end(), supportingOwners.begin(),
-            supportingOwners.begin() + static_cast<std::ptrdiff_t>(companions));
-        supportingOwners.erase(supportingOwners.begin(),
-            supportingOwners.begin() + static_cast<std::ptrdiff_t>(companions));
-        for (std::size_t begin = 0; begin < narrativeOwners.size();
-             begin += performanceShardSize) {
-            const auto end = std::min(narrativeOwners.size(), begin + performanceShardSize);
-            blocks.emplace_back(
-                narrativeOwners.begin() + static_cast<std::ptrdiff_t>(begin),
-                narrativeOwners.begin() + static_cast<std::ptrdiff_t>(end));
-        }
-    }
-    for (std::size_t begin = 0; begin < supportingOwners.size();
-         begin += performanceShardSize) {
-        std::vector<std::size_t> block;
-        const auto end = std::min(supportingOwners.size(),
-                                  begin + performanceShardSize);
-        for (auto index = begin; index < end; ++index) block.push_back(supportingOwners[index]);
-        blocks.push_back(std::move(block));
-    }
+    auto blocks = performanceWritingBlocks(result, localEditorial);
     if (blocks.empty()) {
         error = "AI blueprint contains no instrument cast";
         return {};
@@ -7331,7 +7374,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     PerformanceScore assembledScore;
     auto requestSerial = std::size_t{};
     auto completedBlocks = std::size_t{};
-    auto localBlockRewrites = std::size_t{};
+    std::map<std::string, std::size_t> localBlockRewrites;
     auto localVoicingPatches = std::size_t{};
     auto rejectedCandidateCaptured = false;
     std::function<bool(const PerformanceScore&)> localCheckpointAudit;
@@ -7866,7 +7909,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         // AI-sovereign composition is evaluated as one score. Mid-block
         // surgery on raw overlap counts fragments the authored narrative and
         // can spend several full rewrites before the other voices even exist.
-        if (localEditorial && !aiSovereign) {
+        if (localEditorial) {
             const auto beforeAudit = auditLocalScore(scoreBeforeBlock);
             auto afterAudit = auditLocalScore(assembledScore);
             const auto tonalDebt = SelectiveRepair::measuredTonalDebt;
@@ -7892,7 +7935,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         "new tonal conflicts had no attributable instrument in this block; "
                         "preserving authored MIDI for final audition");
                 } else {
-                if (result.instruments[*selected].sourceVoice == VoiceId::HarmonicFoundation) {
+                const auto& selectedId = result.instruments[*selected].id;
+                if (!aiSovereign &&
+                    result.instruments[*selected].sourceVoice == VoiceId::HarmonicFoundation) {
                     OperationalJournal::write("WARN", "EDITORIAL",
                         "block " + juce::String(static_cast<int>(displayBlock + 1)) +
                         " introduced " + juce::String(introduced) +
@@ -8006,7 +8051,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             if (++unusableVoicingReplies >= 2) break;
                         }
                     }
-                } else if (localBlockRewrites < 2) {
+                } else if (localBlockRewrites[selectedId] < 2) {
                 const std::vector<std::size_t> rewriteIndices{*selected};
                 const auto rewriteIds = instrumentIdsFor(result, rewriteIndices);
                 OperationalJournal::write("WARN", "EDITORIAL",
@@ -8037,7 +8082,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::seconds(90)));
                 if (budget >= std::chrono::seconds(30)) {
-                    ++localBlockRewrites;
+                    ++localBlockRewrites[selectedId];
                     const auto response = performRequest(body, apiKey, token, budget);
                     PerformanceScore replacement;
                     juce::String rewriteError;
@@ -9286,6 +9331,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     auto bestPattern = initialPattern;
     auto bestReport = initialReport;
     std::set<std::string> repairedInstrumentIds;
+    std::set<std::string> attemptedInstrumentIds;
     auto completedRepairs = std::size_t{};
     juce::String terminalReason = "audible quality remained below the publication threshold";
     const auto performanceDebt = [](const SongPlan& plan, const PerformanceScore& score,
@@ -9337,17 +9383,30 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         return *std::max_element(windows.begin(), windows.end()) -
             *std::min_element(windows.begin(), windows.end());
     };
+    const auto repairPassLimit = localEditorial ? 3 : 2;
     const auto repairDeadline = std::min(overallDeadline,
         std::chrono::steady_clock::now() + std::chrono::minutes(3));
 
-    for (auto repairPass = 1; repairPass <= 2; ++repairPass) {
+    for (auto repairPass = 1; repairPass <= repairPassLimit; ++repairPass) {
         if (token.stop_requested()) {
             error = "Generation cancelled";
             return {};
         }
         auto diagnosis = SelectiveRepair::diagnose(bestPlan, bestPattern, bestReport, 4);
         if (!diagnosis.needed) break;
-        if (repairPass > 1 && diagnosis.instrumentIndices.size() > 1) {
+        // The local AI-only editor auditions one musical owner at a time. The
+        // former four-owner transaction could contain three excellent rewrites
+        // and one invalid sustain; rejecting the combined candidate then threw
+        // all four away. Re-diagnosing after every accepted lane also prevents
+        // stale repair objectives and unnecessary calls.
+        if (localEditorial) {
+            std::erase_if(diagnosis.instrumentIndices, [&](const auto index) {
+                return index >= bestPlan.instruments.size() ||
+                    attemptedInstrumentIds.contains(bestPlan.instruments[index].id);
+            });
+            if (diagnosis.instrumentIndices.size() > 1)
+                diagnosis.instrumentIndices.resize(1);
+        } else if (repairPass > 1 && diagnosis.instrumentIndices.size() > 1) {
             std::vector<std::size_t> freshTargets;
             for (const auto index : diagnosis.instrumentIndices)
                 if (index < bestPlan.instruments.size() &&
@@ -9368,13 +9427,17 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             break;
         }
         const auto targetIds = instrumentIdsFor(bestPlan, diagnosis.instrumentIndices);
+        if (localEditorial)
+            attemptedInstrumentIds.insert(targetIds.begin(), targetIds.end());
         juce::String targetList;
         for (const auto& id : targetIds) targetList += juce::String::fromUTF8(id.c_str()) + ",";
         OperationalJournal::write("INFO", "REPAIR", "pass " + juce::String(repairPass) +
-            "/2 | targets=" + targetList + " | before " + audibleAuditSummary(bestReport));
+            "/" + juce::String(repairPassLimit) + " | targets=" + targetList +
+            " | before " + audibleAuditSummary(bestReport));
         if (progress) progress({AiSongStage::Validation, completedBlocks + repairPass - 1,
-            blocks.size() + 2, repairPass, "selective musical repair " +
-            juce::String(repairPass) + "/2 - " +
+            blocks.size() + static_cast<std::size_t>(repairPassLimit), repairPass,
+            "selective musical repair " +
+            juce::String(repairPass) + "/" + juce::String(repairPassLimit) + " - " +
             juce::String(static_cast<int>(diagnosis.instrumentIndices.size())) + " part(s)"});
 
         std::vector<std::vector<std::size_t>> repairShards;
@@ -9518,6 +9581,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         if (completedTargetIds.empty() || repairedMaterial.empty()) {
             OperationalJournal::write("WARN", "REPAIR",
                 "no valid repair shard was available; preserving the prior score");
+            if (localEditorial) continue;
             break;
         }
 
@@ -9537,7 +9601,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 "AI repair changed passages outside the measured conflict bars within its target lanes; "
                 "all untargeted MIDI remains preserved and the complete audible gate decides acceptance");
         OperationalJournal::write("INFO", "REPAIR", "pass " + juce::String(repairPass) +
-            "/2 result | " + audibleAuditSummary(candidateReport));
+            "/" + juce::String(repairPassLimit) + " result | " +
+            audibleAuditSummary(candidateReport));
         const auto priorPerformanceDebt = performanceDebt(
             bestPlan, bestPlan.performanceScore, diagnosis.instrumentIndices);
         const auto candidatePerformanceDebt = performanceDebt(
@@ -9554,12 +9619,17 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         const auto incrementalSafer = localEditorial &&
             SelectiveRepair::improvedTonalCheckpoint(bestReport, candidateReport,
                                                      candidatePattern.aiAuthoredNoteRatio);
-        const auto safer = (strictSafer || incrementalSafer) &&
+        const auto creativeSafer = localEditorial &&
+            EditorialSafety::technicallySafeAiScore(candidatePattern, candidateReport) &&
+            SelectiveRepair::improvedCreativeCheckpoint(
+                bestReport, candidateReport, candidatePattern.aiAuthoredNoteRatio);
+        const auto safer = (strictSafer || incrementalSafer || creativeSafer) &&
             (!localEditorial ||
              SelectiveRepair::preservesNarrative(bestReport, candidateReport));
         if (!safer) {
             terminalReason = "selective repair did not produce a safer audible candidate";
             OperationalJournal::write("WARN", "REPAIR", terminalReason);
+            if (localEditorial) continue;
             break;
         }
         bestPlan = std::move(candidatePlan);
@@ -9575,7 +9645,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             OperationalJournal::write("OK", "GATE", "strict audible contract passed after " +
                 juce::String(static_cast<int>(completedRepairs)) + " repair pass(es)");
             if (progress) progress({AiSongStage::Validation, blocks.size() + completedRepairs,
-                blocks.size() + 2, repairPass, "selective repair passed the strict audible gate"});
+                blocks.size() + static_cast<std::size_t>(repairPassLimit), repairPass,
+                "selective repair passed the strict audible gate"});
             error.clear();
             return bestPlan;
         }
@@ -9584,7 +9655,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         OperationalJournal::write("OK", "GATE", "editorially accepted after measurable improvement | " +
             audibleAuditSummary(bestReport));
         if (progress) progress({AiSongStage::Validation, blocks.size() + completedRepairs,
-            blocks.size() + 2, static_cast<int>(completedRepairs),
+            blocks.size() + static_cast<std::size_t>(repairPassLimit),
+            static_cast<int>(completedRepairs),
             "musically improved candidate accepted with non-critical editorial observations"});
         error.clear();
         return bestPlan;

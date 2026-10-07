@@ -5,6 +5,16 @@ export type SuiteTrack = {
   filename: string
   notes: MidiNote[]
   instrument: string
+  patchId?: string
+  meta?: {
+    catalog_id?: string
+    department?: string
+    source_voice?: string
+    role?: string
+    orchestral_function?: string
+    articulation?: string
+    live_preset_intent?: string
+  }
 }
 
 export function instrumentFor(part?: {
@@ -23,6 +33,7 @@ export class SuiteAudio {
   position: number
   playing: boolean
   duration: number
+  currentPosition(): number
   setSong(midi: MidiScore, tracks: SuiteTrack[]): void
   setVolume(value: number): void
   setMute(index: number, value: boolean): void

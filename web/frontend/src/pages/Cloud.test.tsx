@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Cloud } from './Cloud'
 
 const mock = vi.hoisted(() => ({
-  cloudJobs: vi.fn(), cloudStatus: vi.fn(), createCloudJob: vi.fn(), cancelCloudJob: vi.fn(),
+  cloudJobs: vi.fn(), cloudJob: vi.fn(), cloudStatus: vi.fn(), createCloudJob: vi.fn(), cancelCloudJob: vi.fn(),
 }))
 vi.mock('../api', () => ({ api: mock }))
 vi.mock('../auth', () => ({ useAuth: () => ({ user: { id: 'user-1', email: 'test@example.com' }, loading: false }) }))
@@ -22,15 +22,18 @@ const job = {
   status: 'completed', stage: 'ready', completedSteps: 1, totalSteps: 1, errorCode: null,
   createdAt: 1_800_000_000, updatedAt: 1_800_000_000,
   resultManifest: { title: 'Obra de prueba', key: 'C major', bpm: 120, bars: 1,
-    fullFile: 'full-song.mid', tracks: [{ filename: 'track-01.mid', name: 'Protagonist lead', notes: 1 }] },
+    fullFile: 'full-song.mid', tracks: [{ filename: 'track-01.mid', name: 'Protagonist lead', notes: 1,
+      instrument: { catalog_id: 'lead_synth', source_voice: 'lead', department: 'melody' } }] },
 }
 
 beforeEach(() => {
   mock.cloudJobs.mockReset().mockResolvedValue([job])
+  mock.cloudJob.mockReset().mockResolvedValue(job)
   mock.cloudStatus.mockReset().mockResolvedValue({ available: true, dailyJobLimit: 3 })
   mock.createCloudJob.mockReset().mockResolvedValue({ ...job, id: 'new-job', status: 'queued', resultManifest: null })
   mock.cancelCloudJob.mockReset()
   vi.stubGlobal('fetch', vi.fn(async () => new Response(midi(), { status: 200, headers: { 'Content-Type': 'audio/midi' } })))
+  localStorage.clear()
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ scale() {}, fillRect() {}, set fillStyle(_value: string) {}, set globalAlpha(_value: number) {} } as unknown as CanvasRenderingContext2D)
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
@@ -40,9 +43,17 @@ describe('Cloud Suite', () => {
     render(<Cloud />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reproducir' })).not.toBeDisabled())
     expect(screen.getByText('Protagonist lead')).toBeInTheDocument()
-    expect(screen.getByText('Seno · melodía')).toBeInTheDocument()
+    expect(screen.getByLabelText('Sonido de Protagonist lead')).toHaveValue('lead_round')
+    expect(screen.getByLabelText('Modo de escucha')).toHaveValue('production')
+    expect(screen.getByRole('button', { name: 'WAV 30 s' })).not.toBeDisabled()
+    fireEvent.change(screen.getByLabelText('Sonido de Protagonist lead'), { target: { value: 'lead_analog' } })
+    expect(screen.getByLabelText('Sonido de Protagonist lead')).toHaveValue('lead_analog')
+    expect(localStorage.getItem(`pulso:audition:local-1:${job.id}:track-01.mid`)).toBe('lead_analog')
     expect(screen.getByRole('link', { name: '↓ Exportar obra MIDI' })).toHaveAttribute('href', `/api/cloud/jobs/${job.id}/tracks/full-song.mid`)
     expect(screen.getByRole('button', { name: 'Escuchar solo Protagonist lead' })).toHaveAttribute('aria-pressed', 'false')
+    fireEvent.change(screen.getByLabelText('Modo de escucha'), { target: { value: 'neutral' } })
+    expect(screen.getByText('Seno · melodía')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Sonido de Protagonist lead')).not.toBeInTheDocument()
   })
 
   it('sends only the musician-facing parameters with a new Cloud request', async () => {

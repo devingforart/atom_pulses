@@ -4,10 +4,12 @@ import { api, type CloudJob, type CloudTrack } from '../api'
 import { useAuth } from '../auth'
 import { Logo } from '../components/Logo'
 import { parseMidi, type MidiNote, type MidiScore } from '../../../shared/midi.mjs'
-import { SuiteAudio, instrumentFor, type SuiteTrack } from '../../../shared/audio-engine.mjs'
+import { instrumentFor, type SuiteTrack } from '../../../shared/audio-engine.mjs'
+import { ProductionAudio } from '../../../shared/production-audio.mjs'
+import { PATCHES, SOUND_BANK_VERSION, patchForTrack, patchOptions } from '../../../shared/sound-palette.mjs'
 import './CloudSuite.css'
 
-type AudibleTrack = SuiteTrack & { color: string; subtitle: string }
+type AudibleTrack = SuiteTrack & { color: string }
 type AudibleScore = { jobId: string; midi: MidiScore; tracks: AudibleTrack[] }
 
 const stageText: Record<string, string> = {
@@ -17,12 +19,14 @@ const stageText: Record<string, string> = {
   interrupted: 'Interrumpida', generation: 'La composición no se completó',
 }
 const palette: Record<string, string> = { pad: '#dfb64e', bass: '#71a1d0', keys: '#8b9dca', pluck: '#cc8b6e', lead: '#d84f2b', drums: '#75b57c', synth: '#a899c7' }
-const subtitles: Record<string, string> = { pad: 'Seno · armonía', bass: 'Seno · bajo', keys: 'Seno · teclas', pluck: 'Seno · arpegio', lead: 'Seno · melodía', drums: 'Seno · percusión', synth: 'Seno · pista' }
+const neutralLabels: Record<string, string> = { pad: 'Seno · armonía', bass: 'Seno · bajo', keys: 'Seno · teclas', pluck: 'Seno · arpegio', lead: 'Seno · melodía', drums: 'Seno · percusión', synth: 'Seno · pista' }
 const fmt = (seconds: number) => { const value = Math.max(0, Math.floor(seconds || 0)); return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}` }
 const trackUrl = (jobId: string, filename: string) => `/api/cloud/jobs/${encodeURIComponent(jobId)}/tracks/${encodeURIComponent(filename)}`
 
 async function loadScore(job: CloudJob, signal: AbortSignal): Promise<AudibleScore> {
-  const manifest = job.resultManifest
+  const detail = await api.cloudJob(job.id)
+  if (signal.aborted) throw new Error('Carga cancelada')
+  const manifest = detail.resultManifest
   if (!manifest?.tracks?.length) throw new Error('Esta obra no tiene pistas MIDI disponibles.')
   const parts: { track: CloudTrack; midi: MidiScore }[] = []
   for (let start = 0; start < manifest.tracks.length; start += 6) {
@@ -37,8 +41,14 @@ async function loadScore(job: CloudJob, signal: AbortSignal): Promise<AudibleSco
   const midi: MidiScore = { ...first, lengthBeats: Math.max(manifest.bars * first.beatsPerBar, ...parts.map(part => part.midi.lengthBeats)) }
   const tracks = parts.map(({ track, midi: partMidi }) => {
     const notes = partMidi.tracks.flatMap(item => item.notes).sort((a, b) => a.startBeat - b.startBeat)
-    const kind = instrumentFor({}, track.name)
-    return { name: track.name, filename: track.filename, notes, instrument: kind, color: palette[kind] || palette.synth, subtitle: subtitles[kind] || subtitles.synth }
+    const kind = instrumentFor(track.instrument || {}, track.name)
+    const item: AudibleTrack = { name: track.name, filename: track.filename, notes, instrument: kind, meta: track.instrument || {}, color: palette[kind] || palette.synth }
+    item.patchId = patchForTrack(item)
+    try {
+      const saved = localStorage.getItem(`pulso:audition:${SOUND_BANK_VERSION}:${job.id}:${track.filename}`)
+      if (saved && PATCHES[saved]?.family === PATCHES[item.patchId]?.family) item.patchId = saved
+    } catch { /* Private browsing may disable storage. */ }
+    return item
   }).filter(track => track.notes.length)
   if (!tracks.length) throw new Error('La obra no contiene notas reproducibles.')
   return { jobId: job.id, midi, tracks }
@@ -79,6 +89,8 @@ export function Cloud() {
   const [scoreLoading, setScoreLoading] = useState(false)
   const [playing, setPlaying] = useState(false)
   const [mixRevision, setMixRevision] = useState(0)
+  const [listeningMode, setListeningMode] = useState<'production' | 'neutral'>('production')
+  const [renderingWav, setRenderingWav] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [durationSeconds, setDurationSeconds] = useState(390)
   const [bpm, setBpm] = useState(120)
@@ -88,8 +100,8 @@ export function Cloud() {
   const timelineRef = useRef<HTMLDivElement>(null)
   const playheadRef = useRef<HTMLDivElement>(null)
   const timeRef = useRef<HTMLSpanElement>(null)
-  const audioRef = useRef<SuiteAudio | null>(null)
-  if (!audioRef.current) audioRef.current = new SuiteAudio(seconds => {
+  const audioRef = useRef<ProductionAudio | null>(null)
+  if (!audioRef.current) audioRef.current = new ProductionAudio(seconds => {
     const audio = audioRef.current
     if (!audio) return
     if (timeRef.current) timeRef.current.textContent = `${fmt(seconds)} / ${fmt(audio.duration)}`
@@ -166,6 +178,27 @@ export function Cloud() {
   }
   function toggleMute(index: number) { audio.setMute(index, !audio.muted.has(index)); setMixRevision(value => value + 1) }
   function toggleSolo(index: number) { audio.setSolo(index, !audio.soloed.has(index)); setMixRevision(value => value + 1) }
+  function changePatch(index: number, patchId: string) {
+    if (!activeScore || !audio.setPatch(index, patchId)) return
+    try { localStorage.setItem(`pulso:audition:${SOUND_BANK_VERSION}:${activeScore.jobId}:${activeScore.tracks[index].filename}`, patchId) }
+    catch { /* The session still works without storage. */ }
+    setMixRevision(value => value + 1)
+  }
+  async function downloadWav() {
+    if (!activeScore) return
+    setRenderingWav(true); setScoreError('')
+    try {
+      const start = audio.currentPosition()
+      const blob = await audio.renderPreview(start, 30)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `pulso-${activeScore.jobId.slice(0, 8)}-${Math.floor(start)}s-preview.wav`
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (problem) { setScoreError(problem instanceof Error ? problem.message : 'No se pudo preparar el audio WAV.') }
+    finally { setRenderingWav(false) }
+  }
   const status = selected?.status === 'completed' ? 'LISTA' : selected?.status === 'failed' ? 'NO COMPLETADA' :
     selected?.status === 'cancelled' ? 'CANCELADA' : selected ? stageText[selected.stage] || 'COMPONIENDO' : 'SIN OBRAS'
 
@@ -193,11 +226,11 @@ export function Cloud() {
           {selected.status === 'completed' && selected.resultManifest && <div className="cloud-suite-session-actions"><a href={trackUrl(selected.id, selected.resultManifest.fullFile)}>↓ Obra completa MIDI</a><span>{selected.resultManifest.tracks.length} pistas · {selected.resultManifest.key}</span></div>}
           {selected.status === 'failed' && <p className="cloud-suite-error">La composición no se completó. No se publicó una obra incompleta.</p>}</> : <p className="cloud-suite-empty-copy">Tus obras aparecerán aquí cuando empieces a componer.</p>}</div>
     </div></aside>
-      <div className="cloud-suite-arrangement"><div className="cloud-suite-transport"><div className="cloud-suite-player"><button type="button" onClick={() => audio.seek(0)} disabled={!activeScore} aria-label="Volver al inicio">⏮</button><button type="button" className="cloud-suite-play" onClick={() => void togglePlay()} disabled={!activeScore} aria-label={playing ? 'Pausar' : 'Reproducir'}>{playing ? 'Ⅱ' : '▶'}</button><button type="button" onClick={() => { audio.stop(); setPlaying(false) }} disabled={!activeScore} aria-label="Detener">■</button><span ref={timeRef} className="cloud-suite-time">00:00 / {fmt(duration)}</span></div><div className="cloud-suite-transport-meta"><span>{selected?.resultManifest?.bpm || selected?.bpm || '—'} BPM</span><span>{selected?.resultManifest?.key || '—'}</span><label htmlFor="cloud-volume">Volumen</label><input id="cloud-volume" type="range" min="0" max="100" defaultValue="68" onChange={event => audio.setVolume(Number(event.target.value) / 100)} /></div></div>
-        <div className="cloud-suite-score-head"><div><div className="cloud-suite-kicker">03 / PARTITURA</div><h2>{selected?.resultManifest?.title || 'El estudio está listo'}</h2><p>{activeScore ? `${selected?.resultManifest?.key || '—'} · ${bars} compases · ${activeScore.tracks.length} pistas con notas` : selected?.status === 'completed' ? 'Preparando las pistas MIDI…' : 'Elige una obra terminada para escuchar su partitura.'}</p></div><span>{activeScore ? `${activeScore.tracks.reduce((total, track) => total + track.notes.length, 0).toLocaleString('es-AR')} NOTAS · ${activeScore.tracks.length} PISTAS` : 'MIDI REAL · MONITOR SENOIDAL'}</span></div>
+      <div className="cloud-suite-arrangement"><div className="cloud-suite-transport"><div className="cloud-suite-player"><button type="button" onClick={() => audio.seek(0)} disabled={!activeScore} aria-label="Volver al inicio">⏮</button><button type="button" className="cloud-suite-play" onClick={() => void togglePlay()} disabled={!activeScore} aria-label={playing ? 'Pausar' : 'Reproducir'}>{playing ? 'Ⅱ' : '▶'}</button><button type="button" onClick={() => { audio.stop(); setPlaying(false) }} disabled={!activeScore} aria-label="Detener">■</button><span ref={timeRef} className="cloud-suite-time">00:00 / {fmt(duration)}</span></div><div className="cloud-suite-transport-meta"><label htmlFor="cloud-listen-mode">Escucha</label><select id="cloud-listen-mode" aria-label="Modo de escucha" value={listeningMode} onChange={event => { const mode = event.target.value as 'production' | 'neutral'; audio.setMode(mode); setListeningMode(mode) }}><option value="production">Producción</option><option value="neutral">MIDI neutro</option></select><button type="button" className="cloud-suite-preview-wav" disabled={!activeScore || renderingWav} onClick={() => void downloadWav()} title="Descargar 30 segundos de audio WAV desde la posición actual, con los sonidos elegidos. No consume API.">{renderingWav ? 'Renderizando…' : 'WAV 30 s'}</button><span>{selected?.resultManifest?.bpm || selected?.bpm || '—'} BPM</span><span>{selected?.resultManifest?.key || '—'}</span><label htmlFor="cloud-volume">Volumen</label><input id="cloud-volume" type="range" min="0" max="100" defaultValue="72" onChange={event => audio.setVolume(Number(event.target.value) / 100)} /></div></div>
+        <div className="cloud-suite-score-head"><div><div className="cloud-suite-kicker">03 / PARTITURA</div><h2>{selected?.resultManifest?.title || 'El estudio está listo'}</h2><p>{activeScore ? `${selected?.resultManifest?.key || '—'} · ${bars} compases · ${activeScore.tracks.length} pistas con notas` : selected?.status === 'completed' ? 'Preparando las pistas MIDI…' : 'Elige una obra terminada para escuchar su partitura.'}</p></div><span>{activeScore ? `${activeScore.tracks.reduce((total, track) => total + track.notes.length, 0).toLocaleString('es-AR')} NOTAS · ${activeScore.tracks.length} PISTAS` : 'MIDI REAL · ESCUCHA PULSO'}</span></div>
         <div className="cloud-suite-timeline" ref={timelineRef}>{activeScore ? <div className="cloud-suite-content" style={{ width: 205 + timelineWidth }}><div className="cloud-suite-ruler"><div className="cloud-suite-ruler-label">{bars} COMPASES</div><div className="cloud-suite-ruler-marks" style={{ width: timelineWidth }} onClick={seekAt}>{Array.from({ length: Math.floor(bars / (bars > 240 ? 16 : bars > 80 ? 8 : 4)) + 1 }, (_, i) => { const interval = bars > 240 ? 16 : bars > 80 ? 8 : 4; return <span key={i} style={{ left: i * interval * 22 }}>{i * interval + 1}</span> })}</div></div>
-          {activeScore.tracks.map((track, index) => <div className="cloud-suite-track" key={`${track.filename}-${index}`}><div className="cloud-suite-track-label" style={{ '--suite-track-color': track.color } as CSSProperties}><div className="cloud-suite-track-name"><i /><b title={track.name}>{track.name}</b></div><div className="cloud-suite-track-controls"><button type="button" className={audio.muted.has(index) ? 'active' : ''} aria-label={`Silenciar ${track.name}`} aria-pressed={audio.muted.has(index)} onClick={() => toggleMute(index)}>M</button><button type="button" className={audio.soloed.has(index) ? 'active' : ''} aria-label={`Escuchar solo ${track.name}`} aria-pressed={audio.soloed.has(index)} onClick={() => toggleSolo(index)}>S</button><small>{track.subtitle}</small><a href={trackUrl(activeScore.jobId, track.filename)} aria-label={`Descargar MIDI de ${track.name}`} title={`Descargar MIDI de ${track.name}`}>↓</a></div></div><div className="cloud-suite-lane" style={{ width: timelineWidth }} onClick={seekAt}><MidiLane notes={track.notes} color={track.color} width={timelineWidth} beatsPerBar={activeScore.midi.beatsPerBar} /></div></div>)}<div className="cloud-suite-playhead" ref={playheadRef} style={{ left: 205 }} /></div> : <div className="cloud-suite-timeline-empty"><span>◫</span><h3>{scoreLoading ? 'Leyendo las notas MIDI…' : scoreError || 'Una vista para escuchar la composición.'}</h3><p>{scoreLoading ? 'La obra se carga desde tus archivos Cloud, sin generar una nueva composición.' : 'Las notas y silencios aparecerán aquí tal como están en los MIDI exportados.'}</p></div>}</div>
-        <div className="cloud-suite-footer"><span>Una misma onda seno para todas las notas tonales; percusión con pulsos senoidales. El MIDI no cambia.</span><span>{activeScore?.tracks.length || 0} pistas · {fmt(duration)}</span></div>
+          {activeScore.tracks.map((track, index) => <div className="cloud-suite-track" key={`${track.filename}-${index}`}><div className="cloud-suite-track-label" style={{ '--suite-track-color': track.color } as CSSProperties}><div className="cloud-suite-track-name"><i /><b title={track.name}>{track.name}</b></div><div className="cloud-suite-track-controls"><button type="button" className={audio.muted.has(index) ? 'active' : ''} aria-label={`Silenciar ${track.name}`} aria-pressed={audio.muted.has(index)} onClick={() => toggleMute(index)}>M</button><button type="button" className={audio.soloed.has(index) ? 'active' : ''} aria-label={`Escuchar solo ${track.name}`} aria-pressed={audio.soloed.has(index)} onClick={() => toggleSolo(index)}>S</button>{listeningMode === 'production' ? <select className="cloud-suite-sound-select" aria-label={`Sonido de ${track.name}`} title={`Cambiar el sonido de ${track.name} sin alterar su MIDI`} value={track.patchId} onChange={event => changePatch(index, event.target.value)}>{patchOptions(PATCHES[track.patchId || '']?.family || 'synth').map(id => <option value={id} key={id}>{PATCHES[id].label}</option>)}</select> : <small>{neutralLabels[track.instrument] || neutralLabels.synth}</small>}<a href={trackUrl(activeScore.jobId, track.filename)} aria-label={`Descargar MIDI de ${track.name}`} title={`Descargar MIDI de ${track.name}`}>↓</a></div></div><div className="cloud-suite-lane" style={{ width: timelineWidth }} onClick={seekAt}><MidiLane notes={track.notes} color={track.color} width={timelineWidth} beatsPerBar={activeScore.midi.beatsPerBar} /></div></div>)}<div className="cloud-suite-playhead" ref={playheadRef} style={{ left: 205 }} /></div> : <div className="cloud-suite-timeline-empty"><span>◫</span><h3>{scoreLoading ? 'Leyendo las notas MIDI…' : scoreError || 'Una vista para escuchar la composición.'}</h3><p>{scoreLoading ? 'La obra se carga desde tus archivos Cloud, sin generar una nueva composición.' : 'Las notas y silencios aparecerán aquí tal como están en los MIDI exportados.'}</p></div>}</div>
+        <div className="cloud-suite-footer"><span>{scoreError || (listeningMode === 'production' ? 'Sonidos PULSO elegidos por función musical. Cambiá a MIDI neutro para auditar la partitura; las notas no cambian.' : 'Monitor senoidal: todas las notas tonales usan el mismo sonido.')}</span><span>{activeScore?.tracks.length || 0} pistas · {fmt(duration)}</span></div>
       </div></div>
     {historyOpen && <aside className="cloud-suite-history" aria-label="Historial de composiciones"><div><h2>Tus obras</h2><button type="button" onClick={() => setHistoryOpen(false)} aria-label="Cerrar historial">×</button></div>{jobs.length ? jobs.map(job => <button type="button" key={job.id} className={job.id === selectedId ? 'selected' : ''} onClick={() => { setSelectedId(job.id); setHistoryOpen(false) }}><strong>{job.resultManifest?.title || job.prompt.slice(0, 72)}</strong><span>{job.status === 'completed' ? 'LISTA' : job.status === 'failed' ? 'NO COMPLETADA' : stageText[job.stage] || job.status} · {new Date(job.createdAt * 1000).toLocaleString()}</span></button>) : <p>Aquí aparecerán tus composiciones Cloud.</p>}</aside>}
     <span hidden>{mixRevision}</span>

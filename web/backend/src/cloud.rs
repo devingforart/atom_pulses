@@ -193,11 +193,65 @@ pub async fn get(
     UrlPath(id): UrlPath<Uuid>,
 ) -> ApiResult<Json<CloudJob>> {
     let user = require_user(&state, &headers).await?;
-    let job = sqlx::query_as::<_, CloudJob>(
+    let mut job = sqlx::query_as::<_, CloudJob>(
         "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at FROM cloud_jobs WHERE user_id=$1 AND id=$2")
         .bind(user.id).bind(id).fetch_optional(&state.db).await?
         .ok_or_else(|| ApiError::public(StatusCode::NOT_FOUND, "Obra no encontrada."))?;
+    enrich_instruments(&state, &mut job).await;
     Ok(Json(job))
+}
+
+// The MIDI exporter has always written a private sidecar for each track. Enrich
+// the selected job on demand so existing Cloud works get the same sound intent
+// that Local Studio already reads, without scanning every job on each poll.
+async fn enrich_instruments(state: &AppState, job: &mut CloudJob) {
+    let Some(tracks) = job
+        .result_manifest
+        .as_mut()
+        .and_then(|manifest| manifest.get_mut("tracks"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for track in tracks {
+        if track.get("instrument").is_some() {
+            continue;
+        }
+        let Some(stem) = track
+            .get("filename")
+            .and_then(Value::as_str)
+            .and_then(|filename| filename.strip_suffix(".mid"))
+        else {
+            continue;
+        };
+        if !stem.starts_with("track-") || !stem[6..].bytes().all(|byte| byte.is_ascii_digit()) {
+            continue;
+        }
+        let sidecar_path = state
+            .config
+            .cloud_output_dir
+            .join(job.id.to_string())
+            .join(format!("{stem}.pulso.json"));
+        let Some(sidecar) = read_json(&sidecar_path).await else {
+            continue;
+        };
+        if let Some(instrument) = instrument_from_sidecar(&sidecar) {
+            track["instrument"] = instrument;
+        }
+    }
+}
+
+fn instrument_from_sidecar(sidecar: &Value) -> Option<Value> {
+    let part = sidecar.get("parts")?.as_array()?.first()?;
+    Some(serde_json::json!({
+        "catalog_id": part.get("catalog_id"),
+        "department": part.get("department"),
+        "source_voice": part.get("source_voice"),
+        "role": part.get("role"),
+        "orchestral_function": part.get("orchestral_function"),
+        "articulation": part.get("articulation"),
+        "live_preset_intent": part.get("live_preset_intent"),
+    }))
 }
 
 pub async fn cancel(
@@ -479,5 +533,21 @@ mod tests {
             bpm: f64::NAN,
             ..valid
         }));
+    }
+
+    #[test]
+    fn old_midi_sidecars_recover_sound_intent() {
+        let sidecar = serde_json::json!({"parts": [{
+            "catalog_id": "analog_pad",
+            "department": "harmony",
+            "source_voice": "harmonic_foundation",
+            "role": "primary_chord_bed",
+            "live_preset_intent": "dark low-passed pad"
+        }]});
+        let instrument = instrument_from_sidecar(&sidecar).expect("part should exist");
+        assert_eq!(instrument["catalog_id"], "analog_pad");
+        assert_eq!(instrument["source_voice"], "harmonic_foundation");
+        assert_eq!(instrument["live_preset_intent"], "dark low-passed pad");
+        assert!(instrument_from_sidecar(&serde_json::json!({"parts": []})).is_none());
     }
 }

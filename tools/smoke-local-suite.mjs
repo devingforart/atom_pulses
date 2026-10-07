@@ -36,6 +36,10 @@ try {
   let tracks = 0;
   for (let i = 0; i < 80; i++) { tracks = await evaluate("document.querySelectorAll('.track-row').length"); if (tracks) break; await wait(100); }
   if (!tracks) throw new Error('No se dibujaron pistas MIDI.');
+  const initialMode = await evaluate("document.querySelector('#listen-mode').value");
+  if (initialMode !== 'production') throw new Error('La escucha de producción no es la predeterminada.');
+  const assignedPatches = await evaluate("[...document.querySelectorAll('.sound-select')].map(select => select.value)");
+  if (assignedPatches.length !== tracks || assignedPatches.some(value => !value)) throw new Error('Faltan sonidos asignados a pistas MIDI.');
   const durationDefault = await evaluate("document.querySelector('#duration').value");
   if (durationDefault !== '32') throw new Error(`La prueba corta no es la seleccion predeterminada: ${durationDefault}`);
   const proofDefault = await evaluate("document.querySelector('#proof-mode').checked");
@@ -51,11 +55,66 @@ try {
   await evaluate("document.querySelector('.track-bottom button:nth-child(2)').click()");
   const soloed = await evaluate("document.querySelector('.track-bottom button:nth-child(2)').getAttribute('aria-pressed')");
   if (soloed !== 'true') throw new Error('Solo no respondió.');
+  await evaluate("document.querySelector('#listen-mode').value='neutral';document.querySelector('#listen-mode').dispatchEvent(new Event('change'))");
+  const neutral = await evaluate("document.querySelector('.sound-select').disabled");
+  if (!neutral) throw new Error('El monitor neutro no desactivó los selectores de sonido.');
+  await evaluate("document.querySelector('#listen-mode').value='production';document.querySelector('#listen-mode').dispatchEvent(new Event('change'))");
+  const renderedBytes = await evaluate(`(async()=>{
+    const { ProductionAudio } = await import('/production-audio.mjs');
+    const engine = new ProductionAudio();
+    const midi = { lengthBeats: 2, beatToSeconds: beat => beat * .5 };
+    engine.setSong(midi, [{ name: 'Lead', filename: 'lead.mid', instrument: 'lead', notes: [{ startBeat: 0, durationBeats: 1, pitch: 69, velocity: 100, channel: 0 }] }]);
+    const wav = await engine.renderPreview(0, 1);
+    const bytes = new Uint8Array(await wav.arrayBuffer());
+    return bytes.length > 44 && String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' ? bytes.length : 0;
+  })()`);
+  if (renderedBytes < 1000) throw new Error('La vista previa WAV local no produjo audio.');
+  const kitDifference = await evaluate(`(async()=>{
+    const { ProductionAudio } = await import('/production-audio.mjs');
+    const engine = new ProductionAudio();
+    engine.setSong({ lengthBeats: 2, beatToSeconds: beat => beat * .5 }, [{ name: 'Kick', filename: 'kick.mid', instrument: 'drums', notes: [{ startBeat: 0, durationBeats: .5, pitch: 36, velocity: 105, channel: 9 }] }]);
+    engine.setPatch(0, 'drums_808');
+    const oldKit = new Uint8Array(await (await engine.renderPreview(0, 1)).arrayBuffer());
+    engine.setPatch(0, 'drums_909');
+    const newKit = new Uint8Array(await (await engine.renderPreview(0, 1)).arrayBuffer());
+    let difference = 0;
+    for (let i = 44; i < Math.min(oldKit.length, newKit.length); i += 31) if (oldKit[i] !== newKit[i]) difference++;
+    return difference;
+  })()`);
+  if (kitDifference < 100) throw new Error('Los kits 808 y 909 no producen sonidos suficientemente distintos.');
+  const mix = await evaluate(`(async()=>{
+    const { parseMidi } = await import('/midi.mjs');
+    const { ProductionAudio } = await import('/production-audio.mjs');
+    const { patchForTrack } = await import('/sound-palette.mjs');
+    const { jobs } = await (await fetch('/api/jobs')).json();
+    const job = jobs.find(item => item.manifest?.tracks?.length);
+    const parts = await Promise.all(job.manifest.tracks.map(async track => {
+      const midi = parseMidi(await (await fetch('/api/jobs/' + job.id + '/files/' + track.filename)).arrayBuffer());
+      return { track, midi };
+    }));
+    const first = parts[0].midi;
+    const score = { ...first, lengthBeats: Math.max(job.manifest.bars * first.beatsPerBar, ...parts.map(part => part.midi.lengthBeats)) };
+    const tracks = parts.map(({ track, midi }) => {
+      const item = { name: track.name, filename: track.filename, instrument: track.instrument?.department === 'rhythm' ? 'drums' : 'synth', meta: track.instrument,
+        notes: midi.tracks.flatMap(row => row.notes).sort((a,b) => a.startBeat - b.startBeat) };
+      item.patchId = patchForTrack(item);
+      return item;
+    });
+    const engine = new ProductionAudio(); engine.setSong(score, tracks);
+    const buffer = await (await engine.renderPreview(0, 3)).arrayBuffer();
+    const view = new DataView(buffer); let peak = 0, power = 0, count = 0;
+    for (let offset = 44; offset < buffer.byteLength; offset += 2) {
+      const sample = view.getInt16(offset, true) / 32768;
+      peak = Math.max(peak, Math.abs(sample)); power += sample * sample; count++;
+    }
+    return { tracks: tracks.length, peak, rms: Math.sqrt(power / count) };
+  })()`);
+  if (mix.rms < .0005 || mix.peak >= .999) throw new Error(`La mezcla real está muda o saturada: ${JSON.stringify(mix)}`);
   await evaluate("document.querySelector('#stop').click()");
   const stopped = await evaluate("document.querySelector('#time-display').textContent");
   if (!stopped.startsWith('00:00')) throw new Error(`Stop no volvió al inicio: ${stopped}`);
   if (exceptions.length) throw new Error(`Excepción del navegador: ${exceptions[0]}`);
-  console.log(JSON.stringify({ tracks, durationDefault, proofDefault, before, after, muted, soloed, stopped, browserExceptions: 0 }));
+  console.log(JSON.stringify({ tracks, initialMode, assignedPatches: assignedPatches.length, renderedBytes, kitDifference, mix, durationDefault, proofDefault, before, after, muted, soloed, stopped, browserExceptions: 0 }));
 } finally {
   socket?.close();
   child.kill();

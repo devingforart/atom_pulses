@@ -90,6 +90,9 @@ function jobDetails(id) {
     return part ? { ...track, instrument: {
       catalog_id: part.catalog_id, department: part.department,
       source_voice: part.source_voice, role: part.role,
+      orchestral_function: part.orchestral_function,
+      articulation: part.articulation,
+      live_preset_intent: part.live_preset_intent,
     } } : track;
   });
   const checkpoint = readJson(path.join(dir, 'checkpoint.json'));
@@ -244,6 +247,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/app.js') return serveFile(res, path.join(here, 'app.js'), 'text/javascript; charset=utf-8');
     if (req.method === 'GET' && pathname === '/midi.mjs') return serveFile(res, path.join(shared, 'midi.mjs'), 'text/javascript; charset=utf-8');
     if (req.method === 'GET' && pathname === '/audio-engine.mjs') return serveFile(res, path.join(shared, 'audio-engine.mjs'), 'text/javascript; charset=utf-8');
+    if (req.method === 'GET' && pathname === '/production-audio.mjs') return serveFile(res, path.join(shared, 'production-audio.mjs'), 'text/javascript; charset=utf-8');
+    if (req.method === 'GET' && pathname === '/sound-palette.mjs') return serveFile(res, path.join(shared, 'sound-palette.mjs'), 'text/javascript; charset=utf-8');
     return json(res, 404, { error: 'Ruta no encontrada.' });
   } catch (error) {
     const isInput = error instanceof InputError;

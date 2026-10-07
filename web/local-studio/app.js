@@ -1,5 +1,7 @@
 import { parseMidi } from './midi.mjs';
-import { SuiteAudio, instrumentFor } from './audio-engine.mjs';
+import { instrumentFor } from './audio-engine.mjs';
+import { ProductionAudio } from './production-audio.mjs';
+import { PATCHES, SOUND_BANK_VERSION, patchOptions, patchForTrack } from './sound-palette.mjs';
 
 const $ = selector => document.querySelector(selector);
 // A short, affordable proof of musical coherence is the safest default while
@@ -32,7 +34,21 @@ const fileUrl = (job, filename) => `/api/jobs/${job.id}/files/${encodeURICompone
 const download = (job, filename, label, className = '') => { const a = node('a', className, label); a.href = fileUrl(job, filename); a.download = filename; return a; };
 const number = value => new Intl.NumberFormat('es-AR').format(Number(value) || 0);
 let jobs = [], selectedId = null, loadedKey = null, loadVersion = 0, current = null, barPx = 22, playhead = null, previewDiagnostic = false;
-const audio = new SuiteAudio(updatePosition, () => { ui.play.textContent = '▶'; ui.play.setAttribute('aria-label', 'Reproducir'); });
+const audio = new ProductionAudio(updatePosition, () => { ui.play.textContent = '▶'; ui.play.setAttribute('aria-label', 'Reproducir'); });
+const patchStorageKey = (jobId, filename) => `pulso:audition:${SOUND_BANK_VERSION}:${jobId}:${filename}`;
+function updateListeningLabels() {
+  $('#listen-description').textContent = audio.mode === 'production'
+    ? 'Sonidos PULSO elegidos por función musical. Cambiá a MIDI neutro para auditar la partitura; las notas no cambian.'
+    : 'Monitor senoidal: todas las notas tonales usan el mismo sonido. Compará la composición sin color instrumental.';
+  if (!current) return;
+  ui.timeline.querySelectorAll('.track-row').forEach((row, index) => {
+    const track = current.tracks[index];
+    const label = row.querySelector('.sound-label');
+    const select = row.querySelector('.sound-select');
+    if (label) label.textContent = audio.mode === 'production' ? PATCHES[track.patchId]?.label || 'Sonido PULSO' : names[track.instrument] || names.synth;
+    if (select) select.disabled = audio.mode !== 'production';
+  });
+}
 
 async function api(url, options = {}) { const response = await fetch(url, { cache: 'no-store', ...options }); const result = await response.json(); if (!response.ok) throw new Error(result.error || `Error HTTP ${response.status}`); return result; }
 function showNotice(message) { ui.notice.textContent = message || ''; ui.notice.hidden = !message; }
@@ -151,7 +167,7 @@ function mergedMidi(parts, manifest) {
 async function loadSong(job, diagnostic = false) {
   const version = ++loadVersion;
   audio.stop(); current = null; playhead = null;
-  ui.play.disabled = true;
+  ui.play.disabled = true; $('#preview-wav').disabled = true;
   ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Leyendo las notas MIDI de esta obra…'));
   $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
   $('#song-subtitle').textContent = 'Preparando partitura y monitor senoidal…';
@@ -172,13 +188,19 @@ async function loadSong(job, diagnostic = false) {
         part.midi.tracks.forEach((track, index) => { if (track.notes.length) tracks.push({ name: track.name || `Pista ${index + 1}`, notes: track.notes, filename: part.track.filename, instrument: instrumentFor({}, track.name) }); });
       } else {
         const notes = part.midi.tracks.flatMap(track => track.notes).sort((a, b) => a.startBeat - b.startBeat);
-        if (notes.length) tracks.push({ name: part.track.name, notes, filename: part.track.filename, instrument: instrumentFor(part.track.instrument || {}, part.track.name), meta: part.track.instrument || {} });
+        if (notes.length) {
+          const track = { name: part.track.name, notes, filename: part.track.filename, instrument: instrumentFor(part.track.instrument || {}, part.track.name), meta: part.track.instrument || {} };
+          track.patchId = patchForTrack(track);
+          try { const saved = localStorage.getItem(patchStorageKey(job.id, track.filename)); if (PATCHES[saved]?.family === PATCHES[track.patchId]?.family) track.patchId = saved; } catch { /* Private browsing may disable storage. */ }
+          tracks.push(track);
+        }
       }
     }
     if (!tracks.length) throw new Error('El MIDI no contiene notas reproducibles.');
     current = { job, midi: timing, tracks };
     audio.setSong(timing, tracks);
     renderTimeline();
+    updateListeningLabels();
     $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
     $('#song-subtitle').textContent = diagnostic ? `Candidato rechazado · ${tracks.length} pistas con notas · NO aprobado` : job.manifest ? `${job.manifest.key || 'Tonalidad no declarada'} · ${job.manifest.bars || Math.ceil(timing.lengthBeats / timing.beatsPerBar)} compases · ${tracks.length} pistas con notas` : `Escucha provisional · ${tracks.length} pistas con notas · sin aprobación musical final`;
     $('#song-bpm').textContent = `${Math.round(job.manifest?.bpm || 60e6 / timing.tempos[0].microseconds)} BPM`;
@@ -186,6 +208,7 @@ async function loadSong(job, diagnostic = false) {
     $('#song-stat').textContent = `${number(tracks.reduce((sum, track) => sum + track.notes.length, 0))} NOTAS · ${tracks.length} PISTAS`;
     $('#track-summary').textContent = `${tracks.length} pistas · ${fmt(audio.duration)}`;
     ui.play.disabled = false;
+    $('#preview-wav').disabled = false;
     setExport(job, diagnostic ? job.diagnostic?.file : job.manifest?.fullFile || job.checkpoint?.file);
     updatePosition(0);
   } catch (error) {
@@ -211,7 +234,19 @@ function renderTimeline() {
     const name = node('div', 'track-name'), dot = node('span', 'track-dot'), title = node('b', '', track.name); title.title = track.name; name.append(dot, title);
     const bottom = node('div', 'track-bottom'), mute = actionButton('M', () => { const value = !audio.muted.has(index); audio.setMute(index, value); mute.classList.toggle('active', value); mute.setAttribute('aria-pressed', String(value)); }), solo = actionButton('S', () => { const value = !audio.soloed.has(index); audio.setSolo(index, value); solo.classList.toggle('active', value); solo.setAttribute('aria-pressed', String(value)); });
     mute.title = `Silenciar ${track.name}`; solo.title = `Escuchar solo ${track.name}`; mute.setAttribute('aria-label', mute.title); solo.setAttribute('aria-label', solo.title); mute.setAttribute('aria-pressed', 'false'); solo.setAttribute('aria-pressed', 'false');
-    bottom.append(mute, solo, node('small', '', names[track.instrument] || names.synth));
+    const soundLabel = node('small', 'sound-label', audio.mode === 'production' ? PATCHES[track.patchId]?.label || 'Sonido PULSO' : names[track.instrument] || names.synth);
+    const patchSelect = node('select', 'sound-select');
+    patchSelect.setAttribute('aria-label', `Sonido de ${track.name}`);
+    patchSelect.title = `Cambiar el sonido de ${track.name} sin alterar su MIDI`;
+    for (const id of patchOptions(PATCHES[track.patchId]?.family || 'synth')) patchSelect.add(new Option(PATCHES[id].label, id));
+    patchSelect.value = track.patchId;
+    patchSelect.disabled = audio.mode !== 'production';
+    patchSelect.addEventListener('change', () => {
+      if (!audio.setPatch(index, patchSelect.value)) return;
+      soundLabel.textContent = PATCHES[patchSelect.value].label;
+      try { localStorage.setItem(patchStorageKey(job.id, track.filename), patchSelect.value); } catch { /* Session still works. */ }
+    });
+    bottom.append(mute, solo, soundLabel, patchSelect);
     const link = download(job, track.filename, '↓', 'track-download'); link.title = `Descargar MIDI de ${track.name}`; link.setAttribute('aria-label', link.title); bottom.append(link);
     label.append(name, bottom);
     const lane = node('div', 'lane'); lane.style.width = `${width}px`;
@@ -256,6 +291,7 @@ async function refresh() {
       if (selectedId || current) {
         audio.stop(); current = null; playhead = null; loadedKey = null; ++loadVersion;
         ui.play.disabled = true; setExport(null, null);
+        $('#preview-wav').disabled = true;
         ui.session.replaceChildren(node('div', 'empty-session', 'El historial está vacío. Comienza una nueva obra para escucharla aquí.'));
         ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Todavía no hay MIDI en el historial local.'));
         $('#song-title').textContent = 'El estudio está listo';
@@ -285,5 +321,23 @@ ui.play.addEventListener('click', async () => { try { if (audio.playing) audio.p
 ui.stop.addEventListener('click', () => audio.stop());
 ui.back.addEventListener('click', () => audio.seek(0));
 $('#volume').addEventListener('input', event => audio.setVolume(Number(event.target.value) / 100));
+$('#listen-mode').addEventListener('change', event => { audio.setMode(event.target.value); updateListeningLabels(); });
+$('#preview-wav').addEventListener('click', async () => {
+  if (!current) return;
+  const button = $('#preview-wav');
+  button.disabled = true; button.textContent = 'Renderizando…';
+  try {
+    const start = audio.currentPosition();
+    const blob = await audio.renderPreview(start, 30);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pulso-${current.job.id.slice(0, 8)}-${Math.floor(start)}s-preview.wav`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    showNotice(`Vista previa WAV lista: ${fmt(start)} a ${fmt(Math.min(audio.duration, start + 30))}. No se cambió el MIDI.`);
+  } catch (error) { showNotice(`No se pudo crear el WAV: ${error.message}`); }
+  finally { button.textContent = 'WAV 30 s'; button.disabled = !current; }
+});
 document.addEventListener('visibilitychange', () => { if (document.hidden && audio.playing) { audio.pause(); ui.play.textContent = '▶'; } });
 refresh(); setInterval(refresh, 4000);

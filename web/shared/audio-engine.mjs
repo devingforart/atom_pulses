@@ -26,7 +26,7 @@ export class SuiteAudio {
     this.voices = new Set();
     this.masterVolume = 0.68;
   }
-  setSong(midi, tracks) { this.stop(); this.midi = midi; this.tracks = tracks; this.position = 0; this.onPosition?.(0); }
+  setSong(midi, tracks) { this.stop(); this.midi = midi; this.tracks = tracks; this.muted.clear(); this.soloed.clear(); this.position = 0; this.onPosition?.(0); }
   async ensureAudio() {
     if (!this.context) {
       this.context = new AudioContext({ latencyHint: 'interactive' });
@@ -106,7 +106,7 @@ export class SuiteAudio {
         if (when > end) break;
         if (this.audible(index) && when >= now - 0.02) {
           const endAt = this.origin + this.midi.beatToSeconds(note.startBeat + note.durationBeats);
-          this.note(track.instrument, note, Math.max(now, when), Math.max(0.035, endAt - when));
+          this.note(track.instrument, note, Math.max(now, when), Math.max(0.035, endAt - when), track);
         }
         cursor++;
       }
@@ -122,7 +122,7 @@ export class SuiteAudio {
         const start = this.midi.beatToSeconds(note.startBeat);
         if (start >= this.position) break;
         const end = this.midi.beatToSeconds(note.startBeat + note.durationBeats);
-        if (end > this.position + 0.03) this.note(track.instrument, note, now, end - this.position);
+        if (end > this.position + 0.03) this.note(track.instrument, note, now, end - this.position, track);
       }
     });
   }

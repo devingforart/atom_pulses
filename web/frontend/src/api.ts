@@ -24,7 +24,13 @@ export type BillingPlans = {
 
 export type Device = { id: string; name: string; createdAt: number; lastSeenAt: number }
 
-export type CloudTrack = { filename: string; name: string; notes: number }
+export type CloudTrack = {
+  filename: string; name: string; notes: number
+  instrument?: {
+    catalog_id?: string; department?: string; source_voice?: string; role?: string
+    orchestral_function?: string; articulation?: string; live_preset_intent?: string
+  }
+}
 export type CloudJob = {
   id: string; prompt: string; durationSeconds: number; bpm: number
   behavior: 'adaptive' | 'hypnotic' | 'narrative'

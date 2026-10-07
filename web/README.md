@@ -55,12 +55,16 @@ Vite reenvía `/api` a `localhost:8080`.
 
 ## Despliegue en servidor
 
-La página autenticada `/cloud` incluye la misma vista de partitura y monitor
-senoidal que el estudio local. Ambos importan `web/shared/midi.mjs` y
-`web/shared/audio-engine.mjs`: una nueva versión del frontend debe copiar
-`web/shared` durante el build (incluido en `web/Dockerfile`). El navegador
-descarga cada MIDI exclusivamente por la ruta autenticada de su propietario;
-escuchar una obra guardada no crea otra composición ni consume la API de IA.
+La página autenticada `/cloud` y el estudio local importan el mismo lector MIDI,
+motor `ProductionAudio` y banco de sonidos desde `web/shared`. Ambos ofrecen
+**Producción**, **MIDI neutro**, selección de sonido por pista y una vista previa
+WAV de 30 segundos desde el navegador. Una nueva versión del frontend debe
+copiar `web/shared` durante el build (incluido en `web/Dockerfile`). Para obras
+Cloud anteriores, el endpoint autenticado de detalle recupera `catalog_id`,
+función e intención tímbrica de los archivos laterales `.pulso.json` existentes.
+El navegador descarga cada MIDI exclusivamente por la ruta autenticada de su
+propietario; escuchar o renderizar una obra guardada no crea otra composición
+ni consume la API de IA.
 
 PULSO Cloud expone solamente idea musical, duración y tempo. El servidor fija
 el enfoque `adaptive`, genera una semilla privada por obra y exige autoría

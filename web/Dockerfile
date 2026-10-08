@@ -11,6 +11,7 @@ RUN npm run build
 FROM rust:1-bookworm AS backend
 WORKDIR /source/backend
 COPY web/backend/Cargo.toml web/backend/Cargo.lock* ./
+COPY web/backend/build.rs ./build.rs
 COPY web/backend/migrations ./migrations
 COPY web/backend/src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry \

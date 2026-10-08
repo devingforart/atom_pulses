@@ -5,6 +5,7 @@ import { existsSync, createReadStream, mkdirSync, readFileSync, statSync, writeF
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataRoot, jobsRoot, jobDirectory, listJobIds } from './storage.mjs';
+import { analyzeComposition } from './composition-audit.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -81,6 +82,13 @@ function jobDetails(id) {
   const request = readJson(path.join(dir, 'job.json'));
   if (!request) return null;
   const manifest = readJson(path.join(dir, 'manifest.json'));
+  let compositionAudit = readJson(path.join(dir, 'composition-audit.json'));
+  if (manifest && !compositionAudit) {
+    try {
+      compositionAudit = analyzeComposition(dir, manifest);
+      writeFileSync(path.join(dir, 'composition-audit.json'), JSON.stringify(compositionAudit, null, 2));
+    } catch { /* An optional audit must never hide a completed MIDI score. */ }
+  }
   // MIDI sidecars are produced by the existing exporter. Read them server-side
   // so older jobs also get sound-role metadata without rebuilding the worker.
   if (manifest?.tracks) manifest.tracks = manifest.tracks.map(track => {
@@ -108,7 +116,7 @@ function jobDetails(id) {
     try { endedAt = statSync(path.join(dir, terminalFile)).mtimeMs; } catch { /* Keep elapsed time. */ }
   }
   const trace = traceFor(id, request.created_at, endedAt);
-  return { id, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, checkpoint, diagnostic, telemetry: trace.summary, error: state === 'cancelled' ? null : explainJobFailure(failure?.error) || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
+  return { id, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, compositionAudit, checkpoint, diagnostic, telemetry: trace.summary, error: state === 'cancelled' ? null : explainJobFailure(failure?.error) || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
 }
 
 function listJobs() {
@@ -234,7 +242,7 @@ const server = http.createServer(async (req, res) => {
       const job = jobDetails(fileMatch[1]);
       if (!job) return json(res, 404, { error: 'Composición no encontrada.' });
       const filename = decodeURIComponent(fileMatch[2]);
-      const allowed = new Set(['job.json', 'manifest.json', 'checkpoint.json', 'diagnostic.json', job.checkpoint?.file, job.diagnostic?.file, job.diagnostic?.planFile, job.diagnostic?.auditFile, job.manifest?.planFile, job.manifest?.auditFile, job.manifest?.fullFile, job.manifest?.comparisonFile, ...(job.manifest?.tracks || []).map(track => track.filename)]);
+      const allowed = new Set(['job.json', 'manifest.json', 'checkpoint.json', 'diagnostic.json', job.compositionAudit && 'composition-audit.json', job.checkpoint?.file, job.diagnostic?.file, job.diagnostic?.planFile, job.diagnostic?.auditFile, job.manifest?.planFile, job.manifest?.auditFile, job.manifest?.fullFile, job.manifest?.comparisonFile, ...(job.manifest?.tracks || []).map(track => track.filename)]);
       if (!allowed.has(filename) || !/^[a-zA-Z0-9._-]+$/.test(filename)) return json(res, 404, { error: 'Archivo no disponible.' });
       const file = path.join(jobDirectory(job.id), filename);
       if (!existsSync(file)) return json(res, 404, { error: 'Archivo no disponible.' });

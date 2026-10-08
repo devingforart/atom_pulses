@@ -121,7 +121,8 @@ public:
     static void replaceChunk(Pattern&, const PerformanceScore&, int sectionIndex,
                              double chunkStartInSection, double chunkLength,
                              std::span<const InstrumentAssignment> instruments = {},
-                             bool preserveAuthoredPitch = false);
+                             bool preserveAuthoredPitch = false,
+                             double sectionLengthBeats = 0.0);
     [[nodiscard]] static PerformanceRealizationReport auditRealization(
         const PerformanceScore&, std::string_view instrumentId,
         std::span<const InstrumentAssignment> instruments,

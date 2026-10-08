@@ -112,6 +112,18 @@ function renderSession(job) {
     if (q.uniform_activity_advisory) box.append(node('div', '', 'Las entradas de melodía y acordes se repiten con la misma frecuencia en cada compás: escuchá si la hipnosis evoluciona lo suficiente.'));
     ui.session.append(box);
   }
+  if (job.compositionAudit) {
+    const audit = job.compositionAudit;
+    const box = node('div', 'editorial');
+    box.append(node('strong', '', 'Desarrollo y procedencia MIDI'));
+    box.append(node('span', '', `${number(audit.exactRepeatedEightBarNotes)} de ${number(audit.totalNotes)} notas en bloques de 8 compases idénticos (${Math.round(audit.exactRepeatedEightBarRatio * 100)}%). ${number(audit.crossTrackExactNoteInstances)} notas coinciden exactamente entre pistas.`));
+    const source = audit.noteProvenance;
+    if (source) box.append(node('span', '', `Frases IA: ${number(source.direct_ai)} notas de primer uso · ${number(source.reused_ai)} reutilizadas · ${number(source.transformed_ai)} transformadas · ${number(source.reused_transformed_ai)} reutilizadas y transformadas.`));
+    else box.append(node('span', '', 'La procedencia de cada nota no está disponible para esta obra anterior; la repetición exacta sí se midió desde el MIDI.'));
+    const repeated = [...audit.tracks].sort((a, b) => b.exactRepeatedEightBarNotes - a.exactRepeatedEightBarNotes).slice(0, 3);
+    box.append(node('span', '', `Más repetición literal: ${repeated.map(track => `${track.name} (${track.exactRepeatedEightBarNotes})`).join(' · ')}.`));
+    ui.session.append(box);
+  }
   const actions = node('div', 'session-actions');
   actions.append(actionButton('Repetir ajustes', () => reuse(job)));
   if (job.manifest?.fullFile) actions.append(download(job, job.manifest.fullFile, '↓ Obra completa MIDI', 'primary-link'));
@@ -125,6 +137,7 @@ function renderSession(job) {
   if (job.manifest?.comparisonFile) actions.append(download(job, job.manifest.comparisonFile, 'Referencia A/B'));
   if (job.manifest?.planFile) actions.append(download(job, job.manifest.planFile, 'Plan compositivo'));
   if (job.manifest?.auditFile) actions.append(download(job, job.manifest.auditFile, 'Auditoría musical'));
+  if (job.compositionAudit) actions.append(download(job, 'composition-audit.json', 'Desarrollo MIDI'));
   if (job.manifest) actions.append(download(job, 'manifest.json', 'Manifiesto'));
   actions.append(download(job, 'job.json', 'Solicitud JSON'));
   const trace = node('a', '', '↓ Traza JSON'); trace.href = `/api/jobs/${job.id}/trace?download=1`; trace.download = `pulso-trace-${job.id}.json`; actions.append(trace);

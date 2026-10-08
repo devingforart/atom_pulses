@@ -177,7 +177,7 @@ bool intentionalVerticalColour(const NoteEvent& left, const NoteEvent& right,
     // close low-register pair remains risky, but a seventh nearly two or more
     // octaves above its bass root is an ordinary open jazz/electronic voicing.
     if ((interval == 11 || (interval == 1 && distance >= 13)) &&
-        (std::min(left.pitch, right.pitch) >= 52 ||
+        (std::min(left.pitch, right.pitch) >= 50 ||
          distance >= 23) &&
         chordHasPair(root, positiveModulo(root + 11, 12))) return true;
     // In a declared minor add-nine or minor ninth, the third and ninth form a

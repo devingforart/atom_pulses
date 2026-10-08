@@ -104,7 +104,8 @@ Pattern SovereignScoreRenderer::render(const SongPlan& plan,
         Pattern chunk;
         const auto sectionBeats = section.bars * plan.beatsPerBar;
         PerformanceScoreEngine::replaceChunk(chunk, plan.performanceScore,
-            static_cast<int>(index), 0.0, sectionBeats, plan.instruments, true);
+            static_cast<int>(index), 0.0, sectionBeats, plan.instruments, true,
+            sectionBeats);
         const auto offset = section.startBar * plan.beatsPerBar;
         for (auto note : chunk.notes) {
             note.startBeat += offset;

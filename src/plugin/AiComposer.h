@@ -63,9 +63,9 @@ public:
     [[nodiscard]] static std::size_t selectiveRepairShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t performanceBlockCount(std::size_t instruments) noexcept;
     // Build the ordered authoring transactions used by the incremental writer.
-    // In the AI-only editorial profile the central chord bed and its primary
-    // low foundation share one transaction, so their vertical harmony is
-    // composed together instead of discovered only by a later audit.
+    // In electronic AI-only editorial mode the central bed and a second
+    // sustained body share one transaction; bass and melody follow the
+    // accepted harmony. Other profiles retain their established order.
     [[nodiscard]] static std::vector<std::vector<std::size_t>> performanceWritingBlocks(
         const SongPlan&, bool localEditorial);
     [[nodiscard]] static bool castManifestUsesExactCount(std::size_t instruments) noexcept;

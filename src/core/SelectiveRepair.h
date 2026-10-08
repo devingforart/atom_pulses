@@ -240,6 +240,10 @@ public:
     // incomplete or structurally unsafe protagonist never qualifies.
     [[nodiscard]] static bool deferableLocalProtagonistEditorial(
         const SongPlan&, const PerformanceCoverageDeficit&) noexcept;
+    // Target missing dramatic acts even when the total number of phrase windows
+    // already exceeds its minimum. Never request notes in inactive sections.
+    [[nodiscard]] static std::vector<int> focusedProtagonistWindowTargets(
+        const SongPlan&, const PerformanceCoverageDeficit&);
     // A null `after` means every measured deficit was resolved. This is a
     // successful focused repair, not an invalid validator response.
     [[nodiscard]] static bool acceptsFocusedProtagonistCompletion(

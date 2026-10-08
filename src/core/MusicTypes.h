@@ -112,6 +112,9 @@ struct NoteEvent {
     bool authoredTiming{};
     NoteOrigin origin{NoteOrigin::Procedural};
     std::uint32_t narrativeId{};
+    // True when a performance cell is placed again (or an explicit placement
+    // repeats it). Kept separate from origin: reuse can also transform a cell.
+    bool aiReusedCell{};
 
     [[nodiscard]] double endBeat() const noexcept { return startBeat + durationBeats; }
     friend bool operator==(const NoteEvent&, const NoteEvent&) = default;

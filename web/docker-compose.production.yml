@@ -30,6 +30,7 @@ services:
       PULSO_WEB_BIND: 0.0.0.0:8080
       FRONTEND_DIR: /app/frontend
       DATABASE_URL: postgres://pulso:${POSTGRES_PASSWORD}@postgres:5432/pulso
+      PULSO_AI_EDITORIAL_V2: "1"
     ports:
       - "127.0.0.1:${PULSO_HOST_PORT:-8188}:8080"
     networks: [database, ingress]

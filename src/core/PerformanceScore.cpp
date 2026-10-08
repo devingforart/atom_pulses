@@ -253,7 +253,8 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
                                           int sectionIndex, double chunkStartInSection,
                                           double chunkLength,
                                           std::span<const InstrumentAssignment> instruments,
-                                          bool preserveAuthoredPitch) {
+                                          bool preserveAuthoredPitch,
+                                          double sectionLengthBeats) {
     struct OwnershipSpan {
         double start{};
         double end{};
@@ -304,6 +305,18 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
         if (placement.sectionIndex != sectionIndex) continue;
         const auto* cell = findCell(score, placement.cellId);
         if (cell == nullptr) continue;
+        const auto placementIndex = static_cast<std::size_t>(
+            &placement - score.placements.data());
+        const auto earlierUse = std::any_of(score.placements.begin(),
+            score.placements.end(), [&](const auto& candidate) {
+                if (candidate.cellId != placement.cellId) return false;
+                if (candidate.sectionIndex != placement.sectionIndex)
+                    return candidate.sectionIndex < placement.sectionIndex;
+                if (candidate.startBeat != placement.startBeat)
+                    return candidate.startBeat < placement.startBeat;
+                return static_cast<std::size_t>(
+                    &candidate - score.placements.data()) < placementIndex;
+            });
         const auto iterationLength = cell->lengthBeats * placement.timeScale;
         for (auto repeat = 0; repeat < placement.repeats; ++repeat) {
             const auto origin = placement.startBeat + repeat * iterationLength;
@@ -326,6 +339,22 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
                     placement.metricIntent == MetricIntent::StrictGrid)
                     sectionBeat = std::round(sectionBeat * 4.0) / 4.0;
                 if (sectionBeat < chunkStartInSection || sectionBeat >= chunkEnd) continue;
+                // A placement is a MIDI clip, not an unlimited note-on generator.
+                // Its fragment owns the note-off boundary on every repeat. The
+                // section owns the final boundary, including a partial last
+                // repeat. This is independent of the style or pitch authored by
+                // AI and applies to every score, short or long.
+                const auto fragmentEndInCell = placement.retrograde
+                    ? cell->lengthBeats - placement.fragmentStart
+                    : placement.fragmentEnd;
+                auto releaseBoundary = origin + fragmentEndInCell * placement.timeScale;
+                if (sectionLengthBeats > 0.0)
+                    releaseBoundary = std::min(releaseBoundary, sectionLengthBeats);
+                const auto availableDuration = releaseBoundary - sectionBeat;
+                if (availableDuration < 0.01 - 0.000001) continue;
+                const auto realizedDuration = std::min(
+                    std::max(0.01, authored.durationBeats * placement.timeScale),
+                    availableDuration);
                 const auto voice = remappedVoice(placement, authored.voice);
                 if (!validVoice(voice)) continue;
                 const auto& definition = voiceDefinition(voice);
@@ -345,7 +374,7 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
                         partId = static_cast<std::uint16_t>(std::distance(instruments.begin(), owner) + 1);
                 }
                 chunk.notes.push_back({sectionBeat - chunkStartInSection,
-                    std::max(0.01, authored.durationBeats * placement.timeScale), pitch,
+                    realizedDuration, pitch,
                     std::clamp(static_cast<int>(std::lround(authored.velocity * placement.velocityScale)), 1, 127),
                     definition.midiChannel, voice, partId,
                     authored.metricIntent != MetricIntent::StrictGrid ||
@@ -355,7 +384,7 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
                         placement.fragmentStart > 0.001 ||
                         placement.fragmentEnd < cell->lengthBeats - 0.001 || !placement.voiceMap.empty()
                         ? NoteOrigin::AiTransformed : NoteOrigin::AiAuthored,
-                    narrativeIdFor(*cell)});
+                    narrativeIdFor(*cell), earlierUse || repeat > 0});
             }
             for (const auto& authored : cell->controls) {
                 if (authored.beat < placement.fragmentStart || authored.beat >= placement.fragmentEnd)

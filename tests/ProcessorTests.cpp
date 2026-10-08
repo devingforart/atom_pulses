@@ -937,14 +937,27 @@ int main(int argc, char** argv) {
         writingPart("speaker", pulso::VoiceId::Lead),
         writingPart("horizon", pulso::VoiceId::Atmosphere)};
     writingOrderPlan.narrativeSpine.protagonistInstrumentId = "speaker";
+    writingOrderPlan.productionLanguage.domain = pulso::ProductionDomain::ClubElectronic;
+    writingOrderPlan.productionLanguage.electronicIntent = .85;
+    writingOrderPlan.instruments[4].instrumentId = "granular_pad";
+    writingOrderPlan.instruments[4].orchestralFunction = "body";
     const auto editorialBlocks =
         pulso::plugin::AiComposer::performanceWritingBlocks(writingOrderPlan, true);
     require(editorialBlocks.size() == 4 &&
-                editorialBlocks[0] == std::vector<std::size_t>({0, 1}) &&
-                editorialBlocks[1] == std::vector<std::size_t>({2}) &&
-                editorialBlocks[2] == std::vector<std::size_t>({3}) &&
-                editorialBlocks[3] == std::vector<std::size_t>({4}),
-            "AI-only writing must co-author the central bed and primary bass before independent motion and melody");
+                editorialBlocks[0] == std::vector<std::size_t>({0, 4}) &&
+                editorialBlocks[1] == std::vector<std::size_t>({1}) &&
+                editorialBlocks[2] == std::vector<std::size_t>({2}) &&
+                editorialBlocks[3] == std::vector<std::size_t>({3}),
+            "Electronic AI-only writing must co-author two harmonic bodies before bass and melody");
+    auto nonElectronicWritingOrder = writingOrderPlan;
+    nonElectronicWritingOrder.productionLanguage.domain =
+        pulso::ProductionDomain::Orchestral;
+    nonElectronicWritingOrder.productionLanguage.electronicIntent = .2;
+    const auto nonElectronicBlocks = pulso::plugin::AiComposer::performanceWritingBlocks(
+        nonElectronicWritingOrder, true);
+    require(!nonElectronicBlocks.empty() &&
+                nonElectronicBlocks.front() == std::vector<std::size_t>({0, 1}),
+            "Non-electronic editorial writing must retain the previous bed-and-bass order");
     const auto standardBlocks =
         pulso::plugin::AiComposer::performanceWritingBlocks(writingOrderPlan, false);
     require(!standardBlocks.empty() &&

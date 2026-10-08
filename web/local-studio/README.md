@@ -167,8 +167,9 @@ pasen el umbral. Una respuesta que completa todos los deficit se acepta; una
 respuesta inutil se guarda como MIDI diagnostico independiente. La traza local
 incluye el conteo fuente/colocacion/fragmento/seccion/voz del protagonista.
 
-Solo los trabajos nuevos iniciados desde esta suite activan `PULSO_LOCAL_EDITORIAL_V2=1`
-en el worker. Cloud y VST no lo activan y conservan su flujo anterior. En modo
+El estudio local activa `PULSO_LOCAL_EDITORIAL_V2=1` en su worker. Cloud activa
+el mismo perfil mediante `PULSO_AI_EDITORIAL_V2=1` en produccion; el VST no lo
+activa y conserva su flujo anterior. En modo
 `ai_sovereign`, el perfil encarga como máximo dos instrumentos por bloque, presenta
 a la IA el MIDI ya aceptado y deja que escriba todas las notas sin cuotas numéricas
 de densidad por pista. Una pista poblada pero escasa pasa a la auditoría global como

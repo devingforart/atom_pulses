@@ -435,6 +435,21 @@ int main(int argc, char** argv) {
         }));
     if (request.aiSovereign && aiNotes != song.notes.size())
         return fail(output, "AI-sovereign render produced non-AI notes; publication stopped");
+    const auto countNotes = [&](auto predicate) {
+        return static_cast<int>(std::count_if(song.notes.begin(), song.notes.end(), predicate));
+    };
+    const auto directAiNotes = countNotes([](const auto& note) {
+        return note.origin == pulso::NoteOrigin::AiAuthored && !note.aiReusedCell;
+    });
+    const auto repeatedAiNotes = countNotes([](const auto& note) {
+        return note.origin == pulso::NoteOrigin::AiAuthored && note.aiReusedCell;
+    });
+    const auto transformedAiNotes = countNotes([](const auto& note) {
+        return note.origin == pulso::NoteOrigin::AiTransformed && !note.aiReusedCell;
+    });
+    const auto repeatedTransformedAiNotes = countNotes([](const auto& note) {
+        return note.origin == pulso::NoteOrigin::AiTransformed && note.aiReusedCell;
+    });
     if (!output.getChildFile("musical-audit.json").replaceWithText(
             juce::JSON::toString(musicalAuditFor(song, finalAudit), false),
             false, false, "\n"))
@@ -527,6 +542,14 @@ int main(int argc, char** argv) {
     manifest->setProperty("render_mode", request.aiSovereign ? "ai_sovereign" : "standard");
     manifest->setProperty("ai_authored_or_declared_transform_notes", static_cast<int>(aiNotes));
     manifest->setProperty("all_midi_notes", static_cast<int>(song.notes.size()));
+    auto* noteProvenance = new juce::DynamicObject();
+    noteProvenance->setProperty("direct_ai", directAiNotes);
+    noteProvenance->setProperty("reused_ai", repeatedAiNotes);
+    noteProvenance->setProperty("transformed_ai", transformedAiNotes);
+    noteProvenance->setProperty("reused_transformed_ai", repeatedTransformedAiNotes);
+    noteProvenance->setProperty("other", static_cast<int>(song.notes.size()) -
+        directAiNotes - repeatedAiNotes - transformedAiNotes - repeatedTransformedAiNotes);
+    manifest->setProperty("note_provenance", juce::var(noteProvenance));
     if (comparisonFile.isNotEmpty()) {
         manifest->setProperty("comparisonFile", comparisonFile);
         manifest->setProperty("comparisonNotes", comparisonNotes);

@@ -369,7 +369,35 @@ void runSelectiveRepairTests() {
         require(diagnosis.needed && diagnosis.instrumentIndices.size() == 2 &&
                     diagnosis.instrumentIndices.front() == 0 &&
                     diagnosis.instrumentIndices.back() == 1,
-                "A sparse electronic floor must return its authored bed and harmonic companion to AI review");
+                "An unwritten electronic floor must establish its central bed and harmonic companion");
+        PerformanceCell populatedBed;
+        populatedBed.id = "populated_bed";
+        populatedBed.lengthBeats = 32.0;
+        populatedBed.ownedVoices = {VoiceId::HarmonicFoundation};
+        for (int attack = 0; attack < 8; ++attack)
+            for (const auto pitch : {60, 64, 67})
+                populatedBed.notes.push_back({static_cast<double>(attack * 4), 3.5,
+                    pitch, 80, VoiceId::HarmonicFoundation,
+                    MetricIntent::StrictGrid, bed.id});
+        floorPlan.performanceScore.cells.push_back(populatedBed);
+        const auto populatedDiagnosis = SelectiveRepair::diagnose(
+            floorPlan, floorPattern, floorReport, 2);
+        require(populatedDiagnosis.instrumentIndices.size() == 2 &&
+                    populatedDiagnosis.instrumentIndices.front() == 1,
+                "A strong central bed with a missing companion must revise the companion before replacing the bed");
+        auto layeredFloorPlan = floorPlan;
+        InstrumentAssignment sub;
+        sub.id = "sub_tonal_anchor";
+        sub.sourceVoice = VoiceId::HarmonicFoundation;
+        InstrumentAssignment arp;
+        arp.id = "hypnotic_arp";
+        arp.sourceVoice = VoiceId::HarmonicPulse;
+        layeredFloorPlan.instruments = {bed, sub, arp, memory};
+        const auto layeredDiagnosis = SelectiveRepair::diagnose(
+            layeredFloorPlan, floorPattern, floorReport, 4);
+        require(!layeredDiagnosis.instrumentIndices.empty() &&
+                    layeredDiagnosis.instrumentIndices.front() == 3,
+                "A sub-bass and an arpeggio must not masquerade as the sustained companion pad");
     }
     {
         SongPlan tonalPriority;
@@ -412,6 +440,41 @@ void runSelectiveRepairTests() {
         require(diagnosis.instrumentIndices.size() == 1 &&
                     diagnosis.instrumentIndices.front() == 0,
                 "Unsupported chromatic owners must be repaired before noisy overlap counts");
+    }
+    {
+        SongPlan collisionPlan;
+        collisionPlan.totalBars = 16;
+        collisionPlan.beatsPerBar = 4.0;
+        InstrumentAssignment bed;
+        bed.id = "bed";
+        bed.sourceVoice = VoiceId::HarmonicFoundation;
+        bed.prominence = .4;
+        InstrumentAssignment lead;
+        lead.id = "lead";
+        lead.sourceVoice = VoiceId::Lead;
+        lead.prominence = .9;
+        InstrumentAssignment hat;
+        hat.id = "hat";
+        hat.sourceVoice = VoiceId::CoreDrums;
+        collisionPlan.instruments = {bed, lead, hat};
+        Pattern pattern;
+        pattern.lengthBeats = 64.0;
+        CompositionRenderReport report;
+        report.production.unintendedHarshOverlaps = 51;
+        for (auto index = 0; index < 51; ++index) {
+            TonalIssue issue;
+            issue.kind = "harsh_overlap";
+            issue.partId = 1;
+            issue.otherPartId = 2;
+            issue.overlapBeats = 1.0;
+            report.finalTonalPass.after.issues.push_back(issue);
+        }
+        const auto diagnosis = SelectiveRepair::diagnose(
+            collisionPlan, pattern, report, 2);
+        require(diagnosis.instrumentIndices.size() == 2 &&
+                    diagnosis.instrumentIndices.front() == 0 &&
+                    diagnosis.instrumentIndices.back() == 1,
+                "Repeated harmonic collisions must prioritize both audible owners before unrelated rhythm lanes");
     }
     {
         SongPlan authored;
@@ -602,6 +665,76 @@ void runSelectiveRepairTests() {
         require(!SelectiveRepair::applyChordVoicingPatches(referencePlan, accepted, 1,
                     {{0, 1.0, 3.0, {62, 65}}}, patched, patchError),
                 "An AI reply must not invent a new edit location");
+        auto upperPlan = referencePlan;
+        upperPlan.instruments[1].sourceVoice = VoiceId::HarmonicUpper;
+        auto upperAccepted = accepted;
+        upperAccepted.cells[1].ownedVoices = {VoiceId::HarmonicUpper};
+        for (auto& note : upperAccepted.cells[1].notes)
+            note.voice = VoiceId::HarmonicUpper;
+        for (auto& control : upperAccepted.cells[1].controls)
+            control.voice = VoiceId::HarmonicUpper;
+        require(SelectiveRepair::applyChordVoicingPatches(upperPlan, upperAccepted, 1,
+                    {{0, 0.0, 3.0, {62, 65}}}, patched, patchError),
+                "A sustained upper chord body must allow the same localized voicing repair");
+        Pattern upperAfter;
+        PerformanceScoreEngine::replaceChunk(upperAfter, patched, 0, 0.0, 32.0,
+                                              upperPlan.instruments);
+        require(pitchesAt(upperAfter, 2, 0.0) == std::vector<int>({62, 65}) &&
+                    pitchesAt(upperAfter, 1, 0.0) == pitchesAt(before, 1, 0.0),
+                "Upper-body repair must leave the other instrument untouched");
+        auto bassPlan = referencePlan;
+        bassPlan.instruments[1].sourceVoice = VoiceId::MovementBass;
+        auto bassAccepted = accepted;
+        bassAccepted.cells[1].ownedVoices = {VoiceId::MovementBass};
+        bassAccepted.cells[1].notes.resize(1);
+        bassAccepted.cells[1].notes.front().voice = VoiceId::MovementBass;
+        for (auto& control : bassAccepted.cells[1].controls)
+            control.voice = VoiceId::MovementBass;
+        Pattern bassBefore;
+        PerformanceScoreEngine::replaceChunk(bassBefore, bassAccepted, 0, 0.0,
+                                              32.0, bassPlan.instruments);
+        auto bassConflicts = conflicts;
+        bassConflicts.issues.front().pitch = 62;
+        require(SelectiveRepair::chordVoicingTargets(bassPlan, bassBefore,
+                    bassConflicts, 1).size() == 1,
+                "A measured single-note bass collision must be a repair target");
+        require(SelectiveRepair::applyChordVoicingPatches(bassPlan, bassAccepted, 1,
+                    {{0, 0.0, 3.0, {60}}}, patched, patchError),
+                "The AI must be able to change one bass pitch without rewriting its lane");
+        require(patched.cells.size() <= 3,
+                "Localized pitch repair must stay compact across repeated placements");
+        Pattern bassAfter;
+        PerformanceScoreEngine::replaceChunk(bassAfter, patched, 0, 0.0,
+                                              32.0, bassPlan.instruments);
+        require(pitchesAt(bassAfter, 2, 0.0) == std::vector<int>({60}) &&
+                    pitchesAt(bassAfter, 2, 4.0) == pitchesAt(bassBefore, 2, 4.0) &&
+                    pitchesAt(bassAfter, 1, 0.0) == pitchesAt(bassBefore, 1, 0.0) &&
+                    SelectiveRepair::preservesUntouchedMidi(bassPlan, bassBefore,
+                        bassAfter, 1, {{0, 0.0, 3.0, {60}}}),
+                "One AI bass edit must preserve every unrelated MIDI event");
+        auto leadPlan = referencePlan;
+        leadPlan.instruments[1].sourceVoice = VoiceId::Lead;
+        auto leadAccepted = bassAccepted;
+        leadAccepted.cells[1].ownedVoices = {VoiceId::Lead};
+        leadAccepted.cells[1].notes.front().voice = VoiceId::Lead;
+        for (auto& control : leadAccepted.cells[1].controls)
+            control.voice = VoiceId::Lead;
+        Pattern leadBefore;
+        PerformanceScoreEngine::replaceChunk(leadBefore, leadAccepted, 0, 0.0,
+                                              32.0, leadPlan.instruments);
+        require(SelectiveRepair::chordVoicingTargets(leadPlan, leadBefore,
+                    bassConflicts, 1).size() == 1,
+                "A measured protagonist collision must identify one note attack");
+        require(SelectiveRepair::applyChordVoicingPatches(leadPlan, leadAccepted, 1,
+                    {{0, 0.0, 3.0, {60}}}, patched, patchError),
+                "The AI must be able to correct a protagonist pitch without rewriting its phrase");
+        Pattern leadAfter;
+        PerformanceScoreEngine::replaceChunk(leadAfter, patched, 0, 0.0,
+                                              32.0, leadPlan.instruments);
+        require(pitchesAt(leadAfter, 2, 0.0) == std::vector<int>({60}) &&
+                    SelectiveRepair::preservesUntouchedMidi(leadPlan, leadBefore,
+                        leadAfter, 1, {{0, 0.0, 3.0, {60}}}),
+                "A protagonist pitch edit must retain all other notes and controls");
     }
 
     SongPlan plan;
@@ -1006,6 +1139,40 @@ void runSelectiveRepairTests() {
                           lateEntranceFindings.front().missingNarrativeWindowStartBars.end(), 0) !=
                     lateEntranceFindings.front().missingNarrativeWindowStartBars.end(),
             "A protagonist cannot satisfy narrative presence statistically while skipping the premise");
+    const auto missingPremiseTargets =
+        SelectiveRepair::focusedProtagonistWindowTargets(
+            longNarrative, lateEntranceFindings.front());
+    require(!missingPremiseTargets.empty() && missingPremiseTargets.front() == 0,
+            "An omitted active premise must receive a focused repair target");
+
+    auto deliberateEntrancePlan = longNarrative;
+    deliberateEntrancePlan.instruments.front().activeSections.erase(
+        deliberateEntrancePlan.instruments.front().activeSections.begin());
+    const auto deliberateEntranceFindings = SelectiveRepair::performanceDeficits(
+        deliberateEntrancePlan, lateEntranceLead, {0});
+    require(deliberateEntranceFindings.size() == 1 &&
+                !deliberateEntranceFindings.front().missingNarrativePresence &&
+                std::find(deliberateEntranceFindings.front().missingNarrativeWindowStartBars.begin(),
+                          deliberateEntranceFindings.front().missingNarrativeWindowStartBars.end(), 0) ==
+                    deliberateEntranceFindings.front().missingNarrativeWindowStartBars.end(),
+            "An explicitly delayed protagonist entrance must not require MIDI in a withdrawn opening section");
+
+    auto climaxTargetPlan = deliberateEntrancePlan;
+    NarrativeAct climaxAct;
+    climaxAct.sectionName = climaxTargetPlan.sections[2].name;
+    climaxAct.stage = NarrativeStage::Climax;
+    climaxTargetPlan.narrativeSpine.acts.push_back(climaxAct);
+    PerformanceCoverageDeficit climaxGap;
+    climaxGap.instrumentIndex = 0;
+    climaxGap.instrumentId = longLead.id;
+    climaxGap.missingNarrativePresence = true;
+    climaxGap.narrativePhraseWindows = 13;
+    climaxGap.minimumNarrativePhraseWindows = 7;
+    climaxGap.missingNarrativeWindowStartBars = {0, 64, 72, 80, 88};
+    const auto climaxTargets = SelectiveRepair::focusedProtagonistWindowTargets(
+        climaxTargetPlan, climaxGap);
+    require(climaxTargets.size() == 1 && climaxTargets.front() == 64,
+            "A missing active climax needs focused AI repair even when total phrase count exceeds its floor");
 
     PerformanceCoverageDeficit marginalSpeech;
     marginalSpeech.instrumentId = longLead.id;

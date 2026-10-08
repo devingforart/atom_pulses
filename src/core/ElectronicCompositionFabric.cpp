@@ -35,13 +35,7 @@ bool arpPart(const InstrumentAssignment& part) noexcept {
 }
 
 bool floorPart(const InstrumentAssignment& part) noexcept {
-    if (part.sourceVoice != VoiceId::HarmonicFoundation &&
-        part.sourceVoice != VoiceId::HarmonicUpper && part.sourceVoice != VoiceId::Atmosphere)
-        return false;
-    return part.orchestralFunction == "foundation" || part.orchestralFunction == "body" ||
-           part.instrumentId == "analog_pad" || part.instrumentId == "granular_pad" ||
-           part.instrumentId == "spectral_drone" || contains(part.role, "pad") ||
-           contains(part.role, "chord body");
+    return HarmonicFloorContext::sustainedFloorOwner(part);
 }
 
 bool dialoguePart(const InstrumentAssignment& part) noexcept {

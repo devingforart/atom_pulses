@@ -1,5 +1,6 @@
 #include "plugin/SongGenerationPipeline.h"
 #include "plugin/AiComposer.h"
+#include "core/SovereignScoreRenderer.h"
 
 #include <cmath>
 #include <iostream>
@@ -30,6 +31,41 @@ int main() {
     try {
         using namespace pulso;
         using namespace pulso::plugin;
+        SongPlan orderPlan;
+        const auto part = [](std::string id, VoiceId voice, std::string function = {}) {
+            InstrumentAssignment owner;
+            owner.id = std::move(id);
+            owner.name = owner.id;
+            owner.instrumentId = owner.id == "upper_body" ? "granular_pad" : "poly_synth";
+            owner.sourceVoice = voice;
+            owner.orchestralFunction = std::move(function);
+            owner.contentLaneId = owner.id;
+            return owner;
+        };
+        orderPlan.instruments = {
+            part("bed", VoiceId::HarmonicFoundation, "foundation"),
+            part("sub", VoiceId::SubBass),
+            part("moving_bass", VoiceId::MovementBass),
+            part("speaker", VoiceId::Lead),
+            part("upper_body", VoiceId::HarmonicUpper, "body")};
+        orderPlan.instruments[0].role = "primary_chord_bed";
+        orderPlan.narrativeSpine.protagonistInstrumentId = "speaker";
+        orderPlan.productionLanguage.domain = ProductionDomain::ClubElectronic;
+        orderPlan.productionLanguage.electronicIntent = .85;
+        const auto electronicBlocks = AiComposer::performanceWritingBlocks(orderPlan, true);
+        check(electronicBlocks.size() == 5 &&
+              electronicBlocks[0] == std::vector<std::size_t>({0}) &&
+              electronicBlocks[1] == std::vector<std::size_t>({4}) &&
+              electronicBlocks[2] == std::vector<std::size_t>({1}) &&
+              electronicBlocks[3] == std::vector<std::size_t>({2}) &&
+              electronicBlocks[4] == std::vector<std::size_t>({3}),
+              "electronic writer must finish each harmonic body before bass and melody");
+        orderPlan.productionLanguage.domain = ProductionDomain::Orchestral;
+        orderPlan.productionLanguage.electronicIntent = .2;
+        const auto otherBlocks = AiComposer::performanceWritingBlocks(orderPlan, true);
+        check(!otherBlocks.empty() &&
+              otherBlocks.front() == std::vector<std::size_t>({0, 1}),
+              "non-electronic editorial writer changed its established ordering");
         SongGenerationRequest request;
         request.direction = "A dark electronic journey";
         request.targetSeconds = 60;
@@ -106,6 +142,47 @@ int main() {
                                              direct.instruments, true);
         check(exactChunk.notes.size() == 1 && exactChunk.notes[0].pitch == 33,
               "AI-sovereign rendering retuned a valid authored pitch");
+        SongPlan longForm;
+        longForm.totalBars = 296;
+        longForm.beatsPerBar = 4.0;
+        longForm.aiSovereign = true;
+        longForm.instrumentCastAuthored = true;
+        longForm.instruments = {bed};
+        SongSection finalSection;
+        finalSection.name = "Final section";
+        finalSection.startBar = 272;
+        finalSection.bars = 24;
+        longForm.sections = {finalSection};
+        PerformanceCell longCell;
+        longCell.id = "authored_final_phrase";
+        longCell.lengthBeats = 32.0;
+        longCell.ownedVoices = {VoiceId::HarmonicFoundation};
+        for (const auto pitch : {50, 54, 57, 61, 64})
+            longCell.notes.push_back({0.0, 32.0, pitch, 72,
+                VoiceId::HarmonicFoundation, MetricIntent::StrictGrid, bed.id});
+        for (const auto pitch : {54, 61, 64, 69})
+            longCell.notes.push_back({8.0, 16.0, pitch, 68,
+                VoiceId::HarmonicFoundation, MetricIntent::StrictGrid, bed.id});
+        longForm.performanceScore.cells = {longCell};
+        PerformancePlacement finalPlacement;
+        finalPlacement.cellId = longCell.id;
+        finalPlacement.sectionIndex = 0;
+        finalPlacement.startBeat = 64.0;
+        finalPlacement.fragmentEnd = 32.0;
+        finalPlacement.timeScale = 2.0;
+        longForm.performanceScore.placements = {finalPlacement};
+        CompositionRenderReport longFormReport;
+        const auto renderedLongForm = SovereignScoreRenderer::render(
+            longForm, {}, &longFormReport);
+        check(renderedLongForm.lengthBeats == 1184.0 &&
+              renderedLongForm.notes.size() == 9 &&
+              longFormReport.production.unsafeDurations == 0 &&
+              std::all_of(renderedLongForm.notes.begin(), renderedLongForm.notes.end(),
+                  [](const auto& note) {
+                      return note.endBeat() <= 1184.000001 &&
+                          note.origin == NoteOrigin::AiTransformed;
+                  }),
+              "long-form AI note releases must stay inside the work without changing its authored attacks");
         std::cout << "Song pipeline parity passed: " << vst.notes.size() << " notes\n";
         return 0;
     } catch (const std::exception& error) {

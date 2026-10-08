@@ -1838,6 +1838,16 @@ void runGeneratorTests() {
     require(auditTonalContract(midMajorSeventh, 10, ScaleKind::Major, 4.0,
                               bFlatMajorSeventhWindow).unintendedHarshOverlaps == 0,
             "Bb3-A4 is a declared major seventh in the middle register, not a low cluster");
+    const std::vector<HarmonicWindow> dMajorNinthWindow{
+        {0.0, 4.0, 2, 2, {2, 6, 9, 1, 4}, HarmonicFunction::Tonic,
+         VoicingStrategy::Open, 0.3, "dmaj9", "Dmaj9"}
+    };
+    auto midLowMajorSeventh = declaredMajorSeventh;
+    midLowMajorSeventh.notes[0].pitch = 50;  // D3
+    midLowMajorSeventh.notes[1].pitch = 61;  // C#4
+    require(auditTonalContract(midLowMajorSeventh, 2, ScaleKind::Major, 4.0,
+                              dMajorNinthWindow).unintendedHarshOverlaps == 0,
+            "A D3-C#4 shell in an explicit Dmaj9 is a valid major-seventh voicing");
     auto wideInvertedMajorSeventh = declaredMajorSeventh;
     wideInvertedMajorSeventh.notes[0].pitch = 57;  // A3
     wideInvertedMajorSeventh.notes[1].pitch = 82;  // Bb5
@@ -2372,6 +2382,12 @@ void runGeneratorTests() {
         {1.0, 1.0, 55, 70, 3, VoiceId::HarmonicFoundation}
     };
     PerformanceScoreEngine::replaceChunk(authoredChunk, authoredScore, 0, 0.0, 8.0);
+    require(std::count_if(authoredChunk.notes.begin(), authoredChunk.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::Lead && !note.aiReusedCell;
+            }) == 2 && std::count_if(authoredChunk.notes.begin(), authoredChunk.notes.end(), [](const auto& note) {
+                return note.voice == VoiceId::Lead && note.aiReusedCell;
+            }) == 2,
+            "Repeated AI placements must be distinguishable from first-use notes");
     require(std::none_of(authoredChunk.notes.begin(), authoredChunk.notes.end(), [](const auto& note) {
                 return note.voice == VoiceId::Lead && std::abs(note.startBeat) < 0.001;
             }) && std::count_if(authoredChunk.notes.begin(), authoredChunk.notes.end(), [](const auto& note) {
@@ -2382,6 +2398,50 @@ void runGeneratorTests() {
                 return note.voice != VoiceId::Lead || note.origin == NoteOrigin::AiAuthored;
             }),
             "Explicit performance must replace only owned voices and preserve AI authorship provenance");
+
+    PerformanceScore boundaryScore;
+    PerformanceCell boundaryCell;
+    boundaryCell.id = "long_form_boundary";
+    boundaryCell.lengthBeats = 4.0;
+    boundaryCell.ownedVoices = {VoiceId::HarmonicFoundation};
+    boundaryCell.notes = {
+        {0.0, 4.0, 60, 72, VoiceId::HarmonicFoundation,
+            MetricIntent::StrictGrid, "long_form_bed"},
+        {2.0, 2.0, 64, 68, VoiceId::HarmonicFoundation,
+            MetricIntent::StrictGrid, "long_form_bed"}
+    };
+    boundaryScore.cells.push_back(boundaryCell);
+    PerformancePlacement boundaryPlacement;
+    boundaryPlacement.cellId = boundaryCell.id;
+    boundaryPlacement.sectionIndex = 0;
+    boundaryPlacement.repeats = 2;
+    boundaryPlacement.fragmentEnd = 4.0;
+    boundaryScore.placements.push_back(boundaryPlacement);
+    PerformanceScoreEngine::normalize(boundaryScore, 1, {6.0});
+    Pattern boundaryChunk;
+    PerformanceScoreEngine::replaceChunk(boundaryChunk, boundaryScore,
+        0, 0.0, 6.0, {}, true, 6.0);
+    require(boundaryChunk.notes.size() == 3 &&
+            std::any_of(boundaryChunk.notes.begin(), boundaryChunk.notes.end(),
+                [](const auto& note) {
+                    return note.pitch == 60 && std::abs(note.startBeat - 4.0) < .001 &&
+                        std::abs(note.durationBeats - 2.0) < .001;
+                }) &&
+            std::all_of(boundaryChunk.notes.begin(), boundaryChunk.notes.end(),
+                [](const auto& note) { return note.endBeat() <= 6.000001; }),
+        "A partial final repeat must preserve AI attacks and pitches while ending notes at the section boundary");
+    boundaryScore.placements.front().repeats = 1;
+    boundaryScore.placements.front().fragmentEnd = 3.0;
+    Pattern fragmentChunk;
+    PerformanceScoreEngine::replaceChunk(fragmentChunk, boundaryScore,
+        0, 0.0, 6.0, {}, true, 6.0);
+    require(fragmentChunk.notes.size() == 2 &&
+            std::any_of(fragmentChunk.notes.begin(), fragmentChunk.notes.end(),
+                [](const auto& note) {
+                    return note.pitch == 64 && std::abs(note.startBeat - 2.0) < .001 &&
+                        std::abs(note.durationBeats - 1.0) < .001;
+                }),
+        "The placed MIDI fragment, not an arbitrary later note-off, owns its release boundary");
 
     PerformanceScore partialScore;
     partialScore.cells.push_back({"brief_answer", 2.0, {VoiceId::Lead},
@@ -2717,6 +2777,45 @@ void runGeneratorTests() {
                 HarmonicFloorContext::requiredLayers(floorContextPlan, 68.0) == 1 &&
                 HarmonicFloorContext::requiredLayers(floorContextPlan, 100.0) == 2,
             "The harmonic floor must remain deep in active sections without filling an intentional breakdown");
+    floorContextPlan.totalBars = 40;
+    InstrumentAssignment centralBody;
+    centralBody.id = "main_pad";
+    centralBody.instrumentId = "analog_pad";
+    centralBody.sourceVoice = VoiceId::HarmonicFoundation;
+    centralBody.activeSections = {"Main", "Breakdown", "Return"};
+    InstrumentAssignment subAnchor;
+    subAnchor.id = "sub_anchor";
+    subAnchor.instrumentId = "sub_synth";
+    subAnchor.sourceVoice = VoiceId::HarmonicFoundation;
+    subAnchor.orchestralFunction = "foundation";
+    subAnchor.activeSections = centralBody.activeSections;
+    InstrumentAssignment colorAccent;
+    colorAccent.id = "upper_color";
+    colorAccent.instrumentId = "poly_synth";
+    colorAccent.sourceVoice = VoiceId::HarmonicUpper;
+    colorAccent.orchestralFunction = "color";
+    colorAccent.activeSections = centralBody.activeSections;
+    floorContextPlan.instruments = {centralBody, subAnchor, colorAccent};
+    require(!HarmonicFloorContext::sustainedFloorOwner(subAnchor) &&
+                !HarmonicFloorContext::sustainedFloorOwner(colorAccent) &&
+                HarmonicFloorContext::plannedCoverage(floorContextPlan) < .85,
+            "Sub-bass and color accents must not satisfy a second sustained harmonic body on paper");
+    InstrumentAssignment companionBody;
+    companionBody.id = "independent_body";
+    companionBody.instrumentId = "granular_pad";
+    companionBody.sourceVoice = VoiceId::Atmosphere;
+    companionBody.orchestralFunction = "body";
+    companionBody.activeSections = {"Main", "Return"};
+    floorContextPlan.instruments.push_back(companionBody);
+    require(HarmonicFloorContext::plannedCoverage(floorContextPlan) >= .85,
+            "A real companion body must make the planned electronic floor feasible before MIDI writing");
+    auto decorativePad = companionBody;
+    decorativePad.orchestralFunction = "color";
+    decorativePad.lineRelationship = "call_response";
+    floorContextPlan.instruments.back() = decorativePad;
+    require(!HarmonicFloorContext::sustainedFloorOwner(decorativePad) &&
+                HarmonicFloorContext::plannedCoverage(floorContextPlan) < .85,
+            "A decorative pad reply must not pass as the second sustained harmonic body");
 
     auto weakNarrativePlan = narrativePlan;
     weakNarrativePlan.performanceScore = {};

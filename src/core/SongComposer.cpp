@@ -2361,7 +2361,8 @@ Pattern SongComposer::render(const SongPlan& sourcePlan, const GenerationContext
             // fallback has completed. Their rests, phrasing and dynamics remain intentional.
             PerformanceScoreEngine::replaceChunk(chunk, plan.performanceScore,
                 static_cast<int>(sectionIndex), sectionBar * plan.beatsPerBar,
-                chunkBars * plan.beatsPerBar, plan.instruments);
+                chunkBars * plan.beatsPerBar, plan.instruments, false,
+                section.bars * plan.beatsPerBar);
 
             appendShifted(song, std::move(chunk), offset, song.lengthBeats);
             sectionBar += chunkBars;

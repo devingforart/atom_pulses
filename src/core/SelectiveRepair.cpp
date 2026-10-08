@@ -523,7 +523,14 @@ std::vector<ChordVoicingTarget> SelectiveRepair::chordVoicingTargets(
         std::sort(target.pitches.begin(), target.pitches.end());
         target.pitches.erase(std::unique(target.pitches.begin(), target.pitches.end()),
                              target.pitches.end());
-        if (target.pitches.size() >= 2) result.push_back(std::move(target));
+        const auto& owner = plan.instruments[instrumentIndex];
+        const auto monophonic = owner.sourceVoice == VoiceId::SubBass ||
+            owner.sourceVoice == VoiceId::MovementBass ||
+            owner.sourceVoice == VoiceId::Lead ||
+            owner.sourceVoice == VoiceId::Countermelody ||
+            ElectronicRoleContract::motionOwner(owner);
+        if (target.pitches.size() >= (monophonic ? 1U : 2U))
+            result.push_back(std::move(target));
     }
     std::stable_sort(result.begin(), result.end(), [](const auto& a, const auto& b) {
         if (a.conflictEvents != b.conflictEvents)
@@ -549,8 +556,14 @@ bool SelectiveRepair::applyChordVoicingPatches(
         return false;
     }
     const auto& owner = plan.instruments[instrumentIndex];
-    if (owner.sourceVoice != VoiceId::HarmonicFoundation) {
-        error = "Voicing patches require a harmonic-foundation owner";
+    const auto monophonic = owner.sourceVoice == VoiceId::SubBass ||
+        owner.sourceVoice == VoiceId::MovementBass ||
+        owner.sourceVoice == VoiceId::Lead ||
+        owner.sourceVoice == VoiceId::Countermelody ||
+        ElectronicRoleContract::motionOwner(owner);
+    if (!monophonic && owner.sourceVoice != VoiceId::HarmonicFoundation &&
+        owner.sourceVoice != VoiceId::HarmonicUpper) {
+        error = "Pitch patches require a harmonic, bass or motion owner";
         return false;
     }
     using Key = std::tuple<int, long long, long long>;
@@ -567,15 +580,18 @@ bool SelectiveRepair::applyChordVoicingPatches(
             patch.sectionBeat < 0.0 || patch.durationBeats < .01 ||
             patch.sectionBeat + patch.durationBeats >
                 plan.sections[patch.sectionIndex].bars * plan.beatsPerBar + .001 ||
-            patch.pitches.size() < 2 || patch.pitches.size() > 6) {
+            patch.pitches.size() < (monophonic ? 1U : 2U) ||
+            patch.pitches.size() > (monophonic ? 1U : 6U)) {
             error = "Voicing patch has invalid location, duration or chord size";
             return false;
         }
         auto pitches = patch.pitches;
         std::sort(pitches.begin(), pitches.end());
+        const auto& voiceRange = voiceDefinition(owner.sourceVoice);
         if (std::adjacent_find(pitches.begin(), pitches.end()) != pitches.end() ||
             std::any_of(pitches.begin(), pitches.end(), [&](int pitch) {
-                return pitch < owner.minimumPitch || pitch > owner.maximumPitch;
+                return pitch < owner.minimumPitch || pitch > owner.maximumPitch ||
+                    pitch < voiceRange.minimumPitch || pitch > voiceRange.maximumPitch;
             }) || !replacements.emplace(keyOf(patch.sectionIndex,
                 patch.sectionBeat, patch.durationBeats), std::move(pitches)).second) {
             error = "Voicing patch duplicates a pitch or target, or leaves the instrument register";
@@ -611,8 +627,10 @@ bool SelectiveRepair::applyChordVoicingPatches(
     }
     for (const auto& [key, pitches] : replacements) {
         const auto found = groups.find(key);
-        if (found == groups.end() || found->second.notes.size() < 2) {
-            error = "Voicing patch does not match a complete rendered chord attack";
+        if (found == groups.end() ||
+            (monophonic ? found->second.notes.size() != 1 :
+                           found->second.notes.size() < 2)) {
+            error = "Pitch patch does not match a complete rendered attack";
             return false;
         }
     }
@@ -631,51 +649,47 @@ bool SelectiveRepair::applyChordVoicingPatches(
     output.placements.erase(std::remove_if(output.placements.begin(), output.placements.end(),
         [&](const auto& placement) { return emptied.contains(placement.cellId); }),
         output.placements.end());
-    std::size_t serial = 0;
-    for (const auto& [key, group] : groups) {
-        const auto [sectionIndex, microbeat, microduration] = key;
-        const auto duration = microduration / 1000000.0;
+    // Keep one compact cell per section. Expanding every rendered bass or arp
+    // attack into its own cell would exhaust the global score capacity in a
+    // long-form piece even when the AI changes only one pitch.
+    for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
         PerformanceCell cell;
-        cell.id = "ai_voicing_" + owner.id + "_" + std::to_string(serial++);
-        cell.lengthBeats = std::max(.25, duration);
-        cell.themeId = owner.id + "_voicing";
-        cell.narrativeFunction = "harmony";
+        cell.id = "ai_pitch_patch_" + owner.id + "_" +
+            std::to_string(sectionIndex);
+        cell.lengthBeats = plan.sections[sectionIndex].bars * plan.beatsPerBar;
+        cell.themeId = owner.id + "_performance";
+        cell.narrativeFunction = monophonic ? "support" : "harmony";
         cell.ownedVoices = {owner.sourceVoice};
-        const auto replacement = replacements.find(key);
-        if (replacement == replacements.end()) {
-            for (const auto& note : group.notes)
-                cell.notes.push_back({0.0, note.durationBeats, note.pitch,
-                    note.velocity, note.voice, note.authoredTiming
-                        ? MetricIntent::DeliberateDisplacement : MetricIntent::StrictGrid,
-                    owner.id});
-        } else {
-            const auto velocity = group.notes.front().velocity;
-            for (const auto pitch : replacement->second)
-                cell.notes.push_back({0.0, duration, pitch, velocity,
-                    owner.sourceVoice, MetricIntent::StrictGrid, owner.id});
+        for (const auto& [key, group] : groups) {
+            if (std::get<0>(key) != static_cast<int>(sectionIndex)) continue;
+            const auto beat = std::get<1>(key) / 1000000.0;
+            const auto duration = std::get<2>(key) / 1000000.0;
+            const auto replacement = replacements.find(key);
+            if (replacement == replacements.end()) {
+                for (const auto& note : group.notes)
+                    cell.notes.push_back({beat, note.durationBeats, note.pitch,
+                        note.velocity, note.voice, note.authoredTiming
+                            ? MetricIntent::DeliberateDisplacement : MetricIntent::StrictGrid,
+                        owner.id});
+            } else {
+                const auto velocity = group.notes.front().velocity;
+                for (const auto pitch : replacement->second)
+                    cell.notes.push_back({beat, duration, pitch, velocity,
+                        owner.sourceVoice,
+                        std::any_of(group.notes.begin(), group.notes.end(),
+                            [](const auto& note) { return note.authoredTiming; })
+                            ? MetricIntent::DeliberateDisplacement : MetricIntent::StrictGrid,
+                        owner.id});
+            }
         }
+        for (const auto& [controlSection, control] : controls)
+            if (controlSection == static_cast<int>(sectionIndex))
+                cell.controls.push_back({control.beat, control.controller,
+                    control.value, control.voice, owner.id});
+        if (cell.notes.empty() && cell.controls.empty()) continue;
         PerformancePlacement placement;
         placement.cellId = cell.id;
-        placement.sectionIndex = sectionIndex;
-        placement.startBeat = microbeat / 1000000.0;
-        if (std::any_of(group.notes.begin(), group.notes.end(),
-                [](const auto& note) { return note.authoredTiming; }))
-            placement.metricIntent = MetricIntent::DeliberateDisplacement;
-        placement.fragmentEnd = cell.lengthBeats;
-        output.cells.push_back(std::move(cell));
-        output.placements.push_back(std::move(placement));
-    }
-    for (const auto& [sectionIndex, control] : controls) {
-        PerformanceCell cell;
-        cell.id = "ai_voicing_ctl_" + owner.id + "_" + std::to_string(serial++);
-        cell.lengthBeats = .25;
-        cell.ownedVoices = {control.voice};
-        cell.controls.push_back({0.0, control.controller, control.value,
-            control.voice, owner.id});
-        PerformancePlacement placement;
-        placement.cellId = cell.id;
-        placement.sectionIndex = sectionIndex;
-        placement.startBeat = control.beat;
+        placement.sectionIndex = static_cast<int>(sectionIndex);
         placement.fragmentEnd = cell.lengthBeats;
         output.cells.push_back(std::move(cell));
         output.placements.push_back(std::move(placement));
@@ -874,21 +888,31 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
     // quota for one lane. When the declared electronic floor is absent, ask
     // the AI to revisit the two harmonic responsibilities together while
     // preserving breakdowns and authored rests.
-    if (report.soundscape.active && report.soundscape.harmonicFloorCoverage < .70) {
+    if (report.soundscape.active && report.soundscape.harmonicFloorCoverage < .85) {
         const auto bed = centralChordBedOwner(plan);
-        if (bed) add(*bed, 20.0,
-            "develop the authored chord-bed arc so harmony carries through the form with intentional breaths");
         const auto companion = std::find_if(plan.instruments.begin(), plan.instruments.end(),
             [&](const auto& instrument) {
                 const auto index = static_cast<std::size_t>(
                     &instrument - plan.instruments.data());
                 return (!bed || index != *bed) &&
+                    !containsAny(instrument, {"sub", "bass", "kick", "low",
+                                              "arp", "sequence", "pulse", "motion"}) &&
                     (isVoiceInFamily(instrument.sourceVoice, VoiceFamily::Harmony) ||
                      instrument.sourceVoice == VoiceId::Atmosphere);
             });
+        const auto bedNotes = bed ? authoredNotes[plan.instruments[*bed].id] : 0;
+        // Two-layer coverage cannot be restored by rewriting an already
+        // populated central bed alone. A sub-bass or arpeggio is not the
+        // sustained second harmonic responsibility even if its voice family
+        // happens to be classified as harmonic.
+        const auto underwrittenCompanion = bedNotes >= 12 &&
+            companion != plan.instruments.end();
+        if (bed) add(*bed, underwrittenCompanion ? 12.0 : 30.0,
+            "preserve the central chord-bed arc while supporting its intentional breaths");
         if (companion != plan.instruments.end())
             add(static_cast<std::size_t>(std::distance(plan.instruments.begin(), companion)),
-                12.0, "write an independent harmonic memory that supports the chord bed during its chosen breaths");
+                underwrittenCompanion ? 65.0 : 20.0,
+                "write an independent sustained harmonic memory through the chord-bed breaths and chord changes");
     }
 
     // Token and underwritten tracks are the cheapest, most deterministic repairs.
@@ -950,12 +974,19 @@ SelectiveRepairPlan SelectiveRepair::diagnose(
             issue.otherPartId > plan.instruments.size()) continue;
         const auto first = static_cast<std::size_t>(issue.partId - 1);
         const auto second = static_cast<std::size_t>(issue.otherPartId - 1);
-        const auto target = preservationPriority(plan, first) <=
+        const auto preferred = preservationPriority(plan, first) <=
                 preservationPriority(plan, second) ? first : second;
-        overlapRisk[target] += std::min(3.0, .5 + issue.overlapBeats);
+        const auto alternate = preferred == first ? second : first;
+        const auto severity = std::min(3.0, .5 + issue.overlapBeats);
+        overlapRisk[preferred] += severity;
+        // A pair collision has two possible musical repairs. If the less
+        // structurally important owner cannot be revoiced safely, the editor
+        // must be able to audition the counterpart instead of drifting to a
+        // token FX or rhythm lane unrelated to the dissonance.
+        overlapRisk[alternate] += severity * .5;
     }
     for (const auto& [index, risk] : overlapRisk)
-        tonalRisk[index] += std::min(12.0, risk);
+        tonalRisk[index] += std::min(60.0, risk);
     for (const auto& [index, risk] : tonalRisk)
         add(index, std::min(120.0, risk),
             "rewrite measured unsupported tones and vertical clashes against the immutable ensemble");
@@ -1728,6 +1759,7 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                 const auto narrativeWindowBars =
                     plan.compositionBehavior == CompositionBehavior::Hypnotic ? 16 : 8;
                 auto eligibleNarrativeSections = std::size_t{};
+                std::vector<std::size_t> activeNarrativeSectionIndices;
                 std::set<std::size_t> connectedNarrativeSections;
                 for (std::size_t sectionIndex = 0;
                      sectionIndex < plan.sections.size(); ++sectionIndex) {
@@ -1737,6 +1769,7 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                                   section.name) != instrument.activeSections.end();
                     if (!active) continue;
                     ++eligibleNarrativeSections;
+                    activeNarrativeSectionIndices.push_back(sectionIndex);
                     for (auto localBar = 0; localBar < section.bars;
                          localBar += narrativeWindowBars) {
                         ++deficit.minimumNarrativePhraseWindows;
@@ -1787,18 +1820,26 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                     deficit.minimumNarrativePhraseWindows,
                     std::max<std::size_t>(3, eligibleNarrativeSections));
                 std::set<std::size_t> requiredNarrativeSections;
-                if (!plan.sections.empty()) {
-                    requiredNarrativeSections.insert(0);
-                    requiredNarrativeSections.insert(plan.sections.size() - 1);
+                // A delayed protagonist entrance can be the authored premise.
+                // Requiring absolute section zero when the AI explicitly marks
+                // that instrument withdrawn there makes the contract impossible.
+                if (!activeNarrativeSectionIndices.empty()) {
+                    requiredNarrativeSections.insert(activeNarrativeSectionIndices.front());
+                    requiredNarrativeSections.insert(activeNarrativeSectionIndices.back());
                 }
                 for (const auto& act : plan.narrativeSpine.acts) {
                     if (act.stage != NarrativeStage::Climax &&
                         act.stage != NarrativeStage::Resolution) continue;
                     const auto found = std::find_if(plan.sections.begin(), plan.sections.end(),
                         [&](const auto& section) { return section.name == act.sectionName; });
-                    if (found != plan.sections.end())
-                        requiredNarrativeSections.insert(static_cast<std::size_t>(
-                            std::distance(plan.sections.begin(), found)));
+                    if (found != plan.sections.end()) {
+                        const auto actSectionIndex = static_cast<std::size_t>(
+                            std::distance(plan.sections.begin(), found));
+                        if (std::find(activeNarrativeSectionIndices.begin(),
+                                      activeNarrativeSectionIndices.end(), actSectionIndex) !=
+                            activeNarrativeSectionIndices.end())
+                            requiredNarrativeSections.insert(actSectionIndex);
+                    }
                 }
                 auto missingRequiredNarrativeSection = false;
                 for (const auto sectionIndex : requiredNarrativeSections) {
@@ -2588,6 +2629,59 @@ bool SelectiveRepair::deferableLocalProtagonistEditorial(
                 (deficit.minimumNarrativePhraseWindows + 1) / 2))
         return false;
     return deficit.missingNarrativePresence || deficit.missingMelodicSpeech;
+}
+
+std::vector<int> SelectiveRepair::focusedProtagonistWindowTargets(
+    const SongPlan& plan, const PerformanceCoverageDeficit& deficit) {
+    if (!deficit.missingNarrativePresence ||
+        deficit.instrumentIndex >= plan.instruments.size()) return {};
+    const auto& instrument = plan.instruments[deficit.instrumentIndex];
+    const auto windowBars = plan.compositionBehavior == CompositionBehavior::Hypnotic
+        ? 16 : 8;
+    const std::set<int> missing(deficit.missingNarrativeWindowStartBars.begin(),
+        deficit.missingNarrativeWindowStartBars.end());
+    std::vector<std::size_t> activeSections;
+    for (std::size_t index = 0; index < plan.sections.size(); ++index)
+        if (instrument.activeSections.empty() ||
+            std::find(instrument.activeSections.begin(), instrument.activeSections.end(),
+                plan.sections[index].name) != instrument.activeSections.end())
+            activeSections.push_back(index);
+    if (activeSections.empty()) return {};
+    std::set<std::size_t> required{activeSections.front(), activeSections.back()};
+    for (const auto& act : plan.narrativeSpine.acts) {
+        if (act.stage != NarrativeStage::Climax &&
+            act.stage != NarrativeStage::Resolution) continue;
+        for (const auto index : activeSections)
+            if (plan.sections[index].name == act.sectionName)
+                required.insert(index);
+    }
+    std::vector<int> targets;
+    for (const auto index : required) {
+        const auto& section = plan.sections[index];
+        auto allMissing = true;
+        for (auto bar = section.startBar;
+             bar < section.startBar + section.bars; bar += windowBars)
+            if (!missing.contains(bar)) { allMissing = false; break; }
+        if (allMissing && missing.contains(section.startBar))
+            targets.push_back(section.startBar);
+    }
+    const auto countShortfall = deficit.minimumNarrativePhraseWindows >
+        deficit.narrativePhraseWindows
+        ? deficit.minimumNarrativePhraseWindows - deficit.narrativePhraseWindows : 0;
+    const auto targetCount = std::min<std::size_t>(3,
+        std::max(targets.size(), countShortfall));
+    for (const auto index : activeSections) {
+        const auto& section = plan.sections[index];
+        for (auto bar = section.startBar;
+             bar < section.startBar + section.bars && targets.size() < targetCount;
+             bar += windowBars)
+            if (missing.contains(bar) &&
+                std::find(targets.begin(), targets.end(), bar) == targets.end())
+                targets.push_back(bar);
+        if (targets.size() >= targetCount) break;
+    }
+    if (targets.size() > 3) targets.resize(3);
+    return targets;
 }
 
 bool SelectiveRepair::deferableProtagonistCoverage(

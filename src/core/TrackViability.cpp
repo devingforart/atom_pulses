@@ -675,6 +675,11 @@ TrackViabilityReport TrackViability::enforce(Pattern& pattern, SongPlan& plan) {
     report.active = !pattern.parts.empty();
     report.declaredTracks = plan.instruments.size();
     if (!report.active) return report;
+    if (plan.instrumentCastAuthored) {
+        // A weak AI part is feedback for the AI, not permission to synthesize
+        // notes or transfer its fragment into another instrument.
+        return audit(pattern, plan);
+    }
     for (const auto& part : pattern.parts) {
         const auto current = evidence(pattern, part.id, plan.beatsPerBar);
         if (current.notes == 0) continue;
@@ -806,6 +811,7 @@ TrackViabilityReport TrackViability::compactIncomplete(Pattern& pattern, SongPla
     TrackViabilityReport report;
     report.active = !pattern.parts.empty();
     report.declaredTracks = plan.instruments.size();
+    if (plan.instrumentCastAuthored) return audit(pattern, plan);
     std::set<std::string> removedAssignments;
     std::set<std::uint16_t> viableParts;
     for (const auto& part : pattern.parts)

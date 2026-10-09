@@ -596,8 +596,22 @@ void runSelectiveRepairTests() {
                     ledger.find("bed [32.00-35.00:62,63]") != std::string::npos &&
                     ledger.find("speaker") == std::string::npos,
                 "The harmonic ledger must preserve every simultaneous chord pitch in each section");
+        const auto boundedLedger = EnsembleReference::harmonicLedger(
+            referencePlan, accepted, {"speaker"}, 2);
+        require(boundedLedger.find("SECTION 0") != std::string::npos &&
+                    boundedLedger.find("SECTION 1") != std::string::npos &&
+                    boundedLedger.find("bed [32.00-35.00:62,63]") != std::string::npos,
+                "A bounded harmonic reference must include the ending rather than truncate after the opening");
         require(EnsembleReference::harmonicLedger(referencePlan, {}, {}).empty(),
                 "No accepted MIDI must yield no invented harmonic context");
+        const auto vertical = EnsembleReference::verticalSnapshots(
+            referencePlan, accepted, {"speaker"}, 2);
+        require(vertical.find("SECTION 0") != std::string::npos &&
+                    vertical.find("SECTION 1") != std::string::npos &&
+                    vertical.find("beat=0.00 bed=62,63") != std::string::npos &&
+                    vertical.find("beat=32.00 bed=62,63") != std::string::npos &&
+                    vertical.find("speaker") == std::string::npos,
+                "A bounded ensemble snapshot must show complete simultaneous pitches across the form");
         Pattern before;
         before.lengthBeats = 64.0;
         PerformanceScoreEngine::replaceChunk(before, accepted, 0, 0.0, 32.0,
@@ -617,6 +631,113 @@ void runSelectiveRepairTests() {
         require(targets.size() == 1 && targets.front().pitches == std::vector<int>({62, 63}) &&
                     targets.front().sectionIndex == 0 && targets.front().sectionBeat == 0.0,
                 "Chord repair must target a complete rendered attack, not one sampled note");
+        auto repeatedConflicts = conflicts;
+        for (const auto beat : {4.0, 8.0, 12.0}) {
+            auto repeated = issue;
+            repeated.beat = beat;
+            repeatedConflicts.issues.push_back(repeated);
+        }
+        const auto sourceTargets = SelectiveRepair::repeatedSourceVoicingTargets(
+            referencePlan, accepted, repeatedConflicts, 1);
+        require(sourceTargets.size() == 1 &&
+                    sourceTargets.front().sourceCellId == "chord" &&
+                    sourceTargets.front().sourceOccurrences == 16 &&
+                    sourceTargets.front().occurrences.size() == 16 &&
+                    sourceTargets.front().occurrences.front().sectionIndex == 0 &&
+                    sourceTargets.front().occurrences.front().sectionBeat == 0.0 &&
+                    sourceTargets.front().conflictEvents == 4,
+            "Repeated collisions must expose every affected context to one source attack");
+        PerformanceScore sourcePatched;
+        std::string sourcePatchError;
+        require(SelectiveRepair::applySourceVoicingPatches(referencePlan, accepted, 1,
+                    sourceTargets, {{0, 0.0, 3.0, {62, 65}}},
+                    sourcePatched, sourcePatchError),
+            "One AI voicing decision must repair a reused source chord cell");
+        Pattern sourceAfter;
+        sourceAfter.lengthBeats = 64.0;
+        PerformanceScoreEngine::replaceChunk(sourceAfter, sourcePatched, 0, 0.0,
+            32.0, referencePlan.instruments);
+        for (const auto beat : {0.0, 4.0, 8.0, 12.0}) {
+            std::vector<int> pitches;
+            for (const auto& note : sourceAfter.notes)
+                if (note.partId == 2 && std::abs(note.startBeat - beat) < .001)
+                    pitches.push_back(note.pitch);
+            std::sort(pitches.begin(), pitches.end());
+            require(pitches == std::vector<int>({62, 65}),
+                "A source-cell voicing must reach every repeated occurrence");
+        }
+        require(sourcePatched.cells.size() == accepted.cells.size() &&
+                    sourcePatched.placements.size() == accepted.placements.size() &&
+                    std::count_if(sourceAfter.notes.begin(), sourceAfter.notes.end(),
+                        [](const auto& note) { return note.partId == 1; }) ==
+                    std::count_if(before.notes.begin(), before.notes.end(),
+                        [](const auto& note) { return note.partId == 1; }),
+            "A source-cell repair must preserve the cast, placements and other MIDI owners");
+        auto explicitScore = accepted;
+        auto& explicitChord = explicitScore.cells[1];
+        explicitChord.lengthBeats = 16.0;
+        const auto originalChordNotes = explicitChord.notes;
+        for (const auto beat : {4.0, 8.0, 12.0})
+            for (auto note : originalChordNotes) {
+                note.beat += beat;
+                explicitChord.notes.push_back(std::move(note));
+            }
+        for (auto& placement : explicitScore.placements)
+            if (placement.cellId == "chord") {
+                placement.repeats = 2;
+                placement.fragmentEnd = 16.0;
+            }
+        const auto explicitTargets = SelectiveRepair::repeatedSourceVoicingTargets(
+            referencePlan, explicitScore, repeatedConflicts, 1);
+        require(explicitTargets.size() == 1 &&
+                    explicitTargets.front().sourceAttacks.size() == 4 &&
+                    explicitTargets.front().sourceOccurrences == 16 &&
+                    explicitTargets.front().occurrences.size() == 16,
+            "Identical explicit chord attacks must form one harmonic source cohort");
+        PerformanceScore explicitPatched;
+        require(SelectiveRepair::applySourceVoicingPatches(referencePlan, explicitScore, 1,
+                    explicitTargets, {{0, 0.0, 3.0, {62, 65}}},
+                    explicitPatched, sourcePatchError),
+            "One AI choice must repair every equivalent explicit source attack");
+        Pattern explicitAfter;
+        PerformanceScoreEngine::replaceChunk(explicitAfter, explicitPatched, 0, 0.0,
+            32.0, referencePlan.instruments);
+        for (const auto beat : {0.0, 4.0, 8.0, 12.0}) {
+            std::vector<int> pitches;
+            for (const auto& note : explicitAfter.notes)
+                if (note.partId == 2 && std::abs(note.startBeat - beat) < .001)
+                    pitches.push_back(note.pitch);
+            std::sort(pitches.begin(), pitches.end());
+            require(pitches == std::vector<int>({62, 65}),
+                "An explicit source motif repair must reach each written chord attack");
+        }
+        auto pulsePlan = referencePlan;
+        pulsePlan.instruments[1].sourceVoice = VoiceId::HarmonicPulse;
+        pulsePlan.instruments[1].role = "independent harmonic pulse";
+        auto pulseScore = accepted;
+        auto& pulseCell = pulseScore.cells[1];
+        pulseCell.notes.erase(pulseCell.notes.begin());
+        pulseCell.notes.front().voice = VoiceId::HarmonicPulse;
+        pulseCell.ownedVoices = {VoiceId::HarmonicPulse};
+        const auto pulseTargets = SelectiveRepair::repeatedSourceVoicingTargets(
+            pulsePlan, pulseScore, repeatedConflicts, 1);
+        require(pulseTargets.size() == 1 &&
+                    pulseTargets.front().pitches == std::vector<int>({63}) &&
+                    pulseTargets.front().sourceOccurrences == 16,
+                "A repeated single-note harmonic pulse must be a tonal source target");
+        PerformanceScore pulsePatched;
+        require(SelectiveRepair::applySourceVoicingPatches(pulsePlan, pulseScore, 1,
+                    pulseTargets, {{0, 0.0, 3.0, {65}}}, pulsePatched,
+                    sourcePatchError),
+                "A one-note harmonic pulse must be revoiced without inventing a chord");
+        Pattern pulseAfter;
+        PerformanceScoreEngine::replaceChunk(pulseAfter, pulsePatched, 0, 0.0,
+            32.0, pulsePlan.instruments);
+        require(std::count_if(pulseAfter.notes.begin(), pulseAfter.notes.end(),
+                    [](const auto& note) {
+                        return note.partId == 2 && note.pitch == 65;
+                    }) == 8,
+                "The single AI pitch choice must reach every repetition of the pulse");
         PerformanceScore patched;
         std::string patchError;
         require(SelectiveRepair::applyChordVoicingPatches(referencePlan, accepted, 1,
@@ -1818,14 +1939,12 @@ void runSelectiveRepairTests() {
         2, true, NoteOrigin::AiAuthored, 102});
     const auto testimonialReport = TrackViability::compactIncomplete(
         testimonialPattern, testimonialPlan);
-    require(testimonialReport.mergedTracks == 1 &&
-                std::none_of(testimonialPattern.notes.begin(), testimonialPattern.notes.end(),
-                    [](const auto& note) { return note.partId == 2; }) &&
+    require(testimonialReport.mergedTracks == 0 && testimonialReport.tokenTracks == 1 &&
                 std::count_if(testimonialPattern.notes.begin(), testimonialPattern.notes.end(),
                     [](const auto& note) {
-                        return note.partId == 1 && note.narrativeId == 102;
+                        return note.partId == 2 && note.narrativeId == 102;
                     }) == 3,
-            "A testimonial lane must disappear before export while its authored gestures survive intact");
+            "A sparse AI lane must remain on its own track and be reported for AI revision");
 
     auto substantialTokenPlan = testimonialPlan;
     substantialTokenPlan.instruments[1].lineRelationship = "independent";
@@ -1840,8 +1959,129 @@ void runSelectiveRepairTests() {
     }
     const auto substantialTokenReport = TrackViability::compactIncomplete(
         substantialToken, substantialTokenPlan);
-    require(substantialTokenReport.mergedTracks == 1 &&
-                std::none_of(substantialToken.notes.begin(), substantialToken.notes.end(),
-                    [](const auto& note) { return note.partId == 2; }),
-            "A non-essential independent lane that remains token-sized at publication must relay into a viable owner");
+    require(substantialTokenReport.mergedTracks == 0 &&
+                std::count_if(substantialToken.notes.begin(), substantialToken.notes.end(),
+                    [](const auto& note) { return note.partId == 2; }) == 10,
+            "An underdeveloped AI lane must not be silently merged into another owner");
+
+    // The final contract reads the MIDI, not the cast list or the AI's description.
+    SongPlan finalPlan;
+    finalPlan.totalBars = 24;
+    finalPlan.beatsPerBar = 4.0;
+    finalPlan.requestedCastCount = 3;
+    finalPlan.sections = {
+        SongSection{.name = "opening", .function = "premise", .startBar = 0,
+                    .bars = 8, .energy = .6, .density = .6},
+        SongSection{.name = "preparation", .function = "development", .startBar = 8,
+                    .bars = 8, .energy = .7, .density = .7},
+        SongSection{.name = "culmination", .function = "climax", .startBar = 16,
+                    .bars = 8, .energy = .9, .density = .9}
+    };
+    InstrumentAssignment bed;
+    bed.id = "bed";
+    bed.sourceVoice = VoiceId::HarmonicFoundation;
+    bed.orchestralFunction = "foundation";
+    InstrumentAssignment upper = bed;
+    upper.id = "upper";
+    upper.sourceVoice = VoiceId::HarmonicUpper;
+    upper.orchestralFunction = "body";
+    InstrumentAssignment speaker;
+    speaker.id = "speaker";
+    speaker.sourceVoice = VoiceId::Lead;
+    finalPlan.instruments = {bed, upper, speaker};
+    finalPlan.narrativeSpine.protagonistInstrumentId = "speaker";
+    Pattern finalMidi;
+    finalMidi.lengthBeats = 96.0;
+    for (auto bar = 0; bar < 24; ++bar) {
+        const auto beat = bar * 4.0;
+        finalMidi.notes.push_back({beat, 3.75, 54, 75, 1,
+            VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
+        finalMidi.notes.push_back({beat, 3.75, 66, 70, 2,
+            VoiceId::HarmonicUpper, 2, true, NoteOrigin::AiAuthored});
+        finalMidi.notes.push_back({beat + 1.0, .5, 73 + (bar / 8) * 2, 85, 3,
+            VoiceId::Lead, 3, true, NoteOrigin::AiAuthored});
+    }
+    const auto completeReview = SelectiveRepair::reviewFinalScore(finalPlan, finalMidi);
+    require(completeReview.ready && completeReview.developedVoices == 3 &&
+                completeReview.harmonicContinuity > .95,
+            "Developed independent voices and a sectionally sustained harmonic floor should pass");
+
+    auto transformedReprise = finalMidi;
+    for (auto& note : transformedReprise.notes)
+        if (note.partId == 3 && note.startBeat >= 16.0)
+            note.aiReusedCell = true;
+    require(SelectiveRepair::reviewFinalScore(finalPlan, transformedReprise).ready,
+            "A transformed melodic reprise remains developed even when most notes reuse an authored cell");
+
+    auto literalReprise = finalMidi;
+    for (auto& note : literalReprise.notes)
+        if (note.partId == 3) note.pitch = 73;
+    require(SelectiveRepair::reviewFinalScore(finalPlan, literalReprise).developedVoices == 2,
+            "A literal melodic copy in every section is not independent long-form development");
+    auto staticBassPlan = finalPlan;
+    staticBassPlan.instruments[2].sourceVoice = VoiceId::SubBass;
+    require(SelectiveRepair::reviewFinalScore(staticBassPlan, literalReprise).developedVoices == 3,
+            "A stable rhythmic bass cell may be intentional when it has enough authored material and section coverage");
+
+    auto hollowMidi = finalMidi;
+    std::erase_if(hollowMidi.notes, [](const NoteEvent& note) {
+        return note.startBeat >= 64.0 && note.partId != 1;
+    });
+    const auto hollowReview = SelectiveRepair::reviewFinalScore(finalPlan, hollowMidi);
+    require(!hollowReview.ready && hollowReview.harmonicContinuity < .78 &&
+                hollowReview.climaxContrast < .85 &&
+                !hollowReview.instrumentIndices.empty(),
+            "A thin climax with a missing second harmonic body must trigger targeted musical review");
+    finalPlan.sections.back().energy = .5;
+    require(SelectiveRepair::reviewFinalScore(finalPlan, hollowMidi).climaxContrast < .85,
+            "A named climax cannot escape review merely because its AI blueprint assigns low energy");
+    finalPlan.sections.back().energy = .9;
+
+    auto tokenMidi = finalMidi;
+    std::erase_if(tokenMidi.notes, [](const NoteEvent& note) { return note.partId == 3; });
+    tokenMidi.notes.push_back({1.0, .5, 73, 85, 3,
+        VoiceId::Lead, 3, true, NoteOrigin::AiAuthored});
+    const auto tokenReview = SelectiveRepair::reviewFinalScore(finalPlan, tokenMidi);
+    require(!tokenReview.ready && tokenReview.developedVoices == 2 &&
+                std::find(tokenReview.instrumentIndices.begin(),
+                          tokenReview.instrumentIndices.end(), 2) !=
+                    tokenReview.instrumentIndices.end(),
+            "A listed lead with one isolated note is not a developed voice");
+
+    auto clonedMidi = finalMidi;
+    for (auto& note : clonedMidi.notes)
+        if (note.partId == 3 && note.startBeat >= 4.0)
+            note.aiReusedCell = true;
+    const auto clonedReview = SelectiveRepair::reviewFinalScore(finalPlan, clonedMidi);
+    require(!clonedReview.ready && clonedReview.developedVoices == 2,
+            "A line copied across the arrangement without enough new source material is not developed");
+
+    SoundscapeLayerPlan pianoPreview;
+    pianoPreview.instrumentId = "speaker";
+    pianoPreview.kind = SoundscapeLayerKind::OneShot;
+    SoundscapeLayerPlan shimmerPreview;
+    shimmerPreview.instrumentId = "upper";
+    shimmerPreview.kind = SoundscapeLayerKind::Transition;
+    finalPlan.soundscape.layers = {pianoPreview, shimmerPreview};
+    require(SelectiveRepair::eligibleDevelopedVoiceOwners(finalPlan) == 3 &&
+                SelectiveRepair::reviewFinalScore(finalPlan, finalMidi).ready,
+            "A preview one-shot or transition timbre must not erase an independently developed MIDI owner");
+
+    finalPlan.requestedCastCount = 4;
+    require(!SelectiveRepair::reviewFinalScore(finalPlan, finalMidi).ready,
+            "An explicit four-voice brief cannot pass with only three developed MIDI lines");
+    InstrumentAssignment transition;
+    transition.id = "riser";
+    transition.sourceVoice = VoiceId::Transitions;
+    finalPlan.instruments.push_back(transition);
+    require(SelectiveRepair::eligibleDevelopedVoiceOwners(finalPlan) == 3,
+            "A transition track cannot satisfy an explicit quota of developed musical voices");
+    finalPlan.instruments[1].contentLaneId = "shared_harmony";
+    finalPlan.instruments[0].contentLaneId = "shared_harmony";
+    require(SelectiveRepair::eligibleDevelopedVoiceOwners(finalPlan) == 2,
+            "Two timbral tracks sharing a content lane are one musical owner, not two independent voices");
+    const auto feasibility = SelectiveRepair::reviewFinalScore(finalPlan, finalMidi);
+    require(!SelectiveRepair::canReachDevelopedVoiceTarget(feasibility, 0, 1) &&
+                SelectiveRepair::canReachDevelopedVoiceTarget(feasibility, 1, 1),
+            "Stop an impossible cast before later paid blocks, but preserve a score still within the bounded revision budget");
 }

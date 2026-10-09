@@ -502,6 +502,16 @@ void runGeneratorTests() {
                         return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
                     }),
             "Fallback must preserve natural-language percussion exclusion and an explicit F# minor key");
+    const auto noRequiredPercussion = SongComposer::createLocalPlan(
+        "Progressive house en Fa sostenido menor. No se requieren percusiones ni baterias.",
+        60, 120.0, 4.0, 99130, 6, ScaleKind::Minor);
+    require(noRequiredPercussion.percussionFreeIntent &&
+                std::none_of(noRequiredPercussion.instruments.begin(),
+                    noRequiredPercussion.instruments.end(), [](const auto& part) {
+                        const auto* definition = instrumentDefinition(part.instrumentId);
+                        return definition != nullptr && definition->department == ScoreDepartment::Rhythm;
+                    }),
+            "A no-required-percussion prompt must not silently cast drum tracks");
     auto adaptiveAiNoPercussion = explicitFallbackIntent;
     adaptiveAiNoPercussion.productionLanguage.domain = ProductionDomain::Adaptive;
     adaptiveAiNoPercussion.productionLanguage.electronicIntent = 0.2;
@@ -608,6 +618,49 @@ void runGeneratorTests() {
     require(authoredNoArp.instruments.size() == authoredNoArpSize &&
                 std::none_of(authoredNoArp.instruments.begin(), authoredNoArp.instruments.end(), explicitArp),
             "A closed AI cast without arpeggiation must remain arpeggio-free");
+    SongPlan explicitThirtyCast;
+    explicitThirtyCast.instrumentCastAuthored = true;
+    explicitThirtyCast.requestedCastCount = 30;
+    explicitThirtyCast.productionLanguage.domain = ProductionDomain::Hybrid;
+    explicitThirtyCast.productionLanguage.electronicIntent = .9;
+    explicitThirtyCast.narrativeSpine.protagonistInstrumentId = "voice_0";
+    for (auto index = 0; index < 30; ++index) {
+        InstrumentAssignment part;
+        part.id = "voice_" + std::to_string(index);
+        part.instrumentId = "ambient_texture";
+        part.name = part.id;
+        part.sourceVoice = VoiceId::Atmosphere;
+        part.orchestralFunction = "color";
+        part.contentLaneId = part.id;
+        part.lineRelationship = "independent";
+        part.prominence = .25;
+        explicitThirtyCast.instruments.push_back(std::move(part));
+    }
+    auto unconstrainedCast = explicitThirtyCast;
+    unconstrainedCast.requestedCastCount = 0;
+    ElectronicCompositionFabric::normalizePlan(explicitThirtyCast);
+    require(explicitThirtyCast.instruments.size() == 30 &&
+                std::none_of(explicitThirtyCast.instruments.begin(),
+                    explicitThirtyCast.instruments.end(), [&](const auto& part) {
+                        return ElectronicCompositionFabric::rendererOwnedDestination(
+                            explicitThirtyCast, part);
+                    }),
+            "An explicit thirty-track MIDI cast must retain all thirty independent authored lanes");
+    ElectronicCompositionFabric::normalizePlan(explicitThirtyCast);
+    require(std::none_of(explicitThirtyCast.instruments.begin(),
+                explicitThirtyCast.instruments.end(), [&](const auto& part) {
+                    return ElectronicCompositionFabric::rendererOwnedDestination(
+                        explicitThirtyCast, part);
+                }),
+            "Re-normalizing an explicit MIDI cast must not silently collapse its owners");
+    ElectronicCompositionFabric::normalizePlan(unconstrainedCast);
+    require(std::all_of(unconstrainedCast.instruments.begin(),
+                unconstrainedCast.instruments.end(), [&](const auto& part) {
+                    return part.lineRelationship == "independent" &&
+                        !ElectronicCompositionFabric::rendererOwnedDestination(
+                            unconstrainedCast, part);
+                }),
+            "An unconstrained AI cast must not silently become timbral destinations");
     SongPlan motionContract;
     motionContract.productionLanguage.domain = ProductionDomain::ClubElectronic;
     motionContract.productionLanguage.electronicIntent = .95;
@@ -687,6 +740,7 @@ void runGeneratorTests() {
         thematicAssignment("fragment", "relay", .62),
         thematicAssignment("answer", "call_response", .78),
         thematicAssignment("inverted_answer", "call_response", .54)};
+    ownershipPlan.instruments[1].contentLaneId = ownershipPlan.instruments[0].contentLaneId;
     ElectronicCompositionFabric::normalizePlan(ownershipPlan);
     require(ownershipPlan.instruments[1].contentLaneId ==
                 ownershipPlan.instruments[0].contentLaneId,
@@ -717,11 +771,16 @@ void runGeneratorTests() {
     const auto ownershipReport = ElectronicCompositionFabric::concentrateThematicOwnership(
         ownershipPattern, ownershipPlan);
     require(ownershipReport.active && ownershipReport.foregroundTracksBefore == 4 &&
-                ownershipReport.foregroundTracksAfter == 2 &&
-                ownershipReport.consolidatedTracks == 2 && ownershipReport.notesReassigned == 8 &&
-                std::none_of(ownershipPattern.notes.begin(), ownershipPattern.notes.end(),
-                    [](const auto& note) { return note.partId == 2 || note.partId == 4; }),
-            "One leitmotif may have one protagonist and one answerer, not nominal variant tracks");
+                ownershipReport.foregroundTracksAfter == 4 &&
+                ownershipReport.consolidatedTracks == 0 && ownershipReport.notesReassigned == 0 &&
+                std::all_of(ownershipPattern.parts.begin(), ownershipPattern.parts.end(),
+                    [&](const auto& part) {
+                        return std::count_if(ownershipPattern.notes.begin(),
+                            ownershipPattern.notes.end(), [&](const auto& note) {
+                                return note.partId == part.id;
+                            }) == 4;
+                    }),
+            "An AI-authored relay and each answer must retain their own complete MIDI phrases");
     auto publishedArpNotes = std::size_t{};
     auto misplacedArpNotes = std::size_t{};
     std::map<std::uint32_t, std::vector<double>> protagonistOnsets;
@@ -2753,15 +2812,13 @@ void runGeneratorTests() {
     independentMidi.notes.push_back({32.0, 1.0, 67, 55, 4, VoiceId::HarmonicUpper, 2,
         true, NoteOrigin::AiAuthored, 7002});
     const auto independentReport = TrackViability::enforce(independentMidi, independentPlan);
-    require(independentReport.tokenTracks == 0 && independentReport.mergedTracks == 1 &&
+    require(independentReport.tokenTracks == 1 && independentReport.mergedTracks == 0 &&
                 independentReport.prunedTracks == 0 &&
-                std::none_of(independentMidi.notes.begin(), independentMidi.notes.end(),
-                    [](const auto& note) { return note.partId == 2; }) &&
                 std::any_of(independentMidi.notes.begin(), independentMidi.notes.end(),
                     [](const auto& note) {
-                        return note.partId == 1 && note.origin == NoteOrigin::AiAuthored;
+                        return note.partId == 2 && note.origin == NoteOrigin::AiAuthored;
                     }),
-            "A testimonial independent AI line must be relayed intact instead of publishing an empty-looking track: token=" +
+            "A testimonial independent AI line must be flagged for revision without moving its notes: token=" +
                 std::to_string(independentReport.tokenTracks) + ", merged=" +
                 std::to_string(independentReport.mergedTracks) + ", pruned=" +
                 std::to_string(independentReport.prunedTracks));
@@ -4025,19 +4082,10 @@ void runGeneratorTests() {
     std::set<std::string> pitchedLanes;
     for (const auto& part : largeCast.instruments)
         pitchedLanes.insert(part.contentLaneId);
-    require(pitchedLanes.size() == 20 &&
-                std::all_of(largeCast.instruments.begin(), largeCast.instruments.begin() + 20,
-                    [](const auto& part) { return part.lineRelationship == "independent"; }) &&
-                std::all_of(largeCast.instruments.begin() + 20, largeCast.instruments.end(),
-                    [](const auto& part) { return part.lineRelationship == "timbral_handoff"; }),
-            "A large cast must preserve real harmonic owners and relay only ornamental colour: lanes=" +
-                std::to_string(pitchedLanes.size()) + ", independent=" +
-                std::to_string(std::count_if(largeCast.instruments.begin(), largeCast.instruments.end(),
-                    [](const auto& part) { return part.lineRelationship == "independent"; })) +
-                ", handoffs=" + std::to_string(std::count_if(largeCast.instruments.begin(),
-                    largeCast.instruments.end(), [](const auto& part) {
-                        return part.lineRelationship == "timbral_handoff";
-                    })));
+    require(pitchedLanes.size() == 30 &&
+                std::all_of(largeCast.instruments.begin(), largeCast.instruments.end(),
+                    [](const auto& part) { return part.lineRelationship == "independent"; }),
+            "A large AI cast must preserve all thirty independent musical owners");
     std::vector<std::pair<std::string, std::string>> frozenArchitecture;
     for (const auto& part : largeCast.instruments)
         frozenArchitecture.emplace_back(part.contentLaneId, part.lineRelationship);
@@ -4059,16 +4107,18 @@ void runGeneratorTests() {
                                   part.lineRelationship == frozen.second;
                        }),
             "Final normalization must not re-elect content owners after AI performance writing");
-    largeCast.instruments[20].contentLaneId = "orphan_renderer_lane";
+    largeCast.instruments[29].contentLaneId = largeCast.instruments[0].contentLaneId;
+    largeCast.instruments[29].lineRelationship = "timbral_handoff";
     ElectronicCompositionFabric::normalizePlan(largeCast);
-    require(largeCast.instruments[20].contentLaneId != "orphan_renderer_lane" &&
-                ElectronicCompositionFabric::rendererOwnedDestination(
-                    largeCast, largeCast.instruments[20]),
-            "An orphan renderer destination must be attached locally to a canonical independent owner");
+    require(largeCast.instruments[29].lineRelationship == "timbral_handoff" &&
+                largeCast.instruments[29].contentLaneId == largeCast.instruments[0].contentLaneId &&
+                !ElectronicCompositionFabric::rendererOwnedDestination(
+                    largeCast, largeCast.instruments[29]),
+            "A deliberate AI handoff must retain its shared lineage but own its own MIDI");
     const auto deferredDestinationDeficits = SelectiveRepair::performanceDeficits(
-        largeCast, largeCast.performanceScore, {20});
-    require(deferredDestinationDeficits.empty(),
-            "AI-score validation must defer a canonical renderer-owned destination until handoff realization");
+        largeCast, largeCast.performanceScore, {29});
+    require(!deferredDestinationDeficits.empty(),
+            "AI-score validation must not defer an unwritten handoff instrument");
     Pattern handoffPattern;
     handoffPattern.lengthBeats = largeCast.totalBars * largeCast.beatsPerBar;
     for (std::size_t index = 0; index < largeCast.instruments.size(); ++index) {
@@ -4081,10 +4131,8 @@ void runGeneratorTests() {
             source.livePresetIntent, source.timbre, source.contentLaneId,
             source.lineRelationship});
     }
-    std::set<std::string> authoredLanes;
     for (std::size_t index = 0; index < largeCast.instruments.size(); ++index) {
         const auto& owner = largeCast.instruments[index];
-        if (!authoredLanes.insert(owner.contentLaneId).second) continue;
         for (auto phrase = 0; phrase < 24; ++phrase)
             handoffPattern.notes.push_back({phrase * 16.0, 3.5, 55 + static_cast<int>(index % 12),
                 64, voiceDefinition(owner.sourceVoice).midiChannel, owner.sourceVoice,
@@ -4097,8 +4145,13 @@ void runGeneratorTests() {
     require(handoffReport.active && handoffReport.exactCast &&
                 handoffReport.populatedDestinations == largeCast.instruments.size() &&
                 handoffPattern.notes.size() == notesBeforeHandoff &&
-                handoffReport.notesReassigned > 0,
-            "Timbral handoffs must publish every requested track without cloning or inventing notes: active=" +
+                handoffReport.notesReassigned == 0 &&
+                std::all_of(handoffPattern.notes.begin(), handoffPattern.notes.end(),
+                    [](const auto& note) {
+                        return note.partId > 0 && note.partId <= 30 &&
+                            note.narrativeId == 1000 + note.partId - 1;
+                    }),
+            "Timbral handoffs must preserve every AI-authored part, note and phrase: active=" +
                 std::to_string(handoffReport.active) + ", exact=" + std::to_string(handoffReport.exactCast) +
                 ", populated=" + std::to_string(handoffReport.populatedDestinations) + "/" +
                 std::to_string(largeCast.instruments.size()) + ", notes=" +

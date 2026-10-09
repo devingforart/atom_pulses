@@ -55,20 +55,17 @@ struct TimbralHandoffReport {
 class ElectronicCompositionFabric final {
 public:
     static void normalizePlan(SongPlan&);
-    // True only when a pitched destination has a canonical independent content
-    // owner. These destinations are intentionally omitted from AI performance
-    // blocks and populated later by phrase-scale ownership transfer.
+    // Legacy non-AI routing only. Every AI-authored instrument owns its own
+    // performance notes, including deliberately related relay instruments.
     [[nodiscard]] static bool rendererOwnedDestination(
         const SongPlan&, const InstrumentAssignment&) noexcept;
     [[nodiscard]] static ElectronicFabricReport materialize(Pattern&, const SongPlan&);
-    // Keeps one narrative protagonist and at most one motif-derived answerer. Explicit
-    // relays and handoffs remain audible, but their MIDI is consolidated onto the line
-    // they actually belong to instead of masquerading as independent composition.
+    // Measures foreground ownership. Legacy fallback may consolidate a redundant
+    // thematic destination; AI-authored notes are never reassigned.
     [[nodiscard]] static ThematicOwnershipReport concentrateThematicOwnership(
         Pattern&, const SongPlan&);
-    // Realizes a shared musical line as mutually exclusive phrase-scale timbral
-    // hand-offs. No pitch, onset or rhythm is invented and the total note count is
-    // unchanged; only ownership, register and MIDI channel are reassigned.
+    // Reports explicitly authored shared lanes and cast coverage. It never moves
+    // or duplicates notes between AI-authored instruments after composition.
     [[nodiscard]] static TimbralHandoffReport realizeTimbralHandoffs(
         Pattern&, const SongPlan&);
     // Re-establishes the aggregate musical promises after tonal, vertical and

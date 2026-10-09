@@ -330,13 +330,12 @@ void ElectronicCompositionFabric::normalizePlan(SongPlan& plan) {
         }
     }
 
-    // A relay, handoff or doubling is one musical line changing colour, not a new
-    // independent idea.  GPT occasionally returned unique lane ids despite declaring
-    // one of those relationships, which made one leitmotif look like many unrelated
-    // DAW tracks. Canonicalise thematic handoffs onto the protagonist's lane.
+    // Fallback plans may lack a consistent thematic lane id. AI-authored casts
+    // retain their declared relationships: rewriting those ids would invent a
+    // handoff that the model did not actually compose.
     const auto protagonist = std::find_if(plan.instruments.begin(), plan.instruments.end(),
         [&](const auto& part) { return part.id == plan.narrativeSpine.protagonistInstrumentId; });
-    if (protagonist != plan.instruments.end()) {
+    if (!plan.instrumentCastAuthored && protagonist != plan.instruments.end()) {
         const auto protagonistLane = protagonist->contentLaneId.empty()
             ? protagonist->id : protagonist->contentLaneId;
         protagonist->contentLaneId = protagonistLane;
@@ -350,106 +349,9 @@ void ElectronicCompositionFabric::normalizePlan(SongPlan& plan) {
         }
     }
 
-    // A large production cast is not the same thing as a large number of musical
-    // arguments. Keep a bounded set of pitched content owners and turn the remaining
-    // colours into explicit hand-offs. The performance writer can then spend its
-    // budget developing complete lines; the renderer rotates those lines through the
-    // declared DAW tracks without cloning them or dropping the cast.
-    // Performance writing freezes this architecture. normalizePlan is deliberately
-    // called again after all blocks are assembled; re-electing owners at that point
-    // would promote previously unwritten destinations and invalidate a valid score.
-    if (plan.instrumentCastAuthored && plan.performanceScore.empty()) {
-        std::vector<std::size_t> pitched;
-        for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
-            const auto& part = plan.instruments[index];
-            if (isVoiceInFamily(part.sourceVoice, VoiceFamily::Rhythm) ||
-                part.sourceVoice == VoiceId::Transitions ||
-                part.orchestralFunction == "transition") continue;
-            pitched.push_back(index);
-        }
-        if (pitched.size() >= 24) {
-            const auto ownerTarget = std::min<std::size_t>(24,
-                std::max<std::size_t>(18, static_cast<std::size_t>(
-                    std::lround(static_cast<double>(pitched.size()) * .55))));
-            std::stable_sort(pitched.begin(), pitched.end(), [&](auto left, auto right) {
-                const auto priority = [&](const auto& part) {
-                    auto value = part.prominence;
-                    if (part.id == plan.narrativeSpine.protagonistInstrumentId) value += 10.0;
-                    if (ElectronicRoleContract::motionOwner(part)) value += 6.0;
-                    if (floorPart(part)) value += 4.0;
-                    if (dialoguePart(part)) value += 3.0;
-                    if (part.lineRelationship == "independent") value += 1.0;
-                    return value;
-                };
-                return priority(plan.instruments[left]) > priority(plan.instruments[right]);
-            });
-            const auto essentialOwner = [&](std::size_t index) {
-                const auto& part = plan.instruments[index];
-                const auto relationship = part.lineRelationship;
-                const auto explicitlyShared = relationship == "relay" ||
-                    relationship == "timbral_handoff" || relationship == "doubling" ||
-                    relationship == "octave_reinforcement";
-                if (explicitlyShared) return false;
-                return part.id == plan.narrativeSpine.protagonistInstrumentId ||
-                    ElectronicRoleContract::motionOwner(part) || floorPart(part) ||
-                    dialoguePart(part) || part.sourceVoice == VoiceId::SubBass ||
-                    part.sourceVoice == VoiceId::MovementBass ||
-                    part.orchestralFunction == "foundation" ||
-                    part.orchestralFunction == "body" ||
-                    part.orchestralFunction == "counterpoint" || part.prominence >= .55;
-            };
-            std::vector<std::size_t> owners;
-            for (const auto index : pitched)
-                if (essentialOwner(index)) owners.push_back(index);
-            for (const auto index : pitched) {
-                if (owners.size() >= ownerTarget) break;
-                if (std::find(owners.begin(), owners.end(), index) == owners.end())
-                    owners.push_back(index);
-            }
-            for (const auto index : pitched) {
-                if (std::find(owners.begin(), owners.end(), index) != owners.end()) {
-                    auto& owner = plan.instruments[index];
-                    if (owner.lineRelationship != "call_response")
-                        owner.lineRelationship = "independent";
-                    // Promoting an existing destination makes it a genuine new owner;
-                    // it must no longer retain another owner's lane id.
-                    owner.contentLaneId = owner.id == plan.narrativeSpine.protagonistInstrumentId &&
-                            !owner.contentLaneId.empty()
-                        ? owner.contentLaneId : owner.id;
-                    continue;
-                }
-                auto& layer = plan.instruments[index];
-                const auto explicitlyShared = layer.lineRelationship == "relay" ||
-                    layer.lineRelationship == "timbral_handoff" ||
-                    layer.lineRelationship == "doubling" ||
-                    layer.lineRelationship == "octave_reinforcement";
-                const auto genuineColour = (layer.orchestralFunction == "color" ||
-                    layer.sourceVoice == VoiceId::Atmosphere) && layer.prominence < .58;
-                if (!explicitlyShared && !genuineColour) {
-                    layer.contentLaneId = layer.id;
-                    layer.lineRelationship = "independent";
-                    continue;
-                }
-                const auto best = std::max_element(owners.begin(), owners.end(),
-                    [&](auto left, auto right) {
-                        const auto affinity = [&](auto candidateIndex) {
-                            const auto& candidate = plan.instruments[candidateIndex];
-                            auto score = candidate.sourceVoice == layer.sourceVoice ? 8.0 : 0.0;
-                            if (voiceDefinition(candidate.sourceVoice).family ==
-                                voiceDefinition(layer.sourceVoice).family) score += 3.0;
-                            if (candidate.orchestralFunction == layer.orchestralFunction) score += 2.0;
-                            return score + candidate.prominence;
-                        };
-                        return affinity(left) < affinity(right);
-                    });
-                if (best == owners.end()) continue;
-                const auto& owner = plan.instruments[*best];
-                layer.contentLaneId = owner.contentLaneId.empty() ? owner.id : owner.contentLaneId;
-                layer.lineRelationship = "timbral_handoff";
-                layer.doubling = 0.0;
-            }
-        }
-    }
+    // An AI-authored cast is a set of MIDI authors, not a pool of timbral
+    // destinations. Never turn an independent instrument into a handoff merely
+    // because the cast is large; the model must write each instrument's notes.
 
     // Every renderer-owned destination must terminate at one concrete independent
     // owner. Repair malformed/unique lane ids locally before performance blocks are
@@ -472,6 +374,14 @@ void ElectronicCompositionFabric::normalizePlan(SongPlan& plan) {
                 return ownerLane == destinationLane;
             });
         if (hasOwner) continue;
+        if (plan.instrumentCastAuthored) {
+            // A malformed shared-lane declaration is still a real AI instrument.
+            // Do not attach it to an unrelated owner and move that owner's notes.
+            destination.lineRelationship = "independent";
+            destination.contentLaneId = destination.id;
+            canonicalOwners.push_back(index);
+            continue;
+        }
         const auto best = std::max_element(canonicalOwners.begin(), canonicalOwners.end(),
             [&](auto left, auto right) {
                 const auto affinity = [&](auto ownerIndex) {
@@ -551,6 +461,7 @@ void ElectronicCompositionFabric::normalizePlan(SongPlan& plan) {
 
 bool ElectronicCompositionFabric::rendererOwnedDestination(
         const SongPlan& plan, const InstrumentAssignment& destination) noexcept {
+    if (plan.instrumentCastAuthored) return false;
     if (!pitchedRendererMember(destination) || !sharedDestination(destination)) return false;
     const auto lane = destination.contentLaneId.empty() ? destination.id : destination.contentLaneId;
     return std::any_of(plan.instruments.begin(), plan.instruments.end(), [&](const auto& owner) {
@@ -575,6 +486,13 @@ ThematicOwnershipReport ElectronicCompositionFabric::concentrateThematicOwnershi
     };
     for (const auto& part : pattern.parts)
         if (foregroundPart(part) && populated(part.id)) ++report.foregroundTracksBefore;
+
+    if (plan.instrumentCastAuthored) {
+        // The model owns each foreground performance. A thematic relationship
+        // does not authorize moving its notes to the protagonist after writing.
+        report.foregroundTracksAfter = report.foregroundTracksBefore;
+        return report;
+    }
 
     const InstrumentPart* primary = nullptr;
     for (const auto& part : pattern.parts) {
@@ -1059,72 +977,11 @@ TimbralHandoffReport ElectronicCompositionFabric::realizeTimbralHandoffs(
         membersByLane[lane].push_back(index);
     }
     report.contentLanes = membersByLane.size();
-    const auto phraseBeats = std::max(plan.beatsPerBar * 2.0, 4.0);
     for (const auto& [lane, members] : membersByLane) {
         (void) lane;
-        if (members.size() < 2) continue;
-        report.timbralDestinations += members.size() - 1;
-        // Preserve a canonical musical owner for most phrase windows.  Destinations
-        // are colours, not alternate authors: only every third phrase may move to a
-        // renderer-owned member.  This keeps the line identifiable and bounds the
-        // amount of MIDI reassignment while still auditioning each declared timbre.
-        const auto canonical = std::find_if(members.begin(), members.end(), [&](auto index) {
-            return index < plan.instruments.size() &&
-                !rendererOwnedDestination(plan, plan.instruments[index]);
-        });
-        std::map<int, std::vector<std::size_t>> notesByWindow;
-        for (std::size_t noteIndex = 0; noteIndex < pattern.notes.size(); ++noteIndex) {
-            const auto& note = pattern.notes[noteIndex];
-            if (note.partId == 0) continue;
-            const auto assignmentIndex = static_cast<std::size_t>(note.partId - 1);
-            if (std::find(members.begin(), members.end(), assignmentIndex) == members.end()) continue;
-            notesByWindow[static_cast<int>(std::floor(note.startBeat / phraseBeats))]
-                .push_back(noteIndex);
-        }
-        const auto handoffCount = members.size() - 1;
-        const auto handoffStride = std::clamp<std::size_t>(
-            notesByWindow.size() / std::max<std::size_t>(1, handoffCount), 1, 3);
-        std::map<std::size_t, std::size_t> assignedWindows;
-        for (const auto& [window, noteIndices] : notesByWindow) {
-            const auto beat = window * phraseBeats;
-            const auto* section = sectionAt(plan, beat);
-            std::vector<std::size_t> eligible;
-            const auto preserveCanonical = canonical != members.end() &&
-                (std::abs(window) % static_cast<int>(handoffStride) != 0);
-            if (preserveCanonical) {
-                if (section == nullptr || activeIn(plan.instruments[*canonical], *section))
-                    eligible.push_back(*canonical);
-            } else {
-                for (const auto index : members)
-                    if (section == nullptr || activeIn(plan.instruments[index], *section))
-                        eligible.push_back(index);
-            }
-            if (eligible.empty()) eligible = members;
-            // Give every compatible timbral destination a phrase before returning to
-            // an already-used colour. A plain modulo over a changing eligible set can
-            // starve one destination for the entire arrangement.
-            const auto destination = *std::min_element(eligible.begin(), eligible.end(),
-                [&](auto left, auto right) {
-                    if (assignedWindows[left] != assignedWindows[right])
-                        return assignedWindows[left] < assignedWindows[right];
-                    return left < right;
-                });
-            ++assignedWindows[destination];
-            const auto& assignment = plan.instruments[destination];
-            const auto partId = static_cast<std::uint16_t>(destination + 1);
-            auto changed = false;
-            for (const auto noteIndex : noteIndices) {
-                auto& note = pattern.notes[noteIndex];
-                if (note.partId == partId) continue;
-                note.partId = partId;
-                note.voice = assignment.sourceVoice;
-                note.channel = voiceDefinition(assignment.sourceVoice).midiChannel;
-                note.pitch = nearestPitch(positiveModulo(note.pitch, 12), note.pitch, assignment);
-                ++report.notesReassigned;
-                changed = true;
-            }
-            if (changed) ++report.phraseWindowsReassigned;
-        }
+        // The MIDI for every member is authored on that member. These numbers
+        // describe an intentional shared musical lineage, never a renderer move.
+        if (members.size() > 1) report.timbralDestinations += members.size() - 1;
     }
     std::set<std::uint16_t> populated;
     for (const auto& note : pattern.notes)

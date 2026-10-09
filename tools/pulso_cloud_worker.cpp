@@ -5,6 +5,7 @@
 #include "core/CoherentProofRevision.h"
 #include "core/EditorialSafety.h"
 #include "core/PerformanceScore.h"
+#include "core/SelectiveRepair.h"
 
 #include <juce_core/juce_core.h>
 
@@ -70,6 +71,7 @@ juce::var planAuditFor(const pulso::SongPlan& plan) {
     root->setProperty("tonal_policy", juce::String(pulso::tonalPolicyKey(
         plan.harmonicLanguage.tonalPolicy).data()));
     root->setProperty("total_bars", plan.totalBars);
+    root->setProperty("requested_cast_count", static_cast<int>(plan.requestedCastCount));
     root->setProperty("beats_per_bar", plan.beatsPerBar);
     root->setProperty("protagonist_id",
         juce::String::fromUTF8(plan.narrativeSpine.protagonistInstrumentId.c_str()));
@@ -435,6 +437,27 @@ int main(int argc, char** argv) {
         }));
     if (request.aiSovereign && aiNotes != song.notes.size())
         return fail(output, "AI-sovereign render produced non-AI notes; publication stopped");
+    if (request.aiSovereign) {
+        const auto review = pulso::SelectiveRepair::reviewFinalScore(plan, song);
+        auto* evidence = new juce::DynamicObject();
+        evidence->setProperty("ready", review.ready);
+        evidence->setProperty("developed_voices", static_cast<int>(review.developedVoices));
+        evidence->setProperty("expected_voices", static_cast<int>(review.expectedVoices));
+        evidence->setProperty("harmonic_continuity", review.harmonicContinuity);
+        evidence->setProperty("climax_contrast", review.climaxContrast);
+        juce::Array<juce::var> findings;
+        for (const auto& issue : review.issues)
+            findings.add(juce::String::fromUTF8(issue.c_str()));
+        evidence->setProperty("issues", findings);
+        if (!output.getChildFile("final-score-review.json").replaceWithText(
+                juce::JSON::toString(juce::var(evidence), false), false, false, "\n"))
+            return fail(output, "Could not save final MIDI review");
+        if (!review.ready) {
+            const auto firstFinding = review.issues.empty() ? juce::String("musical brief incomplete") :
+                juce::String::fromUTF8(review.issues.front().c_str());
+            return fail(output, "Final MIDI review requires a focused musical revision: " + firstFinding);
+        }
+    }
     const auto countNotes = [&](auto predicate) {
         return static_cast<int>(std::count_if(song.notes.begin(), song.notes.end(), predicate));
     };
@@ -578,7 +601,8 @@ int main(int argc, char** argv) {
     editorial->setProperty("ai_authored_note_ratio", song.aiAuthoredNoteRatio);
     if (request.aiSovereign && !proofGate) {
         editorial->setProperty("musical_review_required", !song.productionReady ||
-            !song.narrativeSpineReady || !song.soundscapeReady || !song.trackViabilityReady);
+            !song.creativeReady || !song.narrativeSpineReady ||
+            !song.soundscapeReady || !song.trackViabilityReady);
         editorial->setProperty("harmonic_conflicts", finalAudit.production.unintendedHarshOverlaps);
         editorial->setProperty("low_register_conflicts",
             static_cast<int>(finalAudit.production.lowRegisterVerticalClashes));

@@ -189,7 +189,10 @@ bool harmonicTextureRequested(const SongPlan& plan) {
         has("sin batería") || has("sin ritmica") || has("sin rítmica") ||
         has("sin ritmo") || has("no rhythm") || has("no hace falta percusi") ||
         has("no hacen falta percusi") || has("no hace falta bater") ||
-        has("no hacen falta bater") || has("no necesito percusi") || has("no necesito bater");
+        has("no hacen falta bater") || has("no necesito percusi") || has("no necesito bater") ||
+        has("no se requieren percusi") || has("no se requieren bater") ||
+        has("no se requiere percusi") || has("no se requiere bater") ||
+        has("no se necesitan percusi") || has("no se necesitan bater");
     if (textContainsAny(text, {"no quiero bateria", "no quiero baterias", "no quiero percusion",
                                "nicamente armon", "solo armonias y melodias", "solo armonia",
                                "only harmony", "harmony and melody only"}))
@@ -216,7 +219,10 @@ bool noPercussionRequested(const SongPlan& plan) {
                                "sin percusiones", "no drums", "without drums", "sin drums", "sin bateria",
                                "sin batería", "sin ritmica", "sin rítmica", "sin ritmo", "no rhythm",
                                "no hace falta percusi", "no hacen falta percusi", "no hace falta bater",
-                               "no hacen falta bater", "no necesito percusi", "no necesito bater"}))
+                               "no hacen falta bater", "no necesito percusi", "no necesito bater",
+                               "no se requieren percusi", "no se requieren bater",
+                               "no se requiere percusi", "no se requiere bater",
+                               "no se necesitan percusi", "no se necesitan bater"}))
         return true;
     const auto rhythmParts = std::count_if(plan.instruments.begin(), plan.instruments.end(), [](const auto& instrument) {
         const auto* definition = instrumentDefinition(instrument.instrumentId);
@@ -1198,6 +1204,9 @@ SongPlan SongComposer::createLocalPlan(const std::string& direction, int targetS
          "no quiero bateria", "no quiero baterias", "no quiero percusion",
          "no hace falta percusi", "no hacen falta percusi", "no hace falta bater",
          "no hacen falta bater", "no necesito percusi", "no necesito bater",
+         "no se requieren percusi", "no se requieren bater",
+         "no se requiere percusi", "no se requiere bater",
+         "no se necesitan percusi", "no se necesitan bater",
          "nicamente armon", "solo armonias y melodias", "solo armonia"});
     plan.soundscape.percussionFree = plan.percussionFreeIntent;
 

@@ -943,12 +943,13 @@ int main(int argc, char** argv) {
     writingOrderPlan.instruments[4].orchestralFunction = "body";
     const auto editorialBlocks =
         pulso::plugin::AiComposer::performanceWritingBlocks(writingOrderPlan, true);
-    require(editorialBlocks.size() == 4 &&
-                editorialBlocks[0] == std::vector<std::size_t>({0, 4}) &&
-                editorialBlocks[1] == std::vector<std::size_t>({1}) &&
-                editorialBlocks[2] == std::vector<std::size_t>({2}) &&
-                editorialBlocks[3] == std::vector<std::size_t>({3}),
-            "Electronic AI-only writing must co-author two harmonic bodies before bass and melody");
+    require(editorialBlocks.size() == 5 &&
+                editorialBlocks[0] == std::vector<std::size_t>({0}) &&
+                editorialBlocks[1] == std::vector<std::size_t>({4}) &&
+                editorialBlocks[2] == std::vector<std::size_t>({1}) &&
+                editorialBlocks[3] == std::vector<std::size_t>({2}) &&
+                editorialBlocks[4] == std::vector<std::size_t>({3}),
+            "Electronic AI-only writing must author the bed and complementary harmonic body before bass and melody");
     auto nonElectronicWritingOrder = writingOrderPlan;
     nonElectronicWritingOrder.productionLanguage.domain =
         pulso::ProductionDomain::Orchestral;
@@ -1046,6 +1047,25 @@ int main(int argc, char** argv) {
                 exclusionSafeManifest, excludedInstruments, exclusionError) &&
                 excludedInstruments == 2,
             "An explicit no-percussion direction must sanitize a contradictory AI cast before writing begins");
+    const auto contradictoryDevelopedManifest = juce::String(R"json({
+      "protagonist_instrument_id":"lead",
+      "electronic_soundscape":{"percussion_free":false},
+      "voices":[{"id":"lead"},{"id":"atmosphere"},{"id":"core_drums"},
+                {"id":"snare_clap"},{"id":"transitions"}],
+      "instruments":[
+        {"id":"lead","instrument":"lead_synth","source_voice":"lead"},
+        {"id":"pad","instrument":"analog_pad","source_voice":"atmosphere"},
+        {"id":"kick","instrument":"kick_drum","source_voice":"core_drums"},
+        {"id":"snare","instrument":"snare_clap","source_voice":"snare_clap"},
+        {"id":"shimmer","instrument":"shimmer_tail","source_voice":"transitions"}
+      ]
+    })json");
+    require(pulso::plugin::AiComposer::enforceExplicitCastExclusions(
+                contradictoryDevelopedManifest,
+                "No se requieren percusiones ni baterias. Deben ser al menos 30 pistas MIDI bien llenas.",
+                exclusionSafeManifest, excludedInstruments, exclusionError) &&
+                excludedInstruments == 3,
+            "The actual brief must replace both rhythm and event-only identities before developed-cast reconciliation");
     const auto exclusionJson = juce::JSON::parse(exclusionSafeManifest);
     const auto* exclusionObject = exclusionJson.getDynamicObject();
     const auto* exclusionInstruments = exclusionObject == nullptr
@@ -1178,6 +1198,27 @@ int main(int argc, char** argv) {
         require(owners >= minimumOwners[sectionIndex] && harmonicOwners >= 2,
                 "Reconciliation must meet section density using complementary existing owners");
     }
+    const auto expandedResolutionMacro = juce::String(R"json({"sections":[
+      {"name":"VII. Resolución ganada","density":0.4,"energy":0.3}
+    ]})json");
+    const auto expandedResolutionCast = juce::String(R"json({"instruments":[
+      {"id":"floor_a","source_voice":"harmonic_foundation","active_sections":["VII. Resolución ganada"]},
+      {"id":"floor_b","source_voice":"harmonic_upper","active_sections":["VII. Resolución ganada"]},
+      {"id":"lead","source_voice":"lead","active_sections":["VII. Resolución ganada"]},
+      {"id":"answer_a","source_voice":"countermelody","active_sections":["VII. Resolución ganada"]},
+      {"id":"answer_b","source_voice":"countermelody","active_sections":["VII. Resolución ganada"]},
+      {"id":"bass_a","source_voice":"sub_bass","active_sections":["VII. Resolución ganada"]},
+      {"id":"bass_b","source_voice":"movement_bass","active_sections":["VII. Resolución ganada"]},
+      {"id":"color_a","source_voice":"atmosphere","active_sections":["VII. Resolución ganada"]},
+      {"id":"color_b","source_voice":"atmosphere","active_sections":["VII. Resolución ganada"]},
+      {"id":"pulse","source_voice":"harmonic_pulse","active_sections":["VII. Resolución ganada"]}
+    ]})json");
+    juce::String expandedResolutionReconciled;
+    require(pulso::plugin::AiComposer::reconcileOrchestrationMatrix(
+                expandedResolutionMacro, expandedResolutionCast,
+                expandedResolutionReconciled, matrixReport, matrixError) &&
+                expandedResolutionReconciled == expandedResolutionCast,
+            "A section with a six-owner density target may deliberately retain ten complementary owners");
     juce::String idempotentMatrix;
     juce::String idempotentReport;
     require(pulso::plugin::AiComposer::reconcileOrchestrationMatrix(
@@ -1276,6 +1317,18 @@ int main(int argc, char** argv) {
         require(allowedOwners(cellProperties.getProperty(events, {}).getProperty("items", {})
                     .getProperty("properties", {}).getProperty("instrument_id", {})),
                 "Strict response schemas must prevent invented or foreign note and controller owners");
+    routingPlan.instruments[1].minimumPitch = 69;
+    routingPlan.instruments[1].maximumPitch = 91;
+    const auto leadSchema = juce::JSON::parse(
+        pulso::plugin::AiComposer::performanceSchemaFor(routingPlan, {1}));
+    const auto leadPitch = leadSchema.getProperty("properties", {})
+        .getProperty("performance_score", {}).getProperty("properties", {})
+        .getProperty("cells", {}).getProperty("items", {}).getProperty("properties", {})
+        .getProperty("notes", {}).getProperty("items", {}).getProperty("properties", {})
+        .getProperty("pitch", {});
+    require(static_cast<int>(leadPitch.getProperty("minimum", {})) == 69 &&
+                static_cast<int>(leadPitch.getProperty("maximum", {})) == 91,
+            "A focused single-owner AI response must stay within its playable MIDI register");
     require(pulso::plugin::AiComposer::performanceSchemaFor(routingPlan, {}).isEmpty(),
             "An unassigned performance request must never silently allow arbitrary owners");
     const auto routedBlock = juce::String(R"json({"performance_score":{"cells":[{
@@ -1477,6 +1530,12 @@ int main(int argc, char** argv) {
                                                               4.0, 77, parsedSongPlan, parseError,
                                                               pulso::TonalPolicy::Expanded),
             "Structured GPT song architecture must validate independently from MIDI rendering");
+    pulso::SongPlan committedCastPlan;
+    committedCastPlan.requestedCastCount = 30;
+    require(pulso::plugin::AiComposer::parseSongPlanJson(songPlanExample, 64, 32, 120.0,
+                4.0, 77, committedCastPlan, parseError, pulso::TonalPolicy::Expanded) &&
+                committedCastPlan.requestedCastCount == 30,
+            "Parsing the AI blueprint must preserve the user's explicit track-count commitment");
     require(parsedSongPlan.sections.size() == 3 && parsedSongPlan.voices.size() >= 10 &&
                 parsedSongPlan.instruments.size() >= 12 &&
                 !parsedSongPlan.instrumentCastAuthored &&

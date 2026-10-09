@@ -21,6 +21,19 @@ struct SelectiveRepairPlan {
     std::vector<std::string> issues;
 };
 
+// Measured against the rendered MIDI, not the proposed instrument roster.
+// A failed review supplies exact owners/windows to the bounded AI editor.
+struct FinalScoreReview {
+    bool ready{true};
+    std::size_t developedVoices{};
+    std::size_t expectedVoices{};
+    double harmonicContinuity{1.0};
+    double climaxContrast{1.0};
+    double deficit{};
+    std::vector<std::size_t> instrumentIndices;
+    std::vector<std::string> issues;
+};
+
 // Exact evidence used by incremental AI writing and by the publication contract.
 // Keeping this as a shared value prevents prompts and validators from silently
 // applying different note, active-bar or phrase requirements.
@@ -132,12 +145,34 @@ struct TonalConflictGroup {
 
 // An actual rendered chord attack selected from measured conflicts. Beats are
 // section-relative so a compact AI voicing reply cannot edit another passage.
+struct SourceVoicingAttack {
+    std::string cellId;
+    double beat{};
+    double durationBeats{};
+};
+
+struct SourceVoicingOccurrence {
+    int sectionIndex{};
+    double sectionBeat{};
+    double durationBeats{};
+};
+
 struct ChordVoicingTarget {
     int sectionIndex{};
     double sectionBeat{};
     double durationBeats{};
     std::vector<int> pitches;
     std::size_t conflictEvents{};
+    // Populated only for a repeated source-cell repair. The representative
+    // section attack remains the stable compact-response coordinate.
+    std::string sourceCellId;
+    double sourceBeat{};
+    std::size_t sourceOccurrences{};
+    std::vector<SourceVoicingAttack> sourceAttacks;
+    // Every rendered location changed by a source edit. The AI repair prompt
+    // can inspect contrasting harmonic and ensemble contexts, not only the
+    // representative attack used as its stable response coordinate.
+    std::vector<SourceVoicingOccurrence> occurrences;
 };
 
 struct ChordVoicingPatch {
@@ -153,6 +188,13 @@ struct ChordVoicingPatch {
 
 class SelectiveRepair final {
 public:
+    [[nodiscard]] static FinalScoreReview reviewFinalScore(
+        const SongPlan&, const Pattern&);
+    [[nodiscard]] static std::size_t eligibleDevelopedVoiceOwners(
+        const SongPlan&);
+    [[nodiscard]] static bool canReachDevelopedVoiceTarget(
+        const FinalScoreReview&, std::size_t unwrittenOwners,
+        std::size_t maximumRecoverableOwners) noexcept;
     [[nodiscard]] static bool publicationReady(const CompositionRenderReport&) noexcept;
     // Terminal means structurally unusable, not merely in need of editorial polish.
     // A complete high-scoring checkpoint with an inconclusive ending remains
@@ -193,6 +235,14 @@ public:
     [[nodiscard]] static std::vector<ChordVoicingTarget> chordVoicingTargets(
         const SongPlan&, const Pattern&, const TonalAuditReport&,
         std::size_t instrumentIndex, std::size_t maximumTargets = 24);
+    [[nodiscard]] static std::vector<ChordVoicingTarget> repeatedSourceVoicingTargets(
+        const SongPlan&, const PerformanceScore&, const TonalAuditReport&,
+        std::size_t instrumentIndex, std::size_t maximumTargets = 8);
+    [[nodiscard]] static bool applySourceVoicingPatches(
+        const SongPlan&, const PerformanceScore&, std::size_t instrumentIndex,
+        const std::vector<ChordVoicingTarget>&,
+        const std::vector<ChordVoicingPatch>&, PerformanceScore& output,
+        std::string& error);
     [[nodiscard]] static bool applyChordVoicingPatches(
         const SongPlan&, const PerformanceScore&, std::size_t instrumentIndex,
         const std::vector<ChordVoicingPatch>&, PerformanceScore& output,

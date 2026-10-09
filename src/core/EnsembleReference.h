@@ -25,6 +25,14 @@ public:
         const SongPlan& plan, const PerformanceScore& accepted,
         const std::set<std::string>& excludedInstrumentIds,
         std::size_t maximumGroups = 320);
+    // A compact vertical picture at the harmonic changes in every section.
+    // Unlike a single-lane ledger, this includes all already accepted pitched
+    // owners sounding at each sampled boundary, so late writers can hear the
+    // accumulated ensemble without a full-song note dump.
+    [[nodiscard]] static std::string verticalSnapshots(
+        const SongPlan& plan, const PerformanceScore& accepted,
+        const std::set<std::string>& excludedInstrumentIds,
+        std::size_t maximumSnapshots = 96);
 };
 
 } // namespace pulso

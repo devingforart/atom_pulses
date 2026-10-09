@@ -126,7 +126,7 @@ Pulsa `CONFIGURAR IA` en la cabecera de PULSO, pega una clave de OpenAI y usa `P
 
 ## Contrato 0.58.5: publicación musical compacta
 
-Antes de exportar, PULSO vuelve a auditar el reparto después de todos los relevos tímbricos. Las líneas demasiado pequeñas se integran sin perder MIDI ni expresión; Live recibe únicamente pistas musicalmente utilizables. La audición neutral de Operator, Drift y Wavetable se considera una carga correcta y no un fallback.
+Antes de exportar, PULSO vuelve a auditar el reparto. La compactación de líneas pequeñas descrita en esta versión histórica se conserva solo para el motor local de respaldo: en un reparto de IA, una pista insuficiente pide revisión y nunca absorbe MIDI de otra. La audición neutral de Operator, Drift y Wavetable se considera una carga correcta y no un fallback.
 
 ## Contrato 0.58.4: audición separada del diseño sonoro
 
@@ -145,11 +145,13 @@ composición, no el diseño sonoro.
 
 ## Contrato 0.58.3
 
-Una pista `timbral_handoff`, `relay`, `doubling` u `octave_reinforcement` no necesita duplicar MIDI
-en la respuesta AI. Antes de escribir debe apuntar a un propietario independiente válido; durante
-la escritura se audita ese propietario. El destino obtiene una frase completa en el render final y
-recién entonces participa en `exact_instrument_cast_published`. La normalización final no puede
-cambiar quién era propietario después de que Terra haya compuesto.
+Regla actual: cada pista de un reparto creado por la IA debe recibir sus propias notas MIDI.
+Una relación `timbral_handoff` o `relay` solo declara una continuidad musical planificada:
+la IA escribe la frase completa de cada instrumento y decide dónde termina una y entra la
+otra. El renderizador no corta, copia ni redistribuye frases después de la composición.
+Una pista sin material suficiente queda señalada para revisión, no se rellena moviendo
+notas de otra pista. `exact_instrument_cast_published` se calcula desde el MIDI realmente
+presente en cada identidad.
 
 ## Contrato 0.58.2
 
@@ -174,13 +176,13 @@ la producción ya no se destruye para hacer coincidir un contador.
 
 ## Contrato 0.58.0
 
-Un reparto extenso puede publicar más pistas que ideas independientes sin fingir contenido. Cada
-pista conserva `content_lane_id` y `line_relationship`; los relevos reciben ventanas completas del
-propietario y nunca una copia simultánea. La raíz de `request.json` incluye:
+Cada pista conserva `content_lane_id` y `line_relationship` para distinguir ideas
+independientes de relaciones musicales expresas. La raíz de `request.json` incluye:
 
 - `content_lane_count`: arcos musicales reales.
-- `timbral_handoff_destinations`: instrumentos que interpretan esos arcos por relevo.
-- `timbral_handoff_windows` y `timbral_handoff_notes`: material reasignado sin duplicación.
+- `timbral_handoff_destinations`: instrumentos declarados en una relación de relevo.
+- `timbral_handoff_windows` y `timbral_handoff_notes`: deben ser cero en un reparto de IA,
+  porque no se reasigna material después de componer.
 - `exact_instrument_cast_published`: confirma que todas las identidades solicitadas tienen MIDI.
 
 Si el último valor es falso, `production_quality.py` devuelve

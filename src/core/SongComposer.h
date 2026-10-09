@@ -142,8 +142,8 @@ struct SongPlan {
     // percussion-free electronic piece must not be graded as a failed club track.
     bool percussionFreeIntent{};
     // Non-zero when the user requested a cast-size target. It governs planning and
-    // recovery, but does not make every AI-invented instrument name an explicit user
-    // commitment; empty optional identities may be retired after bounded recovery.
+    // recovery. A numeric full-cast commitment cannot be fulfilled by silently
+    // retiring empty AI-invented identities in the AI-only editorial profile.
     std::size_t requestedCastCount{};
     // True when the instrument list came from the structured AI score. In that case the
     // cast is authoritative per voice: missing ownership is critic feedback, not permission

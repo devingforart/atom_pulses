@@ -72,25 +72,20 @@ escritas y completa únicamente un piso armónico de dos a cuatro capas con tono
 mientras exista presupuesto perceptual. El único saneamiento sustractivo restante es semántico para
 transiciones que ocupan la obra como un secuenciador continuo.
 
-Los repartos de 24 o más instrumentos apuntan normalmente a 18–24 propietarios, pero el número no
-puede degradar fundamentos, cuerpos, bajos, movimiento, protagonista ni contrapuntos reales a
-relevos. `timbral_handoff` queda reservado a colores ornamentales o relaciones compartidas
-declaradas por la IA. El estado binario v26 y los manifiestos separan explícitamente
+Los repartos grandes conservan cada propietario MIDI propuesto por la IA. La normalización
+no convierte instrumentos independientes en destinos tímbricos para alcanzar una cuota de
+líneas. `timbral_handoff` queda reservado a una relación expresamente planificada por la IA:
+cada instrumento escribe su propia frase completa y el cambio ocurre en un límite musical.
+El estado binario v26 y los manifiestos separan explícitamente
 `density_notes_removed`, `semantic_notes_removed` y `authored_notes_preserved`.
 
 ## Arcos musicales y destinos tímbricos (0.58)
 
-En repartos electrónicos con 24 o más instrumentos tonales, la normalización conserva entre 12 y
-18 `content_lane_id` independientes. Protagonista, movimiento, piso armónico y diálogo tienen
-prioridad como propietarios. Las demás identidades no simulan nuevas ideas: se convierten en
-`timbral_handoff` y comparten el carril de un propietario compatible por voz, familia y función.
-
-Los bloques remotos contienen solamente propietarios independientes, ritmo y eventos. Los destinos
-tímbricos no consumen otra respuesta de Terra. Después de ensamblar la partitura,
-`realizeTimbralHandoffs` agrupa el MIDI por ventanas de dos compases y rota cada frase entre los
-instrumentos activos del carril. Es una transformación conservativa: no crea ni duplica notas y
-mantiene alturas dentro del registro de destino. Tonalidad, métrica, armonía vertical, duración y
-expresión vuelven a validarse sobre la asignación definitiva.
+En un reparto de IA, los bloques remotos incluyen todos los instrumentos declarados, incluso
+los que participan en un relevo. Cada identidad recibe notas con su propio `instrument_id`.
+`realizeTimbralHandoffs` solo informa la relación entre carriles y la cobertura del reparto;
+no cambia `partId`, altura, duración ni canal. Una pista débil se conserva para revisión
+focalizada y nunca se fusiona automáticamente con otra para aparentar continuidad.
 
 La viabilidad continúa aplicándose por pista exportada. Por eso una capa tímbrica debe recibir
 frases completas y no una nota testimonial. La auditoría distingue el número de ideas del número
@@ -1201,9 +1196,26 @@ coverage per role, excluding renderer-only timbral destinations. Intro, developm
 and resolution therefore have observable density targets without imposing a genre pattern. These
 metrics are advisory telemetry and only become a readiness finding when a score is genuinely sparse.
 
-Independent AI lines are no longer collapsed merely because they share a narrative lineage. Only
-explicit relay, timbral handoff, doubling or octave-reinforcement relationships may be consolidated;
-this preserves orchestration and substantially reduces accidental note reassignment.
+Independent AI lines are never collapsed because they share a narrative lineage. Even an
+explicit relay, timbral handoff, doubling or octave-reinforcement relationship keeps its
+instrument-owned MIDI; the relationship describes the composition, not a post-render
+instruction to move notes between tracks.
+
+Repeated unresolved voicings are reviewed at their authored source before
+isolated rendered attacks. Identical attacks explicitly written in several cells
+are one review cohort only when pitch set, duration and harmonic context agree.
+One AI pitch choice can therefore repair every recurrence of that motif while
+the complete rendered score decides whether to accept it.
+If a central chord bed still repeats a severe source-cell collision after bounded
+source review, writing stops before paying for the remaining instrument blocks.
+The incremental writer also receives bounded, section-spanning references to
+accepted MIDI: complete chord attack groups plus vertical snapshots of every
+pitched owner at sampled harmonic changes. A truncated opening-only ledger is
+not a valid representation of a long work. Focused phrase and coda additions
+receive the same complete-score pitch review as an initial block; only AI
+pitch edits that reduce measured tonal debt without changing other tracks are
+committed. Two consecutive severe mid-song checkpoints stop further paid
+writing instead of waiting until the final gate.
 
 ### Phrase diversity and bounded timbral handoffs (0.58.8)
 
@@ -1214,9 +1226,10 @@ four distinct statements, while dialogue and environmental lanes require three. 
 may extend an authored harmonic/bass lane from its own seeds, but it never invents an unrelated theme.
 
 The attention pass also inserts phrase-level releases on long pulse/arpeggio lanes, even when global
-perceptual congestion is below its ceiling. Shared timbral lanes keep their canonical owner for two
-out of every three phrase windows; only the remaining windows rotate through declared destinations.
-This preserves the musical identity of a line while retaining audible timbral colour.
+perceptual congestion is below its ceiling. Earlier builds rotated phrase windows among shared
+timbral destinations. AI-authored casts no longer do that: every participant writes its own
+complete phrase. Brief crossfades between authored instruments remain an artistic choice,
+not a new reason for automatic rejection.
 
 ### Redundant clone consolidation (0.58.25)
 

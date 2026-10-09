@@ -104,9 +104,18 @@ std::string EnsembleReference::harmonicLedger(
     const SongPlan& plan, const PerformanceScore& accepted,
     const std::set<std::string>& excludedInstrumentIds, std::size_t maximumGroups) {
     if (accepted.empty() || maximumGroups == 0) return {};
-    std::ostringstream out;
-    out << std::fixed << std::setprecision(2);
-    std::size_t emitted = 0;
+    struct ChordGroup {
+        std::uint16_t partId{};
+        long long start{};
+        long long end{};
+        std::vector<int> pitches;
+    };
+    struct SectionGroups {
+        std::size_t index{};
+        std::vector<ChordGroup> groups;
+    };
+    std::vector<SectionGroups> bySection;
+    bySection.reserve(plan.sections.size());
     for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
         const auto& section = plan.sections[sectionIndex];
         const auto sectionBeats = section.bars * plan.beatsPerBar;
@@ -132,23 +141,117 @@ std::string EnsembleReference::harmonicLedger(
                     std::llround(end * 1000.0)}].push_back(note.pitch);
         }
         if (groups.empty()) continue;
-        out << "SECTION " << sectionIndex << " " << section.name << "\n";
+        SectionGroups sectionGroups;
+        sectionGroups.index = sectionIndex;
         for (auto& [key, pitches] : groups) {
-            if (emitted >= maximumGroups) {
-                out << "TRUNCATED after " << maximumGroups
-                    << " complete attack/release groups; use the local MIDI audit for omitted events.\n";
-                return out.str();
-            }
             std::sort(pitches.begin(), pitches.end());
             pitches.erase(std::unique(pitches.begin(), pitches.end()), pitches.end());
             const auto [partId, start, end] = key;
-            out << "  " << plan.instruments[partId - 1].id << " ["
-                << start / 1000.0 << "-" << end / 1000.0 << ":";
-            for (std::size_t i = 0; i < pitches.size(); ++i) {
-                if (i) out << ',';
-                out << pitches[i];
+            sectionGroups.groups.push_back({partId, start, end, std::move(pitches)});
+        }
+        std::stable_sort(sectionGroups.groups.begin(), sectionGroups.groups.end(),
+            [&](const auto& left, const auto& right) {
+                if (left.start != right.start) return left.start < right.start;
+                return priorityFor(plan, plan.instruments[left.partId - 1]) <
+                    priorityFor(plan, plan.instruments[right.partId - 1]);
+            });
+        bySection.push_back(std::move(sectionGroups));
+    }
+    if (bySection.empty()) return {};
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(2);
+    std::size_t emitted = 0;
+    for (std::size_t sectionPosition = 0; sectionPosition < bySection.size() &&
+         emitted < maximumGroups; ++sectionPosition) {
+        const auto& sectionGroups = bySection[sectionPosition];
+        const auto remainingSections = bySection.size() - sectionPosition;
+        const auto quota = std::min(sectionGroups.groups.size(),
+            std::max<std::size_t>(1, (maximumGroups - emitted) / remainingSections));
+        out << "SECTION " << sectionGroups.index << " "
+            << plan.sections[sectionGroups.index].name << "\n";
+        for (std::size_t i = 0; i < quota; ++i) {
+            const auto selected = quota == 1 ? 0 :
+                i * (sectionGroups.groups.size() - 1) / (quota - 1);
+            const auto& group = sectionGroups.groups[selected];
+            out << "  " << plan.instruments[group.partId - 1].id << " ["
+                << group.start / 1000.0 << "-" << group.end / 1000.0 << ":";
+            for (std::size_t j = 0; j < group.pitches.size(); ++j) {
+                if (j) out << ',';
+                out << group.pitches[j];
             }
             out << "]\n";
+            ++emitted;
+        }
+    }
+    if (emitted == maximumGroups)
+        out << "SAMPLED " << emitted << " complete attack/release groups across "
+            << bySection.size() << " nonempty sections; unlisted attacks are not silence.\n";
+    return out.str();
+}
+
+std::string EnsembleReference::verticalSnapshots(
+    const SongPlan& plan, const PerformanceScore& accepted,
+    const std::set<std::string>& excludedInstrumentIds,
+    std::size_t maximumSnapshots) {
+    if (accepted.empty() || maximumSnapshots == 0) return {};
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(2);
+    auto emitted = std::size_t{};
+    for (std::size_t sectionIndex = 0;
+         sectionIndex < plan.sections.size() && emitted < maximumSnapshots;
+         ++sectionIndex) {
+        const auto& section = plan.sections[sectionIndex];
+        const auto sectionBeats = section.bars * plan.beatsPerBar;
+        if (sectionBeats <= 0.0) continue;
+        Pattern rendered;
+        rendered.lengthBeats = sectionBeats;
+        PerformanceScoreEngine::replaceChunk(rendered, accepted,
+            static_cast<int>(sectionIndex), 0.0, sectionBeats,
+            plan.instruments);
+        std::vector<double> boundaries{0.0};
+        for (const auto& event : section.harmonicEvents) {
+            const auto beat = event.barOffset * plan.beatsPerBar + event.beatOffset;
+            if (beat >= 0.0 && beat < sectionBeats - .001)
+                boundaries.push_back(beat);
+        }
+        std::sort(boundaries.begin(), boundaries.end());
+        boundaries.erase(std::unique(boundaries.begin(), boundaries.end(),
+            [](const auto left, const auto right) {
+                return std::abs(left - right) < .001;
+            }), boundaries.end());
+        const auto remainingSections = plan.sections.size() - sectionIndex;
+        const auto quota = std::min(boundaries.size(),
+            std::max<std::size_t>(1,
+                (maximumSnapshots - emitted) / remainingSections));
+        if (quota == 0) continue;
+        out << "SECTION " << sectionIndex << " " << section.name << "\n";
+        for (std::size_t selected = 0; selected < quota; ++selected) {
+            const auto index = quota == 1 ? 0 :
+                selected * (boundaries.size() - 1) / (quota - 1);
+            const auto localBeat = boundaries[index];
+            const auto probe = localBeat + .01;
+            std::map<std::uint16_t, std::vector<int>> sounding;
+            for (const auto& note : rendered.notes) {
+                if (note.partId == 0 || note.partId > plan.instruments.size() ||
+                    note.startBeat > probe || note.endBeat() <= probe) continue;
+                const auto& owner = plan.instruments[note.partId - 1];
+                if (excludedInstrumentIds.contains(owner.id) ||
+                    isVoiceInFamily(owner.sourceVoice, VoiceFamily::Rhythm)) continue;
+                sounding[note.partId].push_back(note.pitch);
+            }
+            out << "  beat=" << section.startBar * plan.beatsPerBar + localBeat;
+            if (sounding.empty()) out << " accepted_pitched_silence";
+            for (auto& [partId, pitches] : sounding) {
+                std::sort(pitches.begin(), pitches.end());
+                pitches.erase(std::unique(pitches.begin(), pitches.end()),
+                    pitches.end());
+                out << " " << plan.instruments[partId - 1].id << "=";
+                for (std::size_t pitch = 0; pitch < pitches.size(); ++pitch) {
+                    if (pitch) out << ',';
+                    out << pitches[pitch];
+                }
+            }
+            out << "\n";
             ++emitted;
         }
     }

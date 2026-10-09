@@ -2,6 +2,7 @@
 
 #include "ElectronicCompositionFabric.h"
 #include "ElectronicRoleContract.h"
+#include "HarmonicFloorContext.h"
 #include "PerformanceScore.h"
 #include "Scale.h"
 #include "TrackViability.h"
@@ -42,12 +43,12 @@ const SoundscapeLayerPlan* layerFor(const SongPlan& plan, const std::string& id)
     return found == plan.soundscape.layers.end() ? nullptr : &*found;
 }
 
-bool eventInstrument(const SongPlan& plan, const InstrumentAssignment& instrument) {
-    const auto* layer = layerFor(plan, instrument.id);
+bool eventInstrument(const SongPlan&, const InstrumentAssignment& instrument) {
+    // Soundscape kinds describe preview timbre, not how many phrases a MIDI
+    // owner may compose. A piano "one-shot" or shimmer "transition" can still
+    // carry a developed, pitched line across sections. Judge that from notes.
     return instrument.sourceVoice == VoiceId::Transitions ||
-        instrument.orchestralFunction == "transition" ||
-        (layer != nullptr && (layer->kind == SoundscapeLayerKind::Transition ||
-                              layer->kind == SoundscapeLayerKind::OneShot));
+        instrument.orchestralFunction == "transition";
 }
 
 std::size_t distinctPhraseCount(const std::vector<const NoteEvent*>& notes,
@@ -253,6 +254,232 @@ void removeInstrument(PerformanceCell& cell, const std::string& instrumentId) {
 }
 
 } // namespace
+
+std::size_t SelectiveRepair::eligibleDevelopedVoiceOwners(
+    const SongPlan& plan) {
+    std::set<std::string> independentLines;
+    for (const auto& instrument : plan.instruments) {
+        if (eventInstrument(plan, instrument)) continue;
+        independentLines.insert(instrument.contentLaneId.empty()
+            ? instrument.id : instrument.contentLaneId);
+    }
+    return independentLines.size();
+}
+
+FinalScoreReview SelectiveRepair::reviewFinalScore(
+    const SongPlan& plan, const Pattern& pattern) {
+    FinalScoreReview review;
+    if (plan.instruments.empty() || plan.sections.empty() || plan.beatsPerBar <= 0.0)
+        return review;
+
+    const auto bars = std::max(1, plan.totalBars);
+    struct OwnerEvidence {
+        std::size_t notes{};
+        std::size_t freshNotes{};
+        std::set<int> activeBars;
+        std::set<int> sections;
+        std::map<int, std::set<std::tuple<int, int, int>>> sectionalPhrases;
+        std::vector<bool> sustainedBars;
+    };
+    std::vector<OwnerEvidence> owners(plan.instruments.size());
+    for (auto& owner : owners) owner.sustainedBars.resize(static_cast<std::size_t>(bars));
+    std::vector<std::set<std::size_t>> sounding(static_cast<std::size_t>(bars));
+    std::vector<std::size_t> attacks(static_cast<std::size_t>(bars));
+    for (const auto& note : pattern.notes) {
+        if (note.partId == 0 || note.partId > owners.size() || note.durationBeats <= 0.0)
+            continue;
+        const auto index = static_cast<std::size_t>(note.partId - 1);
+        auto& owner = owners[index];
+        ++owner.notes;
+        if (!note.aiReusedCell) ++owner.freshNotes;
+        const auto first = std::clamp(static_cast<int>(std::floor(note.startBeat / plan.beatsPerBar)), 0, bars - 1);
+        const auto last = std::clamp(static_cast<int>(std::floor(
+            (note.endBeat() - .001) / plan.beatsPerBar)), first, bars - 1);
+        ++attacks[static_cast<std::size_t>(first)];
+        for (auto bar = first; bar <= last; ++bar) {
+            const auto overlap = std::min(note.endBeat(), (bar + 1) * plan.beatsPerBar) -
+                std::max(note.startBeat, bar * plan.beatsPerBar);
+            if (overlap <= .001) continue;
+            owner.activeBars.insert(bar);
+            sounding[static_cast<std::size_t>(bar)].insert(index);
+            if (HarmonicFloorContext::sustainedFloorOwner(plan.instruments[index]) &&
+                overlap >= plan.beatsPerBar * .4)
+                owner.sustainedBars[static_cast<std::size_t>(bar)] = true;
+        }
+        for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+            const auto& section = plan.sections[sectionIndex];
+            const auto begin = section.startBar * plan.beatsPerBar;
+            const auto end = (section.startBar + section.bars) * plan.beatsPerBar;
+            if (note.startBeat < end - .001 && note.endBeat() > begin + .001)
+                owner.sections.insert(static_cast<int>(sectionIndex));
+            if (note.startBeat >= begin - .001 && note.startBeat < end - .001) {
+                const auto phraseBeats = plan.beatsPerBar * 8.0;
+                const auto phraseBeat = std::fmod(std::max(0.0, note.startBeat - begin),
+                                                 phraseBeats);
+                owner.sectionalPhrases[static_cast<int>(sectionIndex)].insert({
+                    static_cast<int>(std::lround(phraseBeat * 4.0)), note.pitch,
+                    static_cast<int>(std::lround(note.durationBeats * 4.0))});
+            }
+        }
+    }
+
+    std::set<std::string> developedLines;
+    const auto longForm = plan.sections.size() >= 3 && bars >= 24;
+    auto nonEventCount = std::size_t{};
+    for (std::size_t index = 0; index < owners.size(); ++index) {
+        const auto& instrument = plan.instruments[index];
+        if (eventInstrument(plan, instrument)) continue;
+        ++nonEventCount;
+        const auto& owner = owners[index];
+        const auto sustained = HarmonicFloorContext::sustainedFloorOwner(instrument);
+        const auto minimumNotes = sustained ? (longForm ? 3U : 2U) :
+            (longForm ? 8U : 4U);
+        const auto minimumFreshNotes = sustained ? 2U : longForm ? 4U : 2U;
+        std::set<std::set<std::tuple<int, int, int>>> distinctPhrases;
+        for (const auto& [section, phrase] : owner.sectionalPhrases) {
+            (void) section;
+            if (!phrase.empty()) distinctPhrases.insert(phrase);
+        }
+        const auto family = voiceDefinition(instrument.sourceVoice).family;
+        const auto intentionalStaticRole = sustained ||
+            family == VoiceFamily::Rhythm || family == VoiceFamily::Bass ||
+            containsAny(instrument, {"drone", "pedal", "ostinato", "arpeggio", "arp"});
+        const auto developed = owner.notes >= minimumNotes &&
+            owner.activeBars.size() >= (sustained && longForm ? 8U :
+                                       longForm ? 4U : 2U) &&
+            owner.sections.size() >= (longForm ? 2U : 1U) &&
+            owner.freshNotes >= minimumFreshNotes &&
+            (!longForm || intentionalStaticRole || distinctPhrases.size() >= 2);
+        if (developed) {
+            developedLines.insert(instrument.contentLaneId.empty()
+                ? instrument.id : instrument.contentLaneId);
+        } else {
+            review.instrumentIndices.push_back(index);
+        }
+    }
+    review.developedVoices = developedLines.size();
+    review.expectedVoices = plan.requestedCastCount > 0
+        ? plan.requestedCastCount
+        : static_cast<std::size_t>(std::ceil(nonEventCount * .8));
+    if (review.developedVoices < review.expectedVoices) {
+        review.ready = false;
+        review.deficit += static_cast<double>(review.expectedVoices - review.developedVoices) /
+            static_cast<double>(std::max<std::size_t>(1, review.expectedVoices));
+        review.issues.push_back("The actual MIDI develops " +
+            std::to_string(review.developedVoices) + "/" +
+            std::to_string(review.expectedVoices) +
+            " independent voices; write distinct multi-section phrases in the named underdeveloped owners, not copies or extra tracks");
+    } else {
+        review.instrumentIndices.clear();
+    }
+
+    const auto floorOwners = std::count_if(plan.instruments.begin(), plan.instruments.end(),
+        [](const auto& instrument) { return HarmonicFloorContext::sustainedFloorOwner(instrument); });
+    if (floorOwners > 0) {
+        auto requiredBars = 0;
+        auto coveredBars = 0;
+        for (const auto& section : plan.sections) {
+            auto sectionRequired = 0;
+            auto sectionCovered = 0;
+            const auto endBar = std::min(bars, section.startBar + section.bars);
+            for (auto bar = std::max(0, section.startBar); bar < endBar; ++bar) {
+                const auto required = std::min<std::size_t>(
+                    static_cast<std::size_t>(floorOwners),
+                    HarmonicFloorContext::requiredLayers(plan,
+                        (bar + .5) * plan.beatsPerBar));
+                auto active = std::size_t{};
+                for (const auto& owner : owners)
+                    if (owner.sustainedBars[static_cast<std::size_t>(bar)]) ++active;
+                ++requiredBars;
+                ++sectionRequired;
+                if (active >= required) { ++coveredBars; ++sectionCovered; }
+            }
+            if (sectionRequired >= 4 && sectionCovered * 100 < sectionRequired * 60) {
+                review.ready = false;
+                review.deficit += .6 - static_cast<double>(sectionCovered) / sectionRequired;
+                review.issues.push_back("Harmonic floor is absent in section '" + section.name +
+                    "' (" + std::to_string(sectionCovered) + "/" +
+                    std::to_string(sectionRequired) +
+                    " bars): sustain the declared chord body through this scene while retaining intentional breaths");
+                for (std::size_t index = 0; index < plan.instruments.size(); ++index)
+                    if (HarmonicFloorContext::sustainedFloorOwner(plan.instruments[index]) &&
+                        (plan.instruments[index].activeSections.empty() ||
+                         std::find(plan.instruments[index].activeSections.begin(),
+                                   plan.instruments[index].activeSections.end(),
+                                   section.name) != plan.instruments[index].activeSections.end()))
+                        review.instrumentIndices.insert(review.instrumentIndices.begin(), index);
+            }
+        }
+        review.harmonicContinuity = requiredBars == 0 ? 1.0 :
+            static_cast<double>(coveredBars) / requiredBars;
+        if (review.harmonicContinuity < .78) {
+            review.ready = false;
+            review.deficit += .78 - review.harmonicContinuity;
+            review.issues.push_back("Rendered sustained harmonic coverage is " +
+                std::to_string(static_cast<int>(review.harmonicContinuity * 100)) +
+                "%: bridge unintended gaps with independent chord-compatible voices");
+        }
+    }
+
+    for (std::size_t climaxIndex = 1; climaxIndex < plan.sections.size(); ++climaxIndex) {
+        const auto& climax = plan.sections[climaxIndex];
+        const auto identity = lower(climax.name + " " + climax.function);
+        const auto declaredClimax = identity.find("climax") != std::string::npos ||
+            identity.find("peak") != std::string::npos ||
+            identity.find("culmin") != std::string::npos ||
+            std::any_of(plan.narrativeSpine.acts.begin(), plan.narrativeSpine.acts.end(),
+                [&](const auto& act) { return act.stage == NarrativeStage::Climax &&
+                    act.sectionName == climax.name; });
+        if (!declaredClimax || climax.bars < 4 ||
+            identity.find("anti-climax") != std::string::npos ||
+            identity.find("anticlimax") != std::string::npos) continue;
+        const auto& setup = plan.sections[climaxIndex - 1];
+        const auto weight = [&](const SongSection& section) {
+            auto total = 0.0;
+            auto count = 0;
+            for (auto bar = std::max(0, section.startBar);
+                 bar < std::min(bars, section.startBar + section.bars); ++bar) {
+                const auto index = static_cast<std::size_t>(bar);
+                total += sounding[index].size() + .45 * std::sqrt(static_cast<double>(attacks[index]));
+                ++count;
+            }
+            return count == 0 ? 0.0 : total / count;
+        };
+        const auto setupWeight = weight(setup);
+        const auto climaxWeight = weight(climax);
+        review.climaxContrast = setupWeight <= .01 ? 1.0 : climaxWeight / setupWeight;
+        if (setupWeight > 1.0 && review.climaxContrast < .85) {
+            review.ready = false;
+            review.deficit += .85 - review.climaxContrast;
+            review.issues.push_back("Declared climax '" + climax.name +
+                "' has only " + std::to_string(static_cast<int>(review.climaxContrast * 100)) +
+                "% of the preparation's audible ensemble weight; make its return consequential without filler notes");
+            for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+                const auto& instrument = plan.instruments[index];
+                if (eventInstrument(plan, instrument) ||
+                    (!instrument.activeSections.empty() &&
+                     std::find(instrument.activeSections.begin(), instrument.activeSections.end(),
+                               climax.name) == instrument.activeSections.end())) continue;
+                if (HarmonicFloorContext::sustainedFloorOwner(instrument) ||
+                    instrument.id == plan.narrativeSpine.protagonistInstrumentId)
+                    review.instrumentIndices.insert(review.instrumentIndices.begin(), index);
+            }
+        }
+    }
+    std::set<std::size_t> seen;
+    std::erase_if(review.instrumentIndices, [&](const auto index) {
+        return !seen.insert(index).second;
+    });
+    return review;
+}
+
+bool SelectiveRepair::canReachDevelopedVoiceTarget(
+    const FinalScoreReview& review, std::size_t unwrittenOwners,
+    std::size_t maximumRecoverableOwners) noexcept {
+    const auto needed = review.expectedVoices > review.developedVoices
+        ? review.expectedVoices - review.developedVoices : 0;
+    return needed <= unwrittenOwners + maximumRecoverableOwners;
+}
 
 std::string_view constraintAuthorityKey(ConstraintAuthority authority) noexcept {
     switch (authority) {
@@ -544,6 +771,269 @@ std::vector<ChordVoicingTarget> SelectiveRepair::chordVoicingTargets(
             std::tie(b.sectionIndex, b.sectionBeat);
     });
     return result;
+}
+
+std::vector<ChordVoicingTarget> SelectiveRepair::repeatedSourceVoicingTargets(
+    const SongPlan& plan, const PerformanceScore& score, const TonalAuditReport& audit,
+    std::size_t instrumentIndex, std::size_t maximumTargets) {
+    std::vector<ChordVoicingTarget> result;
+    if (instrumentIndex >= plan.instruments.size() || maximumTargets == 0 ||
+        plan.beatsPerBar <= 0.0) return result;
+    using Key = std::tuple<std::string, long long, long long>;
+    struct Occurrence {
+        int sectionIndex{};
+        double sectionBeat{};
+        double absoluteStart{};
+        double absoluteEnd{};
+    };
+    struct SourceGroup {
+        ChordVoicingTarget target;
+        std::vector<Occurrence> occurrences;
+    };
+    std::map<Key, SourceGroup> groups;
+    std::set<std::string> transformedCells;
+    const auto& owner = plan.instruments[instrumentIndex];
+    // Drum notes are kit addresses, not tonal pitches. A pitched texture or
+    // harmonic pulse may nevertheless have a single-note source attack.
+    if (isVoiceInFamily(owner.sourceVoice, VoiceFamily::Rhythm)) return result;
+    const auto monophonic = owner.sourceVoice == VoiceId::SubBass ||
+        owner.sourceVoice == VoiceId::MovementBass ||
+        owner.sourceVoice == VoiceId::Lead ||
+        owner.sourceVoice == VoiceId::Countermelody ||
+        ElectronicRoleContract::motionOwner(owner);
+    for (const auto& placement : score.placements)
+        if (placement.transpose != 0 || placement.retrograde ||
+            placement.invertContour || !placement.voiceMap.empty() ||
+            std::abs(placement.timeScale - 1.0) > .0001)
+            transformedCells.insert(placement.cellId);
+    for (const auto& cell : score.cells) {
+        if (transformedCells.contains(cell.id)) continue;
+        for (const auto& note : cell.notes) {
+            if (note.instrumentId != owner.id) continue;
+            const Key key{cell.id, std::llround(note.beat * 1000000.0),
+                std::llround(note.durationBeats * 1000000.0)};
+            auto& target = groups[key].target;
+            target.sourceCellId = cell.id;
+            target.sourceBeat = note.beat;
+            target.durationBeats = note.durationBeats;
+            target.pitches.push_back(note.pitch);
+        }
+    }
+    for (const auto& placement : score.placements) {
+        if (placement.sectionIndex < 0 ||
+            static_cast<std::size_t>(placement.sectionIndex) >= plan.sections.size() ||
+            transformedCells.contains(placement.cellId)) continue;
+        const auto cell = std::find_if(score.cells.begin(), score.cells.end(),
+            [&](const auto& item) { return item.id == placement.cellId; });
+        if (cell == score.cells.end()) continue;
+        const auto& section = plan.sections[placement.sectionIndex];
+        const auto sectionLength = section.bars * plan.beatsPerBar;
+        const auto fragmentEnd = placement.fragmentEnd < 0.0
+            ? cell->lengthBeats : placement.fragmentEnd;
+        for (auto& [key, group] : groups) {
+            if (std::get<0>(key) != cell->id) continue;
+            const auto beat = group.target.sourceBeat;
+            if (beat < placement.fragmentStart - .001 || beat >= fragmentEnd - .001)
+                continue;
+            for (auto repeat = 0; repeat < placement.repeats; ++repeat) {
+                const auto sectionBeat = placement.startBeat + repeat * cell->lengthBeats + beat;
+                const auto duration = std::min({group.target.durationBeats,
+                    fragmentEnd - beat, sectionLength - sectionBeat});
+                if (sectionBeat < -.001 || sectionBeat >= sectionLength - .001 ||
+                    duration < .01) continue;
+                const auto absolute = section.startBar * plan.beatsPerBar + sectionBeat;
+                group.occurrences.push_back({placement.sectionIndex, sectionBeat,
+                    absolute, absolute + duration});
+            }
+        }
+    }
+    const auto partId = static_cast<std::uint16_t>(instrumentIndex + 1);
+    for (const auto& issue : audit.issues) {
+        if (issue.kind != "harsh_overlap" ||
+            (issue.partId != partId && issue.otherPartId != partId)) continue;
+        const auto pitch = issue.partId == partId ? issue.pitch : issue.otherPitch;
+        for (auto& [key, group] : groups) {
+            (void) key;
+            if (std::find(group.target.pitches.begin(), group.target.pitches.end(),
+                    pitch) == group.target.pitches.end()) continue;
+            if (std::any_of(group.occurrences.begin(), group.occurrences.end(),
+                    [&](const auto& occurrence) {
+                        return issue.beat >= occurrence.absoluteStart - .001 &&
+                            issue.beat < occurrence.absoluteEnd - .001;
+                    })) {
+                ++group.target.conflictEvents;
+                break;
+            }
+        }
+    }
+    // A long source cell may spell the same defective chord explicitly at
+    // many beats instead of using placement.repeats. Group only attacks with
+    // identical pitches, duration and harmonic contexts. One AI decision then
+    // edits that authored motif family, not arbitrary notes on the same track.
+    using CohortKey = std::tuple<long long, std::vector<int>, std::set<std::string>>;
+    std::map<CohortKey, ChordVoicingTarget> cohorts;
+    for (auto& [key, group] : groups) {
+        auto& source = group.target;
+        std::sort(source.pitches.begin(), source.pitches.end());
+        source.pitches.erase(std::unique(source.pitches.begin(), source.pitches.end()),
+            source.pitches.end());
+        if (group.occurrences.empty() || source.conflictEvents == 0 ||
+            source.pitches.empty() || source.pitches.size() > 6 ||
+            (monophonic && source.pitches.size() != 1)) continue;
+        const auto exemplar = std::find_if(group.occurrences.begin(),
+            group.occurrences.end(), [&](const auto& occurrence) {
+                return occurrence.absoluteEnd - occurrence.absoluteStart >=
+                    source.durationBeats - .001;
+            });
+        if (exemplar == group.occurrences.end()) continue;
+        std::set<std::string> harmony;
+        for (const auto& occurrence : group.occurrences) {
+            const auto& section = plan.sections[occurrence.sectionIndex];
+            const HarmonicEvent* active = nullptr;
+            for (const auto& event : section.harmonicEvents) {
+                const auto eventBeat = event.barOffset * plan.beatsPerBar + event.beatOffset;
+                if (eventBeat <= occurrence.sectionBeat + .001 &&
+                    (active == nullptr || eventBeat >=
+                        active->barOffset * plan.beatsPerBar + active->beatOffset))
+                    active = &event;
+            }
+            harmony.insert(active == nullptr ? std::string{} : active->chordId);
+        }
+        const CohortKey cohortKey{std::get<2>(key), source.pitches, harmony};
+        auto& cohort = cohorts[cohortKey];
+        if (cohort.sourceAttacks.empty()) {
+            cohort = source;
+            cohort.sectionIndex = exemplar->sectionIndex;
+            cohort.sectionBeat = exemplar->sectionBeat;
+            cohort.conflictEvents = 0;
+            cohort.sourceOccurrences = 0;
+        }
+        cohort.conflictEvents += source.conflictEvents;
+        cohort.sourceOccurrences += group.occurrences.size();
+        cohort.sourceAttacks.push_back({source.sourceCellId, source.sourceBeat,
+            source.durationBeats});
+        for (const auto& occurrence : group.occurrences)
+            cohort.occurrences.push_back({occurrence.sectionIndex,
+                occurrence.sectionBeat,
+                occurrence.absoluteEnd - occurrence.absoluteStart});
+    }
+    for (auto& [key, cohort] : cohorts) {
+        (void) key;
+        if (cohort.sourceOccurrences >= 2 && cohort.conflictEvents >= 2) {
+            std::sort(cohort.occurrences.begin(), cohort.occurrences.end(),
+                [](const auto& left, const auto& right) {
+                    return std::tie(left.sectionIndex, left.sectionBeat,
+                               left.durationBeats) <
+                        std::tie(right.sectionIndex, right.sectionBeat,
+                            right.durationBeats);
+                });
+            cohort.occurrences.erase(std::unique(cohort.occurrences.begin(),
+                cohort.occurrences.end(), [](const auto& left, const auto& right) {
+                    return left.sectionIndex == right.sectionIndex &&
+                        std::abs(left.sectionBeat - right.sectionBeat) < .001 &&
+                        std::abs(left.durationBeats - right.durationBeats) < .001;
+                }), cohort.occurrences.end());
+            result.push_back(std::move(cohort));
+        }
+    }
+    std::stable_sort(result.begin(), result.end(), [](const auto& left, const auto& right) {
+        if (left.conflictEvents != right.conflictEvents)
+            return left.conflictEvents > right.conflictEvents;
+        return left.sourceOccurrences > right.sourceOccurrences;
+    });
+    if (result.size() > maximumTargets) result.resize(maximumTargets);
+    return result;
+}
+
+bool SelectiveRepair::applySourceVoicingPatches(
+    const SongPlan& plan, const PerformanceScore& original,
+    std::size_t instrumentIndex, const std::vector<ChordVoicingTarget>& targets,
+    const std::vector<ChordVoicingPatch>& patches, PerformanceScore& output,
+    std::string& error) {
+    error.clear();
+    if (instrumentIndex >= plan.instruments.size() || patches.empty()) {
+        error = "No valid source-cell patch target";
+        return false;
+    }
+    const auto& owner = plan.instruments[instrumentIndex];
+    if (isVoiceInFamily(owner.sourceVoice, VoiceFamily::Rhythm)) {
+        error = "Rhythm kit addresses are not tonal patch targets";
+        return false;
+    }
+    const auto monophonic = owner.sourceVoice == VoiceId::SubBass ||
+        owner.sourceVoice == VoiceId::MovementBass ||
+        owner.sourceVoice == VoiceId::Lead ||
+        owner.sourceVoice == VoiceId::Countermelody ||
+        ElectronicRoleContract::motionOwner(owner);
+    output = original;
+    std::set<std::tuple<std::string, long long, long long>> edited;
+    for (const auto& patch : patches) {
+        const auto target = std::find_if(targets.begin(), targets.end(),
+            [&](const auto& item) {
+                return item.sectionIndex == patch.sectionIndex &&
+                    std::abs(item.sectionBeat - patch.sectionBeat) < .001 &&
+                    std::abs(item.durationBeats - patch.durationBeats) < .001;
+            });
+        if (target == targets.end() || target->sourceCellId.empty() ||
+            patch.pitches.size() < (target->pitches.size() == 1 ? 1U : 2U) ||
+            patch.pitches.size() > (monophonic ? 1U : 6U)) {
+            error = "Source-cell reply does not match a requested complete attack";
+            return false;
+        }
+        auto newPitches = patch.pitches;
+        std::sort(newPitches.begin(), newPitches.end());
+        const auto& range = voiceDefinition(owner.sourceVoice);
+        if (std::adjacent_find(newPitches.begin(), newPitches.end()) !=
+                newPitches.end() ||
+            std::any_of(newPitches.begin(), newPitches.end(), [&](int pitch) {
+                return pitch < owner.minimumPitch || pitch > owner.maximumPitch ||
+                    pitch < range.minimumPitch || pitch > range.maximumPitch;
+            })) {
+            error = "Source-cell voicing leaves the instrument register";
+            return false;
+        }
+        for (const auto& attack : target->sourceAttacks) {
+            const auto key = std::make_tuple(attack.cellId,
+                std::llround(attack.beat * 1000000.0),
+                std::llround(attack.durationBeats * 1000000.0));
+            if (!edited.insert(key).second) {
+                error = "Source-cell reply duplicates an attack";
+                return false;
+            }
+            auto cell = std::find_if(output.cells.begin(), output.cells.end(),
+                [&](const auto& item) { return item.id == attack.cellId; });
+            if (cell == output.cells.end()) {
+                error = "Source-cell reply refers to a missing cell";
+                return false;
+            }
+            std::vector<AuthoredNote> originals;
+            for (const auto& note : cell->notes)
+                if (note.instrumentId == owner.id &&
+                    std::abs(note.beat - attack.beat) < .000001 &&
+                    std::abs(note.durationBeats - attack.durationBeats) < .000001)
+                    originals.push_back(note);
+            std::vector<int> originalPitches;
+            for (const auto& note : originals) originalPitches.push_back(note.pitch);
+            std::sort(originalPitches.begin(), originalPitches.end());
+            if (originals.size() < 1U ||
+                originalPitches != target->pitches) {
+                error = "Source-cell notes changed after the target was measured";
+                return false;
+            }
+            cell->notes.erase(std::remove_if(cell->notes.begin(), cell->notes.end(),
+                [&](const auto& note) {
+                    return note.instrumentId == owner.id &&
+                        std::abs(note.beat - attack.beat) < .000001 &&
+                        std::abs(note.durationBeats - attack.durationBeats) < .000001;
+                }), cell->notes.end());
+            for (const auto pitch : newPitches) {
+                auto note = originals.front();
+                note.pitch = pitch;
+                cell->notes.push_back(std::move(note));
+            }
+        }
+    }
+    return true;
 }
 
 bool SelectiveRepair::applyChordVoicingPatches(

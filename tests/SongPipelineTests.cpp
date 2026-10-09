@@ -49,6 +49,18 @@ int main() {
             part("speaker", VoiceId::Lead),
             part("upper_body", VoiceId::HarmonicUpper, "body")};
         orderPlan.instruments[0].role = "primary_chord_bed";
+        orderPlan.instruments[3].minimumPitch = 69;
+        orderPlan.instruments[3].maximumPitch = 91;
+        const auto focusedSchema = juce::JSON::parse(
+            AiComposer::performanceSchemaFor(orderPlan, {3}));
+        const auto focusedPitch = focusedSchema.getProperty("properties", {})
+            .getProperty("performance_score", {}).getProperty("properties", {})
+            .getProperty("cells", {}).getProperty("items", {}).getProperty("properties", {})
+            .getProperty("notes", {}).getProperty("items", {}).getProperty("properties", {})
+            .getProperty("pitch", {});
+        check(static_cast<int>(focusedPitch.getProperty("minimum", {})) == 69 &&
+              static_cast<int>(focusedPitch.getProperty("maximum", {})) == 91,
+              "focused protagonist schema must enforce the actual playable register");
         orderPlan.narrativeSpine.protagonistInstrumentId = "speaker";
         orderPlan.productionLanguage.domain = ProductionDomain::ClubElectronic;
         orderPlan.productionLanguage.electronicIntent = .85;

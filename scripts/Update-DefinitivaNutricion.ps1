@@ -203,7 +203,7 @@ try {
     Set-CellText $sheet1 $ns1 'H11' 'Sulfato K 99% (g) - 44,4% K / 18,2% S' '10'
     Set-CellText $sheet1 $ns1 'I11' 'MKP 0-52-34 (g)' '10'
     Set-CellText $sheet1 $ns1 'W11' 'Perfil elemental calculado (ppm)' '10'
-    Set-CellText $sheet1 $ns1 'AG11' 'Silicato de potasio Kraff (g)' '10'
+    Set-CellText $sheet1 $ns1 'AG11' 'Silicato eliminado (g)' '10'
     Set-CellText $sheet1 $ns1 'AH11' 'Si aportado (ppm)' '10'
     Set-CellText $sheet1 $ns1 'AI11' 'K del silicato (ppm)' '10'
     $weeklyRatesPer100L = @(
@@ -226,29 +226,61 @@ try {
             Set-CellFormula $sheet1 $ns1 "$($nutrientColumns[$j])$row" "`$B`$3*($rate/100)" '1'
         }
         Set-CellText $sheet1 $ns1 "K$row" $ecTargets[$i]
-        if ($row -lt 20) {
-            Set-CellFormula $sheet1 $ns1 "AG$row" "`$B`$3*'Aditivos'!`$H`$7/(('Aditivos'!`$K`$6/100)*0.46744*1000)" '1'
-        }
-        else {
-            Set-CellNumber $sheet1 $ns1 "AG$row" 0 '1'
-        }
+        Set-CellNumber $sheet1 $ns1 "AG$row" 0 '1'
         $baseK2SO4Rate = ([double]$weeklyRatesPer100L[$i][4]).ToString([System.Globalization.CultureInfo]::InvariantCulture)
-        Set-CellFormula $sheet1 $ns1 "H$row" "MAX(0,`$B`$3*($baseK2SO4Rate/100)-AG$row*('Aditivos'!`$K`$7/100)*0.8301/('Aditivos'!`$H`$3/100))" '1'
-        Set-CellFormula $sheet1 $ns1 "AH$row" "IFERROR(AG$row*('Aditivos'!`$K`$6/100)*0.46744*1000/`$B`$3,0)" '1'
-        Set-CellFormula $sheet1 $ns1 "AI$row" "IFERROR(AG$row*('Aditivos'!`$K`$7/100)*0.8301*1000/`$B`$3,0)" '1'
+        Set-CellFormula $sheet1 $ns1 "H$row" "`$B`$3*($baseK2SO4Rate/100)" '1'
+        Set-CellNumber $sheet1 $ns1 "AH$row" 0 '1'
+        Set-CellNumber $sheet1 $ns1 "AI$row" 0 '1'
         Set-CellFormula $sheet1 $ns1 "AC$row" "(((D$row*0.20+I$row*0.34+F$row*'Aditivos'!`$K`$4/100)*0.8301+H$row*'Aditivos'!`$H`$3/100)+AG$row*('Aditivos'!`$K`$7/100)*0.8301)*1000/`$B`$3"
-        Set-CellFormula $sheet1 $ns1 "W$row" "ROUND(Y$row,0)&`" N / `"&ROUND(AB$row,0)&`" P / `"&ROUND(AC$row,0)&`" K / `"&ROUND(AD$row,0)&`" Ca / `"&ROUND(AE$row,0)&`" Mg / `"&ROUND(AF$row,0)&`" S / `"&ROUND(AH$row,1)&`" Si ppm | Silicato: `"&ROUND(AG$row,2)&`" g`""
+        Set-CellFormula $sheet1 $ns1 "W$row" "ROUND(Y$row,0)&`" N / `"&ROUND(AB$row,0)&`" P / `"&ROUND(AC$row,0)&`" K / `"&ROUND(AD$row,0)&`" Ca / `"&ROUND(AE$row,0)&`" Mg / `"&ROUND(AF$row,0)&`" S ppm`""
     }
-    Set-CellText $sheet1 $ns1 'B27' 'Orden: agua 70-80% > silicato de potasio Kraff prediluido 1:100 > Micro C > Calcinit prediluido > KNO3 > Epsom > K2SO4 > MKP 0-52-34 > completar > EC > pH.'
-    Set-CellText $sheet1 $ns1 'B28' 'Silicato Kraff: objetivo 7 ppm Si en semanas 1-8; semana 9 sin silicio. Calculo basado en etiqueta: 19,5% SiO2 y 8,2% K2O. Dosificar por peso.'
+    Set-CellText $sheet1 $ns1 'B27' 'Orden: agua 70-80% > Micro C > Calcinit prediluido > KNO3 > Epsom > K2SO4 > MKP 0-52-34 > completar > EC > pH.'
+    Set-CellText $sheet1 $ns1 'B28' 'Silicato eliminado del cultivo. El potasio que aportaba fue restituido con sulfato de potasio en la receta semanal.'
+    Set-CellText $sheet1 $ns1 'B29' 'No mezclar Calcinit concentrado con Epsom, sulfato de potasio ni MKP; disolver cada producto por separado para evitar precipitados.'
     Set-CellText $sheet1 $ns1 'B30' 'Formula 100% trazable sin 20-20-20: Calcinit, KNO3, Epsom, K2SO4 y MKP aportan los macros; Micro C aporta todos los micros.'
+    Set-CellText $sheet1 $ns1 'A31' 'Control operativo del riego'
+    Set-CellText $sheet1 $ns1 'B31' 'Los ml/dia son un punto de partida. Ajustar pulsos y volumen con runoff real, EC de drenaje y dryback; con PPFD alto la demanda puede superar esta tabla.'
 
     Reorder-Sheet1PlanColumns $sheet1 $ns1
+
+    # Los horarios heredados enumeran hasta 24 pulsos para mantener
+    # compatibilidad con Excel sin depender de formulas matriciales dinamicas.
+    # Se agregan limites explicitos para parametros fuera del rango operativo.
+    foreach ($row in 12..20) {
+        $scheduleCell = Get-OrCreateCell $sheet1 $ns1 "S$row"
+        $scheduleFormula = $scheduleCell.SelectSingleNode('s:f', $ns1)
+        if ($scheduleFormula) {
+            $formulaText = $scheduleFormula.InnerText
+            $formulaText = $formulaText.Replace('(($B$7-4)/24)', '(MAX(0,$B$7-4)/24)')
+            $formulaText = $formulaText.Replace('(($B$9-6)/24)', '(MAX(0,$B$9-6)/24)')
+            $formulaText = $formulaText.Replace('(($B$9-4)/24)', '(MAX(0,$B$9-4)/24)')
+            $formulaText = $formulaText.Replace('(($B$9-8)/24)', '(MAX(0,$B$9-8)/24)')
+            $scheduleFormula.InnerText = "IF(O$row<1,`"`",IF(O$row>24,`"MAXIMO 24 PULSOS`",$formulaText))"
+        }
+    }
 
     # La antigua columna de base comercial se conserva internamente solo para
     # no romper el formato heredado, pero queda oculta y con dosis cero.
     $removedBaseColumn = $sheet1.SelectSingleNode("//s:cols/s:col[@min='4' and @max='4']", $ns1)
     if ($removedBaseColumn) { $removedBaseColumn.SetAttribute('hidden', '1') }
+
+    # Las columnas de silicato se conservan internamente para no desplazar el
+    # formato heredado, pero quedan ocultas porque el producto fue eliminado.
+    $columnsNode = $sheet1.SelectSingleNode('//s:cols', $ns1)
+    foreach ($range in @(@(11,11), @(34,35))) {
+        $columnNode = $sheet1.CreateElement('col', $script:SpreadsheetNs)
+        $columnNode.SetAttribute('min', [string]$range[0])
+        $columnNode.SetAttribute('max', [string]$range[1])
+        $columnNode.SetAttribute('width', '12')
+        $columnNode.SetAttribute('customWidth', '1')
+        $columnNode.SetAttribute('hidden', '1')
+        $insertBefore = $null
+        foreach ($candidate in $columnsNode.SelectNodes('s:col', $ns1)) {
+            if ([int]$candidate.min -gt [int]$range[0]) { $insertBefore = $candidate; break }
+        }
+        if ($insertBefore) { [void]$columnsNode.InsertBefore($columnNode, $insertBefore) }
+        else { [void]$columnsNode.AppendChild($columnNode) }
+    }
 
     # Control quimico visible despues del reordenamiento. No hay aportes ocultos
     # de una base NPK: cada formula depende solo de las sales declaradas.
@@ -262,7 +294,7 @@ try {
         Set-CellFormula $sheet1 $ns1 "AF$row" "G$row*0.0986*1000/`$B`$3"
         Set-CellFormula $sheet1 $ns1 "AG$row" "(G$row*0.13+H$row*'Aditivos'!`$H`$4/100)*1000/`$B`$3"
         Set-CellFormula $sheet1 $ns1 "Y$row" "IFERROR(AB$row/Z$row*100,0)"
-        Set-CellFormula $sheet1 $ns1 "X$row" "ROUND(Z$row,0)&`" N / `"&ROUND(AC$row,0)&`" P / `"&ROUND(AD$row,0)&`" K / `"&ROUND(AE$row,0)&`" Ca / `"&ROUND(AF$row,0)&`" Mg / `"&ROUND(AG$row,0)&`" S / `"&ROUND(AH$row,1)&`" Si ppm | Silicato: `"&ROUND(K$row,2)&`" g`""
+        Set-CellFormula $sheet1 $ns1 "X$row" "ROUND(Z$row,0)&`" N / `"&ROUND(AC$row,0)&`" P / `"&ROUND(AD$row,0)&`" K / `"&ROUND(AE$row,0)&`" Ca / `"&ROUND(AF$row,0)&`" Mg / `"&ROUND(AG$row,0)&`" S ppm`""
     }
 
     $sheet1Dimension = $sheet1.SelectSingleNode('//s:dimension', $ns1)
@@ -431,16 +463,6 @@ try {
     Set-CellNumber $additives $ns2 'K3' 13.7
     Set-CellText $additives $ns2 'J4' 'Nitrato de potasio: K2O (%)'
     Set-CellNumber $additives $ns2 'K4' 46.1
-    Set-CellText $additives $ns2 'G6' 'Materia prima de silicio'
-    Set-CellText $additives $ns2 'H6' 'Silicato de potasio Kraff (tipo K-30)'
-    Set-CellText $additives $ns2 'G7' 'Objetivo semanas 1-8'
-    Set-CellNumber $additives $ns2 'H7' 7
-    Set-CellText $additives $ns2 'I7' 'ppm Si'
-    Set-CellText $additives $ns2 'J6' 'SiO2 nominal (%)'
-    Set-CellNumber $additives $ns2 'K6' 19.5
-    Set-CellText $additives $ns2 'J7' 'K2O nominal (%)'
-    Set-CellNumber $additives $ns2 'K7' 8.2
-
     Set-CellText $additives $ns2 'A10' 'RECETA DE SOLUCION MADRE MICRO C - VOLUMEN FINAL 2 L' '1'
     Set-CellText $additives $ns2 'A11' 'Producto' '9'
     Set-CellText $additives $ns2 'B11' 'Cantidad' '9'
@@ -482,7 +504,6 @@ try {
     Set-CellText $additives $ns2 'A30' 'ORDEN DE PREPARACION DE CADA TANQUE' '1'
     $mixSteps = @(
         'Cargar 70-80% del agua y encender la circulacion.',
-        'Pesar el silicato Kraff indicado, prediluirlo al menos 1:100 y agregarlo primero; comprobar que no aparezca turbidez.',
         'Agitar Micro C y agregar los ml indicados en Sheet1.',
         'Prediluir Calcinit y agregar lentamente.',
         'Disolver y agregar por separado nitrato de potasio.',
@@ -508,7 +529,7 @@ try {
     Set-CellText $additives $ns2 'A47' '4'
     Set-CellText $additives $ns2 'B47' 'Registrar EC y pH de entrada y de runoff antes de corregir la receta.'
     Set-CellText $additives $ns2 'A48' '5'
-    Set-CellText $additives $ns2 'B48' 'El silicato Kraff no entra en Micro C. Agregar primero y suspender si deja turbidez, gel o sedimento; no acidificar un concentrado.'
+    Set-CellText $additives $ns2 'B48' 'El silicato fue eliminado del plan. No agregarlo a Micro C ni al tanque.'
 
     Set-CellText $additives $ns2 'A50' 'GUIA DE ELEMENTOS DE TU NUTRICION' '1'
     Set-CellText $additives $ns2 'A51' 'Tipo' '9'
@@ -519,7 +540,7 @@ try {
     $elementGuide = @(
         @('Macro primario','N','Nitrogeno','Crecimiento, proteinas y clorofila','Calcinit y nitrato de potasio'),
         @('Macro primario','P','Fosforo','Energia, raices y desarrollo floral','MKP'),
-        @('Macro primario','K','Potasio','Regulacion del agua, enzimas y floracion','Nitrato y sulfato de potasio, MKP y silicato'),
+        @('Macro primario','K','Potasio','Regulacion del agua, enzimas y floracion','Nitrato y sulfato de potasio, MKP'),
         @('Macro secundario','Ca','Calcio','Paredes celulares, brotes y raices nuevas','Calcinit'),
         @('Macro secundario','Mg','Magnesio','Atomo central de la clorofila','Epsom'),
         @('Macro secundario','S','Azufre','Aminoacidos, proteinas y enzimas','Epsom y sulfato de potasio'),
@@ -528,8 +549,7 @@ try {
         @('Micronutriente','Zn','Zinc','Crecimiento y regulacion hormonal','Micro C'),
         @('Micronutriente','B','Boro','Tejidos nuevos, paredes celulares y floracion','Micro C'),
         @('Micronutriente','Cu','Cobre','Enzimas y formacion de tejidos','Micro C'),
-        @('Micronutriente','Mo','Molibdeno','Permite utilizar correctamente el nitrogeno nitrico','Micro C'),
-        @('Elemento benefico','Si','Silicio','Refuerzo estructural y tolerancia a estres','Silicato de potasio Kraff')
+        @('Micronutriente','Mo','Molibdeno','Permite utilizar correctamente el nitrogeno nitrico','Micro C')
     )
     for ($i = 0; $i -lt $elementGuide.Count; $i++) {
         $row = 52 + $i
@@ -555,7 +575,6 @@ try {
         @('Tanque','Epsom','Sulfato de magnesio','Ya lo tienes','https://www.mercadolibre.com.ar/sales-de-epson-sulfato-de-magnesio-x-1kg-icasa/p/MLA54435900'),
         @('Tanque','Nitrato de potasio','KNO3 soluble; confirmar composicion de tu envase','Ya lo tienes','https://www.mercadolibre.com.ar/nitrato-de-potasio--99--maxima-pureza--1kg-farmashop/up/MLAU3374009278'),
         @('Tanque','Sulfato de potasio Salttech','K2SO4 anhidro P.A. 99%; aprox. 44,4% K y 18,2% S','Comprar 50 g en Norte Insumos','https://www.norteinsumoslab.com/productos/potasio-sulfato-anhidro-pro-analisis-a-c-s-salttech/'),
-        @('Materia prima','Silicato de potasio Kraff 5 L','19,5% SiO2 y 8,2% K2O segun la etiqueta; soluble y sin particulas','Usar solo con lote uniforme y ficha/COA','https://www.mercadolibre.com.ar/silicato-de-potasio-kraff-5-litros-uso-industrial/up/MLAU4345782094'),
         @('Micro C','Afital Hierro EDTA liquido','4% Fe p/p; EDTA y lignosulfonatos','Comprar 1 L','https://articulo.mercadolibre.com.ar/MLA-1842015564-hierro-liquido-quelato-edta-fe-_JM'),
         @('Micro C','Sulfato de manganeso','Monohidratado, 31% Mn','Comprar 100 g en Norte Insumos','https://www.norteinsumoslab.com/productos/manganeso-sulfato-industrial/'),
         @('Micro C','Sulfato de zinc Salttech','ZnSO4.7H2O heptahidratado P.A.','Comprar 100 g en Norte Insumos','https://www.norteinsumoslab.com/productos/zinc-sulfato-7-hidrato-pro-analisis-a-c-s-salttech/'),
@@ -573,13 +592,13 @@ try {
         $url = $purchaseLinks[$i][4]
         Set-CellFormula $additives $ns2 "E$row" "HYPERLINK(`"$url`",`"Abrir compra`")"
     }
-    Set-CellText $additives $ns2 'A85' 'Antes de comprar'
-    Set-CellText $additives $ns2 'B85' 'Silicato Kraff verificado por etiqueta: 19,5% SiO2 y 8,2% K2O. Si el envase recibido cambia estos porcentajes, actualizar K6 y K7 antes de preparar el tanque.'
+    Set-CellText $additives $ns2 'A85' 'Decision de formula'
+    Set-CellText $additives $ns2 'B85' 'Silicato eliminado. La receta semanal usa sulfato de potasio para mantener el objetivo de K sin aporte de Si.'
     Set-CellText $additives $ns2 'A86' 'Control de calidad'
     Set-CellText $additives $ns2 'B86' 'Para un cultivo destinado a consumo, priorizar sales grado fertilizante documentado o P.A. con ficha/COA; no usar materias primas de composicion incierta.'
 
     $dimension = $additives.SelectSingleNode('//s:dimension', $ns2)
-    if ($dimension) { $dimension.SetAttribute('ref', 'A1:K85') }
+    if ($dimension) { $dimension.SetAttribute('ref', 'A1:K86') }
 
     $wbNs = Get-NamespaceManager $workbook
     $calcPr = $workbook.SelectSingleNode('//s:calcPr', $wbNs)

@@ -22,6 +22,10 @@ use crate::{
 
 const CLOUD_BEHAVIOR: &str = "adaptive";
 const CLOUD_AI_SOVEREIGN: bool = true;
+// The local AI-only editorial worker can scale its own budget to 180 minutes
+// for an unusually large cast. The API must not kill that same worker at 45
+// minutes just because it is running in Cloud.
+const CLOUD_WORKER_DEADLINE: Duration = Duration::from_secs(185 * 60);
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -341,6 +345,32 @@ async fn claim(state: &AppState) -> ApiResult<Option<ClaimedJob>> {
     Ok(job)
 }
 
+fn worker_command(
+    worker: &Path,
+    openai_key: &str,
+    input: &Path,
+    directory: &Path,
+    output_root: &Path,
+) -> Command {
+    let mut command = Command::new(worker);
+    command
+        .env_clear()
+        .env("OPENAI_API_KEY", openai_key)
+        // env_clear() deliberately strips API-server secrets, but it also
+        // strips the editor profile from Compose. Pass the exact profile used
+        // by Local Studio explicitly; otherwise identical requests follow a
+        // different musical path in Cloud.
+        .env("PULSO_AI_EDITORIAL_V2", "1")
+        .env("PULSO_DISABLE_SECURE_CREDENTIALS", "1")
+        .env("PULSO_TRACE_PATH", directory.join("api-events.jsonl"))
+        .env("HOME", output_root)
+        .env("XDG_CONFIG_HOME", output_root)
+        .arg(input)
+        .arg(directory)
+        .kill_on_drop(true);
+    command
+}
+
 async fn run_one(state: &AppState, job: ClaimedJob) -> ApiResult<()> {
     let directory = state.config.cloud_output_dir.join(job.id.to_string());
     tokio::fs::create_dir_all(&directory).await?;
@@ -364,20 +394,18 @@ async fn run_one(state: &AppState, job: ClaimedJob) -> ApiResult<()> {
     // Stripe, database, mail or signing credentials.
     let openai_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| ApiError::configuration("missing OPENAI_API_KEY"))?;
-    let mut command = Command::new(worker);
-    command
-        .env_clear()
-        .env("OPENAI_API_KEY", openai_key)
-        .env("HOME", &state.config.cloud_output_dir)
-        .env("XDG_CONFIG_HOME", &state.config.cloud_output_dir)
-        .arg(&input)
-        .arg(&directory)
-        .kill_on_drop(true);
+    let mut command = worker_command(
+        worker,
+        &openai_key,
+        &input,
+        &directory,
+        &state.config.cloud_output_dir,
+    );
     let mut child = command
         .spawn()
         .map_err(|e| ApiError::internal(e.to_string()))?;
     let mut heartbeat = interval(Duration::from_secs(5));
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(45 * 60);
+    let deadline = tokio::time::Instant::now() + CLOUD_WORKER_DEADLINE;
     loop {
         heartbeat.tick().await;
         let cancelled: bool =
@@ -512,6 +540,49 @@ pub async fn worker_loop(state: AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cloud_worker_budget_covers_the_ai_only_editorial_ceiling() {
+        assert!(CLOUD_WORKER_DEADLINE >= Duration::from_secs(180 * 60));
+        assert_eq!(CLOUD_BEHAVIOR, "adaptive");
+        assert!(CLOUD_AI_SOVEREIGN);
+    }
+    #[test]
+    fn cloud_worker_recreates_the_local_editorial_environment_without_server_secrets() {
+        let command = worker_command(
+            Path::new("worker"),
+            "test-only",
+            Path::new("job.json"),
+            Path::new("jobs/work"),
+            Path::new("jobs"),
+        );
+        let env: std::collections::HashMap<_, _> = command
+            .as_std()
+            .get_envs()
+            .filter_map(|(key, value)| {
+                value.map(|value| {
+                    (
+                        key.to_string_lossy().into_owned(),
+                        value.to_string_lossy().into_owned(),
+                    )
+                })
+            })
+            .collect();
+        assert_eq!(
+            env.get("PULSO_AI_EDITORIAL_V2").map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            env.get("PULSO_DISABLE_SECURE_CREDENTIALS")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert!(
+            env.get("PULSO_TRACE_PATH")
+                .is_some_and(|path| path.ends_with("api-events.jsonl"))
+        );
+        assert!(!env.contains_key("DATABASE_URL"));
+        assert!(!env.contains_key("STRIPE_SECRET_KEY"));
+    }
     #[test]
     fn input_boundaries_and_idempotency_key() {
         let valid = CreateJob {

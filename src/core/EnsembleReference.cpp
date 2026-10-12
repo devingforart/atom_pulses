@@ -79,9 +79,11 @@ std::string EnsembleReference::summarize(const SongPlan& plan,
                     if (left.startBeat != right.startBeat) return left.startBeat < right.startBeat;
                     return left.pitch < right.pitch;
                 });
-                const auto ownerQuota = priority == 0 ? std::size_t{8} :
-                    priority == 1 ? std::size_t{8} : priority == 2 ? std::size_t{6} :
-                    std::size_t{3};
+                // Cover several owners rather than exhausting a whole scene
+                // budget on one protagonist or chord-bed lane.
+                const auto ownerQuota = priority == 0 ? std::size_t{4} :
+                    priority == 1 ? std::size_t{4} : priority == 2 ? std::size_t{3} :
+                    std::size_t{2};
                 const auto quota = std::min({maximumEvents - emitted,
                     sectionBudget - emittedInSection, ownerQuota});
                 const auto chosen = landmarks(notes, quota);

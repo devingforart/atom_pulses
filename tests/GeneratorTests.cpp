@@ -2723,6 +2723,22 @@ void runGeneratorTests() {
             "The final MIDI must prove causal acts and repay its tonal debt: causal=" +
                 std::to_string(causalAudit.causalNarrative) + " resolution=" +
                 std::to_string(causalAudit.resolutionScore));
+    auto delayedProtagonist = causalMidi;
+    const auto firstActEnd = (causalPlan.sections[0].startBar +
+        causalPlan.sections[0].bars) * causalPlan.beatsPerBar;
+    std::erase_if(delayedProtagonist.notes, [&](const auto& note) {
+        return note.voice == VoiceId::Lead && note.startBeat < firstActEnd;
+    });
+    delayedProtagonist.notes.push_back({0.0, 4.0, tonic - 5, 54, 3,
+        VoiceId::HarmonicFoundation, 2, false, NoteOrigin::AiAuthored, 0});
+    delayedProtagonist.notes.push_back({0.0, 4.0, tonic - 8, 50, 3,
+        VoiceId::HarmonicFoundation, 2, false, NoteOrigin::AiAuthored, 0});
+    const auto delayedAudit = NarrativeScoreGate::audit(delayedProtagonist, causalPlan);
+    require(delayedAudit.motifClosure > .5 && delayedAudit.narrativeSpineReady,
+            "An intentional harmonic prologue must not erase the protagonist's later "
+            "statement and resolved return: closure=" +
+                std::to_string(delayedAudit.motifClosure) + " resolution=" +
+                std::to_string(delayedAudit.resolutionScore));
     auto restrainedArcPlan = causalPlan;
     restrainedArcPlan.narrativeSpine.acts[3].stage = NarrativeStage::Transformation;
     const auto restrainedArcAudit = NarrativeScoreGate::audit(causalMidi, restrainedArcPlan);

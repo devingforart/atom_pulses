@@ -27,6 +27,12 @@ Cada composicion nueva puede generar cargos de API. Para evitar sorpresas,
 consulta `api-events.jsonl` y `progress-events.jsonl` en el directorio del
 trabajo antes de repetir una generacion fallida.
 
+En obras largas, el escritor editorial y sus recuperaciones permiten hasta
+18 000 tokens de salida por bloque y 24 000 en sus reintentos acotados. Es un
+limite maximo, no un gasto fijo: una respuesta breve conserva su consumo real. Esto evita repetir
+el antiguo limite fijo de 10 000 tokens cuando un JSON valido necesita mas
+espacio para completar una pista pedida explicitamente.
+
 El estudio guarda en `build/local-studio-data/validated-response-cache/` solo
 respuestas que pasaron su validacion: plano macro, reparto y ventanas MIDI
 aceptadas. Un nuevo trabajo con solicitud identica puede reutilizarlas; una
@@ -48,6 +54,27 @@ Desde la raíz del repositorio, en PowerShell:
 ```
 
 La clave `OPENAI_API_KEY` debe estar configurada como variable de entorno del usuario o del proceso. El script nunca imprime su valor. Abrí `http://127.0.0.1:4177`. La página indica si el ejecutable y la clave están disponibles. **Abrir la página no envía solicitudes a OpenAI**: solo el botón «Comenzar composición» lo hace y puede generar un cargo.
+
+Para medir latencia sin tocar el MIDI ni interrumpir una generación, ejecutá
+`node tools/analyze-local-latency.mjs <id-del-trabajo>`. El informe separa
+escritura, revisión, cantidad de llamadas, tokens, divisiones de bloques y
+correcciones puntuales. En pruebas A/B de obras largas puede activarse
+`PULSO_AI_SINGLE_OWNER_WRITING=1` **antes de iniciar el servidor local**: el
+worker escribirá cada identidad en una transacción propia, conservando su
+orden, la autoría de notas por IA y todas las puertas de aceptación. No se
+activa en producción sin comparar tiempo y calidad con el modo establecido.
+Para comparar dos obras terminadas con el mismo encargo, ejecutá
+`node tools/compare-local-compositions.mjs <directorio-base> <directorio-candidato>`.
+Además de tiempo y llamadas, informa pistas con MIDI, densidad por pista,
+continuidad armónica y problemas de la auditoría. La misma semilla no obliga
+a la IA a devolver notas idénticas; una comparación objetiva nunca sustituye
+la escucha humana del MIDI completo.
+Para una comparación más estricta que conservar solo semilla y prompt, la API
+local admite `blueprint_from_job` con el UUID de una obra terminada. Exige
+idénticos prompt, duración, tempo, semilla y modo; copia únicamente el plan
+aceptado y obliga a escribir nuevamente todas las notas. Es una herramienta
+de ensayo aislada, no una opción de publicación ni un atajo para recuperar
+notas de otra obra.
 
 Opcional: `./scripts/start-local-studio.ps1 -Port 4180`. Para usar otro worker existente, definí `PULSO_LOCAL_WORKER_PATH` antes de iniciar. El script no compila nada.
 
@@ -223,6 +250,17 @@ auditoría final y la exportación concluyen correctamente. Estos checkpoints no
 inician solicitudes nuevas ni añaden notas procedurales; son una representación
 MIDI de las células de interpretación ya recibidas.
 
+En obras nuevas, `accepted-blueprint.json` conserva el plan IA exacto que dio
+origen al checkpoint. Si una corrida falla **después** de guardar MIDI aceptado,
+el estudio inicia una única recuperación automática: restaura ese plan y esas
+notas, pide solo el material pendiente y vuelve a auditar. La recuperación se
+muestra como una obra vinculada a la original y se limita a 10 minutos y USD
+20 estimados adicionales. El importe es un límite blando: una respuesta ya
+iniciada puede excederlo. Una falla antes del primer checkpoint, una clave sin
+créditos o una cancelación deliberada no disparan otra composición. Los trabajos
+anteriores sin blueprint exacto conservan su MIDI, pero no se reanudan
+automáticamente para evitar mezclar planes distintos.
+
 Una falta marginal de exactamente un intervalo melódico de paso ya no provoca
 varias reescrituras de la pista protagonista. El compositor intenta una única
 edición de altura acotada y verifica de nuevo el contrato. Si no converge, el
@@ -232,7 +270,7 @@ un costo, una duración o una calidad musical concretos**. Para validarlo con
 audio y medir el ahorro hay que lanzar una composición nueva, que sí consume API.
 
 1. Escribí el prompt, elegí duración, tempo y enfoque. Dejando la semilla vacía se genera una nueva; conservándola se facilita comparar versiones.
-2. Componé una sola obra a la vez. La interfaz muestra etapa y progreso. No hay reintentos automáticos desde la web.
+2. Componé una sola obra a la vez. La interfaz muestra etapa y progreso. Si existe un checkpoint exacto y ocurre una falla recuperable, se verá un único intento automático acotado; una falla anterior al primer MIDI queda informada sin gastar en un nuevo intento.
 3. Al terminar, la suite abre la partitura **directamente desde los archivos MIDI**. Reproducí, pausá, detené o desplazate en la regla; usá **M** y **S** para silenciar o escuchar una pista sola. **Producción** usa una paleta PULSO de síntesis electrónica y percusión diferenciada, asignada a partir de los metadatos de cada pista. **MIDI neutro** conserva la escucha senoidal para auditar la composición. El selector de sonido de cada pista cambia solo la escucha y se recuerda localmente para esa obra. **WAV 30 s** renderiza desde la posición actual un pasaje con los sonidos elegidos, sin llamadas a la API. Podés descargar `full-song.mid` o los MIDI individuales para continuar en Ableton; también `job.json`, `manifest.json` y, para obras nuevas, `composition-plan.json`.
 4. Descargá «Traza JSON» para ver cada llamada a OpenAI y cada cambio de fase. El resumen en pantalla muestra tiempos, tokens, respuestas incompletas y costo orientativo. Las llamadas que no devuelven `usage` se identifican explícitamente: sus tokens y costo no pueden inferirse con exactitud.
 5. Las obras nuevas se guardan en `build/local-studio-data/jobs`, una carpeta ignorada por Git dentro del proyecto. El historial anterior de `%LOCALAPPDATA%\Pulso\LocalStudio\jobs` permanece visible en modo lectura; no se mueve ni se borra. Para usar otra ubicación escribible, definí `PULSO_LOCAL_DATA_DIR` antes de iniciar el estudio. Escuchar obras guardadas no hace solicitudes a OpenAI. Los MIDI provisionales de trabajos fallidos también pueden audicionarse, etiquetados como no aprobados.

@@ -394,6 +394,53 @@ int main(int argc, char** argv) {
     request.seed = seed;
     request.behavior = behaviorFrom(object->getProperty("behavior").toString());
     request.aiSovereign = object->getProperty("ai_sovereign") == juce::var(true);
+    const auto resumePath = object->getProperty("resume_checkpoint_file").toString();
+    if (resumePath.isNotEmpty()) {
+        const juce::File resumeFile(resumePath);
+        if (!resumeFile.existsAsFile() || resumeFile.getSize() > 16 * 1024 * 1024)
+            return fail(output, "AI resume checkpoint is missing or too large");
+        const auto resumeJson = juce::JSON::parse(resumeFile);
+        const auto* resumeObject = resumeJson.getDynamicObject();
+        const auto* cast = resumeObject == nullptr ? nullptr :
+            resumeObject->getProperty("cast_ids").getArray();
+        const auto* sections = resumeObject == nullptr ? nullptr :
+            resumeObject->getProperty("sections").getArray();
+        const auto* notes = resumeObject == nullptr ? nullptr :
+            resumeObject->getProperty("notes").getArray();
+        const auto blueprintJson = resumeObject == nullptr ? juce::String{} :
+            resumeObject->getProperty("blueprint_json").toString();
+        const auto blueprintOnly = resumeObject != nullptr &&
+            resumeObject->getProperty("blueprint_only") == juce::var(true);
+        if (blueprintJson.getNumBytesAsUTF8() > 2 * 1024 * 1024)
+            return fail(output, "AI resume blueprint is too large");
+        request.resume.blueprintJson = blueprintJson;
+        request.resume.blueprintOnly = blueprintOnly;
+        if (cast == nullptr || sections == nullptr || notes == nullptr ||
+            cast->isEmpty() ||
+            (blueprintOnly ? (blueprintJson.isEmpty() || !notes->isEmpty()) :
+                notes->isEmpty()) || notes->size() > 100000)
+            return fail(output, "AI resume checkpoint JSON is invalid");
+        for (const auto& id : *cast)
+            request.resume.castIds.push_back(id.toString().toStdString());
+        for (const auto& value : *sections) {
+            const auto* item = value.getDynamicObject();
+            if (item == nullptr) return fail(output, "AI resume section is invalid");
+            request.resume.sections.emplace_back(
+                static_cast<int>(item->getProperty("start_bar")),
+                static_cast<int>(item->getProperty("bars")));
+        }
+        for (const auto& value : *notes) {
+            const auto* item = value.getDynamicObject();
+            if (item == nullptr) return fail(output, "AI resume note is invalid");
+            pulso::plugin::AiResumeNote note;
+            note.instrumentId = item->getProperty("instrument_id").toString().toStdString();
+            note.startBeat = static_cast<double>(item->getProperty("start_beat"));
+            note.durationBeats = static_cast<double>(item->getProperty("duration_beats"));
+            note.pitch = static_cast<int>(item->getProperty("pitch"));
+            note.velocity = static_cast<int>(item->getProperty("velocity"));
+            request.resume.notes.push_back(std::move(note));
+        }
+    }
     writeStatus(output, "running", "blueprint", 0, 1);
     juce::String error;
     std::size_t checkpointNumber = 0;
@@ -408,6 +455,11 @@ int main(int argc, char** argv) {
         }, [&output, &checkpointNumber, proofMode](const pulso::SongPlan& partial,
                                         std::size_t, bool, bool diagnostic) {
             writeProvisionalMidi(output, partial, ++checkpointNumber, diagnostic, proofMode);
+        }, [&output](const juce::String& exactBlueprint) {
+            if (exactBlueprint.isNotEmpty() &&
+                exactBlueprint.getNumBytesAsUTF8() <= 2 * 1024 * 1024)
+                output.getChildFile("accepted-blueprint.json").replaceWithText(
+                    exactBlueprint, false, false, "\n");
         });
     if (error.isNotEmpty() || plan.instruments.empty())
         return fail(output, error.isNotEmpty() ? error : "AI returned an empty score");

@@ -33,7 +33,7 @@ const node = (tag, className, value) => { const el = document.createElement(tag)
 const fileUrl = (job, filename) => `/api/jobs/${job.id}/files/${encodeURIComponent(filename)}`;
 const download = (job, filename, label, className = '') => { const a = node('a', className, label); a.href = fileUrl(job, filename); a.download = filename; return a; };
 const number = value => new Intl.NumberFormat('es-AR').format(Number(value) || 0);
-let jobs = [], selectedId = null, loadedKey = null, loadVersion = 0, current = null, barPx = 22, playhead = null, previewDiagnostic = false;
+let jobs = [], selectedId = null, loadedKey = null, loadVersion = 0, current = null, barPx = 22, playhead = null, previewDiagnostic = false, lastAutoRecoverySelection = null;
 const audio = new ProductionAudio(updatePosition, () => { ui.play.textContent = '▶'; ui.play.setAttribute('aria-label', 'Reproducir'); });
 const patchStorageKey = (jobId, filename) => `pulso:audition:${SOUND_BANK_VERSION}:${jobId}:${filename}`;
 function updateListeningLabels() {
@@ -98,6 +98,8 @@ function renderSession(job) {
   }
   if (job.error) ui.session.append(node('p', 'notice', job.error));
   if (job.checkpoint?.file && !job.manifest) ui.session.append(node('p', 'session-note', `Hay MIDI provisional: ${job.checkpoint.parts || 0} pistas con notas y ${job.checkpoint.notes || 0} notas. No es una obra terminada ni auditada.`));
+  if (job.request.automatic_recovery_attempt) ui.session.append(node('p', 'session-note', 'Recuperación automática desde el último MIDI aceptado. Conserva las pistas previas; límite de 10 minutos y USD 0,75 estimados para este intento. Una llamada ya iniciada puede superar ese importe.'));
+  if (job.recovery?.jobId) ui.session.append(node('p', 'session-note', 'PULSO inició una recuperación automática desde esta obra. El material aceptado permanece guardado.'));
   if (job.manifest?.editorial) {
     const q = job.manifest.editorial, ready = q.creative_ready && q.narrative_ready && q.soundscape_ready && q.track_viability_ready && !q.musical_review_required;
     const box = node('div', `editorial ${ready ? 'complete' : ''}`);
@@ -126,6 +128,9 @@ function renderSession(job) {
   }
   const actions = node('div', 'session-actions');
   actions.append(actionButton('Repetir ajustes', () => reuse(job)));
+  if (job.recovery?.jobId) actions.append(actionButton('Ver recuperación', () => {
+    selectedId = job.recovery.jobId; loadedKey = null; previewDiagnostic = false; showSelected();
+  }));
   if (job.manifest?.fullFile) actions.append(download(job, job.manifest.fullFile, '↓ Obra completa MIDI', 'primary-link'));
   if (job.checkpoint?.file && !job.manifest) actions.append(download(job, job.checkpoint.file, '↓ MIDI provisional'));
   if (job.diagnostic?.file && !job.manifest) actions.append(download(job, job.diagnostic.file, '↓ MIDI rechazado (diagnóstico)'));
@@ -317,6 +322,14 @@ async function refresh() {
     }
     if (!selectedId || !jobs.some(job => job.id === selectedId))
       selectedId = (jobs.find(job => job.state === 'running') || jobs.find(job => job.manifest?.tracks?.length) || jobs.find(job => job.checkpoint?.file) || jobs[0])?.id || null;
+    const selected = jobs.find(job => job.id === selectedId);
+    if (selected?.recovery?.jobId && lastAutoRecoverySelection !== selected.id &&
+        jobs.some(job => job.id === selected.recovery.jobId)) {
+      lastAutoRecoverySelection = selected.id;
+      selectedId = selected.recovery.jobId;
+      loadedKey = null;
+      previewDiagnostic = false;
+    }
     renderHistory(); showSelected();
   } catch (error) { ui.health.className = 'health warn'; ui.health.textContent = `No se pudo conectar con el estudio local: ${error.message}`; ui.submit.disabled = true; }
 }

@@ -193,12 +193,10 @@ bool enforceExplicitCastExclusionsImpl(const juce::String& source,
     removed = 0;
     sanitized = source;
     const auto percussionFree = explicitlyPercussionFreeDirection(direction);
-    const auto lowerDirection = direction.toLowerCase();
-    const auto developedCast = requestedInstrumentCountFromDirection(direction) > 0 &&
-        (lowerDirection.contains("bien llen") || lowerDirection.contains("desarrollad") ||
-         lowerDirection.contains("fully developed") ||
-         lowerDirection.contains("independent midi tracks") ||
-         lowerDirection.contains("pistas midi independientes"));
+    // The later score contract counts only independent, developable MIDI owners.
+    // Apply that same definition at the manifest boundary for every explicit
+    // track count, regardless of how the user describes "complete" tracks.
+    const auto developedCast = requestedInstrumentCountFromDirection(direction) > 0;
     if (!percussionFree && !developedCast) return true;
 
     auto document = juce::JSON::parse(source);
@@ -2105,6 +2103,7 @@ struct HttpResponse {
     bool cancelled{};
     bool timedOut{};
     bool reusedLocally{};
+    bool recoveryBudgetExceeded{};
     unsigned long nativeError{};
 };
 
@@ -2407,9 +2406,53 @@ void cancelBackgroundResponse(const juce::String& responseId, const juce::String
 
 HttpResponse performRequest(const juce::String& body, const juce::String& apiKey,
                             std::stop_token token, std::chrono::milliseconds budget) {
+    // Automatic checkpoint recovery is one bounded transaction. These are
+    // per-worker-process limits; normal compositions retain their existing
+    // budgets. USD is estimated from returned usage, so an in-flight call can
+    // exceed the soft cap by its own final charge.
+    static const auto recoveryStarted = std::chrono::steady_clock::now();
+    static std::atomic<double> recoveryEstimatedUsd{0.0};
+    const auto secondsText = std::getenv("PULSO_AUTO_RECOVERY_MAX_SECONDS");
+    const auto usdText = std::getenv("PULSO_AUTO_RECOVERY_MAX_USD");
+    const auto secondsCap = secondsText == nullptr ? 0 : std::atoi(secondsText);
+    const auto usdCap = usdText == nullptr ? 0.0 : std::atof(usdText);
+    if ((secondsCap > 0 && std::chrono::steady_clock::now() - recoveryStarted >=
+            std::chrono::seconds(secondsCap)) ||
+        (usdCap > 0.0 && recoveryEstimatedUsd.load() >= usdCap)) {
+        HttpResponse stopped;
+        stopped.recoveryBudgetExceeded = true;
+        return stopped;
+    }
+    if (secondsCap > 0)
+        budget = std::min(budget, std::chrono::duration_cast<
+            std::chrono::milliseconds>(std::chrono::seconds(secondsCap) -
+                (std::chrono::steady_clock::now() - recoveryStarted)));
     const auto started = std::chrono::steady_clock::now();
     juce::String knownResponseId;
     const auto finish = [&](HttpResponse result) {
+        if (!result.reusedLocally) {
+            const auto remote = juce::JSON::parse(result.body);
+            const auto* root = remote.getDynamicObject();
+            const auto* usage = root == nullptr ? nullptr :
+                root->getProperty("usage").getDynamicObject();
+            if (usage != nullptr && root->getProperty("model").toString() ==
+                    "gpt-5.6-terra") {
+                const auto* details = usage->getProperty("input_tokens_details")
+                    .getDynamicObject();
+                const auto input = static_cast<double>(usage->getProperty("input_tokens"));
+                const auto cached = details == nullptr ? 0.0 : static_cast<double>(
+                    details->getProperty("cached_tokens"));
+                const auto writes = details == nullptr ? 0.0 : static_cast<double>(
+                    details->getProperty("cache_write_tokens"));
+                const auto output = static_cast<double>(usage->getProperty("output_tokens"));
+                const auto ordinary = std::max(0.0, input - cached - writes);
+                const auto longContext = input > 272000.0;
+                recoveryEstimatedUsd.fetch_add(((ordinary * 2.0 + cached * .2 +
+                    writes * 2.5) *
+                    (longContext ? 2.0 : 1.0) + output * 12.0 *
+                    (longContext ? 1.5 : 1.0)) / 1000000.0);
+            }
+        }
         traceOpenAiRequest(body, result, started, knownResponseId);
         return result;
     };
@@ -2491,7 +2534,9 @@ HttpResponse performRequest(const juce::String& body, const juce::String& apiKey
 }
 
 juce::String apiErrorMessage(const HttpResponse& response) {
-    auto error = response.timedOut ? juce::String("OpenAI request reached its time budget")
+    auto error = response.recoveryBudgetExceeded ?
+                   juce::String("Automatic recovery reached its spending or time budget")
+               : response.timedOut ? juce::String("OpenAI request reached its time budget")
                : response.cancelled ? juce::String("Generation cancelled")
                : !response.connected ? juce::String("Could not connect to OpenAI") +
                     (response.nativeError != 0 ? " (transport error " +
@@ -2653,6 +2698,59 @@ juce::String orchestrationMatrixBrief(const SongPlan& plan,
     return matrix;
 }
 
+juce::String exactMidiHarmonyMap(const SongPlan& plan,
+                                 const std::vector<std::size_t>& indices) {
+    juce::String map;
+    constexpr std::array<const char*, 12> names{
+        "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
+    map << "\nEXACT MIDI HARMONY MAP (MIDI 60=C4; pitch classes 0=C, 1=C#, "
+           "2=D, 3=Eb, 4=E, 5=F, 6=F#, 7=G, 8=Ab, 9=A, 10=Bb, 11=B):\n";
+    for (const auto index : indices) {
+        if (index >= plan.instruments.size()) continue;
+        const auto& owner = plan.instruments[index];
+        if (isVoiceInFamily(owner.sourceVoice, VoiceFamily::Rhythm)) continue;
+        const auto& voiceRange = voiceDefinition(owner.sourceVoice);
+        const auto low = std::max(owner.minimumPitch, voiceRange.minimumPitch);
+        const auto high = std::min(owner.maximumPitch, voiceRange.maximumPitch);
+        if (low > high) continue;
+        map << "owner=" << juce::String::fromUTF8(owner.id.c_str())
+            << " register=" << low << ".." << high << "\n";
+        for (const auto& chord : plan.chordPalette) {
+            std::vector<int> pitches;
+            for (auto pitch = low; pitch <= high; ++pitch)
+                if (std::find(chord.pitchClasses.begin(), chord.pitchClasses.end(),
+                              positiveModulo(pitch, 12)) != chord.pitchClasses.end())
+                    pitches.push_back(pitch);
+            // A compact register-local illustration, not an instruction to
+            // write every listed note or to prefer the central octave.
+            const auto anchor = low + (high - low) / 3;
+            std::stable_sort(pitches.begin(), pitches.end(), [anchor](int a, int b) {
+                return std::abs(a - anchor) < std::abs(b - anchor);
+            });
+            map << "  " << juce::String::fromUTF8(chord.id.c_str()) << "="
+                << juce::String::fromUTF8(chord.label.c_str()) << " example_tones=";
+            for (std::size_t i = 0; i < std::min<std::size_t>(8, pitches.size()); ++i) {
+                if (i) map << ",";
+                const auto pitch = pitches[i];
+                map << names[static_cast<std::size_t>(positiveModulo(pitch, 12))]
+                    << pitch / 12 - 1 << "(" << pitch << ")";
+            }
+            if (pitches.empty()) map << "none_in_register";
+            map << "\n";
+        }
+    }
+    map << "These are chord-native examples, NOT a mandatory note sequence. "
+           "For every proposed note, use the chord sounding at that absolute "
+           "beat, not merely the key or the opening chord. A source cell reused "
+           "under a different chord must still fit at EACH placement: author a "
+           "different cell, an intentional transposition or a rest when one fixed "
+           "pitch cannot serve both. In particular a repeated low pedal must "
+           "not sustain an out-of-chord semitone against the accepted bed. "
+           "Non-chord notes are allowed as brief prepared/resolved musical "
+           "events; a multi-bar unsupported pitch is not a suspension.\n";
+    return map;
+}
+
 juce::String performanceBlockPrompt(const juce::String& direction,
                                     const juce::String& blueprintJson,
                                     const SongPlan& plan,
@@ -2737,7 +2835,8 @@ juce::String performanceBlockPrompt(const juce::String& direction,
                "Give the ending an audible consequence, not just a chord label: let the protagonist "
                "return to a transformed contour from the opening and settle its final attack on the "
                "home tonic when the narrative promises tonic closure. Hold that arrival longer than "
-               "the median note of its closing phrase. The protagonist's first premise statement must expose "
+               "the median note of its closing phrase. The protagonist's first audible statement, "
+               "which may follow an intentional harmony-only prologue, must expose "
                "a memorable four-to-eight-attack nucleus. In the final eight bars, recall at least the first four "
                "attack directions and their recognizable rest pattern; transposition and one consequential interval "
                "change are welcome, but unrelated replacement material is not resolution. End with at least four "
@@ -2745,6 +2844,12 @@ juce::String performanceBlockPrompt(const juce::String& direction,
                "chord tone, and sustain it longer than the phrase median. Let the climax be clearly higher and/or fuller "
                "than the final resolution, then release register and ensemble density in the coda. "
                "A listener should hear the accumulated question answered, not a new unrelated phrase. "
+               "Between that first statement and the ending, author at least two materially different "
+               "versions of the nucleus: change onset grammar, interval consequence or cadence while retaining "
+               "a recognizable identity. Repeating or merely transposing the same cell in most returns is "
+               "a placeholder, not development. Melodic speakers should link roughly a quarter to two-thirds "
+               "of within-phrase attacks by one- or two-semitone motion; balance those connections with "
+               "characteristic leaps and rests, never an uninterrupted scale. "
                "Author complete playable MIDI cells and section-relative placements, never prose or empty "
                "placeholder tracks. Treat active_sections as an audible performance contract: every listed "
                "section needs a meaningful statement unless the identity is explicitly a transition or one-shot. "
@@ -2773,6 +2878,10 @@ juce::String performanceBlockPrompt(const juce::String& direction,
                "connected musical gestures or evolving voicings across their active sections, "
                "not token notes that merely prove the track exists. A real withdrawal is "
                "better than empty filler, while a stable pedal may repeat by design. In a long hypnotic work, "
+               "For every atmosphere declared as evolving, vary at least two of pitch material, note duration, "
+               "entrance timing and register between its formal scenes; a static pedal is valid only when "
+               "the instrument's role explicitly calls for one. Distinct layers must remain audible as "
+               "distinct responsibilities rather than merely increasing track count. "
                "repetition is a deliberate AI-authored arrangement decision: specify both the "
                "actual notes AND their section-relative placements/repeats; nothing will be "
                "invented to fill gaps later. "
@@ -2796,11 +2905,18 @@ juce::String performanceBlockPrompt(const juce::String& direction,
                << compositionBehaviorBrief(plan.compositionBehavior)
                << "\nINSTRUMENTS IN THIS BLOCK:\n" << instrumentBlockBrief(plan, indices, true)
                << "\nSHARED ORCHESTRATION:\n" << orchestrationMatrixBrief(plan, true)
-               << "\nIMMUTABLE COMPACT BLUEPRINT:\n" << compactBlueprint;
+               << "\nIMMUTABLE COMPACT BLUEPRINT:\n" << compactBlueprint
+               << exactMidiHarmonyMap(plan, indices);
         std::set<std::string> targets;
         for (const auto index : indices)
             if (index < plan.instruments.size()) targets.insert(plan.instruments[index].id);
-        const auto reference = EnsembleReference::summarize(plan, acceptedScore, targets, 4);
+        // Four note landmarks for an entire long-form cast hid virtually all
+        // of the already-authored music from later voices. Keep the reference
+        // bounded, but allocate enough events to represent every formal scene.
+        const auto reference = EnsembleReference::summarize(
+            plan, acceptedScore, targets,
+            std::min<std::size_t>(144, std::max<std::size_t>(48,
+                plan.sections.size() * std::size_t{16})));
         if (!reference.empty())
             prompt << "\nACCEPTED ENSEMBLE MIDI (absolute beat,pitch,duration; immutable samples):\n"
                    << juce::String::fromUTF8(reference.c_str())
@@ -4866,6 +4982,124 @@ juce::String localTonalConflictBrief(const SongPlan& plan,
     feedback << "\nMEASURED HARMONIC COLLISIONS BY PAIR AND BAR (bar numbers are 1-based):\n";
     const auto groups = SelectiveRepair::tonalConflictGroups(
         plan, report.finalTonalPass.after);
+    const auto pitchName = [](const int midi) {
+        constexpr std::array<const char*, 12> names{
+            "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
+        return juce::String(names[static_cast<std::size_t>(positiveModulo(midi, 12))]) +
+            juce::String(midi / 12 - 1);
+    };
+    struct RepeatedPair {
+        std::size_t events{};
+        double overlapBeats{};
+        std::set<int> bars;
+    };
+    using PairKey = std::tuple<std::size_t, std::size_t, int, int>;
+    std::map<PairKey, RepeatedPair> repeatedPairs;
+    for (const auto& group : groups) {
+        const auto& firstId = plan.instruments[group.firstInstrument].id;
+        const auto& secondId = plan.instruments[group.secondInstrument].id;
+        if (!targetIds.empty() && !targetIds.contains(firstId) &&
+            !targetIds.contains(secondId)) continue;
+        auto& pair = repeatedPairs[{group.firstInstrument, group.secondInstrument,
+            group.exampleFirstPitch, group.exampleSecondPitch}];
+        pair.events += group.events;
+        pair.overlapBeats += group.overlapBeats;
+        pair.bars.insert(group.bar + 1);
+    }
+    std::vector<std::pair<PairKey, RepeatedPair>> rankedPairs(
+        repeatedPairs.begin(), repeatedPairs.end());
+    std::stable_sort(rankedPairs.begin(), rankedPairs.end(), [](const auto& left,
+                                                               const auto& right) {
+        return left.second.events > right.second.events;
+    });
+    if (!rankedPairs.empty())
+        feedback << "REPEATED PITCH-PAIR ROOT CAUSES (fix the source cell/placement, "
+                    "not each occurrence separately):\n";
+    for (std::size_t i = 0; i < std::min<std::size_t>(8, rankedPairs.size()); ++i) {
+        const auto& [key, pair] = rankedPairs[i];
+        const auto [first, second, firstPitch, secondPitch] = key;
+        feedback << "- " << juce::String::fromUTF8(plan.instruments[first].id.c_str())
+                 << " " << pitchName(firstPitch) << "(" << firstPitch << ") vs "
+                 << juce::String::fromUTF8(plan.instruments[second].id.c_str())
+                 << " " << pitchName(secondPitch) << "(" << secondPitch << ")"
+                 << " | pair_events=" << static_cast<int>(pair.events)
+                 << " | distinct_bars=" << static_cast<int>(pair.bars.size())
+                 << " | overlap_beats=" << juce::String(pair.overlapBeats, 1)
+                 << " | example_bars=";
+        auto shownBars = 0;
+        for (const auto bar : pair.bars) {
+            if (shownBars++) feedback << ",";
+            feedback << bar;
+            if (shownBars == 5) break;
+        }
+        // Give the composer a small, *non-prescriptive* local feasibility map.
+        // The AI still chooses every note and must validate every occurrence;
+        // these are chord tones avoiding the measured partner interval at the
+        // example bar, not notes inserted by a local generator.
+        const auto targetIsFirst = targetIds.contains(plan.instruments[first].id);
+        const auto targetIndex = targetIsFirst ? first : second;
+        const auto targetPitch = targetIsFirst ? firstPitch : secondPitch;
+        const auto partnerPitch = targetIsFirst ? secondPitch : firstPitch;
+        const auto exampleBar = *pair.bars.begin() - 1;
+        const auto section = std::find_if(plan.sections.begin(), plan.sections.end(),
+            [&](const auto& candidate) {
+                return exampleBar >= candidate.startBar &&
+                    exampleBar < candidate.startBar + candidate.bars;
+            });
+        if (section != plan.sections.end()) {
+            const auto localBeat = (exampleBar - section->startBar) *
+                plan.beatsPerBar;
+            const HarmonicEvent* eventAtBar = nullptr;
+            for (const auto& event : section->harmonicEvents) {
+                const auto eventBeat = event.barOffset * plan.beatsPerBar +
+                    event.beatOffset;
+                if (eventBeat <= localBeat + .001 &&
+                    (eventAtBar == nullptr || eventBeat >=
+                        eventAtBar->barOffset * plan.beatsPerBar +
+                        eventAtBar->beatOffset))
+                    eventAtBar = &event;
+            }
+            if (eventAtBar != nullptr) {
+                const auto chord = std::find_if(plan.chordPalette.begin(),
+                    plan.chordPalette.end(), [&](const auto& candidate) {
+                        return candidate.id == eventAtBar->chordId;
+                    });
+                if (chord != plan.chordPalette.end()) {
+                    std::vector<int> options;
+                    const auto& instrument = plan.instruments[targetIndex];
+                    for (auto pitch = instrument.minimumPitch;
+                         pitch <= instrument.maximumPitch; ++pitch) {
+                        if (std::find(chord->pitchClasses.begin(),
+                                      chord->pitchClasses.end(),
+                                      positiveModulo(pitch, 12)) ==
+                            chord->pitchClasses.end()) continue;
+                        const auto interval = positiveModulo(
+                            std::abs(pitch - partnerPitch), 12);
+                        if (interval == 0 || interval == 1 || interval == 6 ||
+                            interval == 11) continue;
+                        options.push_back(pitch);
+                    }
+                    std::stable_sort(options.begin(), options.end(),
+                        [&](const int left, const int right) {
+                            return std::abs(left - targetPitch) <
+                                std::abs(right - targetPitch);
+                        });
+                    feedback << " | bar_opening_chord="
+                             << juce::String::fromUTF8(chord->label.c_str())
+                             << " | locally_possible_chord_tones=";
+                    for (std::size_t option = 0;
+                         option < std::min<std::size_t>(5, options.size());
+                         ++option) {
+                        if (option) feedback << ",";
+                        feedback << pitchName(options[option]) << "("
+                                 << options[option] << ")";
+                    }
+                    if (options.empty()) feedback << "none; choose a rest or new entrance";
+                }
+            }
+        }
+        feedback << "\n";
+    }
     auto shown = std::size_t{};
     for (const auto& group : groups) {
         const auto& firstId = plan.instruments[group.firstInstrument].id;
@@ -4874,9 +5108,11 @@ juce::String localTonalConflictBrief(const SongPlan& plan,
             !targetIds.contains(secondId)) continue;
         feedback << "- bar " << group.bar + 1 << " "
                  << juce::String::fromUTF8(firstId.c_str()) << " pitch "
-                 << group.exampleFirstPitch << " vs "
+                 << group.exampleFirstPitch << "(" << pitchName(group.exampleFirstPitch)
+                 << ") vs "
                  << juce::String::fromUTF8(secondId.c_str()) << " pitch "
-                 << group.exampleSecondPitch << " | pair_events="
+                 << group.exampleSecondPitch << "(" << pitchName(group.exampleSecondPitch)
+                 << ") | pair_events="
                  << static_cast<int>(group.events) << " | overlap_beats_total="
                  << juce::String(group.overlapBeats, 2) << " | longest_event_beats="
                  << juce::String(group.longestOverlapBeats, 2) << "\n";
@@ -4885,7 +5121,13 @@ juce::String localTonalConflictBrief(const SongPlan& plan,
     if (shown == 0) feedback << "- No measured harsh-overlap pair touches this target.\n";
     feedback << "Pair events are not a count of bad notes. Verify the interval in its harmony and "
                 "musical duration before editing. Preserve intentional suspensions and every "
-                "unlisted instrument; address only collisions involving the selected target.\n";
+                "unlisted instrument; address only collisions involving the selected target. "
+                "A single source cell may repeat across many bars: repair its source notes, "
+                "placement transpositions, repeats and releases against EVERY harmonic event "
+                "where it sounds. Fixing one listed bar while reusing the same conflicting cell "
+                "elsewhere is not a repair. Locally possible chord tones above are diagnostic "
+                "examples at the bar opening, not instructions to use them everywhere; compare "
+                "the complete sounding chord and all placements before deciding.\n";
     return feedback;
 }
 
@@ -5355,8 +5597,21 @@ std::size_t AiComposer::performanceBlockCount(std::size_t instruments) noexcept 
         instrumentsPerPerformanceBlock;
 }
 
+int AiComposer::performanceOutputTokenBudget(bool localEditorial,
+                                             bool protagonistOnly,
+                                             int attempt) noexcept {
+    if (!localEditorial)
+        return protagonistOnly ? 9000 : 16000;
+    // A ten-minute, single-owner performance can legitimately need more than
+    // 10k output tokens. The former fixed cap truncated valid JSON, then made
+    // two identical paid retries before retiring an explicitly requested lane.
+    // A ceiling does not spend tokens by itself: completed short responses keep
+    // their existing size, while a bounded retry has room to finish the JSON.
+    return attempt <= 1 ? 18000 : 24000;
+}
+
 std::vector<std::vector<std::size_t>> AiComposer::performanceWritingBlocks(
-    const SongPlan& plan, bool localEditorial) {
+    const SongPlan& plan, bool localEditorial, bool singleOwner) {
     std::vector<std::vector<std::size_t>> blocks;
     std::vector<std::size_t> orderedInstruments;
     orderedInstruments.reserve(plan.instruments.size());
@@ -5369,9 +5624,22 @@ std::vector<std::vector<std::size_t>> AiComposer::performanceWritingBlocks(
         [&](auto left, auto right) {
             const auto& a = plan.instruments[left];
             const auto& b = plan.instruments[right];
-            const auto familyA = static_cast<int>(voiceDefinition(a.sourceVoice).family);
-            const auto familyB = static_cast<int>(voiceDefinition(b.sourceVoice).family);
-            if (familyA != familyB) return familyA < familyB;
+            // Establish long-lived harmonic and atmospheric space before the
+            // shorter melodic gestures. Otherwise a late sustained layer must
+            // fit around every previously written attack, which turns a
+            // perfectly valid atmospheric role into hundreds of collisions.
+            const auto priority = [](const InstrumentAssignment& instrument) {
+                const auto family = voiceDefinition(instrument.sourceVoice).family;
+                if (family == VoiceFamily::Bass) return 0;
+                if (family == VoiceFamily::Harmony) return 1;
+                if (instrument.sourceVoice == VoiceId::Atmosphere) return 2;
+                if (family == VoiceFamily::Melodic) return 3;
+                if (family == VoiceFamily::Texture) return 4;
+                return 5;
+            };
+            const auto priorityA = priority(a);
+            const auto priorityB = priority(b);
+            if (priorityA != priorityB) return priorityA < priorityB;
             return a.contentLaneId < b.contentLaneId;
         });
 
@@ -5444,6 +5712,7 @@ std::vector<std::vector<std::size_t>> AiComposer::performanceWritingBlocks(
     const auto performanceShardSize = localEditorial ? std::size_t{2} :
         plan.totalBars >= 128 ? std::size_t{6} : instrumentsPerPerformanceBlock;
     const auto narrativeShardSize = std::min(performanceShardSize, std::size_t{8});
+    std::vector<std::size_t> atmosphericOwners;
     std::vector<std::size_t> narrativeOwners;
     std::vector<std::size_t> supportingOwners;
     for (const auto index : orderedInstruments) {
@@ -5452,7 +5721,22 @@ std::vector<std::vector<std::size_t>> AiComposer::performanceWritingBlocks(
             instrument.sourceVoice == VoiceId::MovementBass ||
             instrument.role.find("primary_chord_bed") != std::string::npos ||
             ElectronicRoleContract::motionOwner(instrument);
-        (narrative ? narrativeOwners : supportingOwners).push_back(index);
+        if (localEditorial && instrument.sourceVoice == VoiceId::Atmosphere)
+            atmosphericOwners.push_back(index);
+        else
+            (narrative ? narrativeOwners : supportingOwners).push_back(index);
+    }
+    // Atmospheric MIDI usually contains the longest note releases. Give the
+    // AI harmonic headroom for these layers before writing the busier calls,
+    // answers and ornamentation around them. The score, cast and every note
+    // remain AI-authored; this only changes the order of the requests.
+    for (std::size_t begin = 0; begin < atmosphericOwners.size();
+         begin += performanceShardSize) {
+        const auto end = std::min(atmosphericOwners.size(),
+            begin + performanceShardSize);
+        blocks.emplace_back(
+            atmosphericOwners.begin() + static_cast<std::ptrdiff_t>(begin),
+            atmosphericOwners.begin() + static_cast<std::ptrdiff_t>(end));
     }
     if (!narrativeOwners.empty()) {
         const auto companions = std::min<std::size_t>(
@@ -5476,6 +5760,14 @@ std::vector<std::vector<std::size_t>> AiComposer::performanceWritingBlocks(
         blocks.emplace_back(
             supportingOwners.begin() + static_cast<std::ptrdiff_t>(begin),
             supportingOwners.begin() + static_cast<std::ptrdiff_t>(end));
+    }
+    if (singleOwner && localEditorial) {
+        std::vector<std::vector<std::size_t>> focused;
+        focused.reserve(orderedInstruments.size() + blocks.size());
+        for (const auto& block : blocks)
+            for (const auto index : block)
+                focused.push_back({index});
+        return focused;
     }
     return blocks;
 }
@@ -5954,7 +6246,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                               std::uint64_t seed, CompositionBehavior behavior,
                               std::stop_token token,
                               juce::String& error, const AiSongProgress& progress,
-                              const AiSongCheckpoint& checkpoint, bool aiSovereign) {
+                              const AiSongCheckpoint& checkpoint, bool aiSovereign,
+                              const AiSongResume* resume,
+                              const AiSongBlueprint& blueprint) {
     SongPlan result;
     result.sections.clear();
     result.compositionBehavior = behavior;
@@ -6387,12 +6681,31 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     // Full-song architecture can legitimately require several minutes of reasoning. Background
     // Responses keeps the UI cancellable while short, independently bounded polls avoid a single
     // fragile HTTP connection owning the full composition lifetime.
-    constexpr auto totalAiBudget = std::chrono::minutes(45);
+    // The global deadline must scale with an explicitly requested long-form
+    // ensemble. A fixed 45-minute cap previously discarded a valid 30-owner,
+    // ten-minute score at block 14/18, after all accepted MIDI had been paid
+    // for. This is a ceiling, not a delay: smaller works retain the old limit
+    // and every request still finishes as soon as its musical gates pass.
+    const auto extraLongFormMinutes = targetSeconds >= 300
+        ? std::clamp((static_cast<int>(requestedCastCount) - 15) * 3, 0, 105)
+        : 0;
+    auto totalAiBudget = std::chrono::minutes(45 + extraLongFormMinutes);
+    OperationalJournal::write("INFO", "GENERATION",
+        "AI time ceiling " + juce::String(static_cast<int>(totalAiBudget.count())) +
+        " min for requested long-form cast; this is a maximum, not a target");
+    const auto aiStarted = std::chrono::steady_clock::now();
+    juce::String outputText;
+    if (resume != nullptr && resume->blueprintJson.isNotEmpty()) {
+        outputText = resume->blueprintJson;
+        OperationalJournal::write("OK", "CHECKPOINT",
+            "reusing exact accepted AI blueprint; macro and instrument cast requests skipped");
+        if (progress) progress({AiSongStage::Blueprint, 2, 2, 0,
+            "restored exact musical plan from accepted checkpoint"});
+    } else {
     // The first macro normally needs roughly a minute of background work. A
     // 30-second budget cancelled it on every local long-form run and paid the
     // latency of a fresh recovery request before the cast could even begin.
     constexpr auto architectureBudget = std::chrono::seconds(120);
-    const auto aiStarted = std::chrono::steady_clock::now();
     if (progress) progress({AiSongStage::Blueprint, 0, 2, 1, "macro form, harmony and narrative"});
     auto http = performRequest(body, apiKey, token, architectureBudget);
     auto usedMacroRecovery = false;
@@ -6492,7 +6805,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "audible dialogue lines without simultaneous unison stacking. Transformations such as "
         "original, inversion, fragmentation, recovery and return belong to that protagonist's later performance cells, "
         "not to separate instrument members. Use additional tracks for true orchestration: independent inner voices, "
-        "pedals, chord bodies, contrary counterpoint, spectral color and transition functions. Permit an arpeggiator only "
+        "pedals, chord bodies, contrary counterpoint and spectral color. When an exact track count is requested, "
+        "transitions and one-shot FX may be performance events, but never count as independent MIDI owners. Permit an arpeggiator only "
         "when it is an intentional part of this particular production argument. In percussion-free electronic music, "
         "Elect exactly one harmonic_foundation instrument as the central polyphonic chord lane by including the literal "
         "marker primary_chord_bed in its role. That exported MIDI track must later contain complete three-to-five-note "
@@ -6645,7 +6959,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             "You are PULSO's cast reconciler. The accepted global ensemble below is immutable but is short of its "
             "explicit size. Return exactly ") + juce::String(static_cast<int>(missing)) +
             " additional manifest members and nothing else. Do not repeat, rename, replace or revise any accepted member. "
-            "Choose only genuinely complementary responsibilities missing from the existing architecture. Respect every "
+            "Choose only genuinely complementary, independently developable MIDI voices missing from the existing "
+            "architecture. Do not use source_voice=transitions or orchestral_function=transition: event-only and "
+            "one-shot parts cannot fill an explicitly requested track count. Respect every "
             "exclusion and subset count in the original direction. Use only source_voice IDs already declared in the "
             "accepted manifest. Every new id and content_lane_id must be unique. These are orchestration identities only; "
             "do not write notes, patterns, registers, presets or performance material. ORIGINAL DIRECTION:\n" + direction +
@@ -6859,7 +7175,6 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     }
     juce::String castMergeError;
     const auto castText = mergeCastManifestAndDetails(manifestText, castDetailTexts, castMergeError);
-    juce::String outputText;
     juce::String protagonistBindingError;
     if (castText.isEmpty() ||
         !AiComposer::bindCastProtagonist(macroText, castText, outputText,
@@ -6869,10 +7184,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             "Could not merge AI macro and instrument cast";
         return result;
     }
+    cacheValidatedResponse(usedMacroRecovery ? macroRecoveryBody : body, http);
+    }
     if (!parseSongPlanJson(outputText, targetSeconds, totalBars, bpm, beatsPerBar,
                            seed, result, error,
                            tonalPolicyForDirection(direction.toStdString()))) return {};
-    cacheValidatedResponse(usedMacroRecovery ? macroRecoveryBody : body, http);
+    if (blueprint) blueprint(outputText);
     result.compositionBehavior = behavior;
     result.aiSovereign = aiSovereign;
     // Parsing reconstructs SongPlan from the AI JSON. The user's numeric cast
@@ -8217,10 +8534,36 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         juce::String(static_cast<int>(rendererDestinations)) +
         " renderer-owned timbral destination(s) | " +
         juce::String(static_cast<int>(result.instruments.size())) + " exported tracks");
-    auto blocks = performanceWritingBlocks(result, localEditorial);
+    const auto focusedWriting = localEditorial && result.totalBars >= 128 &&
+        result.instruments.size() >= 12 &&
+        juce::SystemStats::getEnvironmentVariable(
+            "PULSO_AI_SINGLE_OWNER_WRITING", {}) == "1";
+    auto blocks = performanceWritingBlocks(result, localEditorial, focusedWriting);
+    OperationalJournal::write("INFO", "WRITING",
+        "AI authoring transactions=" + juce::String(static_cast<int>(blocks.size())) +
+        " | strategy=" + (focusedWriting ? juce::String("single-owner") :
+            juce::String("established")) +
+        " | note authorship and musical acceptance gates unchanged");
     if (blocks.empty()) {
         error = "AI blueprint contains no instrument cast";
         return {};
+    }
+    if (localEditorial) {
+        // An open-ended prompt can produce a substantial cast even when no
+        // instrument count was requested. The pre-blueprint ceiling only knows
+        // the requested count; extend it after the actual writing blocks are
+        // known so a valid 14-block/5-minute song is not discarded at 10/14.
+        // This changes only the ceiling, never the pace or musical criteria.
+        const auto blockAwareBudget = std::chrono::minutes(
+            std::clamp(15 + static_cast<int>(blocks.size()) * 4, 45, 180));
+        if (blockAwareBudget > totalAiBudget) {
+            totalAiBudget = blockAwareBudget;
+            OperationalJournal::write("INFO", "GENERATION",
+                "AI time ceiling scaled to " +
+                juce::String(static_cast<int>(totalAiBudget.count())) +
+                " min for " + juce::String(static_cast<int>(blocks.size())) +
+                " authored writing blocks; accepted MIDI checkpoints preserved");
+        }
     }
 
     PerformanceScore assembledScore;
@@ -8228,6 +8571,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     auto completedBlocks = std::size_t{};
     std::map<std::string, std::size_t> localBlockRewrites;
     std::map<std::string, std::size_t> localVoicingPatches;
+    std::map<std::size_t, juce::String> tonalRetryFeedback;
     auto rejectedCandidateCaptured = false;
     std::function<bool(const PerformanceScore&)> localCheckpointAudit;
     const auto saveAcceptedCheckpoint = [&](bool provisional) {
@@ -8322,6 +8666,126 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             const auto rendered = SongComposer{}.render(snapshot, foundation, {}, &audit);
             return EditorialSafety::technicallySafeAiScore(rendered, audit);
         };
+    std::set<std::string> resumedInstrumentIds;
+    if (resume != nullptr) {
+        if (!localEditorial || resume->castIds.size() != result.instruments.size() ||
+            resume->sections.size() != result.sections.size() ||
+            (!resume->blueprintOnly && resume->notes.empty()) ||
+            (resume->blueprintOnly && (resume->blueprintJson.isEmpty() ||
+                !resume->notes.empty())) || resume->notes.size() > 100000) {
+            error = "AI checkpoint does not match this editorial song plan";
+            return {};
+        }
+        for (std::size_t i = 0; i < result.instruments.size(); ++i)
+            if (resume->castIds[i] != result.instruments[i].id) {
+                error = "AI checkpoint instrument cast changed; resume refused";
+                return {};
+            }
+        for (std::size_t i = 0; i < result.sections.size(); ++i)
+            if (resume->sections[i] != std::pair{result.sections[i].startBar,
+                                                  result.sections[i].bars}) {
+                error = "AI checkpoint section form changed; resume refused";
+                return {};
+            }
+        if (resume->blueprintOnly) {
+            OperationalJournal::write("OK", "CHECKPOINT",
+                "controlled local A/B: reusing exact AI blueprint with zero MIDI notes; "
+                "every performance owner will be authored again");
+        } else {
+        std::map<std::tuple<std::size_t, std::size_t, int>, PerformanceCell> cells;
+        std::map<std::tuple<std::size_t, std::size_t, long long, int>, int> sameAttacks;
+        for (const auto& source : resume->notes) {
+            const auto owner = std::find_if(result.instruments.begin(),
+                result.instruments.end(), [&](const auto& candidate) {
+                    return candidate.id == source.instrumentId;
+                });
+            const auto ownerIndex = static_cast<std::size_t>(
+                std::distance(result.instruments.begin(), owner));
+            const auto section = std::find_if(result.sections.begin(),
+                result.sections.end(), [&](const auto& candidate) {
+                    const auto start = candidate.startBar * result.beatsPerBar;
+                    const auto end = (candidate.startBar + candidate.bars) *
+                        result.beatsPerBar;
+                    return source.startBeat >= start - .001 &&
+                        source.startBeat < end - .001;
+                });
+            if (owner == result.instruments.end() || section == result.sections.end() ||
+                !std::isfinite(source.startBeat) ||
+                !std::isfinite(source.durationBeats) ||
+                source.durationBeats <= 0.0 || source.pitch < 0 || source.pitch > 127 ||
+                source.velocity < 1 || source.velocity > 127 ||
+                source.startBeat + source.durationBeats >
+                    (section->startBar + section->bars) * result.beatsPerBar + .001) {
+                error = "AI checkpoint contains invalid or unowned MIDI";
+                return {};
+            }
+            const auto sectionIndex = static_cast<std::size_t>(
+                std::distance(result.sections.begin(), section));
+            // The exported MIDI can contain intentional unisons at the same
+            // tick from separately authored cells. Normalization deduplicates
+            // a single cell's equal attacks, so keep each additional unison
+            // in its own source cell instead of silently losing it.
+            const auto duplicateIndex = sameAttacks[{ownerIndex, sectionIndex,
+                std::llround(source.startBeat * 1000000.0), source.pitch}]++;
+            auto& cell = cells[{ownerIndex, sectionIndex, duplicateIndex}];
+            if (cell.id.empty()) {
+                cell.id = "resume_p" + std::to_string(ownerIndex + 1) +
+                    "_s" + std::to_string(sectionIndex + 1) +
+                    "_v" + std::to_string(duplicateIndex);
+                cell.lengthBeats = section->bars * result.beatsPerBar;
+                cell.ownedVoices = {owner->sourceVoice};
+                cell.narrativeFunction = "accepted AI MIDI checkpoint";
+                if (owner->id == result.narrativeSpine.protagonistInstrumentId)
+                    cell.themeId = result.narrativeSpine.motifIdentity;
+            }
+            AuthoredNote note;
+            note.beat = source.startBeat - section->startBar * result.beatsPerBar;
+            note.durationBeats = source.durationBeats;
+            note.pitch = source.pitch;
+            note.velocity = source.velocity;
+            note.voice = owner->sourceVoice;
+            // MIDI export may contain intentional tuplets or timing at the
+            // file's tick resolution. StrictGrid would round these attacks
+            // and merge notes that were distinct in the accepted checkpoint.
+            note.metricIntent = MetricIntent::DeliberateDisplacement;
+            note.instrumentId = owner->id;
+            cell.notes.push_back(std::move(note));
+            resumedInstrumentIds.insert(owner->id);
+        }
+        for (auto& [key, cell] : cells) {
+            PerformancePlacement placement;
+            placement.cellId = cell.id;
+            placement.sectionIndex = static_cast<int>(std::get<1>(key));
+            placement.purpose = "preserve accepted AI MIDI exactly";
+            assembledScore.placements.push_back(std::move(placement));
+            assembledScore.cells.push_back(std::move(cell));
+        }
+        const auto sourceCount = resume->notes.size();
+        if (!normalizeAssembledScore(assembledScore, "resumed AI MIDI")) {
+            error = "AI checkpoint exceeded score capacity";
+            return {};
+        }
+        const auto normalizedCount = std::accumulate(assembledScore.cells.begin(),
+            assembledScore.cells.end(), std::size_t{},
+            [](std::size_t count, const auto& cell) {
+                return count + cell.notes.size();
+            });
+        if (normalizedCount != sourceCount) {
+            error = "AI checkpoint lost notes during normalization: " +
+                juce::String(static_cast<int>(normalizedCount)) + "/" +
+                juce::String(static_cast<int>(sourceCount));
+            return {};
+        }
+        if (localCheckpointAudit && !localCheckpointAudit(assembledScore)) {
+            error = "AI checkpoint failed exact MIDI safety validation";
+            return {};
+        }
+        OperationalJournal::write("OK", "CHECKPOINT",
+            "resuming " + juce::String(static_cast<int>(resumedInstrumentIds.size())) +
+            " immutable AI lanes and " + juce::String(static_cast<int>(sourceCount)) +
+            " exact MIDI notes; only missing instruments will be requested");
+        }
+    }
     const auto reportMarginalBarAcceptances = [&](const PerformanceScore& score,
                                                    const std::vector<std::size_t>& candidates,
                                                    const juce::String& context) {
@@ -8540,7 +9004,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 const auto shardBody = juce::String("{\"model\":\"") + model +
                     "\",\"background\":true,\"reasoning\":{\"effort\":\"" + realizationReasoningEffort +
                     "\"},\"max_output_tokens\":" +
-                    juce::String(localEditorial ? 10000 : 7000) +
+                    juce::String(localEditorial
+                        ? performanceOutputTokenBudget(true, false, recoveryAttempt)
+                        : 7000) +
                     ",\"prompt_cache_key\":" +
                     juce::JSON::toString(juce::var(cacheKey)) + ",\"input\":" +
                     juce::JSON::toString(juce::var(shardPrompt)) +
@@ -8553,7 +9019,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     continue;
                 }
                 const auto budget = std::min(remaining,
-                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(90)));
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::seconds(localEditorial ? 150 : 90)));
                 requests.push_back({std::move(shard), std::move(replacementIds), serial,
                     std::async(std::launch::async, [&, shardBody, budget] {
                         return performRequest(shardBody, apiKey, token, budget);
@@ -8720,6 +9187,28 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         const auto serial = requestSerial++;
         auto blockPrompt = performanceBlockPrompt(direction, outputText, result, assembledScore, indices,
                                                   serial, attempt, localEditorial);
+        if (localEditorial && indices.size() == 1) {
+            if (const auto guidance = tonalRetryFeedback.find(indices.front());
+                guidance != tonalRetryFeedback.end())
+                blockPrompt += "\nPREVIOUS DRAFT TONAL REJECTION: " +
+                    guidance->second +
+                    " Rewrite the complete independent line against the accepted harmonic ledger. "
+                    "Keep the instrument's narrative responsibility, but change pitches, voicings and "
+                    "releases wherever the measured collisions require it.\n";
+            if (attempt >= 3 && tonalRetryFeedback.contains(indices.front()))
+                blockPrompt +=
+                    "\nORCHESTRATION PIVOT: The earlier complete-draft shape was incompatible "
+                    "with the real accepted ensemble. Compose a genuinely different role-complete "
+                    "performance for this identity, not a minor edit of the failed source cell. "
+                    "You may replace an unbroken sustained blanket with fewer, harmonically "
+                    "motivated swells, countermotions or spaced chord-tone arrivals. Honor each "
+                    "active formal section, but leave silence inside crowded passages and choose "
+                    "entrances that contribute a distinct musical thought. Create chord-specific "
+                    "source cells when harmony changes; do not transpose or repeat one fixed cell "
+                    "through incompatible chords. Check every chosen note and its full release "
+                    "against the immutable accepted MIDI. No notes or rests are supplied by PULSO: "
+                    "you compose both.\n";
+        }
         if (localEditorial) {
             const auto bed = SelectiveRepair::centralChordBedOwner(result);
             if (bed && std::find(indices.begin(), indices.end(), *bed) != indices.end())
@@ -8730,8 +9219,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     "breathing room. Never write only the introduction. Coordinate "
                     "each chord against the protagonist, bass and active harmony.\n";
         }
-        const auto blockOutputTokens = localEditorial ? 10000 :
-            isProtagonistOnly(indices) ? 9000 : 16000;
+        const auto blockOutputTokens = performanceOutputTokenBudget(
+            localEditorial, isProtagonistOnly(indices), attempt);
         const auto cacheKey = "pulso-performance-" + juce::String::toHexString(
             static_cast<juce::int64>(seed));
         const auto blockBody = juce::String("{\"model\":\"") + model +
@@ -8766,6 +9255,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     : "OpenAI could not author an essential protagonist or motion part";
                 deferConstraints(indices, lastBlockError, displayBlock);
                 return true;
+            }
+            if (requestedCastCount > 0) {
+                lastBlockError = "OpenAI could not complete one of the explicitly requested " +
+                    juce::String(static_cast<int>(requestedCastCount)) +
+                    " MIDI tracks after bounded transport recovery: " + lastBlockError;
+                return false;
             }
             for (const auto index : indices)
                 if (index < result.instruments.size())
@@ -8811,6 +9306,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 deferConstraints(indices, lastBlockError, displayBlock);
                 return true;
             }
+            if (requestedCastCount > 0) {
+                lastBlockError = "OpenAI could not complete one of the explicitly requested " +
+                    juce::String(static_cast<int>(requestedCastCount)) +
+                    " MIDI tracks after bounded structured-output recovery: " + lastBlockError;
+                return false;
+            }
             for (const auto index : indices)
                 if (index < result.instruments.size())
                     retiredInstrumentIds.insert(result.instruments[index].id);
@@ -8840,6 +9341,30 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             const auto beforeAudit = auditLocalScore(scoreBeforeBlock);
             auto afterAudit = auditLocalScore(assembledScore);
             const auto tonalDebt = SelectiveRepair::measuredTonalDebt;
+            const auto splitThreshold = std::max<std::size_t>(32,
+                static_cast<std::size_t>(result.totalBars / 6));
+            if (indices.size() > 1 &&
+                tonalDebt(afterAudit) > tonalDebt(beforeAudit) + splitThreshold) {
+                // A grouped response can make more than one owner discordant.
+                // Repairing only the first measured culprit leaves the other
+                // line's repeated wrong pitches in every placement. Roll back
+                // this unaccepted block and let the AI write each owner against
+                // the already accepted harmony, with a separate tonal gate.
+                assembledScore = scoreBeforeBlock;
+                const auto middle = indices.begin() +
+                    static_cast<std::ptrdiff_t>(indices.size() / 2);
+                const std::vector<std::size_t> left(indices.begin(), middle);
+                const std::vector<std::size_t> right(middle, indices.end());
+                OperationalJournal::write("WARN", "EDITORIAL",
+                    "grouped block introduced excessive tonal debt; authoring its " +
+                    juce::String(static_cast<int>(indices.size())) +
+                    " owners separately against the accepted score");
+                if (progress) progress({AiSongStage::Recovery, completedBlocks,
+                    blocks.size(), attempt,
+                    "AI separating discordant voices for independent harmonic review"});
+                return authorBlock(left, attempt + 1, displayBlock) &&
+                       authorBlock(right, attempt + 1, displayBlock);
+            }
             const auto introduced = tonalDebt(afterAudit) - tonalDebt(beforeAudit);
             const auto priorLowSeconds = SelectiveRepair::sustainedLowChordBedSeconds(
                 result, beforeAudit.finalTonalPass.after).size();
@@ -8870,8 +9395,15 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     selectedOwner.sourceVoice == VoiceId::Lead ||
                     selectedOwner.sourceVoice == VoiceId::Countermelody ||
                     ElectronicRoleContract::motionOwner(selectedOwner);
+                // An atmospheric cell can be a single long F repeated across
+                // dozens of bars. Excluding texture voices from source-cell
+                // repair forced six paid full rewrites for one wrong pitch.
+                // The compact patch still comes from the AI and must improve
+                // the entire rendered score before it is accepted.
+                const auto atmosphericRepair =
+                    selectedOwner.sourceVoice == VoiceId::Atmosphere;
                 if (HarmonicFloorContext::sustainedFloorOwner(selectedOwner) ||
-                    monophonicRepair) {
+                    monophonicRepair || atmosphericRepair) {
                     auto& voicingPatchesForPart = localVoicingPatches[selectedId];
                     OperationalJournal::write("WARN", "EDITORIAL",
                         "block " + juce::String(static_cast<int>(displayBlock + 1)) +
@@ -9018,7 +9550,15 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             if (++unusableVoicingReplies >= 2) break;
                         }
                     }
-                } else if (!aiSovereign && localBlockRewrites[selectedId] < 2) {
+                }
+                // A few local pitch choices can be repaired in place. When a
+                // whole authored voice creates a large new tonal debt, give the
+                // AI a complete one-instrument rewrite as well, even in
+                // sovereign mode; all other accepted MIDI stays immutable.
+                if (localBlockRewrites[selectedId] < 2 &&
+                    (!aiSovereign || tonalDebt(afterAudit) >=
+                        tonalDebt(beforeAudit) + std::max<std::size_t>(32,
+                            static_cast<std::size_t>(result.totalBars / 6)))) {
                     const std::vector<std::size_t> rewriteIndices{*selected};
                     const auto rewriteIds = instrumentIdsFor(result, rewriteIndices);
                     OperationalJournal::write("WARN", "EDITORIAL",
@@ -9039,7 +9579,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 const auto body = juce::String("{\"model\":\"") + model +
                     "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
                     realizationReasoningEffort +
-                    "\"},\"max_output_tokens\":6500,\"input\":" +
+                    "\"},\"max_output_tokens\":" +
+                    juce::String(performanceOutputTokenBudget(localEditorial,
+                        isProtagonistOnly(rewriteIndices), 2)) + ",\"input\":" +
                     juce::JSON::toString(juce::var(feedback)) +
                     ",\"text\":{\"format\":{\"type\":\"json_schema\","
                     "\"name\":\"pulso_performance_block\",\"strict\":true,\"schema\":" +
@@ -9047,7 +9589,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 const auto budget = std::min(std::chrono::duration_cast<std::chrono::milliseconds>(
                     overallDeadline - std::chrono::steady_clock::now()),
                     std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::seconds(90)));
+                        std::chrono::seconds(180)));
                 if (budget >= std::chrono::seconds(30)) {
                     ++localBlockRewrites[selectedId];
                     const auto response = performRequest(body, apiKey, token, budget);
@@ -9111,6 +9653,41 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 }
                 }
             }
+            const auto baselineHarsh = beforeAudit.production.unintendedHarshOverlaps;
+            const auto currentHarsh = afterAudit.production.unintendedHarshOverlaps;
+            const auto newHarsh = currentHarsh > baselineHarsh
+                ? currentHarsh - baselineHarsh : std::size_t{};
+            const auto severeBlockThreshold = std::max<std::size_t>(32,
+                static_cast<std::size_t>(result.totalBars / 8));
+            if (indices.size() == 1 && newHarsh > severeBlockThreshold &&
+                !token.stop_requested()) {
+                tonalRetryFeedback[indices.front()] =
+                    localTonalConflictBrief(result, afterAudit, assignedIds);
+                // Preserve the actual rejected notes for diagnosis. Without
+                // this artifact a repeated source-cell collision is reduced
+                // to one aggregate number and the expensive failed attempt
+                // cannot be understood or reproduced locally.
+                if (attempt >= 4) saveRejectedCandidate(assembledScore);
+                assembledScore = scoreBeforeBlock;
+                OperationalJournal::write("WARN", "EDITORIAL",
+                    "single AI voice introduced " +
+                    juce::String(static_cast<int>(newHarsh)) +
+                    " new harsh overlaps; rejecting only this draft");
+                const auto maximumIndividualAttempts = localEditorial &&
+                    requestedCastCount >= 20 ? 6 : 4;
+                if (attempt < maximumIndividualAttempts) {
+                    if (progress) progress({AiSongStage::Recovery,
+                        completedBlocks, blocks.size(), attempt + 1,
+                        "AI reauthoring one discordant voice; prior tracks preserved"});
+                    return authorBlock(indices, attempt + 1, displayBlock);
+                }
+                lastBlockError = "AI could not author requested MIDI voice " +
+                    juce::String::fromUTF8(result.instruments[indices.front()].id.c_str()) +
+                    " without " +
+                    juce::String(static_cast<int>(newHarsh)) +
+                    " measured harsh overlaps after bounded individual rewrites";
+                return false;
+            }
             const auto remainingIntroduced = tonalDebt(afterAudit) - tonalDebt(beforeAudit);
             if (lowSeconds.size() > priorLowSeconds || remainingIntroduced > 0) {
                 if (localCheckpointAudit && localCheckpointAudit(assembledScore)) {
@@ -9160,6 +9737,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 }
             }
         }
+        if (localEditorial)
+            // Cache only a response whose rendered block has passed the local
+            // tonal and MIDI safety gates. The exact request body fingerprints
+            // the accepted ensemble, so a replay cannot apply this voice to a
+            // different harmonic context. This avoids paying to rewrite early
+            // accepted lanes during a later focused retry.
+            cacheValidatedResponse(blockBody, blockHttp);
         saveAcceptedCheckpoint(true);
         reportMarginalBarAcceptances(
             assembledScore, indices,
@@ -9935,7 +10519,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     auto severeTonalCheckpoints = std::size_t{};
     const auto reviewRecoveredVoicings = [&](const PerformanceScore& beforeBlock,
                                              const std::vector<std::size_t>& owners,
-                                             std::size_t blockIndex) {
+                                             std::size_t blockIndex,
+                                             int maximumAttempts = 8) {
         if (!localEditorial || token.stop_requested()) return;
         const auto baseline = SelectiveRepair::measuredTonalDebt(
             auditLocalScore(beforeBlock));
@@ -9949,9 +10534,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         auto totalAttempts = 0;
         for (const auto ownerIndex : owners) {
             if (ownerIndex >= result.instruments.size() ||
-                token.stop_requested() || totalAttempts >= 8) break;
+                token.stop_requested() || totalAttempts >= maximumAttempts) break;
             auto unhelpful = 0;
-            for (auto ownerAttempt = 0; ownerAttempt < 6 && totalAttempts < 8 &&
+            for (auto ownerAttempt = 0; ownerAttempt < 6 &&
+                 totalAttempts < maximumAttempts &&
                  unhelpful < 2 && !token.stop_requested(); ++ownerAttempt) {
                 if (SelectiveRepair::measuredTonalDebt(current) <= baseline) return;
                 const auto remaining = std::chrono::duration_cast<
@@ -9976,8 +10562,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 const auto sourcePatch = !targets.empty();
                 if (!sourcePatch)
                     targets = SelectiveRepair::chordVoicingTargets(result,
-                        rendered, current.finalTonalPass.after, ownerIndex, 10);
-                if (targets.empty()) break;
+                        rendered, current.finalTonalPass.after, ownerIndex, 4);
+                if (targets.empty()) {
+                    OperationalJournal::write("WARN", "EDITORIAL",
+                        "no measured source or attack target for recovered owner " +
+                        juce::String::fromUTF8(result.instruments[ownerIndex].id.c_str()));
+                    break;
+                }
                 if (progress) progress({AiSongStage::Recovery, blockIndex,
                     blocks.size(), ownerAttempt + 1,
                     "AI aligning recovered phrases with the complete harmony"});
@@ -10004,6 +10595,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     response.timedOut || incompleteStructuredResponse(response.body) ||
                     !parseCompactVoicingCandidates(output, targets,
                         alternatives, patchError)) {
+                    OperationalJournal::write("WARN", "EDITORIAL",
+                        "recovered voicing reply unusable | targets=" +
+                        juce::String(static_cast<int>(targets.size())) +
+                        " | response=" + juce::String(response.status) +
+                        " | reason=" + patchError);
                     ++unhelpful;
                     continue;
                 }
@@ -10051,6 +10647,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     }
                 }
                 if (!bestCandidate) {
+                    OperationalJournal::write("WARN", "EDITORIAL",
+                        "recovered voicing candidates changed no measured tonal debt "
+                        "without damaging the other accepted MIDI");
                     ++unhelpful;
                     continue;
                 }
@@ -10065,6 +10664,144 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             }
         }
     };
+    // A resumed checkpoint can be technically valid yet carry a repeated,
+    // long-form contradiction from a previously accepted harmonic owner. The
+    // usual per-block repair compares only the *new* block with that baseline,
+    // so it cannot pay down inherited debt. Ask the AI to re-author the one
+    // implicated voice against every other immutable lane before spending on
+    // further instruments. This is a complete musical rewrite, not a local
+    // pitch heuristic; unaffected passages and all other lanes are verified.
+    if (localEditorial && resume != nullptr &&
+        !resumedInstrumentIds.empty() && !token.stop_requested()) {
+        auto inheritedAudit = auditLocalScore(assembledScore);
+        constexpr auto severeInheritedOverlaps = std::size_t{64};
+        if (inheritedAudit.production.unintendedHarshOverlaps >=
+            severeInheritedOverlaps) {
+            const auto culprits = localTonalCulprits(result, inheritedAudit);
+            if (!culprits.empty() &&
+                resumedInstrumentIds.contains(result.instruments[culprits.front()].id)) {
+                const auto owner = culprits.front();
+                const std::vector<std::size_t> ownerIndices{owner};
+                const auto ownerIds = instrumentIdsFor(result, ownerIndices);
+                // A complete five-minute rewrite is a last resort. Correct
+                // measured attacks first so the AI can preserve the owner's
+                // phrasing, dynamics and rests exactly where they already work.
+                reviewRecoveredVoicings(PerformanceScore{}, ownerIndices, 0);
+                inheritedAudit = auditLocalScore(assembledScore);
+                if (inheritedAudit.production.unintendedHarshOverlaps <
+                    severeInheritedOverlaps) {
+                    saveAcceptedCheckpoint(true);
+                } else {
+                auto originalPlan = result;
+                originalPlan.performanceScore = assembledScore;
+                GenerationContext context;
+                context.role = Role::Ensemble;
+                context.rootPitchClass = result.rootPitchClass;
+                context.scale = result.scale;
+                context.beatsPerBar = result.beatsPerBar;
+                context.seed = result.seed;
+                context.humanize = 0.0;
+                const auto originalPattern = SongComposer{}.render(originalPlan, context);
+                auto acceptedWithoutOwner = assembledScore;
+                eraseInstrumentMaterial(acceptedWithoutOwner, ownerIds);
+                OperationalJournal::write("WARN", "CHECKPOINT",
+                    "inherited harmonic debt=" + juce::String(static_cast<int>(
+                        inheritedAudit.production.unintendedHarshOverlaps)) +
+                    "; AI reviewing only " + juce::String::fromUTF8(
+                        result.instruments[owner].id.c_str()) +
+                    " before new writing blocks");
+                for (auto attempt = 1; attempt <= 2 && !token.stop_requested(); ++attempt) {
+                    const auto remaining = std::chrono::duration_cast<
+                        std::chrono::milliseconds>(overallDeadline -
+                            std::chrono::steady_clock::now());
+                    if (remaining < std::chrono::seconds(30)) break;
+                    if (progress) progress({AiSongStage::Recovery, completedBlocks,
+                        blocks.size(), attempt,
+                        "AI reconciling the accepted harmonic foundation"});
+                    auto prompt = performanceBlockPrompt(direction, outputText,
+                        result, acceptedWithoutOwner, ownerIndices, requestSerial,
+                        attempt + 1, true);
+                    prompt += localTonalConflictBrief(result, inheritedAudit,
+                        ownerIds) +
+                        "REAUTHOR ONLY THIS INSTRUMENT against the immutable accepted "
+                        "ensemble. The measured sustained collisions are the objective. "
+                        "Keep its musical identity and all unaffected passages, but "
+                        "choose every revised note and rest yourself. Do not merely "
+                        "add notes or double another lane. Preserve the narrative "
+                        "development and the harmonic floor.\n";
+                    const auto body = juce::String("{\"model\":\"") + model +
+                        "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
+                        realizationReasoningEffort +
+                        "\"},\"max_output_tokens\":" +
+                        juce::String(performanceOutputTokenBudget(true, false,
+                            attempt + 1)) + ",\"input\":" +
+                        juce::JSON::toString(juce::var(prompt)) +
+                        ",\"text\":{\"format\":{\"type\":\"json_schema\"," +
+                        "\"name\":\"pulso_performance_block\",\"strict\":true,\"schema\":" +
+                        performanceSchemaFor(result, ownerIndices) + "}}}";
+                    const auto response = performRequest(body, apiKey, token,
+                        std::min(remaining, std::chrono::duration_cast<
+                            std::chrono::milliseconds>(std::chrono::seconds(180))));
+                    PerformanceScore replacement;
+                    juce::String parseError;
+                    const auto text = extractOutputText(juce::JSON::parse(response.body));
+                    if (!response.connected || response.status < 200 ||
+                        response.status >= 300 || response.cancelled || response.timedOut ||
+                        incompleteStructuredResponse(response.body) ||
+                        !parsePerformanceBlock(text, result, ownerIds,
+                            replacement, parseError)) {
+                        OperationalJournal::write("WARN", "CHECKPOINT",
+                            "AI foundation revision unavailable: " + parseError);
+                        continue;
+                    }
+                    retainOnlyInstrumentMaterial(replacement, ownerIds);
+                    auto candidate = acceptedWithoutOwner;
+                    mergePerformanceBlock(candidate, std::move(replacement), requestSerial++);
+                    if (!normalizeAssembledScore(candidate,
+                            "inherited harmonic foundation revision")) continue;
+                    auto candidatePlan = result;
+                    candidatePlan.performanceScore = candidate;
+                    const auto candidatePattern = SongComposer{}.render(
+                        candidatePlan, context);
+                    const auto candidateAudit = auditLocalScore(candidate);
+                    const auto oldDebt = SelectiveRepair::measuredTonalDebt(
+                        inheritedAudit);
+                    const auto newDebt = SelectiveRepair::measuredTonalDebt(
+                        candidateAudit);
+                    const auto unaffected = localUntouchedPassagesPreserved(result,
+                        originalPattern, candidatePattern,
+                        inheritedAudit.finalTonalPass.after, ownerIds);
+                    if (newDebt >= oldDebt ||
+                        candidateAudit.production.unintendedHarshOverlaps >=
+                            inheritedAudit.production.unintendedHarshOverlaps ||
+                        candidateAudit.production.unsupportedChromaticNotes >
+                            inheritedAudit.production.unsupportedChromaticNotes ||
+                        candidateAudit.production.metricViolations >
+                            inheritedAudit.production.metricViolations ||
+                        candidateAudit.production.unsafeDurations >
+                            inheritedAudit.production.unsafeDurations || !unaffected) {
+                        OperationalJournal::write("WARN", "CHECKPOINT",
+                            "AI foundation revision rejected | debt " +
+                            juce::String(oldDebt) + " -> " + juce::String(newDebt) +
+                            " | overlaps " + juce::String(static_cast<int>(
+                                inheritedAudit.production.unintendedHarshOverlaps)) +
+                            " -> " + juce::String(static_cast<int>(
+                                candidateAudit.production.unintendedHarshOverlaps)) +
+                            " | unaffected=" + juce::String(static_cast<int>(unaffected)));
+                        continue;
+                    }
+                    assembledScore = std::move(candidate);
+                    inheritedAudit = candidateAudit;
+                    OperationalJournal::write("OK", "CHECKPOINT",
+                        "AI revised one inherited harmonic owner | tonal debt " +
+                        juce::String(oldDebt) + " -> " + juce::String(newDebt));
+                    saveAcceptedCheckpoint(true);
+                    break;
+                }
+                }
+            }
+        }
+    }
     const auto earlyEditorialCheck = [&](std::size_t blockIndex) {
         if (!localEditorial) return true;
         const auto stopEarly = [&](const juce::String& reason) {
@@ -10144,8 +10881,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 juce::String(review.harmonicContinuity * 100.0, 0) +
                 "% of the promised sustained floor after their focused section recovery");
 
-        const auto severeTonality = tonalPolicy == TonalPolicy::Consolidated &&
-            blockIndex + 1 >= 4 &&
+        const auto severeTonality = blockIndex + 1 >= 4 &&
             !audit.production.ready &&
             audit.production.unintendedHarshOverlaps >
                 std::max<std::size_t>(100, static_cast<std::size_t>(
@@ -10168,21 +10904,32 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     };
 
     for (std::size_t index = 0; index < blocks.size(); ++index) {
+        std::vector<std::size_t> missingIndices;
+        for (const auto ownerIndex : blocks[index])
+            if (ownerIndex < result.instruments.size() &&
+                !resumedInstrumentIds.contains(result.instruments[ownerIndex].id))
+                missingIndices.push_back(ownerIndex);
+        if (missingIndices.empty()) {
+            ++completedBlocks;
+            if (progress) progress({AiSongStage::Validation, completedBlocks,
+                blocks.size(), 0, "accepted AI MIDI restored from checkpoint"});
+            continue;
+        }
         const auto scoreBeforeBlock = localEditorial ? assembledScore : PerformanceScore{};
-        if (!authorBlock(blocks[index], 1, index)) {
+        if (!authorBlock(missingIndices, 1, index)) {
             error = "Incremental GPT performance failed after bounded recovery: " + lastBlockError;
             return {};
         }
         if (localEditorial) {
-            reviewRecoveredVoicings(scoreBeforeBlock, blocks[index], index);
+            reviewRecoveredVoicings(scoreBeforeBlock, missingIndices, index);
             const auto audit = auditLocalScore(assembledScore);
             const auto tonalEvents = SelectiveRepair::measuredTonalDebt(audit);
             const auto lowSeconds = SelectiveRepair::sustainedLowChordBedSeconds(
                 result, audit.finalTonalPass.after);
             const auto bed = SelectiveRepair::centralChordBedOwner(result);
             const auto bedWritten = bed &&
-                std::find(blocks[index].begin(), blocks[index].end(), *bed) !=
-                    blocks[index].end();
+                std::find(missingIndices.begin(), missingIndices.end(), *bed) !=
+                    missingIndices.end();
             const auto bedCoverage = bedWritten
                 ? SelectiveRepair::chordBedFormCoverage(result, assembledScore, *bed)
                 : ChordBedFormCoverage{true, true, true};
@@ -10211,7 +10958,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         juce::String(static_cast<int>(bedCoverage.development)) + "/" +
                         juce::String(static_cast<int>(bedCoverage.closing)) +
                         localTonalConflictBrief(result, audit,
-                            instrumentIdsFor(result, blocks[index])).substring(0, 1800)});
+                            instrumentIdsFor(result, missingIndices)).substring(0, 1800)});
                 saveRejectedCandidate(assembledScore);
                 assembledScore = scoreBeforeBlock;
                 saveAcceptedCheckpoint(true);
@@ -10749,7 +11496,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     auditFoundation.seed = result.seed;
     auditFoundation.humanize = 0.0;
     CompositionRenderReport initialReport;
-    [[maybe_unused]] const auto initialPattern = SongComposer{}.render(
+    auto initialPattern = SongComposer{}.render(
         result, auditFoundation, {}, &initialReport);
     OperationalJournal::write("INFO", "AUDITION", audibleAuditSummary(initialReport));
     if (localEditorial && initialReport.production.unintendedHarshOverlaps > 0) {
@@ -10773,6 +11520,147 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             " | grouped_windows=" + juce::String(static_cast<int>(groups.size())) +
             " | top=" + summary);
     }
+    // The full ensemble can reveal a sustained harmonic contradiction that was
+    // inaudible when its owner was written early. Ask AI for only the implicated
+    // chord attack, not a new ten-minute performance for the whole instrument.
+    // Splicing is mechanical; no pitch or rest is selected by local code.
+    if (localEditorial && !token.stop_requested()) {
+        const auto focusedDeadline = std::min(overallDeadline,
+            std::chrono::steady_clock::now() + std::chrono::minutes(4));
+        std::set<std::tuple<std::size_t, int, long long>> attemptedVoicings;
+        for (auto pass = 0; pass < 4 && !token.stop_requested(); ++pass) {
+            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                focusedDeadline - std::chrono::steady_clock::now());
+            if (remaining < std::chrono::seconds(25)) break;
+            std::optional<std::size_t> selectedOwner;
+            std::optional<ChordVoicingTarget> selectedTarget;
+            auto priority = 0.0;
+            for (std::size_t owner = 0; owner < result.instruments.size(); ++owner) {
+                const auto targets = SelectiveRepair::sustainedHarmonicMismatchTargets(
+                    result, initialPattern, initialReport.finalTonalPass.after, owner, 4);
+                for (const auto& target : targets) {
+                    const auto key = std::tuple{owner, target.sectionIndex,
+                        std::llround(target.sectionBeat * 1000000.0)};
+                    if (attemptedVoicings.contains(key)) continue;
+                    const auto weight = static_cast<double>(target.conflictEvents) *
+                        std::min(16.0, target.durationBeats);
+                    if (!selectedTarget || weight > priority) {
+                        selectedOwner = owner;
+                        selectedTarget = target;
+                        priority = weight;
+                    }
+                }
+            }
+            if (!selectedOwner || !selectedTarget) break;
+            const auto owner = *selectedOwner;
+            const auto target = *selectedTarget;
+            attemptedVoicings.insert({owner, target.sectionIndex,
+                std::llround(target.sectionBeat * 1000000.0)});
+            const auto absoluteBeat = result.sections[target.sectionIndex].startBar *
+                result.beatsPerBar + target.sectionBeat;
+            OperationalJournal::write("WARN", "HARMONY",
+                "AI-focused final voicing review | owner=" +
+                juce::String::fromUTF8(result.instruments[owner].id.c_str()) +
+                " | bar=" + juce::String(static_cast<int>(
+                    std::floor(absoluteBeat / result.beatsPerBar)) + 1) +
+                " | held_beats=" + juce::String(target.durationBeats, 2));
+            if (progress) progress({AiSongStage::Validation,
+                blocks.size() + static_cast<std::size_t>(pass), blocks.size() + 4,
+                pass + 1, "AI reviewing one sustained harmonic voicing against the complete MIDI"});
+            auto prompt = compactVoicingPatchPrompt(result, initialPattern,
+                initialReport.finalTonalPass.after, owner, {target});
+            prompt += "FINAL HARMONIC CONTRACT: this sustained chord body must agree "
+                "with the section chord that the AI declared. Select the replacement "
+                "pitches yourself from the printed allowed_pc set, and coordinate them "
+                "with the immutable simultaneous bass, harmony and melody. Keep the "
+                "same attack, duration, dynamics, other notes and musical function. "
+                "This is an editorial voicing decision, not a request for a new track.\n";
+            const auto body = juce::String("{\"model\":\"") + model +
+                "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
+                realizationReasoningEffort +
+                "\"},\"max_output_tokens\":3200,\"input\":" +
+                juce::JSON::toString(juce::var(prompt)) +
+                ",\"text\":{\"format\":{\"type\":\"json_schema\"," +
+                "\"name\":\"pulso_compact_voicing_candidates\",\"strict\":true," +
+                "\"schema\":" + compactVoicingCandidatesSchema() + "}}}";
+            const auto response = performRequest(body, apiKey, token,
+                std::min(remaining, std::chrono::duration_cast<
+                    std::chrono::milliseconds>(std::chrono::seconds(100))));
+            if (response.timedOut || response.cancelled || !response.connected) {
+                OperationalJournal::write("WARN", "HARMONY",
+                    "focused AI response unavailable; accepted score remains checkpointed");
+                break;
+            }
+            std::vector<std::vector<ChordVoicingPatch>> alternatives;
+            juce::String parseError;
+            const auto output = extractOutputText(juce::JSON::parse(response.body));
+            if (response.status < 200 || response.status >= 300 ||
+                incompleteStructuredResponse(response.body) ||
+                !parseCompactVoicingCandidates(output, {target}, alternatives,
+                    parseError)) {
+                OperationalJournal::write("WARN", "HARMONY",
+                    "focused AI candidates were incomplete; accepted score unchanged");
+                continue;
+            }
+            std::optional<PerformanceScore> acceptedScore;
+            Pattern acceptedPattern;
+            CompositionRenderReport acceptedReport;
+            auto bestDebt = SelectiveRepair::measuredTonalDebt(initialReport);
+            for (const auto& patches : alternatives) {
+                if (patches.size() != 1 ||
+                    !SelectiveRepair::voicingMatchesDeclaredHarmony(result, patches.front()))
+                    continue;
+                PerformanceScore candidate;
+                std::string spliceError;
+                if (!SelectiveRepair::applyChordVoicingPatches(result,
+                        result.performanceScore, owner, patches, candidate, spliceError) ||
+                    !normalizeAssembledScore(candidate, "focused final AI harmony"))
+                    continue;
+                auto candidatePlan = result;
+                candidatePlan.performanceScore = candidate;
+                CompositionRenderReport candidateReport;
+                auto candidatePattern = SongComposer{}.render(candidatePlan,
+                    auditFoundation, {}, &candidateReport);
+                if (!SelectiveRepair::preservesUntouchedMidi(result, initialPattern,
+                        candidatePattern, owner, patches) ||
+                    !SelectiveRepair::preservesNarrative(initialReport, candidateReport) ||
+                    candidateReport.production.metricViolations >
+                        initialReport.production.metricViolations ||
+                    candidateReport.production.unsafeDurations >
+                        initialReport.production.unsafeDurations ||
+                    candidateReport.production.orphanEvents >
+                        initialReport.production.orphanEvents ||
+                    candidateReport.production.unsupportedChromaticNotes >
+                        initialReport.production.unsupportedChromaticNotes ||
+                    candidateReport.production.invalidSustains >
+                        initialReport.production.invalidSustains ||
+                    candidateReport.production.lowRegisterVerticalClashes >
+                        initialReport.production.lowRegisterVerticalClashes ||
+                    candidateReport.soundscape.score + .02 < initialReport.soundscape.score ||
+                    candidateReport.trackViability.score + .02 <
+                        initialReport.trackViability.score)
+                    continue;
+                const auto debt = SelectiveRepair::measuredTonalDebt(candidateReport);
+                if (debt >= bestDebt) continue;
+                bestDebt = debt;
+                acceptedScore = std::move(candidate);
+                acceptedPattern = std::move(candidatePattern);
+                acceptedReport = std::move(candidateReport);
+            }
+            if (!acceptedScore) {
+                OperationalJournal::write("WARN", "HARMONY",
+                    "no AI voicing improved the complete score without changing other MIDI");
+                continue;
+            }
+            result.performanceScore = std::move(*acceptedScore);
+            initialPattern = std::move(acceptedPattern);
+            initialReport = std::move(acceptedReport);
+            OperationalJournal::write("OK", "HARMONY",
+                "one AI-authored sustained voicing accepted | remaining tonal debt=" +
+                juce::String(bestDebt));
+            if (checkpoint) checkpoint(result, blocks.size() + pass + 1, true, false);
+        }
+    }
     const auto finalScoreDiagnosis = [&](const SongPlan& plan, const Pattern& pattern,
                                          const CompositionRenderReport& report) {
         auto diagnosis = SelectiveRepair::diagnose(plan, pattern, report, 4);
@@ -10792,9 +11680,20 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             diagnosis.instrumentIndices.resize(4);
         return diagnosis;
     };
+    const auto hasSustainedHarmonicMismatch = [&](const SongPlan& plan,
+                                                   const Pattern& pattern,
+                                                   const CompositionRenderReport& report) {
+        if (!localEditorial) return false;
+        for (std::size_t owner = 0; owner < plan.instruments.size(); ++owner)
+            if (!SelectiveRepair::sustainedHarmonicMismatchTargets(
+                    plan, pattern, report.finalTonalPass.after, owner, 1).empty())
+                return true;
+        return false;
+    };
     const auto initialDiagnosis = finalScoreDiagnosis(
         result, initialPattern, initialReport);
-    if (SelectiveRepair::publicationReady(initialReport) && !initialDiagnosis.needed) {
+    if (SelectiveRepair::publicationReady(initialReport) && !initialDiagnosis.needed &&
+        !hasSustainedHarmonicMismatch(result, initialPattern, initialReport)) {
         OperationalJournal::write("OK", "AUDITION", "score passed without editorial repair");
         error.clear();
         return result;
@@ -10858,9 +11757,206 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         return *std::max_element(windows.begin(), windows.end()) -
             *std::min_element(windows.begin(), windows.end());
     };
-    const auto repairPassLimit = localEditorial ? 4 : 2;
+    // A final-score floor gap is a section-local omission, not a reason to
+    // rewrite a complete ten-minute instrument. Ask the AI for an additive
+    // section cell and commit it only when the measured score improves.
+    if (localEditorial && !token.stop_requested()) {
+        const auto floorGap = [&](const SongPlan& plan,
+                                  const PerformanceScore& score)
+            -> std::optional<std::pair<std::size_t, std::size_t>> {
+            std::vector<std::size_t> floorOwners;
+            std::vector<std::vector<bool>> sustained;
+            for (std::size_t owner = 0; owner < plan.instruments.size(); ++owner) {
+                if (!HarmonicFloorContext::sustainedFloorOwner(plan.instruments[owner]))
+                    continue;
+                floorOwners.push_back(owner);
+                sustained.push_back(renderedSustainedBodyBars(plan, score, owner));
+            }
+            if (floorOwners.empty()) return std::nullopt;
+            std::optional<std::pair<std::size_t, std::size_t>> selected;
+            auto largestDeficit = std::size_t{};
+            for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size();
+                 ++sectionIndex) {
+                const auto& section = plan.sections[sectionIndex];
+                auto covered = std::size_t{};
+                std::vector<std::size_t> ownerOpportunity(floorOwners.size());
+                for (auto bar = section.startBar;
+                     bar < section.startBar + section.bars; ++bar) {
+                    const auto required = std::min(floorOwners.size(),
+                        HarmonicFloorContext::requiredLayers(plan,
+                            (bar + .5) * plan.beatsPerBar));
+                    auto active = std::size_t{};
+                    for (std::size_t index = 0; index < sustained.size(); ++index)
+                        if (bar >= 0 && static_cast<std::size_t>(bar) <
+                                sustained[index].size() &&
+                            sustained[index][static_cast<std::size_t>(bar)]) ++active;
+                    if (active >= required) { ++covered; continue; }
+                    for (std::size_t index = 0; index < floorOwners.size(); ++index) {
+                        const auto& instrument = plan.instruments[floorOwners[index]];
+                        if ((instrument.activeSections.empty() ||
+                             std::find(instrument.activeSections.begin(),
+                                 instrument.activeSections.end(), section.name) !=
+                                 instrument.activeSections.end()) &&
+                            bar >= 0 && static_cast<std::size_t>(bar) <
+                                sustained[index].size() &&
+                            !sustained[index][static_cast<std::size_t>(bar)])
+                            ++ownerOpportunity[index];
+                    }
+                }
+                if (section.bars < 4 || covered * 100 >=
+                        static_cast<std::size_t>(section.bars) * 60) continue;
+                for (std::size_t index = 0; index < floorOwners.size(); ++index)
+                    if (ownerOpportunity[index] > largestDeficit) {
+                        largestDeficit = ownerOpportunity[index];
+                        selected = std::pair{sectionIndex, floorOwners[index]};
+                    }
+            }
+            return selected;
+        };
+        for (auto attempt = 0; attempt < 2; ++attempt) {
+            const auto target = floorGap(bestPlan, bestPlan.performanceScore);
+            if (!target) break;
+            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                overallDeadline - std::chrono::steady_clock::now());
+            if (remaining < std::chrono::seconds(35)) break;
+            const auto [sectionIndex, ownerIndex] = *target;
+            const auto ownerIds = instrumentIdsFor(bestPlan, {ownerIndex});
+            const auto prompt = focusedSustainedSectionPrompt(bestPlan,
+                bestPlan.performanceScore, ownerIndex, sectionIndex);
+            const auto body = juce::String("{\"model\":\"") + model +
+                "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
+                realizationReasoningEffort +
+                "\"},\"max_output_tokens\":5000,\"input\":" +
+                juce::JSON::toString(juce::var(prompt)) +
+                ",\"text\":{\"format\":{\"type\":\"json_schema\","
+                "\"name\":\"pulso_final_floor_section\",\"strict\":true,\"schema\":" +
+                performanceSchemaFor(bestPlan, {ownerIndex}) + "}}}";
+            OperationalJournal::write("INFO", "REPAIR",
+                "focused final harmonic section " +
+                juce::String::fromUTF8(bestPlan.sections[sectionIndex].name.c_str()) +
+                " owner=" + juce::String::fromUTF8(
+                    bestPlan.instruments[ownerIndex].id.c_str()));
+            const auto response = performRequest(body, apiKey, token,
+                std::min(remaining, std::chrono::duration_cast<
+                    std::chrono::milliseconds>(std::chrono::seconds(95))));
+            PerformanceScore addition;
+            juce::String parseError;
+            const auto reply = extractOutputText(juce::JSON::parse(response.body));
+            if (!response.connected || response.status < 200 || response.status >= 300 ||
+                response.cancelled || response.timedOut ||
+                incompleteStructuredResponse(response.body) ||
+                !parsePerformanceBlock(reply, bestPlan, ownerIds, addition, parseError)) {
+                OperationalJournal::write("WARN", "REPAIR",
+                    "focused final harmonic section unavailable: " +
+                    (parseError.isNotEmpty() ? parseError : apiErrorMessage(response)));
+                break;
+            }
+            retainOnlyInstrumentMaterial(addition, ownerIds);
+            const auto& section = bestPlan.sections[sectionIndex];
+            const auto beforeBars = renderedSustainedBodyBars(
+                bestPlan, bestPlan.performanceScore, ownerIndex);
+            const auto bounded = addition.cells.size() == 1 &&
+                addition.placements.size() == 1 &&
+                addition.placements.front().sectionIndex ==
+                    static_cast<int>(sectionIndex) &&
+                addition.cells.front().notes.size() <= 36 &&
+                std::all_of(addition.cells.front().notes.begin(),
+                    addition.cells.front().notes.end(), [&](const auto& note) {
+                        const auto bar = section.startBar + static_cast<int>(
+                            std::floor(note.beat / bestPlan.beatsPerBar));
+                        return bar >= section.startBar &&
+                            bar < section.startBar + section.bars &&
+                            static_cast<std::size_t>(bar) < beforeBars.size() &&
+                            !beforeBars[static_cast<std::size_t>(bar)];
+                    });
+            if (!bounded) {
+                OperationalJournal::write("WARN", "REPAIR",
+                    "focused final harmonic section exceeded its missing-bar scope");
+                break;
+            }
+            auto candidate = bestPlan;
+            mergePerformanceBlock(candidate.performanceScore,
+                std::move(addition), requestSerial++);
+            std::vector<double> sectionLengths;
+            for (const auto& item : candidate.sections)
+                sectionLengths.push_back(item.bars * candidate.beatsPerBar);
+            const auto normalization = PerformanceScoreEngine::normalize(
+                candidate.performanceScore, candidate.sections.size(), sectionLengths);
+            if (normalization.cellsDroppedByCapacity != 0 ||
+                normalization.placementsDroppedByCapacity != 0) break;
+            // The AI's new voicing can cover every missing bar yet clash with
+            // already accepted ensemble notes. Let the same AI revise only the
+            // measured attacks before judging the addition as a whole.
+            auto originalAssembled = assembledScore;
+            assembledScore = candidate.performanceScore;
+            reviewRecoveredVoicings(bestPlan.performanceScore,
+                {ownerIndex}, blocks.size(), 2);
+            candidate.performanceScore = assembledScore;
+            assembledScore = std::move(originalAssembled);
+            CompositionRenderReport candidateReport;
+            const auto candidatePattern = SongComposer{}.render(
+                candidate, auditFoundation, {}, &candidateReport);
+            const auto beforeReview = SelectiveRepair::reviewFinalScore(
+                bestPlan, bestPattern);
+            const auto afterReview = SelectiveRepair::reviewFinalScore(
+                candidate, candidatePattern);
+            const auto afterBars = renderedSustainedBodyBars(
+                candidate, candidate.performanceScore, ownerIndex);
+            auto newBars = std::size_t{};
+            for (auto bar = section.startBar; bar < section.startBar + section.bars;
+                 ++bar)
+                if (bar >= 0 && static_cast<std::size_t>(bar) < afterBars.size() &&
+                    static_cast<std::size_t>(bar) < beforeBars.size() &&
+                    afterBars[static_cast<std::size_t>(bar)] &&
+                    !beforeBars[static_cast<std::size_t>(bar)]) ++newBars;
+            const auto technicallySafe = EditorialSafety::technicallySafeAiScore(
+                candidatePattern, candidateReport);
+            OperationalJournal::write("INFO", "REPAIR",
+                "focused final harmonic result | new bars=" +
+                juce::String(static_cast<int>(newBars)) + " | review deficit=" +
+                juce::String(beforeReview.deficit, 3) + " -> " +
+                juce::String(afterReview.deficit, 3) + " | overlaps=" +
+                juce::String(static_cast<int>(
+                    bestReport.production.unintendedHarshOverlaps)) + " -> " +
+                juce::String(static_cast<int>(
+                    candidateReport.production.unintendedHarshOverlaps)) +
+                " | technically safe=" + juce::String(technicallySafe ? 1 : 0));
+            // The floor can require two complementary owners. The first
+            // additive cell may improve its own coverage without yet moving
+            // the section-level threshold; preserve that safe intermediate
+            // checkpoint so the second owner can complete the pair.
+            if (newBars == 0 ||
+                afterReview.deficit > beforeReview.deficit + .01 ||
+                !technicallySafe ||
+                candidateReport.production.unintendedHarshOverlaps >
+                    bestReport.production.unintendedHarshOverlaps ||
+                candidateReport.production.lowRegisterVerticalClashes >
+                    bestReport.production.lowRegisterVerticalClashes) {
+                OperationalJournal::write("WARN", "REPAIR",
+                    "focused final harmonic section did not improve the safe full score");
+                break;
+            }
+            bestPlan = std::move(candidate);
+            bestPattern = candidatePattern;
+            bestReport = candidateReport;
+            ++completedRepairs;
+            if (checkpoint) checkpoint(bestPlan, blocks.size() +
+                completedRepairs + 1, true, false);
+            OperationalJournal::write("OK", "REPAIR",
+                "focused AI harmonic section accepted; new sustained bars=" +
+                juce::String(static_cast<int>(newBars)));
+        }
+    }
+    // A large, long-form cast can leave several independent editorial owners
+    // after MIDI integrity and coverage are already sound. Four one-owner passes
+    // cannot review a thirty-part score; keep the repair bounded, but scale it
+    // to the explicit cast instead of publishing known narrative defects.
+    const auto largeLongFormEditorial = localEditorial && result.totalBars >= 128 &&
+        requestedCastCount >= 20;
+    const auto repairPassLimit = largeLongFormEditorial ? 8 : localEditorial ? 4 : 2;
     const auto repairDeadline = std::min(overallDeadline,
-        std::chrono::steady_clock::now() + std::chrono::minutes(4));
+        std::chrono::steady_clock::now() + std::chrono::minutes(
+            largeLongFormEditorial ? 9 : 4));
 
     for (auto repairPass = 1; repairPass <= repairPassLimit; ++repairPass) {
         if (token.stop_requested()) {
@@ -10920,7 +12016,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         const auto repairRemaining = std::chrono::duration_cast<std::chrono::milliseconds>(
             repairDeadline - std::chrono::steady_clock::now());
         if (repairRemaining < std::chrono::seconds(30)) {
-            terminalReason = "selective repair exhausted its four-minute global budget";
+            terminalReason = "selective repair exhausted its bounded global budget";
             break;
         }
         const auto targetIds = instrumentIdsFor(bestPlan, diagnosis.instrumentIndices);
@@ -10951,6 +12047,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         PerformanceScore repairedMaterial;
         std::set<std::string> completedTargetIds;
         auto repairSerial = std::size_t{};
+        auto repairTransportExhausted = false;
         auto makeRepairBody = [&](const std::vector<std::size_t>& indices,
                                   int attempt, std::size_t shardIndex) {
             auto shardDiagnosis = diagnosis;
@@ -11012,6 +12109,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     OperationalJournal::write(parsed ? "INFO" : "WARN", "ROUTING",
                         "editorial repair routing: " + routing.summary(shardIds));
                     if (!parsed) {
+                        // A background response that exhausted its budget was already
+                        // cancelled by performRequest. Reissuing the same large score
+                        // immediately cannot recover that work and can double the bill.
+                        repairTransportExhausted = repairTransportExhausted ||
+                            response.timedOut || response.cancelled || !response.connected;
                         const auto reason = !transportOk
                             ? apiErrorMessage(response)
                             : structuredResponseError(response.body,
@@ -11060,8 +12162,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
 
         auto unresolvedRepairs = executeRepairRound(repairShards, 1,
             std::min(repairRemaining, std::chrono::duration_cast<std::chrono::milliseconds>(
-                                          std::chrono::seconds(90))));
-        if (!unresolvedRepairs.empty() && !token.stop_requested()) {
+                                          std::chrono::seconds(210))));
+        if (!unresolvedRepairs.empty() && !token.stop_requested() &&
+            !repairTransportExhausted) {
             const auto retryRemaining = std::chrono::duration_cast<std::chrono::milliseconds>(
                 repairDeadline - std::chrono::steady_clock::now());
             if (retryRemaining >= std::chrono::seconds(25)) {
@@ -11084,6 +12187,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         if (completedTargetIds.empty() || repairedMaterial.empty()) {
             OperationalJournal::write("WARN", "REPAIR",
                 "no valid repair shard was available; preserving the prior score");
+            if (repairTransportExhausted) {
+                terminalReason = "editorial response exceeded its time budget; "
+                    "accepted MIDI checkpoint preserved without reissuing the same request";
+                break;
+            }
             if (localEditorial) continue;
             break;
         }
@@ -11168,7 +12276,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             checkpoint(bestPlan, blocks.size() + completedRepairs + 1, true, false);
         const auto postRepairDiagnosis = finalScoreDiagnosis(
             bestPlan, bestPattern, bestReport);
-        if (SelectiveRepair::publicationReady(bestReport) && !postRepairDiagnosis.needed) {
+        if (SelectiveRepair::publicationReady(bestReport) && !postRepairDiagnosis.needed &&
+            !hasSustainedHarmonicMismatch(bestPlan, bestPattern, bestReport)) {
             OperationalJournal::write("OK", "GATE", "strict audible contract passed after " +
                 juce::String(static_cast<int>(completedRepairs)) + " repair pass(es)");
             if (progress) progress({AiSongStage::Validation, blocks.size() + completedRepairs,
@@ -11193,6 +12302,30 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 "bounded musical revision incomplete; provisional checkpoints preserved, "
                 "not presented as a complete work | " + findings + " | audit=" +
                 auditFile.getFullPathName());
+            return {};
+        }
+        // A technically playable preview is not a finished composition when a
+        // sustained chord body still contradicts the AI's own harmonic plan and
+        // clashes with the final ensemble. Keep the MIDI checkpoint available,
+        // but never label this condition as a completed song.
+        for (std::size_t owner = 0; owner < bestPlan.instruments.size(); ++owner) {
+            const auto unresolved = SelectiveRepair::sustainedHarmonicMismatchTargets(
+                bestPlan, bestPattern, bestReport.finalTonalPass.after, owner, 1);
+            if (unresolved.empty()) continue;
+            const auto& target = unresolved.front();
+            const auto absoluteBeat = bestPlan.sections[target.sectionIndex].startBar *
+                bestPlan.beatsPerBar + target.sectionBeat;
+            error = "Final MIDI retains an unresolved sustained harmonic contradiction "
+                "at bar " + juce::String(static_cast<int>(
+                    std::floor(absoluteBeat / bestPlan.beatsPerBar)) + 1) +
+                " in " + juce::String::fromUTF8(
+                    bestPlan.instruments[owner].id.c_str()) +
+                "; accepted MIDI checkpoint preserved for audition";
+            const auto auditFile = OperationalJournal::writeRejectedAudit(
+                bestPlan, bestReport, error, completedRepairs,
+                "sustained_harmonic_contradiction");
+            OperationalJournal::write("ERROR", "HARMONY",
+                error + " | audit=" + auditFile.getFullPathName());
             return {};
         }
     }

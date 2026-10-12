@@ -6,6 +6,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataRoot, jobsRoot, jobDirectory, listJobIds } from './storage.mjs';
 import { analyzeComposition } from './composition-audit.mjs';
+import { canAutomaticallyRecover, automaticRecoveryRequest,
+  AUTOMATIC_RECOVERY_MAX_SECONDS, AUTOMATIC_RECOVERY_MAX_USD } from './recovery-policy.mjs';
+import { parseMidi } from '../shared/midi.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -104,6 +107,7 @@ function jobDetails(id) {
     } } : track;
   });
   const checkpoint = readJson(path.join(dir, 'checkpoint.json'));
+  const recovery = readJson(path.join(dir, 'recovery.json'));
   const diagnostic = readJson(path.join(dir, 'diagnostic.json'));
   const progress = readJson(path.join(dir, 'progress.json'));
   const failure = readJson(path.join(dir, 'error.json'));
@@ -116,7 +120,7 @@ function jobDetails(id) {
     try { endedAt = statSync(path.join(dir, terminalFile)).mtimeMs; } catch { /* Keep elapsed time. */ }
   }
   const trace = traceFor(id, request.created_at, endedAt);
-  return { id, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, compositionAudit, checkpoint, diagnostic, telemetry: trace.summary, error: state === 'cancelled' ? null : explainJobFailure(failure?.error) || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
+  return { id, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, compositionAudit, checkpoint, recovery, diagnostic, telemetry: trace.summary, error: state === 'cancelled' ? null : explainJobFailure(failure?.error) || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
 }
 
 function listJobs() {
@@ -147,6 +151,8 @@ function validate(input) {
   const renderMode = input.render_mode || 'ai_sovereign';
   const suppliedSeed = input.seed === undefined || input.seed === '' ? null : String(input.seed);
   const proofMode = input.proof_mode === true;
+  const resumeFromJob = input.resume_from_job === undefined ? null : String(input.resume_from_job);
+  const blueprintFromJob = input.blueprint_from_job === undefined ? null : String(input.blueprint_from_job);
   if (!prompt || prompt.length > 600) throw new InputError('La idea debe contener entre 1 y 600 caracteres.');
   if (!Number.isInteger(duration) || duration < 30 || duration > 900) throw new InputError('La duración debe estar entre 30 y 900 segundos.');
   if (!Number.isFinite(bpm) || bpm < 60 || bpm > 180) throw new InputError('El tempo debe estar entre 60 y 180 BPM.');
@@ -156,7 +162,76 @@ function validate(input) {
   const seed = suppliedSeed || String((randomBytes(8).readBigUInt64LE() & 9223372036854775807n) || 1n);
   if (proofMode && duration > 60) throw new InputError('La prueba de coherencia solo admite obras de hasta 60 segundos.');
   if (proofMode && renderMode !== 'ai_sovereign') throw new InputError('La prueba de coherencia requiere el modo de autoría IA.');
-  return { prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, created_at: new Date().toISOString() };
+  if (resumeFromJob !== null && (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(resumeFromJob) || renderMode !== 'ai_sovereign' || proofMode))
+    throw new InputError('Invalid local AI resume job.');
+  if (blueprintFromJob !== null && (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(blueprintFromJob) ||
+      resumeFromJob !== null || renderMode !== 'ai_sovereign' || proofMode))
+    throw new InputError('Invalid controlled A/B blueprint job.');
+  return { prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, created_at: new Date().toISOString() };
+}
+
+function blueprintOnlyScoreFromJob(request) {
+  const sourceDir = jobDirectory(request.blueprint_from_job);
+  const source = sourceDir && readJson(path.join(sourceDir, 'job.json'));
+  if (!source || !['prompt', 'duration_seconds', 'bpm', 'behavior', 'seed', 'ai_sovereign']
+      .every(field => source[field] === request[field]))
+    throw new InputError('Controlled A/B request must match the source prompt, duration, tempo, seed and mode.');
+  const blueprintFile = path.join(sourceDir, 'accepted-blueprint.json');
+  const blueprintJson = existsSync(blueprintFile) && statSync(blueprintFile).size <= 2 * 1024 * 1024
+    ? readFileSync(blueprintFile, 'utf8') : null;
+  const blueprint = blueprintJson && JSON.parse(blueprintJson);
+  const plan = readJson(path.join(sourceDir, 'composition-plan.json'));
+  if (!blueprint || !Array.isArray(plan?.cast) || !Array.isArray(plan?.sections) ||
+      !plan.cast.length || !plan.sections.length)
+    throw new InputError('Source job has no complete accepted AI blueprint.');
+  return { schema_version: 2, blueprint_only: true, blueprint_json: blueprintJson,
+    cast_ids: plan.cast.map(part => part.id),
+    sections: plan.sections.map(section => ({ start_bar: section.start_bar, bars: section.bars })),
+    notes: [] };
+}
+
+function resumeScoreFromJob(request) {
+  const previousDirectory = jobDirectory(request.resume_from_job);
+  if (!previousDirectory || !existsSync(previousDirectory)) throw new InputError('Previous local job was not found.');
+  const previous = readJson(path.join(previousDirectory, 'job.json'));
+  const same = ['prompt', 'duration_seconds', 'bpm', 'behavior', 'seed', 'ai_sovereign']
+    .every(field => previous?.[field] === request[field]);
+  if (!same) throw new InputError('Prompt, duration, tempo, seed and mode must match the accepted checkpoint.');
+  const checkpoint = readJson(path.join(previousDirectory, 'checkpoint.json'));
+  if (!checkpoint?.file || !/^partial-[0-9]+\.mid$/.test(checkpoint.file))
+    throw new InputError('Previous job has no accepted MIDI checkpoint.');
+  const stem = checkpoint.file.slice(0, -4);
+  const plan = readJson(path.join(previousDirectory, `${stem}-plan.json`));
+  const score = readJson(path.join(previousDirectory, `${stem}.pulso.json`));
+  if (!Array.isArray(plan?.cast) || !Array.isArray(plan?.sections) || !Array.isArray(score?.parts))
+    throw new InputError('Musical checkpoint is incomplete.');
+  const byName = new Map();
+  for (const part of score.parts) {
+    if (!Number.isInteger(part.part_id) || !part.track_name || byName.has(part.track_name) ||
+        !plan.cast[part.part_id - 1]?.id) throw new InputError('Checkpoint cast is ambiguous.');
+    byName.set(part.track_name, { id: plan.cast[part.part_id - 1].id, count: part.note_count });
+  }
+  const midi = parseMidi(readFileSync(path.join(previousDirectory, checkpoint.file)));
+  const notes = [];
+  for (const track of midi.tracks) {
+    if (!track.notes.length) continue;
+    const part = byName.get(track.name);
+    if (!part || part.count !== track.notes.length || track.notes.some(note => note.unterminated))
+      throw new InputError('Provisional MIDI differs from accepted tracks.');
+    for (const note of track.notes) notes.push({ instrument_id: part.id,
+      start_beat: note.startBeat, duration_beats: note.durationBeats,
+      pitch: note.pitch, velocity: note.velocity });
+  }
+  if (notes.length !== checkpoint.notes || byName.size !== checkpoint.parts)
+    throw new InputError('Checkpoint MIDI note count does not match.');
+  const blueprintFile = path.join(previousDirectory, 'accepted-blueprint.json');
+  const blueprintJson = existsSync(blueprintFile) && statSync(blueprintFile).size <= 2 * 1024 * 1024
+    ? readFileSync(blueprintFile, 'utf8') : null;
+  if (blueprintJson && !readJson(blueprintFile))
+    throw new InputError('El plan exacto del checkpoint no es JSON válido.');
+  return { schema_version: 2, blueprint_json: blueprintJson, cast_ids: plan.cast.map(part => part.id),
+    sections: plan.sections.map(section => ({ start_bar: section.start_bar, bars: section.bars })),
+    notes };
 }
 
 function childEnvironment(dir) {
@@ -164,7 +239,37 @@ function childEnvironment(dir) {
   // Local Studio advertises and checks its environment key. Force the worker to
   // use that same key instead of silently preferring a different VST credential
   // stored in Windows Credential Manager.
-  return { ...Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]])), PULSO_DISABLE_SECURE_CREDENTIALS: '1', PULSO_LOCAL_EDITORIAL_V2: '1', PULSO_TRACE_PATH: path.join(dir, 'api-events.jsonl'), PULSO_AI_RESPONSE_CACHE_DIR: path.join(dataRoot, 'validated-response-cache') };
+  const automatic = readJson(path.join(dir, 'job.json'))?.automatic_recovery_attempt === 1;
+  return { ...Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]])), PULSO_DISABLE_SECURE_CREDENTIALS: '1', PULSO_LOCAL_EDITORIAL_V2: '1', PULSO_TRACE_PATH: path.join(dir, 'api-events.jsonl'), PULSO_AI_RESPONSE_CACHE_DIR: path.join(dataRoot, 'validated-response-cache'), ...(process.env.PULSO_AI_SINGLE_OWNER_WRITING === '1' ? { PULSO_AI_SINGLE_OWNER_WRITING: '1' } : {}), ...(automatic ? { PULSO_AUTO_RECOVERY_MAX_SECONDS: String(AUTOMATIC_RECOVERY_MAX_SECONDS), PULSO_AUTO_RECOVERY_MAX_USD: String(AUTOMATIC_RECOVERY_MAX_USD) } : {}) };
+}
+
+function startAutomaticRecovery(sourceId) {
+  if (active) return;
+  const source = jobDetails(sourceId);
+  const hasExactBlueprint = existsSync(path.join(jobDirectory(sourceId), 'accepted-blueprint.json'));
+  if (!canAutomaticallyRecover(source, hasExactBlueprint)) return;
+  try {
+    const request = automaticRecoveryRequest(source, sourceId);
+    const resumeScore = resumeScoreFromJob(request);
+    if (!resumeScore.blueprint_json) return;
+    const id = randomUUID();
+    const dir = path.join(jobsRoot, id);
+    mkdirSync(dir, { recursive: false });
+    request.resume_checkpoint_file = path.join(dir, 'resume-score.json');
+    writeFileSync(request.resume_checkpoint_file, JSON.stringify(resumeScore));
+    writeFileSync(path.join(dir, 'job.json'), JSON.stringify(request, null, 2));
+    writeFileSync(path.join(jobDirectory(sourceId), 'recovery.json'), JSON.stringify({
+      jobId: id, automatic: true, maxSeconds: AUTOMATIC_RECOVERY_MAX_SECONDS,
+      estimatedUsdSoftCap: AUTOMATIC_RECOVERY_MAX_USD,
+      note: 'El costo es estimado; una llamada ya iniciada puede superar el límite.'
+    }));
+    launch(id, dir);
+  } catch (error) {
+    appendFileSync(path.join(dataRoot, 'server-errors.jsonl'), JSON.stringify({
+      id: randomUUID(), at: new Date().toISOString(), route: 'automatic-recovery',
+      name: error.name, message: String(error.message || error).slice(0, 500)
+    }) + '\n');
+  }
 }
 
 function launch(id, dir) {
@@ -181,7 +286,9 @@ function launch(id, dir) {
       const message = active?.cancelled ? 'Generación cancelada por el usuario.' : `El generador terminó con código ${code}. ${diagnostic}`;
       writeFileSync(path.join(dir, 'error.json'), JSON.stringify({ error: message.slice(0, 1000) }));
     }
+    const eligible = active?.id === id && !active.cancelled && code !== 0;
     if (active?.id === id) active = null;
+    if (eligible) startAutomaticRecovery(id);
   });
 }
 
@@ -210,9 +317,15 @@ const server = http.createServer(async (req, res) => {
       if (!existsSync(worker)) return json(res, 503, { error: 'No se encontró el generador local. Revisá PULSO_LOCAL_WORKER_PATH.' });
       if (!process.env.OPENAI_API_KEY) return json(res, 503, { error: 'OPENAI_API_KEY no está configurada en este proceso.' });
       const request = validate(await bodyJson(req));
+      const resumeScore = request.resume_from_job ? resumeScoreFromJob(request) :
+        request.blueprint_from_job ? blueprintOnlyScoreFromJob(request) : null;
       const id = randomUUID();
       const dir = path.join(jobsRoot, id);
       mkdirSync(dir, { recursive: false });
+      if (resumeScore) {
+        request.resume_checkpoint_file = path.join(dir, 'resume-score.json');
+        writeFileSync(request.resume_checkpoint_file, JSON.stringify(resumeScore));
+      }
       writeFileSync(path.join(dir, 'job.json'), JSON.stringify(request, null, 2));
       launch(id, dir);
       return json(res, 202, { job: jobDetails(id) });

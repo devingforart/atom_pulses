@@ -235,6 +235,14 @@ public:
     [[nodiscard]] static std::vector<ChordVoicingTarget> chordVoicingTargets(
         const SongPlan&, const Pattern&, const TonalAuditReport&,
         std::size_t instrumentIndex, std::size_t maximumTargets = 24);
+    // Finds sustained chord attacks whose written pitches contradict the AI's
+    // declared chord while audibly clashing with the finished ensemble. This
+    // only selects locations; the replacement pitches must be authored by AI.
+    [[nodiscard]] static std::vector<ChordVoicingTarget> sustainedHarmonicMismatchTargets(
+        const SongPlan&, const Pattern&, const TonalAuditReport&,
+        std::size_t instrumentIndex, std::size_t maximumTargets = 4);
+    [[nodiscard]] static bool voicingMatchesDeclaredHarmony(
+        const SongPlan&, const ChordVoicingPatch&);
     [[nodiscard]] static std::vector<ChordVoicingTarget> repeatedSourceVoicingTargets(
         const SongPlan&, const PerformanceScore&, const TonalAuditReport&,
         std::size_t instrumentIndex, std::size_t maximumTargets = 8);

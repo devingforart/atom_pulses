@@ -631,6 +631,75 @@ void runSelectiveRepairTests() {
         require(targets.size() == 1 && targets.front().pitches == std::vector<int>({62, 63}) &&
                     targets.front().sectionIndex == 0 && targets.front().sectionBeat == 0.0,
                 "Chord repair must target a complete rendered attack, not one sampled note");
+        auto declaredPlan = referencePlan;
+        HarmonicChord dominant;
+        dominant.id = "A7b9";
+        dominant.label = "A7(b9)";
+        dominant.pitchClasses = {9, 1, 4, 7, 10};
+        declaredPlan.chordPalette.push_back(dominant);
+        declaredPlan.sections[0].harmonicEvents.push_back({0, 0.0, "A7b9"});
+        Pattern heldChord;
+        heldChord.lengthBeats = 64.0;
+        for (const auto pitch : {60, 63, 67}) {
+            NoteEvent note;
+            note.startBeat = 0.0;
+            note.durationBeats = 15.5;
+            note.pitch = pitch;
+            note.voice = VoiceId::HarmonicFoundation;
+            note.partId = 2;
+            heldChord.notes.push_back(note);
+        }
+        auto sustainedConflict = conflicts;
+        sustainedConflict.issues.front().otherPitch = 64;
+        sustainedConflict.issues.front().overlapBeats = 8.0;
+        const auto focused = SelectiveRepair::sustainedHarmonicMismatchTargets(
+            declaredPlan, heldChord, sustainedConflict, 1);
+        require(focused.size() == 1 &&
+                    focused.front().pitches == std::vector<int>({60, 63, 67}) &&
+                    focused.front().durationBeats == 15.5,
+                "A long AI chord that clashes outside its declared harmony must be a focused repair target");
+        require(SelectiveRepair::voicingMatchesDeclaredHarmony(
+                    declaredPlan, {0, 0.0, 15.5, {61, 64, 67}}) &&
+                    !SelectiveRepair::voicingMatchesDeclaredHarmony(
+                        declaredPlan, {0, 0.0, 15.5, {60, 63, 67}}),
+                "AI voicing candidates must honor the chord that the AI declared for the whole hold");
+        auto bar177Plan = declaredPlan;
+        bar177Plan.sections[0].startBar = 176;
+        Pattern bar177Pattern;
+        bar177Pattern.lengthBeats = 720.0;
+        for (const auto pitch : {63, 67, 72}) {
+            NoteEvent note;
+            note.startBeat = 704.0;
+            note.durationBeats = 15.5;
+            note.pitch = pitch;
+            note.voice = VoiceId::HarmonicFoundation;
+            note.partId = 2;
+            bar177Pattern.notes.push_back(note);
+        }
+        TonalAuditReport bar177Audit;
+        for (const auto pitch : {63, 72}) {
+            TonalIssue nonChord;
+            nonChord.kind = "strong_non_chord";
+            nonChord.beat = 704.0;
+            nonChord.partId = 2;
+            nonChord.pitch = pitch;
+            bar177Audit.issues.push_back(nonChord);
+        }
+        const auto bar177Targets = SelectiveRepair::sustainedHarmonicMismatchTargets(
+            bar177Plan, bar177Pattern, bar177Audit, 1);
+        require(bar177Targets.size() == 1 &&
+                    bar177Targets.front().pitches == std::vector<int>({63, 67, 72}) &&
+                    SelectiveRepair::voicingMatchesDeclaredHarmony(
+                        bar177Plan, {0, 0.0, 15.5, {64, 67, 73}}),
+                "Bar 177's sustained wrong chord must be reviewed even without a harsh-overlap issue");
+        for (auto& note : bar177Pattern.notes) note.durationBeats = 2.0;
+        require(SelectiveRepair::sustainedHarmonicMismatchTargets(
+                    bar177Plan, bar177Pattern, bar177Audit, 1).empty(),
+                "A short chromatic color must not be treated as a sustained wrong chord");
+        sustainedConflict.issues.front().overlapBeats = .5;
+        require(SelectiveRepair::sustainedHarmonicMismatchTargets(
+                    declaredPlan, heldChord, sustainedConflict, 1).empty(),
+                "A fleeting expressive tension must not trigger sustained-harmony repair");
         auto repeatedConflicts = conflicts;
         for (const auto beat : {4.0, 8.0, 12.0}) {
             auto repeated = issue;
@@ -738,6 +807,30 @@ void runSelectiveRepairTests() {
                         return note.partId == 2 && note.pitch == 65;
                     }) == 8,
                 "The single AI pitch choice must reach every repetition of the pulse");
+        auto atmospherePlan = pulsePlan;
+        atmospherePlan.instruments[1].sourceVoice = VoiceId::Atmosphere;
+        atmospherePlan.instruments[1].role = "evolving atmospheric tail";
+        auto atmosphereScore = pulseScore;
+        atmosphereScore.cells[1].notes.front().voice = VoiceId::Atmosphere;
+        atmosphereScore.cells[1].ownedVoices = {VoiceId::Atmosphere};
+        const auto atmosphereTargets = SelectiveRepair::repeatedSourceVoicingTargets(
+            atmospherePlan, atmosphereScore, repeatedConflicts, 1);
+        require(atmosphereTargets.size() == 1 &&
+                    atmosphereTargets.front().sourceOccurrences == 16,
+                "A repeating one-note atmosphere must expose its source collision");
+        PerformanceScore atmospherePatched;
+        require(SelectiveRepair::applySourceVoicingPatches(atmospherePlan,
+                    atmosphereScore, 1, atmosphereTargets,
+                    {{0, 0.0, 3.0, {65}}}, atmospherePatched, sourcePatchError),
+                "AI must be able to retune the repeated atmospheric source note");
+        Pattern atmosphereAfter;
+        PerformanceScoreEngine::replaceChunk(atmosphereAfter, atmospherePatched,
+            0, 0.0, 32.0, atmospherePlan.instruments);
+        require(std::count_if(atmosphereAfter.notes.begin(), atmosphereAfter.notes.end(),
+                    [](const auto& note) {
+                        return note.partId == 2 && note.pitch == 65;
+                    }) == 8,
+                "One atmospheric source edit must reach every repeated MIDI occurrence");
         PerformanceScore patched;
         std::string patchError;
         require(SelectiveRepair::applyChordVoicingPatches(referencePlan, accepted, 1,
@@ -2035,7 +2128,16 @@ void runSelectiveRepairTests() {
     finalPlan.sections.back().energy = .5;
     require(SelectiveRepair::reviewFinalScore(finalPlan, hollowMidi).climaxContrast < .85,
             "A named climax cannot escape review merely because its AI blueprint assigns low energy");
+    finalPlan.sections.back().density = .5;
+    const auto withdrawnReview = SelectiveRepair::reviewFinalScore(finalPlan, hollowMidi);
+    require(!withdrawnReview.ready &&
+                std::none_of(withdrawnReview.issues.begin(), withdrawnReview.issues.end(),
+                    [](const std::string& issue) {
+                        return issue.find("Declared climax") != std::string::npos;
+                    }),
+            "An AI-declared low-energy, low-density climax remains subject to voice and floor review, not a forced crescendo");
     finalPlan.sections.back().energy = .9;
+    finalPlan.sections.back().density = .9;
 
     auto tokenMidi = finalMidi;
     std::erase_if(tokenMidi.notes, [](const NoteEvent& note) { return note.partId == 3; });
@@ -2047,6 +2149,15 @@ void runSelectiveRepairTests() {
                           tokenReview.instrumentIndices.end(), 2) !=
                     tokenReview.instrumentIndices.end(),
             "A listed lead with one isolated note is not a developed voice");
+    auto tokenAndThinClimax = tokenMidi;
+    std::erase_if(tokenAndThinClimax.notes, [](const NoteEvent& note) {
+        return note.startBeat >= 64.0 && note.partId == 2;
+    });
+    const auto focusedReview = SelectiveRepair::reviewFinalScore(
+        finalPlan, tokenAndThinClimax);
+    require(!focusedReview.instrumentIndices.empty() &&
+                focusedReview.instrumentIndices.front() == 2,
+            "An actually underdeveloped voice must lead AI repair even when a thin climax implicates many other owners");
 
     auto clonedMidi = finalMidi;
     for (auto& note : clonedMidi.notes)

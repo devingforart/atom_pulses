@@ -35,10 +35,13 @@ int SongGenerationPipeline::targetBars(const SongGenerationRequest& request) {
 SongPlan SongGenerationPipeline::plan(const SongGenerationRequest& request,
                                       std::stop_token token, juce::String& error,
                                       const AiSongProgress& progress,
-                                      const AiSongCheckpoint& checkpoint) {
+                                      const AiSongCheckpoint& checkpoint,
+                                      const AiSongBlueprint& blueprint) {
     return AiComposer::planSong(aiDirection(request), request.targetSeconds,
         targetBars(request), request.bpm, request.beatsPerBar, request.seed,
-        request.behavior, token, error, progress, checkpoint, request.aiSovereign);
+        request.behavior, token, error, progress, checkpoint, request.aiSovereign,
+        request.resume.notes.empty() && !request.resume.blueprintOnly ? nullptr :
+            &request.resume, blueprint);
 }
 
 void SongGenerationPipeline::finalizePlan(SongPlan& plan,

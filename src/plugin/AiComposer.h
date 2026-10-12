@@ -37,6 +37,26 @@ using AiSongProgress = std::function<void(const AiSongProgressUpdate&)>;
 // The final flag marks a rejected diagnostic candidate. It must never replace
 // the last accepted checkpoint or be presented as an approved composition.
 using AiSongCheckpoint = std::function<void(const SongPlan&, std::size_t, bool, bool)>;
+using AiSongBlueprint = std::function<void(const juce::String&)>;
+
+// A local retry may continue exact, already-exported AI MIDI. The host must
+// supply the cast/form identity as well as the notes; a changed blueprint is
+// rejected rather than silently attaching the old score to a new song.
+struct AiResumeNote {
+    std::string instrumentId;
+    double startBeat{};
+    double durationBeats{};
+    int pitch{};
+    int velocity{};
+};
+
+struct AiSongResume {
+    juce::String blueprintJson;
+    bool blueprintOnly{};
+    std::vector<std::string> castIds;
+    std::vector<std::pair<int, int>> sections;
+    std::vector<AiResumeNote> notes;
+};
 
 class AiComposer final {
 public:
@@ -62,12 +82,14 @@ public:
     [[nodiscard]] static std::size_t castDetailShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t selectiveRepairShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t performanceBlockCount(std::size_t instruments) noexcept;
+    [[nodiscard]] static int performanceOutputTokenBudget(bool localEditorial,
+                                                          bool protagonistOnly,
+                                                          int attempt) noexcept;
     // Build the ordered authoring transactions used by the incremental writer.
-    // In electronic AI-only editorial mode the central bed and a second
-    // sustained body share one transaction; bass and melody follow the
-    // accepted harmony. Other profiles retain their established order.
+    // The optional single-owner variant preserves the same order and musical
+    // gates while avoiding expensive multi-owner rewrites in long scores.
     [[nodiscard]] static std::vector<std::vector<std::size_t>> performanceWritingBlocks(
-        const SongPlan&, bool localEditorial);
+        const SongPlan&, bool localEditorial, bool singleOwner = false);
     [[nodiscard]] static bool castManifestUsesExactCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t requestedInstrumentCount(const juce::String& direction) noexcept;
     static void applyExplicitInstrumentCommitments(SongPlan&,
@@ -114,7 +136,9 @@ public:
                                            std::stop_token, juce::String& error,
                                            const AiSongProgress& progress = {},
                                            const AiSongCheckpoint& checkpoint = {},
-                                           bool aiSovereign = false);
+                                           bool aiSovereign = false,
+                                           const AiSongResume* resume = nullptr,
+                                           const AiSongBlueprint& blueprint = {});
     [[nodiscard]] static bool parseSongPlanJson(const juce::String&, int targetSeconds,
                                                 int requestedBars, double bpm,
                                                 double beatsPerBar, std::uint64_t seed,

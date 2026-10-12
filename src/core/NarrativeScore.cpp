@@ -333,9 +333,15 @@ ActEvidence evidenceFor(const Pattern& pattern, const SongPlan& plan,
     const auto end = (section->startBar + section->bars) * plan.beatsPerBar;
     std::set<std::uint16_t> parts;
     auto pitchTotal = 0.0;
+    auto harmonicPitchTotal = 0.0;
+    auto harmonicNotes = std::size_t{};
     for (const auto& note : pattern.notes) {
         if (note.startBeat >= end || note.endBeat() <= start) continue;
         if (note.partId != 0) parts.insert(note.partId);
+        if (voiceDefinition(note.voice).family != VoiceFamily::Rhythm) {
+            harmonicPitchTotal += note.pitch;
+            ++harmonicNotes;
+        }
         if (note.voice == VoiceId::Lead || note.voice == VoiceId::Countermelody) {
             result.melody.push_back(&note);
             pitchTotal += note.pitch;
@@ -345,9 +351,16 @@ ActEvidence evidenceFor(const Pattern& pattern, const SongPlan& plan,
         if (left->startBeat != right->startBeat) return left->startBeat < right->startBeat;
         return left->pitch < right->pitch;
     });
-    result.audible = result.melody.size() >= 3;
-    result.meanPitch = result.melody.empty() ? 0.0 : pitchTotal / result.melody.size();
-    result.noteRate = static_cast<double>(result.melody.size()) /
+    // An introductory premise can be voiced by harmony before the protagonist
+    // enters. Later narrative acts still require an audible melodic statement.
+    const auto harmonicPremise = act.stage == NarrativeStage::Premise &&
+        harmonicNotes >= 3 && !parts.empty();
+    result.audible = result.melody.size() >= 3 || harmonicPremise;
+    result.meanPitch = result.melody.empty()
+        ? (harmonicNotes == 0 ? 0.0 : harmonicPitchTotal / harmonicNotes)
+        : pitchTotal / result.melody.size();
+    result.noteRate = static_cast<double>(result.melody.empty() && harmonicPremise
+        ? harmonicNotes : result.melody.size()) /
         std::max(1.0, static_cast<double>(section->bars));
     result.activeParts = static_cast<double>(parts.size());
     return result;
@@ -464,7 +477,31 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
         });
         return notes;
     };
-    const auto premiseTheme = notesInAct(NarrativeStage::Premise);
+    auto premiseTheme = notesInAct(NarrativeStage::Premise);
+    // Compare the coda with the first *audible protagonist statement*, not a
+    // deliberately melody-free harmonic prologue. Otherwise motif closure is
+    // always zero for a perfectly valid delayed entrance.
+    if (premiseTheme.size() < 3) {
+        for (const auto& act : plan.narrativeSpine.acts) {
+            if (act.stage == NarrativeStage::Resolution) break;
+            const auto section = std::find_if(plan.sections.begin(), plan.sections.end(),
+                [&](const auto& item) { return item.name == act.sectionName; });
+            if (section == plan.sections.end()) continue;
+            const auto start = section->startBar * plan.beatsPerBar;
+            const auto end = (section->startBar + section->bars) * plan.beatsPerBar;
+            std::vector<const NoteEvent*> statement;
+            for (const auto& note : pattern.notes)
+                if (protagonistNote(note) && note.startBeat >= start && note.startBeat < end)
+                    statement.push_back(&note);
+            if (statement.size() < 3) continue;
+            std::sort(statement.begin(), statement.end(), [](const auto* left, const auto* right) {
+                if (left->startBeat != right->startBeat) return left->startBeat < right->startBeat;
+                return left->pitch < right->pitch;
+            });
+            premiseTheme = std::move(statement);
+            break;
+        }
+    }
     const auto totalBeats = plan.totalBars * plan.beatsPerBar;
     const auto codaStart = std::max(0.0, totalBeats - plan.beatsPerBar * 8.0);
     std::vector<const NoteEvent*> codaTheme;

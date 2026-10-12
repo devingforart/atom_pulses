@@ -28,6 +28,7 @@ struct SongGenerationRequest {
     CompositionBehavior behavior{CompositionBehavior::Adaptive};
     SongOrchestrationIntent orchestration{SongOrchestrationIntent::Adaptive};
     bool aiSovereign{};
+    AiSongResume resume;
 };
 
 class SongGenerationPipeline final {
@@ -37,7 +38,8 @@ public:
     [[nodiscard]] static SongPlan plan(const SongGenerationRequest& request,
         std::stop_token token, juce::String& error,
         const AiSongProgress& progress = {},
-        const AiSongCheckpoint& checkpoint = {});
+        const AiSongCheckpoint& checkpoint = {},
+        const AiSongBlueprint& blueprint = {});
     static void finalizePlan(SongPlan& plan, const SongGenerationRequest& request);
     [[nodiscard]] static Pattern render(const SongPlan& plan,
         const SongGenerationRequest& request,

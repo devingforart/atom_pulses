@@ -71,6 +71,15 @@ el enfoque `adaptive`, genera una semilla privada por obra y exige autoría
 MIDI soberana de la IA. El estudio local conserva los controles avanzados de
 diagnóstico y comparación. Ningún cambio de sonido altera los MIDI exportados.
 
+El proceso Cloud limpia las credenciales del servidor antes de lanzar el worker,
+pero vuelve a establecer explícitamente el perfil editorial `PULSO_AI_EDITORIAL_V2=1`
+que usa el estudio local. El límite externo de ejecución es de 185 minutos:
+da margen al límite interno de hasta 180 minutos para obras con muchos
+instrumentos, sin interrumpirlas artificialmente a los 45 minutos. La traza
+de la API se conserva en el volumen privado de cada obra y no se expone en la
+interfaz Cloud. Las dos interfaces comparten el reproductor MIDI y los sonidos;
+Cloud oculta las herramientas de prueba, semilla, diagnóstico y logs.
+
 `docker-compose.production.yml` mantiene PostgreSQL en una red interna y publica la API únicamente en `127.0.0.1:8188`. Copia `.env.production.example` como `.env`, completa los secretos en el servidor y coloca Nginx delante usando `nginx-pulso.conf.example` como base. No abras 8188 en el firewall.
 
 ```bash

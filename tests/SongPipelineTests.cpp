@@ -78,6 +78,57 @@ int main() {
         check(!otherBlocks.empty() &&
               otherBlocks.front() == std::vector<std::size_t>({0, 1}),
               "non-electronic editorial writer changed its established ordering");
+        auto layeredPlan = orderPlan;
+        layeredPlan.instruments.push_back(
+            part("long_atmosphere", VoiceId::Atmosphere, "sustained texture"));
+        layeredPlan.instruments.push_back(
+            part("answer", VoiceId::Countermelody, "answer"));
+        layeredPlan.instruments.back().lineRelationship = "call_response";
+        const auto layeredBlocks = AiComposer::performanceWritingBlocks(layeredPlan, true);
+        const auto blockOf = [&](const std::size_t owner) {
+            for (std::size_t block = 0; block < layeredBlocks.size(); ++block)
+                if (std::find(layeredBlocks[block].begin(), layeredBlocks[block].end(),
+                        owner) != layeredBlocks[block].end())
+                    return block;
+            return layeredBlocks.size();
+        };
+        check(blockOf(5) < blockOf(6),
+              "long-lived atmosphere must be written before busy melodic answers");
+        const auto focusedBlocks = AiComposer::performanceWritingBlocks(
+            layeredPlan, true, true);
+        std::vector<std::size_t> establishedOrder;
+        std::vector<std::size_t> focusedOrder;
+        for (const auto& block : layeredBlocks)
+            establishedOrder.insert(establishedOrder.end(), block.begin(), block.end());
+        for (const auto& block : focusedBlocks) {
+            check(block.size() == 1, "focused authoring must request exactly one owner");
+            focusedOrder.insert(focusedOrder.end(), block.begin(), block.end());
+        }
+        check(focusedOrder == establishedOrder &&
+              focusedOrder.size() == layeredPlan.instruments.size(),
+              "focused authoring must preserve every AI owner and its established order");
+        check(AiComposer::performanceOutputTokenBudget(true, false, 1) > 10000 &&
+              AiComposer::performanceOutputTokenBudget(true, false, 2) >
+                  AiComposer::performanceOutputTokenBudget(true, false, 1) &&
+              AiComposer::performanceOutputTokenBudget(false, true, 1) == 9000 &&
+              AiComposer::performanceOutputTokenBudget(false, false, 1) == 16000,
+              "long-form editorial output must not repeat a truncated JSON budget");
+        const juce::String explicitCastWithFx = R"json({
+          "protagonist_instrument_id":"lead",
+          "voices":[{"id":"lead"},{"id":"atmosphere"},{"id":"transitions"}],
+          "instruments":[
+            {"id":"lead","instrument":"lead_synth","source_voice":"lead"},
+            {"id":"pad","instrument":"analog_pad","source_voice":"atmosphere"},
+            {"id":"fx","instrument":"shimmer_tail","source_voice":"transitions"}
+          ]
+        })json";
+        juce::String developedCast;
+        juce::String castError;
+        std::size_t removedCastMembers{};
+        check(AiComposer::enforceExplicitCastExclusions(explicitCastWithFx,
+                  "30 pistas completas y con narrativa", developedCast,
+                  removedCastMembers, castError) && removedCastMembers == 1,
+              "explicit track count must reject event-only owners before cast details");
         SongGenerationRequest request;
         request.direction = "A dark electronic journey";
         request.targetSeconds = 60;

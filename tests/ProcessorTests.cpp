@@ -1066,6 +1066,12 @@ int main(int argc, char** argv) {
                 exclusionSafeManifest, excludedInstruments, exclusionError) &&
                 excludedInstruments == 3,
             "The actual brief must replace both rhythm and event-only identities before developed-cast reconciliation");
+    require(pulso::plugin::AiComposer::enforceExplicitCastExclusions(
+                contradictoryDevelopedManifest,
+                "Quiero 30 pistas completas y con narrativa.",
+                exclusionSafeManifest, excludedInstruments, exclusionError) &&
+                excludedInstruments == 1,
+            "Every explicit track count must exclude event-only lanes before paid cast details, regardless of wording");
     const auto exclusionJson = juce::JSON::parse(exclusionSafeManifest);
     const auto* exclusionObject = exclusionJson.getDynamicObject();
     const auto* exclusionInstruments = exclusionObject == nullptr

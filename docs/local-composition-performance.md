@@ -82,3 +82,56 @@ after both jobs complete. Never promote the focused strategy solely from a
 speed result; the candidate must retain all requested tracks, pass technical
 and narrative gates, show no worse measured tonal conflicts, and be auditioned
 by a musician.
+
+## Lossless wire and Fast trial (2026-10-12)
+
+The opt-in `PULSO_AI_COMPACT_WIRE=1` shortens only the repeated event keys in
+performance-block responses. The parser expands every beat, duration, pitch,
+velocity, voice, owner, metric intent and control event before the established
+MIDI normalization and musical gates. It does not add, remove, move or rewrite
+notes. `PULSO_AI_FAST_MODE=1` independently requests OpenAI Fast; the trace
+records both the requested tier and the actual response tier. Neither flag is
+enabled in the ordinary local server, VST or Cloud.
+
+`node tools/measure-performance-wire.mjs` measured 67 cached standard-wire
+performance responses containing 3,206 notes and 13 control events; it excludes
+18 already-compact responses. Shorter event keys reduced normalized output JSON
+from 1,128,977 to 971,480 bytes (14.0%). The tool verifies exact object-level
+round-trip equality; the C++ test also verifies event decoding and owner range.
+
+The exact-blueprint, same-prompt/seed, 600-second trial
+`ca5e8920-c2eb-4d01-a0cd-c939f34c7a81` used **both** compact wire and Fast.
+It completed with 20 active tracks and passed technical and narrative gates,
+but took 46.0 minutes versus the 48.0-minute standard baseline, 80 API calls
+versus 71, and about USD 8.20 versus USD 4.55. OpenAI reported `priority` as
+the actual service tier on the Fast calls. The candidate had fewer measured
+harmonic conflicts (3 versus 16), but its resolution score was lower (0.717
+versus 0.881), it contained 2,803 versus 3,465 notes, and both versions still
+failed the soundscape-evolution audit. These observations cannot isolate the
+effect of wire encoding from Fast or stochastic note authorship. The 4% wall
+time improvement and weaker resolution metric do **not** justify promotion.
+Human audition remains pending.
+
+A second exact-blueprint trial with the **original schema and Fast only** was
+run as job `d793be6c-91fc-47d0-81e1-253095c8b569`. OpenAI reported actual
+`priority` service on all traced calls. Its performance-block phase generated
+212,249 output tokens in 1,636 API seconds, versus 189,710 in 1,732 API seconds
+for Standard: about 16% less API time per output token, but more tokens and
+more musical recovery erased that per-token gain. The first attempt lasted
+42.9 minutes and cost an estimated USD 7.69, then failed the final musical
+brief: only 19 of 20 voices were independently developed. Automatic checkpoint
+recovery `cb564865-f2d7-435b-9675-b3e674f5a44e` added 4.5 minutes and about
+USD 0.99, and failed the same brief. **User-visible outcome: no complete song
+after 47.4 minutes and about USD 8.67.**
+
+The measured decision is **do not enable compact wire or Fast by default**.
+Neither created a meaningful end-to-end speed improvement on this controlled
+long work, and Fast-only worsened publication reliability in this sample.
+Compact+Fast created a technically valid alternative, but the change in
+musical-resolution score and the stochastic authorship require human audition
+before any quality claim. This is not evidence that Fast intrinsically lowers
+musical quality; it is evidence that faster individual calls do not solve the
+current write-review-rewrite bottleneck. The next optimization should measure
+and redesign the number of paid AI revision cycles while preserving authored
+notes, validation and checkpoint integrity; it must be evaluated with complete
+works and human listening before activation.

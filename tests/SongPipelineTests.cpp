@@ -3,6 +3,7 @@
 #include "core/SovereignScoreRenderer.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 
@@ -61,6 +62,46 @@ int main() {
         check(static_cast<int>(focusedPitch.getProperty("minimum", {})) == 69 &&
               static_cast<int>(focusedPitch.getProperty("maximum", {})) == 91,
               "focused protagonist schema must enforce the actual playable register");
+        const juce::String originalWire = R"json({"block_id":"test","covered_instrument_ids":["speaker"],"performance_score":{"cells":[{"id":"c1","theme_id":"t1","narrative_function":"establish","length_beats":4,"owned_voices":["lead"],"notes":[{"beat":0,"duration":1,"pitch":72,"velocity":91,"voice":"lead","instrument_id":"speaker","metric_intent":"strict_grid"}],"controls":[{"beat":0,"controller":11,"value":88,"voice":"lead","instrument_id":"speaker"}]}],"placements":[{"cell_id":"c1","section_index":0,"start_beat":0,"repeats":1,"transpose":0,"velocity_scale":1,"time_scale":1,"purpose":"establish","voice_map":[],"retrograde":false,"invert_contour":false,"inversion_axis":60,"fragment_start":0,"fragment_end":4,"metric_intent":"strict_grid"}]}})json";
+        const juce::String compactWire = R"json({"block_id":"test","covered_instrument_ids":["speaker"],"performance_score":{"cells":[{"id":"c1","theme_id":"t1","narrative_function":"establish","length_beats":4,"owned_voices":["lead"],"notes":[{"b":0,"d":1,"p":72,"v":91,"r":"lead","i":"speaker","m":"strict_grid"}],"controls":[{"b":0,"cc":11,"v":88,"r":"lead","i":"speaker"}]}],"placements":[{"cell_id":"c1","section_index":0,"start_beat":0,"repeats":1,"transpose":0,"velocity_scale":1,"time_scale":1,"purpose":"establish","voice_map":[],"retrograde":false,"invert_contour":false,"inversion_axis":60,"fragment_start":0,"fragment_end":4,"metric_intent":"strict_grid"}]}})json";
+        orderPlan.sections.push_back({});
+        orderPlan.sections.back().bars = 1;
+        PerformanceScore originalScore, compactScore;
+        juce::String wireError;
+        check(AiComposer::parsePerformanceBlockJson(originalWire, orderPlan, {3}, originalScore, wireError),
+              "original performance wire must parse");
+        check(AiComposer::parsePerformanceBlockJson(compactWire, orderPlan, {3}, compactScore, wireError),
+              "compact performance wire must parse");
+        check(originalScore.cells.size() == compactScore.cells.size() &&
+              originalScore.placements.size() == compactScore.placements.size() &&
+              originalScore.cells[0].notes.size() == compactScore.cells[0].notes.size() &&
+              originalScore.cells[0].controls.size() == compactScore.cells[0].controls.size() &&
+              originalScore.cells[0].notes[0].pitch == compactScore.cells[0].notes[0].pitch &&
+              originalScore.cells[0].notes[0].beat == compactScore.cells[0].notes[0].beat &&
+              originalScore.cells[0].notes[0].durationBeats == compactScore.cells[0].notes[0].durationBeats &&
+              originalScore.cells[0].notes[0].velocity == compactScore.cells[0].notes[0].velocity &&
+              originalScore.cells[0].controls[0].controller == compactScore.cells[0].controls[0].controller &&
+              originalScore.cells[0].controls[0].value == compactScore.cells[0].controls[0].value,
+              "compact wire must preserve authored MIDI events exactly");
+#if defined(_WIN32)
+        _putenv_s("PULSO_AI_COMPACT_WIRE", "1");
+#else
+        setenv("PULSO_AI_COMPACT_WIRE", "1", 1);
+#endif
+        const auto compactSchema = juce::JSON::parse(AiComposer::performanceSchemaFor(orderPlan, {3}));
+        const auto compactProperties = compactSchema.getProperty("properties", {})
+            .getProperty("performance_score", {}).getProperty("properties", {})
+            .getProperty("cells", {}).getProperty("items", {}).getProperty("properties", {})
+            .getProperty("notes", {}).getProperty("items", {}).getProperty("properties", {});
+        check(compactProperties.hasProperty("p") && !compactProperties.hasProperty("pitch") &&
+              static_cast<int>(compactProperties.getProperty("p", {}).getProperty("minimum", {})) == 69 &&
+              static_cast<int>(compactProperties.getProperty("p", {}).getProperty("maximum", {})) == 91,
+              "compact performance schema must preserve singleton owner register");
+#if defined(_WIN32)
+        _putenv_s("PULSO_AI_COMPACT_WIRE", "");
+#else
+        unsetenv("PULSO_AI_COMPACT_WIRE");
+#endif
         orderPlan.narrativeSpine.protagonistInstrumentId = "speaker";
         orderPlan.productionLanguage.domain = ProductionDomain::ClubElectronic;
         orderPlan.productionLanguage.electronicIntent = .85;

@@ -50,14 +50,17 @@ function estimatedUsd(call) {
   const output = Number(call.output_tokens) || 0;
   const ordinary = Math.max(0, input - cached - writes);
   const longContext = input > 272000;
-  return ((ordinary * 2 + cached * 0.2 + writes * 2.5) * (longContext ? 2 : 1) + output * 12 * (longContext ? 1.5 : 1)) / 1000000;
+  const fast = ['priority', 'fast'].includes(call.service_tier_actual);
+  const rates = fast ? [4, 0.4, 5, 18] : [2, 0.2, 2.5, 12];
+  return ((ordinary * rates[0] + cached * rates[1] + writes * rates[2]) *
+    (longContext ? 2 : 1) + output * rates[3] * (longContext ? 1.5 : 1)) / 1000000;
 }
 
 function traceFor(id, createdAt, endedAt = Date.now()) {
   const dir = jobDirectory(id);
   const apiCalls = readJsonLines(path.join(dir, 'api-events.jsonl')).map(call => ({ ...call, estimatedUsd: estimatedUsd(call) }));
   const progressEvents = readJsonLines(path.join(dir, 'progress-events.jsonl'));
-  const totals = { calls: apiCalls.length, callsWithUsage: 0, localReuseCalls: 0, pricedCalls: 0, estimatedUsd: 0, priceAsOf: '2026-09-29', priceSource: 'https://developers.openai.com/api/docs/models/gpt-5.6-terra', inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, timedOutCalls: 0, incompleteCalls: 0, failedCalls: 0, recoveryEvents: progressEvents.filter(event => event.stage === 'recovery').length, summedApiMs: 0, model: apiCalls.find(call => call.model)?.model || null, effort: apiCalls.find(call => call.effort)?.effort || null };
+  const totals = { calls: apiCalls.length, callsWithUsage: 0, localReuseCalls: 0, pricedCalls: 0, estimatedUsd: 0, priceAsOf: '2026-10-12', priceSource: 'https://developers.openai.com/api/docs/pricing', inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0, timedOutCalls: 0, incompleteCalls: 0, failedCalls: 0, recoveryEvents: progressEvents.filter(event => event.stage === 'recovery').length, summedApiMs: 0, model: apiCalls.find(call => call.model)?.model || null, effort: apiCalls.find(call => call.effort)?.effort || null };
   for (const call of apiCalls) {
     totals.summedApiMs += Number(call.elapsed_ms) || 0;
     if (call.reused_locally) totals.localReuseCalls++;
@@ -240,7 +243,7 @@ function childEnvironment(dir) {
   // use that same key instead of silently preferring a different VST credential
   // stored in Windows Credential Manager.
   const automatic = readJson(path.join(dir, 'job.json'))?.automatic_recovery_attempt === 1;
-  return { ...Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]])), PULSO_DISABLE_SECURE_CREDENTIALS: '1', PULSO_LOCAL_EDITORIAL_V2: '1', PULSO_TRACE_PATH: path.join(dir, 'api-events.jsonl'), PULSO_AI_RESPONSE_CACHE_DIR: path.join(dataRoot, 'validated-response-cache'), ...(process.env.PULSO_AI_SINGLE_OWNER_WRITING === '1' ? { PULSO_AI_SINGLE_OWNER_WRITING: '1' } : {}), ...(automatic ? { PULSO_AUTO_RECOVERY_MAX_SECONDS: String(AUTOMATIC_RECOVERY_MAX_SECONDS), PULSO_AUTO_RECOVERY_MAX_USD: String(AUTOMATIC_RECOVERY_MAX_USD) } : {}) };
+  return { ...Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]])), PULSO_DISABLE_SECURE_CREDENTIALS: '1', PULSO_LOCAL_EDITORIAL_V2: '1', PULSO_TRACE_PATH: path.join(dir, 'api-events.jsonl'), PULSO_AI_RESPONSE_CACHE_DIR: path.join(dataRoot, 'validated-response-cache'), ...(process.env.PULSO_AI_SINGLE_OWNER_WRITING === '1' ? { PULSO_AI_SINGLE_OWNER_WRITING: '1' } : {}), ...(process.env.PULSO_AI_FAST_MODE === '1' ? { PULSO_AI_FAST_MODE: '1' } : {}), ...(process.env.PULSO_AI_COMPACT_WIRE === '1' ? { PULSO_AI_COMPACT_WIRE: '1' } : {}), ...(automatic ? { PULSO_AUTO_RECOVERY_MAX_SECONDS: String(AUTOMATIC_RECOVERY_MAX_SECONDS), PULSO_AUTO_RECOVERY_MAX_USD: String(AUTOMATIC_RECOVERY_MAX_USD) } : {}) };
 }
 
 function startAutomaticRecovery(sourceId) {

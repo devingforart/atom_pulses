@@ -2014,6 +2014,48 @@ const juce::String performanceBlockSchema = R"json({
   },"required":["block_id","covered_instrument_ids","performance_score"],"additionalProperties":false
 })json";
 
+bool compactPerformanceWireEnabled() {
+    return juce::SystemStats::getEnvironmentVariable("PULSO_AI_COMPACT_WIRE", {}) == "1";
+}
+
+// Wire-only encoding: every event field remains present and is expanded back
+// before the existing routing, MIDI integrity and musical gates run.
+juce::String performanceSchemaForWire() {
+    if (!compactPerformanceWireEnabled()) return performanceBlockSchema;
+    auto schema = juce::JSON::parse(performanceBlockSchema);
+    const auto cells = schema.getProperty("properties", {})
+        .getProperty("performance_score", {}).getProperty("properties", {})
+        .getProperty("cells", {}).getProperty("items", {}).getProperty("properties", {});
+    for (const auto* kind : {"notes", "controls"}) {
+        auto item = cells.getProperty(kind, {}).getProperty("items", {});
+        auto* object = item.getDynamicObject();
+        if (object == nullptr) continue;
+        auto* properties = object->getProperty("properties").getDynamicObject();
+        auto* required = object->getProperty("required").getArray();
+        if (properties == nullptr || required == nullptr) continue;
+        const std::vector<std::pair<juce::String, juce::String>> keys =
+            juce::String(kind) == "notes" ?
+                std::vector<std::pair<juce::String, juce::String>>{
+                    {"beat", "b"}, {"duration", "d"}, {"pitch", "p"}, {"velocity", "v"},
+                    {"voice", "r"}, {"instrument_id", "i"}, {"metric_intent", "m"}} :
+                std::vector<std::pair<juce::String, juce::String>>{
+                    {"beat", "b"}, {"controller", "cc"}, {"value", "v"},
+                    {"voice", "r"}, {"instrument_id", "i"}};
+        for (const auto& [longKey, shortKey] : keys) {
+            properties->setProperty(shortKey, properties->getProperty(longKey));
+            properties->removeProperty(longKey);
+            for (auto& field : *required)
+                if (field.toString() == longKey) field = shortKey;
+        }
+    }
+    return juce::JSON::toString(schema, true);
+}
+
+juce::var wireField(const juce::DynamicObject* event,
+                    const juce::Identifier& longKey, const juce::Identifier& shortKey) {
+    return event->hasProperty(longKey) ? event->getProperty(longKey) : event->getProperty(shortKey);
+}
+
 juce::String compositionBehaviorBrief(CompositionBehavior behavior) {
     if (behavior == CompositionBehavior::Adaptive) return {};
     if (behavior == CompositionBehavior::Narrative)
@@ -2028,7 +2070,7 @@ juce::String compositionBehaviorBrief(CompositionBehavior behavior) {
 
 juce::String boundedPerformanceSchema(
     const SongPlan& plan, const std::vector<std::size_t>& indices) {
-    auto schema = juce::JSON::parse(performanceBlockSchema);
+    auto schema = juce::JSON::parse(performanceSchemaForWire());
     juce::Array<juce::var> ids;
     for (const auto index : indices)
         if (index < plan.instruments.size())
@@ -2041,7 +2083,8 @@ juce::String boundedPerformanceSchema(
         .getProperty("cells", {}).getProperty("items", {}).getProperty("properties", {});
     for (const auto* events : {"notes", "controls"})
         cells.getProperty(events, {}).getProperty("items", {}).getProperty("properties", {})
-            .getProperty("instrument_id", {}).getDynamicObject()->setProperty("enum", ids);
+            .getProperty(compactPerformanceWireEnabled() ? "i" : "instrument_id", {})
+            .getDynamicObject()->setProperty("enum", ids);
     // A singleton block (including every focused protagonist addition) has
     // one concrete playable register. Enforce it in the remote contract so an
     // out-of-register note cannot invalidate an otherwise complete cell and
@@ -2049,7 +2092,8 @@ juce::String boundedPerformanceSchema(
     if (indices.size() == 1 && indices.front() < plan.instruments.size()) {
         const auto& owner = plan.instruments[indices.front()];
         auto pitch = cells.getProperty("notes", {}).getProperty("items", {})
-            .getProperty("properties", {}).getProperty("pitch", {});
+            .getProperty("properties", {})
+            .getProperty(compactPerformanceWireEnabled() ? "p" : "pitch", {});
         if (auto* range = pitch.getDynamicObject()) {
             range->setProperty("minimum", std::max(0, owner.minimumPitch));
             range->setProperty("maximum", std::min(127, owner.maximumPitch));
@@ -2185,6 +2229,10 @@ void traceOpenAiRequest(const juce::String& requestBody, const HttpResponse& res
         reasoning->getProperty("effort").toString());
     event->setProperty("phase", format == nullptr ? juce::String{} :
         format->getProperty("name").toString());
+    event->setProperty("service_tier_requested", requestObject == nullptr ? juce::String{} :
+        requestObject->getProperty("service_tier").toString());
+    event->setProperty("service_tier_actual", remoteObject == nullptr ? juce::String{} :
+        remoteObject->getProperty("service_tier").toString());
     event->setProperty("max_output_tokens", requestObject == nullptr ? 0 :
         static_cast<int>(requestObject->getProperty("max_output_tokens")));
     event->setProperty("response_id", remoteObject == nullptr ? knownResponseId :
@@ -2404,8 +2452,15 @@ void cancelBackgroundResponse(const juce::String& responseId, const juce::String
                          cancellationRequest.get_token(), std::chrono::milliseconds(1500));
 }
 
-HttpResponse performRequest(const juce::String& body, const juce::String& apiKey,
+HttpResponse performRequest(juce::String body, const juce::String& apiKey,
                             std::stop_token token, std::chrono::milliseconds budget) {
+    if (juce::SystemStats::getEnvironmentVariable("PULSO_AI_FAST_MODE", {}) == "1") {
+        auto request = juce::JSON::parse(body);
+        if (auto* object = request.getDynamicObject()) {
+            object->setProperty("service_tier", "fast");
+            body = juce::JSON::toString(request, true);
+        }
+    }
     // Automatic checkpoint recovery is one bounded transaction. These are
     // per-worker-process limits; normal compositions retain their existing
     // budgets. USD is estimated from returned usage, so an in-flight call can
@@ -2447,9 +2502,11 @@ HttpResponse performRequest(const juce::String& body, const juce::String& apiKey
                 const auto output = static_cast<double>(usage->getProperty("output_tokens"));
                 const auto ordinary = std::max(0.0, input - cached - writes);
                 const auto longContext = input > 272000.0;
-                recoveryEstimatedUsd.fetch_add(((ordinary * 2.0 + cached * .2 +
-                    writes * 2.5) *
-                    (longContext ? 2.0 : 1.0) + output * 12.0 *
+                const auto serviceTier = root->getProperty("service_tier").toString();
+                const auto fast = serviceTier == "priority" || serviceTier == "fast";
+                recoveryEstimatedUsd.fetch_add(((ordinary * (fast ? 4.0 : 2.0) +
+                    cached * (fast ? .4 : .2) + writes * (fast ? 5.0 : 2.5)) *
+                    (longContext ? 2.0 : 1.0) + output * (fast ? 18.0 : 12.0) *
                     (longContext ? 1.5 : 1.0)) / 1000000.0);
             }
         }
@@ -2480,7 +2537,10 @@ HttpResponse performRequest(const juce::String& body, const juce::String& apiKey
     const auto initialBudget = std::min(budget, std::chrono::duration_cast<std::chrono::milliseconds>(
                                                    std::chrono::seconds(30)));
     auto response = singleRequest(true, "/v1/responses", body, apiKey, token, initialBudget);
-    const auto background = body.contains("\"background\":true");
+    const auto parsedRequest = juce::JSON::parse(body);
+    const auto* requestObject = parsedRequest.getDynamicObject();
+    const auto background = requestObject != nullptr &&
+        static_cast<bool>(requestObject->getProperty("background"));
     if (!background || !response.connected || response.status < 200 || response.status >= 300 ||
         response.cancelled || response.timedOut)
         return finish(std::move(response));
@@ -3760,7 +3820,7 @@ bool parsePerformanceBlock(const juce::String& blockText, const SongPlan& bluepr
                 for (const auto& noteItem : *notes) {
                     const auto* note = noteItem.getDynamicObject();
                     if (note == nullptr) continue;
-                    auto instrumentId = note->getProperty("instrument_id").toString().trim().toStdString();
+                    auto instrumentId = wireField(note, "instrument_id", "i").toString().trim().toStdString();
                     ++routing.received[instrumentId];
                     const auto owner = std::find_if(blueprint.instruments.begin(), blueprint.instruments.end(),
                         [&](const auto& instrument) {
@@ -3777,17 +3837,17 @@ bool parsePerformanceBlock(const juce::String& blockText, const SongPlan& bluepr
                         continue;
                     }
                     const auto reportedVoice = voiceIdFromKey(
-                        note->getProperty("voice").toString().toStdString());
+                        wireField(note, "voice", "r").toString().toStdString());
                     const auto voice = owner->sourceVoice;
                     if (!reportedVoice || *reportedVoice != voice)
                         ++routing.reassigned[instrumentId];
                     ++routing.accepted[instrumentId];
                     parsedCell.notes.push_back({
-                        static_cast<double>(note->getProperty("beat")),
-                        static_cast<double>(note->getProperty("duration")),
-                        static_cast<int>(note->getProperty("pitch")),
-                        static_cast<int>(note->getProperty("velocity")), voice,
-                        metricIntentFromKey(note->getProperty("metric_intent").toString().toStdString()),
+                        static_cast<double>(wireField(note, "beat", "b")),
+                        static_cast<double>(wireField(note, "duration", "d")),
+                        static_cast<int>(wireField(note, "pitch", "p")),
+                        static_cast<int>(wireField(note, "velocity", "v")), voice,
+                        metricIntentFromKey(wireField(note, "metric_intent", "m").toString().toStdString()),
                         std::move(instrumentId)});
                 }
             }
@@ -3795,7 +3855,7 @@ bool parsePerformanceBlock(const juce::String& blockText, const SongPlan& bluepr
                 for (const auto& controlItem : *controls) {
                     const auto* control = controlItem.getDynamicObject();
                     if (control == nullptr) continue;
-                    auto instrumentId = control->getProperty("instrument_id").toString().trim().toStdString();
+                    auto instrumentId = wireField(control, "instrument_id", "i").toString().trim().toStdString();
                     const auto owner = std::find_if(blueprint.instruments.begin(), blueprint.instruments.end(),
                         [&](const auto& instrument) {
                             return instrument.id == instrumentId;
@@ -3804,9 +3864,9 @@ bool parsePerformanceBlock(const juce::String& blockText, const SongPlan& bluepr
                         (!assignedIds.empty() && !assignedIds.contains(instrumentId))) continue;
                     const auto voice = owner->sourceVoice;
                     parsedCell.controls.push_back({
-                        static_cast<double>(control->getProperty("beat")),
-                        static_cast<int>(control->getProperty("controller")),
-                        static_cast<int>(control->getProperty("value")), voice,
+                        static_cast<double>(wireField(control, "beat", "b")),
+                        static_cast<int>(wireField(control, "controller", "cc")),
+                        static_cast<int>(wireField(control, "value", "v")), voice,
                         std::move(instrumentId)});
                 }
             }

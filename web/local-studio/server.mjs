@@ -265,7 +265,7 @@ function childEnvironment(dir) {
   // Local Studio advertises and checks its environment key. Force the worker to
   // use that same key instead of silently preferring a different VST credential
   // stored in Windows Credential Manager.
-  const automatic = readJson(path.join(dir, 'job.json'))?.automatic_recovery_attempt === 1;
+  const automatic = (readJson(path.join(dir, 'job.json'))?.automatic_recovery_attempt || 0) > 0;
   return workerEnvironmentFor(process.env, dir, dataRoot, automatic);
 }
 

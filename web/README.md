@@ -55,6 +55,17 @@ Vite reenvía `/api` a `localhost:8080`.
 
 ## Despliegue en servidor
 
+En `pulso.cargo-core.com`, Nginx sirve el build React desde
+`/www/Pulso-web-current` y envía únicamente `/api` a la API Rust en
+`127.0.0.1:8188`. `Pulso-web-current` apunta a un directorio estático de
+release con `index.html` y `assets/`. Se puede publicar una corrección visual
+sin reiniciar el contenedor ni interrumpir una composición Cloud activa:
+construir el frontend, copiarlo a un directorio de release nuevo, verificar
+que `www-data` pueda leerlo y cambiar el enlace después de `nginx -t`.
+Conservar los assets con hash de la versión anterior evita romper pestañas que
+ya estaban abiertas. El archivo [nginx-pulso.conf](nginx-pulso.conf) documenta
+la separación entre estáticos y API.
+
 La página autenticada `/cloud` y el estudio local importan el mismo lector MIDI,
 motor `ProductionAudio` y banco de sonidos desde `web/shared`. Ambos ofrecen
 **Producción**, **MIDI neutro**, selección de sonido por pista y una vista previa

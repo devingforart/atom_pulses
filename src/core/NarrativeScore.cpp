@@ -229,10 +229,14 @@ void auditDensity(const Pattern& pattern, const SongPlan& plan,
 
 void auditMelodicSpeech(const Pattern& pattern, const SongPlan& plan,
                         NarrativeScoreReport& report) {
-    for (const auto voice : {VoiceId::Lead, VoiceId::Countermelody}) {
-        std::vector<const NoteEvent*> notes;
-        for (const auto& note : pattern.notes)
-            if (note.voice == voice) notes.push_back(&note);
+    // A voice category is not an instrument: several independent lead or
+    // countermelody tracks can sound together. Interleaving their notes invents
+    // melodic leaps that no listener hears in any individual phrase.
+    std::map<std::uint16_t, std::vector<const NoteEvent*>> lines;
+    for (const auto& note : pattern.notes)
+        if (primaryVoice(note.voice)) lines[note.partId].push_back(&note);
+    for (auto& [partId, notes] : lines) {
+        (void) partId;
         std::sort(notes.begin(), notes.end(), [](const auto* left, const auto* right) {
             if (left->startBeat != right->startBeat) return left->startBeat < right->startBeat;
             return left->pitch < right->pitch;

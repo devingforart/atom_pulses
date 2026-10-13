@@ -39,6 +39,20 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Cloud Suite', () => {
+  it('shows the same useful library details as the local studio', async () => {
+    render(<Cloud />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Historial' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Historial' }))
+    const history = screen.getByLabelText('Historial de composiciones')
+    expect(history).toHaveTextContent('BIBLIOTECA CLOUD')
+    expect(history).toHaveTextContent('Obra de prueba')
+    expect(history).toHaveTextContent('LISTA')
+    expect(history).toHaveTextContent('01:00 · 1 pistas')
+    const callsBeforeRefresh = mock.cloudJobs.mock.calls.length
+    fireEvent.click(screen.getByRole('button', { name: /Actualizar/ }))
+    await waitFor(() => expect(mock.cloudJobs.mock.calls.length).toBeGreaterThan(callsBeforeRefresh))
+  })
+
   it('reads the authenticated MIDI and exposes real transport, solo and download controls', async () => {
     render(<Cloud />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reproducir' })).not.toBeDisabled())

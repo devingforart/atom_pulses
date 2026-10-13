@@ -1,0 +1,433 @@
+{
+  "schema_version": 2,
+  "title": "La pregunta de Re",
+  "key": "D minor",
+  "root_pitch_class": 2,
+  "tonal_policy": "consolidated",
+  "total_bars": 30,
+  "requested_cast_count": 0,
+  "beats_per_bar": 4.0,
+  "protagonist_id": "violin_1_protagonist",
+  "motif_identity": "Contorno protagonista: grados 1–b3–2–5–1 de Re menor (Re–Fa–Mi–La–Re), con los intervalos +3, -2, +5, -5. Su ritmo es ataque breve en 1, continuación breve en b3, reposo más largo en 2, silencio de respiración de un pulso, impulso breve a 5 y llegada sostenida a 1. En la pregunta inicial la llegada final queda elidida o suspendida sobre A7; la respuesta audible de la segunda sección la restituye sobre Dm, mientras una línea contrapuntística ocupa el silencio con 5–2–1 descendente.",
+  "harmonic_debt": "A7 al final de la primera sección deja una deuda funcional que se paga en la segunda; Ebmaj7 en el clímax añade la deuda cromática de Mib, pagada inmediatamente por su descenso a Re en Dm(add9).",
+  "resolution_intent": "La resolución final a Dm(add9) ocurre después de la dominante culminante y coincide con la versión completa del motivo; por eso responde tanto a la pregunta melódica como a la deuda armónica.",
+  "narrative_acts": [
+    {
+      "section": "I. Pregunta suspendida",
+      "stage": "premise",
+      "cause": "El motivo se interrumpe tras su impulso ascendente y la dominante retiene la llegada.",
+      "consequence": "La frase parece pedir una voz capaz de completar el descenso.",
+      "unresolved": "La pregunta melódica y la dominante A7.",
+      "resolution_target": "Mantener Re menor como ancla reconocible, pero dejar A7 sin resolver."
+    },
+    {
+      "section": "II. Respuesta y afirmación",
+      "stage": "departure",
+      "cause": "La respuesta contrapuntística ocupa las pausas que antes quedaban vacías.",
+      "consequence": "La tonalidad se afirma, pero la nueva seguridad permite una expansión más arriesgada.",
+      "unresolved": "La relación entre pregunta y respuesta aún no ha soportado tensión extrema.",
+      "resolution_target": "Resolver A7 a Dm y hacer que una segunda línea complete el final del motivo."
+    },
+    {
+      "section": "III. Transformación y clímax",
+      "stage": "climax",
+      "cause": "Las dos líneas, antes alternadas, se superponen y fuerzan el color cromático a regresar al ancla.",
+      "consequence": "La dominante final reúne toda la energía acumulada y exige una caída conclusiva.",
+      "unresolved": "A7 culminante y la necesidad de oír el motivo sin interrupción interrogativa.",
+      "resolution_target": "Exponer Ebmaj7 y resolver su Mib a Re antes de concentrar iiø7–V7."
+    },
+    {
+      "section": "IV. Resolución ganada",
+      "stage": "resolution",
+      "cause": "La dominante del clímax se libera y la respuesta secundaria deja de competir para confirmar el cierre.",
+      "consequence": "Re menor queda oído como destino, no sólo como punto de partida.",
+      "unresolved": "Ninguno esencial; sólo permanece la resonancia del ancla.",
+      "resolution_target": "Cadenciar a Dm(add9) y dejar el contorno completo en estado de respuesta."
+    }
+  ],
+  "chord_palette": [
+    {
+      "id": "i_add9",
+      "label": "Dm(add9)",
+      "root_pitch_class": 2,
+      "bass_pitch_class": 2,
+      "function": "tonic",
+      "voicing": "open",
+      "tension": 0.18,
+      "pitch_classes": [
+        2,
+        5,
+        9,
+        4
+      ]
+    },
+    {
+      "id": "iv6",
+      "label": "Gm6",
+      "root_pitch_class": 7,
+      "bass_pitch_class": 7,
+      "function": "predominant",
+      "voicing": "open",
+      "tension": 0.36,
+      "pitch_classes": [
+        7,
+        10,
+        2,
+        4
+      ]
+    },
+    {
+      "id": "ii_halfdim7",
+      "label": "Eø7",
+      "root_pitch_class": 4,
+      "bass_pitch_class": 4,
+      "function": "predominant",
+      "voicing": "mixed",
+      "tension": 0.5,
+      "pitch_classes": [
+        4,
+        7,
+        10,
+        2
+      ]
+    },
+    {
+      "id": "V7",
+      "label": "A7",
+      "root_pitch_class": 9,
+      "bass_pitch_class": 9,
+      "function": "dominant",
+      "voicing": "shell",
+      "tension": 0.72,
+      "pitch_classes": [
+        9,
+        1,
+        4,
+        7
+      ]
+    },
+    {
+      "id": "bVI_maj7",
+      "label": "Bbmaj7",
+      "root_pitch_class": 10,
+      "bass_pitch_class": 10,
+      "function": "modal",
+      "voicing": "open",
+      "tension": 0.3,
+      "pitch_classes": [
+        10,
+        2,
+        5,
+        9
+      ]
+    },
+    {
+      "id": "bII_maj7",
+      "label": "Ebmaj7",
+      "root_pitch_class": 3,
+      "bass_pitch_class": 3,
+      "function": "chromatic",
+      "voicing": "close",
+      "tension": 0.68,
+      "pitch_classes": [
+        3,
+        7,
+        10,
+        2
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "name": "I. Pregunta suspendida",
+      "function": "Establecer a Re menor como hogar y hacer audible una pregunta melódica incompleta.",
+      "harmonic_direction": "El ancla de Re menor se abre hacia la función predominante y termina retenida por A7, sin cadencia de retorno.",
+      "motif_treatment": "Presentación desnuda del protagonista: la primera frase formula la pregunta y deja su último impulso suspendido; una voz secundaria sólo recoge fragmentos descendentes después de los silencios, sin completar la respuesta.",
+      "start_bar": 0,
+      "bars": 8,
+      "energy": 0.32,
+      "tension": 0.34,
+      "density": 0.34,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 0.0,
+          "chord_id": "i_add9",
+          "purpose": "Ancla inicial y exposición de la primera mitad de la pregunta."
+        },
+        {
+          "bar_offset": 2,
+          "beat_offset": 0.0,
+          "absolute_beat": 8.0,
+          "chord_id": "iv6",
+          "purpose": "Cambio de color para que la respuesta fragmentaria parezca buscar continuidad."
+        },
+        {
+          "bar_offset": 4,
+          "beat_offset": 0.0,
+          "absolute_beat": 16.0,
+          "chord_id": "i_add9",
+          "purpose": "Retorno breve al ancla antes de la suspensión final."
+        },
+        {
+          "bar_offset": 6,
+          "beat_offset": 0.0,
+          "absolute_beat": 24.0,
+          "chord_id": "V7",
+          "purpose": "Pregunta armónica abierta; la dominante no resuelve todavía."
+        }
+      ]
+    },
+    {
+      "name": "II. Respuesta y afirmación",
+      "function": "Desarrollar el diálogo y proporcionar la primera respuesta inequívoca, armónica y melódica, a la pregunta inicial.",
+      "harmonic_direction": "La suspensión heredada se descarga en Re menor; iiø7–V7 prepara una segunda afirmación tonal más firme.",
+      "motif_treatment": "El protagonista vuelve con el mismo contorno, pero una segunda línea contesta sus dos últimos grados durante las pausas. La frase ya no acaba en vacío: su descenso de respuesta coincide con la llegada audible a Re menor.",
+      "start_bar": 8,
+      "bars": 7,
+      "energy": 0.55,
+      "tension": 0.57,
+      "density": 0.52,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 32.0,
+          "chord_id": "i_add9",
+          "purpose": "Respuesta inmediata a la dominante heredada: primer cierre de la pregunta sobre el ancla."
+        },
+        {
+          "bar_offset": 2,
+          "beat_offset": 0.0,
+          "absolute_beat": 40.0,
+          "chord_id": "ii_halfdim7",
+          "purpose": "Apertura de un nuevo arco mediante predominante funcional."
+        },
+        {
+          "bar_offset": 3,
+          "beat_offset": 0.0,
+          "absolute_beat": 44.0,
+          "chord_id": "V7",
+          "purpose": "Replanteamiento conciso de la pregunta, ahora con dirección cadencial explícita."
+        },
+        {
+          "bar_offset": 5,
+          "beat_offset": 0.0,
+          "absolute_beat": 52.0,
+          "chord_id": "i_add9",
+          "purpose": "Respuesta contrapuntística y cadencia audible: la línea secundaria desciende al grado de Re mientras el protagonista completa su contorno."
+        }
+      ]
+    },
+    {
+      "name": "III. Transformación y clímax",
+      "function": "Convertir la suspensión inicial en una crisis cromática breve y resolverla dentro de un clímax de líneas coordinadas.",
+      "harmonic_direction": "El único color ajeno, Ebmaj7, dura un solo marco armónico y resuelve de inmediato a Dm(add9): su Mib desciende por semitono a Re. Después, iiø7–V7 concentra la energía para el clímax sin abandonar el centro de Re.",
+      "motif_treatment": "La identidad no cambia: el mismo ascenso y retroceso se expande en registro y sus respuestas se solapan, reduciendo progresivamente las pausas. En el punto de mayor tensión, la línea contrapuntística insiste en el semitono Mib–Re, haciendo audible la transformación antes del retorno.",
+      "start_bar": 15,
+      "bars": 8,
+      "energy": 0.95,
+      "tension": 0.92,
+      "density": 0.8,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 60.0,
+          "chord_id": "bII_maj7",
+          "purpose": "Color cromático de máxima extrañeza; el Mib queda expuesto como deuda que exige descenso."
+        },
+        {
+          "bar_offset": 1,
+          "beat_offset": 0.0,
+          "absolute_beat": 64.0,
+          "chord_id": "i_add9",
+          "purpose": "Resolución inmediata del Mib extranjero a Re y recuperación del ancla tonal."
+        },
+        {
+          "bar_offset": 3,
+          "beat_offset": 0.0,
+          "absolute_beat": 72.0,
+          "chord_id": "iv6",
+          "purpose": "Sombra predominante que conserva la energía tras la resolución cromática."
+        },
+        {
+          "bar_offset": 5,
+          "beat_offset": 0.0,
+          "absolute_beat": 80.0,
+          "chord_id": "ii_halfdim7",
+          "purpose": "Preparación funcional comprimida para la llegada culminante."
+        },
+        {
+          "bar_offset": 6,
+          "beat_offset": 0.0,
+          "absolute_beat": 84.0,
+          "chord_id": "V7",
+          "purpose": "Pico de tensión: la pregunta original se superpone a su respuesta, sostenida sobre dominante."
+        }
+      ]
+    },
+    {
+      "name": "IV. Resolución ganada",
+      "function": "Resolver después del clímax mediante la respuesta completa del motivo y una cadencia final estable a Re menor.",
+      "harmonic_direction": "La dominante culminante cae a Re menor; Bbmaj7 aporta una expansión diatónica cálida, A7 confirma la necesidad de retorno y la última llegada a Re mantiene el ancla como resolución conseguida.",
+      "motif_treatment": "La llegada a Re menor responde definitivamente: el protagonista enuncia el contorno completo, conserva su pausa central como respiración y la línea secundaria devuelve una versión abreviada descendente. El final prolonga la consecuencia de la cadencia en vez de competir con el clímax.",
+      "start_bar": 23,
+      "bars": 7,
+      "energy": 0.48,
+      "tension": 0.18,
+      "density": 0.43,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 92.0,
+          "chord_id": "i_add9",
+          "purpose": "Consecuencia inmediata del clímax y cierre de la deuda dominante."
+        },
+        {
+          "bar_offset": 2,
+          "beat_offset": 0.0,
+          "absolute_beat": 100.0,
+          "chord_id": "bVI_maj7",
+          "purpose": "Expansión diatónica reposada que permite a la respuesta contrapuntística terminar."
+        },
+        {
+          "bar_offset": 4,
+          "beat_offset": 0.0,
+          "absolute_beat": 108.0,
+          "chord_id": "V7",
+          "purpose": "Última dominante, breve y claramente subordinada a la llegada final."
+        },
+        {
+          "bar_offset": 5,
+          "beat_offset": 0.0,
+          "absolute_beat": 112.0,
+          "chord_id": "i_add9",
+          "purpose": "Resolución final: Re menor ya no es una premisa sino la respuesta ganada."
+        }
+      ]
+    }
+  ],
+  "cast": [
+    {
+      "id": "piano_chord_bed",
+      "name": "Piano",
+      "role": "Lecho armónico polifónico principal; articula el ritmo armónico y sostiene las funciones tonales sin competir con las líneas. | | primary_chord_bed",
+      "minimum_pitch": 45,
+      "maximum_pitch": 76,
+      "content_lane_id": "piano_harmonic_floor",
+      "line_relationship": "independent",
+      "active_sections": [
+        "I. Pregunta suspendida",
+        "II. Respuesta y afirmación",
+        "III. Transformación y clímax",
+        "IV. Resolución ganada"
+      ]
+    },
+    {
+      "id": "contrabass_pedal",
+      "name": "Contrabajo",
+      "role": "Pedal grave y ancla de las llegadas estructurales; se incorpora desde la afirmación para reforzar la gravedad cadencial sin duplicar el bajo móvil.",
+      "minimum_pitch": 31,
+      "maximum_pitch": 45,
+      "content_lane_id": "contrabass_pedal_anchor",
+      "line_relationship": "independent",
+      "active_sections": [
+        "I. Pregunta suspendida",
+        "II. Respuesta y afirmación",
+        "III. Transformación y clímax",
+        "IV. Resolución ganada"
+      ]
+    },
+    {
+      "id": "cello_directional_bass",
+      "name": "Violonchelo",
+      "role": "Bajo tonal direccional: impulsa cambios armónicos, prepara dominantes y hace perceptible el avance rítmico sin percusión. | primary_motion_owner",
+      "minimum_pitch": 38,
+      "maximum_pitch": 57,
+      "content_lane_id": "cello_harmonic_motion",
+      "line_relationship": "independent",
+      "active_sections": [
+        "I. Pregunta suspendida",
+        "II. Respuesta y afirmación",
+        "III. Transformación y clímax",
+        "IV. Resolución ganada"
+      ]
+    },
+    {
+      "id": "viola_inner_voicing",
+      "name": "Viola",
+      "role": "Voz interna sostenida e independiente; completa el cuerpo armónico mediante contramovimiento, notas de enlace y memoria del semitono cromático.",
+      "minimum_pitch": 53,
+      "maximum_pitch": 72,
+      "content_lane_id": "viola_inner_countervoice",
+      "line_relationship": "independent",
+      "active_sections": [
+        "I. Pregunta suspendida",
+        "II. Respuesta y afirmación",
+        "III. Transformación y clímax",
+        "IV. Resolución ganada"
+      ]
+    },
+    {
+      "id": "violin_2_answer",
+      "name": "Violín II",
+      "role": "Única voz de respuesta derivada del motivo; ocupa las respiraciones del protagonista con descensos contrapuntísticos y confirma las cadencias.",
+      "minimum_pitch": 57,
+      "maximum_pitch": 84,
+      "content_lane_id": "violin2_motif_answer",
+      "line_relationship": "call_response",
+      "active_sections": [
+        "I. Pregunta suspendida",
+        "II. Respuesta y afirmación",
+        "III. Transformación y clímax",
+        "IV. Resolución ganada"
+      ]
+    },
+    {
+      "id": "violin_1_protagonist",
+      "name": "Violín I",
+      "role": "Protagonista melódico inequívoco: formula la pregunta, atraviesa la transformación cromática y retorna con el contorno completo en la resolución.",
+      "minimum_pitch": 62,
+      "maximum_pitch": 91,
+      "content_lane_id": "protagonist_question_return",
+      "line_relationship": "independent",
+      "active_sections": [
+        "I. Pregunta suspendida",
+        "II. Respuesta y afirmación",
+        "III. Transformación y clímax",
+        "IV. Resolución ganada"
+      ]
+    },
+    {
+      "id": "flute_climax_air",
+      "name": "Flauta",
+      "role": "Extensión aérea reservada al clímax; prolonga tensiones superiores y despeja la llegada cromática a Re sin asumir material motívico adicional.",
+      "minimum_pitch": 69,
+      "maximum_pitch": 93,
+      "content_lane_id": "flute_climactic_resonance",
+      "line_relationship": "timbral_handoff",
+      "active_sections": [
+        "II. Respuesta y afirmación",
+        "III. Transformación y clímax"
+      ]
+    },
+    {
+      "id": "french_horn_cadential_body",
+      "name": "Trompa",
+      "role": "Cuerpo medio-grave de expansión formal; sostiene la dominante culminante y su caída final como función armónica independiente.",
+      "minimum_pitch": 45,
+      "maximum_pitch": 65,
+      "content_lane_id": "horn_cadential_support",
+      "line_relationship": "independent",
+      "active_sections": [
+        "III. Transformación y clímax",
+        "IV. Resolución ganada"
+      ]
+    }
+  ],
+  "performance_cells": 24,
+  "performance_placements": 24
+}

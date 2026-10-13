@@ -43,7 +43,7 @@ function readJsonLines(file) {
 }
 
 function estimatedUsd(call) {
-  if (!call.usage_available || call.model !== 'gpt-5.6-terra') return null;
+  if (!call.usage_available || !['gpt-5.6-terra', 'gpt-6.1-sol', 'gpt-6-luna'].includes(call.model)) return null;
   const input = Number(call.input_tokens) || 0;
   const cached = Number(call.cached_input_tokens) || 0;
   const writes = Number(call.cache_write_tokens) || 0;
@@ -51,7 +51,9 @@ function estimatedUsd(call) {
   const ordinary = Math.max(0, input - cached - writes);
   const longContext = input > 272000;
   const fast = ['priority', 'fast'].includes(call.service_tier_actual);
-  const rates = fast ? [4, 0.4, 5, 18] : [2, 0.2, 2.5, 12];
+  const rates = call.model === 'gpt-6-luna' ? [0.1, 0.01, 0.125, 0.5] :
+    call.model === 'gpt-6.1-sol' ? [2, 0.1, 2.5, 10] : [2, 0.2, 2.5, 12];
+  if (fast) for (let i = 0; i < rates.length; i++) rates[i] *= 2;
   return ((ordinary * rates[0] + cached * rates[1] + writes * rates[2]) *
     (longContext ? 2 : 1) + output * rates[3] * (longContext ? 1.5 : 1)) / 1000000;
 }
@@ -158,6 +160,10 @@ function validate(input) {
   const blueprintFromJob = input.blueprint_from_job === undefined ? null : String(input.blueprint_from_job);
   if (!prompt || prompt.length > 600) throw new InputError('La idea debe contener entre 1 y 600 caracteres.');
   if (!Number.isInteger(duration) || duration < 30 || duration > 900) throw new InputError('La duración debe estar entre 30 y 900 segundos.');
+  if (process.env.PULSO_AI_JOINT_SHORT_CAST === '1' && duration > 300)
+    throw new InputError('Este laboratorio de ventanas conjuntas admite hasta 5 minutos. No se iniciará el motor estándar en su lugar.');
+  if (process.env.PULSO_AI_JOINT_SHORT_CAST === '1' && renderMode !== 'ai_sovereign')
+    throw new InputError('Este laboratorio requiere autoría IA soberana para usar las ventanas conjuntas.');
   if (!Number.isFinite(bpm) || bpm < 60 || bpm > 180) throw new InputError('El tempo debe estar entre 60 y 180 BPM.');
   if (!['adaptive', 'hypnotic', 'narrative'].includes(behavior)) throw new InputError('El enfoque musical no es válido.');
   if (!['ai_sovereign', 'standard'].includes(renderMode)) throw new InputError('El modo de render no es válido.');
@@ -183,7 +189,12 @@ function blueprintOnlyScoreFromJob(request) {
   const blueprintJson = existsSync(blueprintFile) && statSync(blueprintFile).size <= 2 * 1024 * 1024
     ? readFileSync(blueprintFile, 'utf8') : null;
   const blueprint = blueprintJson && JSON.parse(blueprintJson);
-  const plan = readJson(path.join(sourceDir, 'composition-plan.json'));
+  const checkpoint = readJson(path.join(sourceDir, 'checkpoint.json'));
+  const checkpointPlan = typeof checkpoint?.planFile === 'string' &&
+    /^partial-[0-9]+-plan\.json$/.test(checkpoint.planFile)
+      ? checkpoint.planFile : null;
+  const plan = readJson(path.join(sourceDir, 'composition-plan.json')) ||
+    (checkpointPlan ? readJson(path.join(sourceDir, checkpointPlan)) : null);
   if (!blueprint || !Array.isArray(plan?.cast) || !Array.isArray(plan?.sections) ||
       !plan.cast.length || !plan.sections.length)
     throw new InputError('Source job has no complete accepted AI blueprint.');
@@ -232,7 +243,10 @@ function resumeScoreFromJob(request) {
     ? readFileSync(blueprintFile, 'utf8') : null;
   if (blueprintJson && !readJson(blueprintFile))
     throw new InputError('El plan exacto del checkpoint no es JSON válido.');
-  return { schema_version: 2, blueprint_json: blueprintJson, cast_ids: plan.cast.map(part => part.id),
+  return { schema_version: 2, blueprint_json: blueprintJson,
+    completed_units: Number.isInteger(checkpoint.completed_units)
+      ? checkpoint.completed_units : Number.parseInt(stem.slice(8), 10),
+    cast_ids: plan.cast.map(part => part.id),
     sections: plan.sections.map(section => ({ start_bar: section.start_bar, bars: section.bars })),
     notes };
 }
@@ -243,7 +257,7 @@ function childEnvironment(dir) {
   // use that same key instead of silently preferring a different VST credential
   // stored in Windows Credential Manager.
   const automatic = readJson(path.join(dir, 'job.json'))?.automatic_recovery_attempt === 1;
-  return { ...Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]])), PULSO_DISABLE_SECURE_CREDENTIALS: '1', PULSO_LOCAL_EDITORIAL_V2: '1', PULSO_TRACE_PATH: path.join(dir, 'api-events.jsonl'), PULSO_AI_RESPONSE_CACHE_DIR: path.join(dataRoot, 'validated-response-cache'), ...(process.env.PULSO_AI_SINGLE_OWNER_WRITING === '1' ? { PULSO_AI_SINGLE_OWNER_WRITING: '1' } : {}), ...(process.env.PULSO_AI_FAST_MODE === '1' ? { PULSO_AI_FAST_MODE: '1' } : {}), ...(process.env.PULSO_AI_COMPACT_WIRE === '1' ? { PULSO_AI_COMPACT_WIRE: '1' } : {}), ...(automatic ? { PULSO_AUTO_RECOVERY_MAX_SECONDS: String(AUTOMATIC_RECOVERY_MAX_SECONDS), PULSO_AUTO_RECOVERY_MAX_USD: String(AUTOMATIC_RECOVERY_MAX_USD) } : {}) };
+  return { ...Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]])), PULSO_DISABLE_SECURE_CREDENTIALS: '1', PULSO_LOCAL_EDITORIAL_V2: '1', PULSO_TRACE_PATH: path.join(dir, 'api-events.jsonl'), ...(process.env.PULSO_AI_DISABLE_RESPONSE_CACHE === '1' ? {} : { PULSO_AI_RESPONSE_CACHE_DIR: path.join(dataRoot, 'validated-response-cache') }), ...(process.env.PULSO_AI_SINGLE_OWNER_WRITING === '1' ? { PULSO_AI_SINGLE_OWNER_WRITING: '1' } : {}), ...(process.env.PULSO_AI_FAST_MODE === '1' ? { PULSO_AI_FAST_MODE: '1' } : {}), ...(process.env.PULSO_AI_COMPACT_WIRE === '1' ? { PULSO_AI_COMPACT_WIRE: '1' } : {}), ...(process.env.PULSO_AI_DENSE_WIRE === '1' ? { PULSO_AI_DENSE_WIRE: '1' } : {}), ...(process.env.PULSO_AI_PARALLEL_FRONTIER === '1' ? { PULSO_AI_PARALLEL_FRONTIER: '1' } : {}), ...(process.env.PULSO_AI_JOINT_SHORT_CAST === '1' ? { PULSO_AI_JOINT_SHORT_CAST: '1' } : {}), ...(process.env.PULSO_AI_JOINT_ONE_GROUP === '1' ? { PULSO_AI_JOINT_ONE_GROUP: '1' } : {}), ...(process.env.PULSO_AI_JOINT_NARRATIVE_ANCHORS === '1' ? { PULSO_AI_JOINT_NARRATIVE_ANCHORS: '1' } : {}), ...(process.env.PULSO_AI_JOINT_COMPACT_CAST === '1' ? { PULSO_AI_JOINT_COMPACT_CAST: '1' } : {}), ...(process.env.PULSO_AI_GROUP_SHORT_FOUNDATION === '1' ? { PULSO_AI_GROUP_SHORT_FOUNDATION: '1' } : {}), ...(process.env.PULSO_AI_EXPERIMENT_EFFORT === 'low' ? { PULSO_AI_EXPERIMENT_EFFORT: 'low' } : {}), ...(['gpt-6.1-sol', 'gpt-6-luna'].includes(process.env.PULSO_AI_EXPERIMENT_MODEL) ? { PULSO_AI_EXPERIMENT_MODEL: process.env.PULSO_AI_EXPERIMENT_MODEL } : {}), ...(automatic ? { PULSO_AUTO_RECOVERY_MAX_SECONDS: String(AUTOMATIC_RECOVERY_MAX_SECONDS), PULSO_AUTO_RECOVERY_MAX_USD: String(AUTOMATIC_RECOVERY_MAX_USD) } : {}) };
 }
 
 function startAutomaticRecovery(sourceId) {
@@ -312,7 +326,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   const pathname = url.pathname;
   try {
-    if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, editorialProfile: 'ai-only-v2' });
+    if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, editorialProfile: 'ai-only-v2', experimentalArchitecture: process.env.PULSO_AI_JOINT_SHORT_CAST === '1' ? (process.env.PULSO_AI_JOINT_COMPACT_CAST === '1' ? 'compact-ai-ensemble-up-to-90s-max-6-tracks' : process.env.PULSO_AI_JOINT_ONE_GROUP === '1' ? 'joint-ensemble-windows-up-to-300s-max-12-tracks' : process.env.PULSO_AI_JOINT_NARRATIVE_ANCHORS === '1' ? 'narrative-anchors-then-companions-up-to-300s-max-12-tracks' : 'joint-ensemble-windows-up-to-300s-max-12-tracks') : null });
     if (req.method === 'GET' && pathname === '/api/jobs') return json(res, 200, { jobs: listJobs() });
     if (req.method === 'POST' && !mutatingRequestAllowed(req)) return json(res, 403, { error: 'Solicitud local no autorizada.' });
     if (req.method === 'POST' && pathname === '/api/jobs') {

@@ -32,7 +32,7 @@ La imagen de Cloud compila y ejecuta las pruebas del núcleo y de paridad en Lin
 
 Para probar la beta con licencias Studio, configura `OPENAI_API_KEY` exclusivamente en el entorno del servidor y `PULSO_CLOUD_BETA_STUDIO=true`. Por defecto la beta está cerrada y cada cuenta tiene dos trabajos por 24 horas y uno simultáneo. `PULSO_CLOUD_DAILY_JOBS` permite ajustar el límite. Los planes Cloud de Stripe continúan deshabilitados hasta fijar precios y presupuestos a partir de consumos medidos.
 
-Una interrupción del worker se marca como fallida; no se repite una solicitud de IA automáticamente porque ello podría duplicar el cobro. Los resultados terminados, el progreso y la solicitud idempotente sí sobreviven al cierre del navegador. La integración de activación del VST con esta cola y la reanudación interna de fases todavía son trabajo pendiente; no se debe comercializar Cloud como terminado hasta verificarlos.
+Una interrupción inesperada del proceso API se marca como fallida y no se reintenta a ciegas, porque una solicitud remota aún en curso podría duplicar el cobro. En cambio, una salida controlada del worker con un checkpoint aceptado puede reanudarse de forma acotada. Los resultados terminados, el progreso y la solicitud idempotente sobreviven al cierre del navegador. La integración de activación del VST con esta cola continúa pendiente; no se debe comercializar Cloud como terminado sin verificarla.
 
 ## Puesta en marcha local
 
@@ -79,6 +79,21 @@ instrumentos, sin interrumpirlas artificialmente a los 45 minutos. La traza
 de la API se conserva en el volumen privado de cada obra y no se expone en la
 interfaz Cloud. Las dos interfaces comparten el reproductor MIDI y los sonidos;
 Cloud oculta las herramientas de prueba, semilla, diagnóstico y logs.
+La biblioteca `Tus obras` mantiene el diseño útil del estudio local: título,
+estado, fecha, duración, número de pistas y actualización manual. En Cloud
+los trabajos pertenecen a la cuenta autenticada; en local, al almacenamiento
+de pruebas de ese equipo.
+
+Cloud pasa también `PULSO_AI_JOINT_SHORT_CAST=1` y
+`PULSO_AI_JOINT_NARRATIVE_ANCHORS=1` al worker aislado: las obras de hasta cinco
+minutos usan la misma arquitectura de ventanas y voces que produjo el anclaje
+«Pregunta suspendida, Re menor» en el estudio local. Si una ejecución termina
+con un checkpoint aceptado, Cloud puede reanudar hasta tres veces la misma obra
+sin pedir de nuevo el plan ni las ventanas terminadas. Cada reanudación tiene
+un límite propio de diez minutos y USD 20 estimados; la obra completa conserva
+el límite externo de 185 minutos. No se reintenta una interrupción inesperada
+del proceso API ni un error permanente de credenciales o cuota, para evitar
+duplicar cargos inciertos. El MIDI parcial nunca se publica como obra terminada.
 
 `docker-compose.production.yml` mantiene PostgreSQL en una red interna y publica la API únicamente en `127.0.0.1:8188`. Copia `.env.production.example` como `.env`, completa los secretos en el servidor y coloca Nginx delante usando `nginx-pulso.conf.example` como base. No abras 8188 en el firewall.
 

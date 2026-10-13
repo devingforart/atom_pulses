@@ -200,6 +200,25 @@ bool intentionalVerticalColour(const NoteEvent& left, const NoteEvent& right,
         containsPitchClass(window->pitchClasses, root + 10) &&
         chordHasPair(positiveModulo(root + 4, 12),
                      positiveModulo(root + 10, 12))) return true;
+    // The root and diminished fifth define a declared half-diminished or
+    // diminished harmony. Requiring the dominant guide-tone function here
+    // falsely rejects its own chord tones, causing needless AI rewrites.
+    // Keep the pair out of the lowest register, where it becomes muddy.
+    if (interval == 6 && std::min(left.pitch, right.pitch) >= 52 &&
+        containsPitchClass(window->pitchClasses, root) &&
+        containsPitchClass(window->pitchClasses, root + 3) &&
+        containsPitchClass(window->pitchClasses, root + 6) &&
+        chordHasPair(root, positiveModulo(root + 6, 12))) return true;
+    // The minor third and added sixth are the characteristic upper tritone
+    // of a declared minor-sixth chord. This is intentional colour only when
+    // voiced in the middle/upper register, not a license for bass clusters.
+    if (interval == 6 && std::min(left.pitch, right.pitch) >= 55 &&
+        containsPitchClass(window->pitchClasses, root) &&
+        containsPitchClass(window->pitchClasses, root + 3) &&
+        containsPitchClass(window->pitchClasses, root + 7) &&
+        chordHasPair(positiveModulo(root + 3, 12),
+                     positiveModulo(root + 9, 12)) &&
+        containsPitchClass(window->pitchClasses, root + 9)) return true;
     // The fifth and flat ninth are another explicit dominant-b9 colour.
     // Permit them in the middle/upper register only, not as a low cluster.
     if (interval == 6 && std::min(left.pitch, right.pitch) >= 60 &&

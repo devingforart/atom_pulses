@@ -1,0 +1,14 @@
+{
+  "prompt": "Pieza de camara tonal con un protagonista melodico claro, respuestas contrapuntisticas, ritmo tonal vivo y una resolucion ganada al final. Sin bateria ni percusion.",
+  "duration_seconds": 180,
+  "bpm": 120,
+  "behavior": "adaptive",
+  "seed": "7983455810432481276",
+  "ai_sovereign": true,
+  "editorial_profile": "ai-only-v2",
+  "proof_mode": false,
+  "resume_from_job": "90c82c56-83af-4551-9100-855c0ffaf3d6",
+  "blueprint_from_job": null,
+  "created_at": "2026-10-13T06:08:07.253Z",
+  "resume_checkpoint_file": "C:\\Users\\deving4art\\Desktop\\Projects\\cod\\build\\latency-lab-data\\jobs\\77b7a537-4aa7-4698-879a-a9c01ac864ae\\resume-score.json"
+}

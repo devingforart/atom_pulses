@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "technical_ready": true,
+  "narrative_ready": false,
+  "motif_closure": 0.9825,
+  "tonal_closure": 1.0,
+  "register_release": 0.911011904761905,
+  "density_release": 0.375,
+  "resolution_score": 0.883202380952381,
+  "causal_narrative": 0.5625,
+  "soundscape_ready": false,
+  "declared_layers": 8,
+  "meaningful_layers": 6,
+  "harmonic_floor_coverage": 0.966666666666667,
+  "harmonic_conflicts": 0,
+  "low_register_conflicts": 0,
+  "unsupported_chromatic": 0,
+  "invalid_sustains": 0,
+  "narrative_issues": [
+    "narrative_events_lack_audible_consequence"
+  ],
+  "soundscape_issues": [
+    "soundscape_voices_are_only_token_tracks",
+    "electronic_layers_repeat_without_evolution"
+  ],
+  "tonal_issue_examples": []
+}

@@ -22,10 +22,14 @@ use crate::{
 
 const CLOUD_BEHAVIOR: &str = "adaptive";
 const CLOUD_AI_SOVEREIGN: bool = true;
+const _: () = assert!(CLOUD_AI_SOVEREIGN);
 // The local AI-only editorial worker can scale its own budget to 180 minutes
 // for an unusually large cast. The API must not kill that same worker at 45
 // minutes just because it is running in Cloud.
 const CLOUD_WORKER_DEADLINE: Duration = Duration::from_secs(185 * 60);
+const MAX_CHECKPOINT_RECOVERIES: u8 = 3;
+const RECOVERY_CALL_SECONDS: u64 = 600;
+const RECOVERY_CALL_USD: u64 = 20;
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -351,6 +355,7 @@ fn worker_command(
     input: &Path,
     directory: &Path,
     output_root: &Path,
+    recovery: bool,
 ) -> Command {
     let mut command = Command::new(worker);
     command
@@ -361,6 +366,12 @@ fn worker_command(
         // by Local Studio explicitly; otherwise identical requests follow a
         // different musical path in Cloud.
         .env("PULSO_AI_EDITORIAL_V2", "1")
+        .env("PULSO_LOCAL_EDITORIAL_V2", "1")
+        // Match the verified Local Studio architecture that authored
+        // "Pregunta suspendida". Long works continue to use the existing
+        // route; the joint-window branch itself is bounded to 300 seconds.
+        .env("PULSO_AI_JOINT_SHORT_CAST", "1")
+        .env("PULSO_AI_JOINT_NARRATIVE_ANCHORS", "1")
         .env("PULSO_DISABLE_SECURE_CREDENTIALS", "1")
         .env("PULSO_TRACE_PATH", directory.join("api-events.jsonl"))
         .env("HOME", output_root)
@@ -368,23 +379,61 @@ fn worker_command(
         .arg(input)
         .arg(directory)
         .kill_on_drop(true);
+    if recovery {
+        command
+            .env(
+                "PULSO_AUTO_RECOVERY_MAX_SECONDS",
+                RECOVERY_CALL_SECONDS.to_string(),
+            )
+            .env("PULSO_AUTO_RECOVERY_MAX_USD", RECOVERY_CALL_USD.to_string());
+    }
     command
+}
+
+fn valid_resume(checkpoint: &Value, resume: &Value) -> bool {
+    checkpoint["resumeFile"].as_str() == Some("resume-score.json")
+        && checkpoint["completed_units"]
+            .as_u64()
+            .is_some_and(|n| n > 0)
+        && checkpoint["completed_units"] == resume["completed_units"]
+        && checkpoint["notes"].as_u64().is_some_and(|n| n > 0)
+        && resume["notes"].as_array().is_some_and(|notes| {
+            notes.len() == checkpoint["notes"].as_u64().unwrap_or_default() as usize
+        })
+        && resume["cast_ids"]
+            .as_array()
+            .is_some_and(|cast| !cast.is_empty())
+        && resume["sections"]
+            .as_array()
+            .is_some_and(|sections| !sections.is_empty())
+        && resume["blueprint_json"]
+            .as_str()
+            .is_some_and(|blueprint| !blueprint.is_empty() && blueprint.len() <= 2 * 1024 * 1024)
+}
+
+fn permanent_worker_error(error: &str) -> bool {
+    let lower = error.to_ascii_lowercase();
+    [
+        "insufficient_quota",
+        "no credits remaining",
+        "invalid api key",
+        "unauthorized",
+        "authentication",
+        "cancelled",
+        "canceled",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
 }
 
 async fn run_one(state: &AppState, job: ClaimedJob) -> ApiResult<()> {
     let directory = state.config.cloud_output_dir.join(job.id.to_string());
     tokio::fs::create_dir_all(&directory).await?;
-    let input = directory.join("job.json");
-    let body = serde_json::json!({
+    let original_body = serde_json::json!({
         "prompt": job.prompt, "duration_seconds": job.duration_seconds,
         "bpm": job.bpm, "behavior": job.behavior, "seed": job.seed.to_string(),
         "ai_sovereign": job.ai_sovereign,
     });
-    tokio::fs::write(
-        &input,
-        serde_json::to_vec(&body).map_err(|e| ApiError::internal(e.to_string()))?,
-    )
-    .await?;
     let worker = state
         .config
         .cloud_worker_path
@@ -394,83 +443,113 @@ async fn run_one(state: &AppState, job: ClaimedJob) -> ApiResult<()> {
     // Stripe, database, mail or signing credentials.
     let openai_key = std::env::var("OPENAI_API_KEY")
         .map_err(|_| ApiError::configuration("missing OPENAI_API_KEY"))?;
-    let mut command = worker_command(
-        worker,
-        &openai_key,
-        &input,
-        &directory,
-        &state.config.cloud_output_dir,
-    );
-    let mut child = command
-        .spawn()
-        .map_err(|e| ApiError::internal(e.to_string()))?;
-    let mut heartbeat = interval(Duration::from_secs(5));
+    let mut recovery_count = 0_u8;
     let deadline = tokio::time::Instant::now() + CLOUD_WORKER_DEADLINE;
     loop {
-        heartbeat.tick().await;
-        let cancelled: bool =
-            sqlx::query_scalar("SELECT cancel_requested FROM cloud_jobs WHERE id=$1")
-                .bind(job.id)
-                .fetch_one(&state.db)
-                .await?;
-        if cancelled || tokio::time::Instant::now() > deadline {
-            let _ = child.kill().await;
-            sqlx::query("UPDATE cloud_jobs SET status=$2,stage=$2,error_code=$3,lease_until=NULL,updated_at=$4 WHERE id=$1")
-                .bind(job.id).bind(if cancelled { "cancelled" } else { "failed" })
-                .bind(if cancelled { None } else { Some("time_budget") })
-                .bind(unix_time()).execute(&state.db).await?;
-            return Ok(());
+        let input = if recovery_count == 0 {
+            directory.join("job.json")
+        } else {
+            directory.join(format!("job-attempt-{recovery_count}.json"))
+        };
+        let mut body = original_body.clone();
+        if recovery_count > 0 {
+            // The file is produced from an accepted C++ checkpoint. Snapshot
+            // it before launching the next worker so a later checkpoint write
+            // cannot change the input under a running process.
+            let resume = directory.join(format!("resume-attempt-{recovery_count}.json"));
+            tokio::fs::copy(directory.join("resume-score.json"), &resume).await?;
+            body["resume_checkpoint_file"] = Value::String(resume.to_string_lossy().into_owned());
         }
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|e| ApiError::internal(e.to_string()))?
-        {
-            let manifest_path = directory.join("manifest.json");
-            let manifest = if status.success() {
-                read_json(&manifest_path).await
-            } else {
-                None
-            };
+        tokio::fs::write(
+            &input,
+            serde_json::to_vec(&body).map_err(|e| ApiError::internal(e.to_string()))?,
+        )
+        .await?;
+        let mut command = worker_command(
+            worker,
+            &openai_key,
+            &input,
+            &directory,
+            &state.config.cloud_output_dir,
+            recovery_count > 0,
+        );
+        let mut child = command
+            .spawn()
+            .map_err(|e| ApiError::internal(e.to_string()))?;
+        let mut heartbeat = interval(Duration::from_secs(5));
+        loop {
+            heartbeat.tick().await;
             let cancelled: bool =
                 sqlx::query_scalar("SELECT cancel_requested FROM cloud_jobs WHERE id=$1")
                     .bind(job.id)
                     .fetch_one(&state.db)
                     .await?;
-            if cancelled {
-                sqlx::query("UPDATE cloud_jobs SET status='cancelled',stage='cancelled',lease_until=NULL,updated_at=$2 WHERE id=$1")
-                    .bind(job.id).bind(unix_time()).execute(&state.db).await?;
+            if cancelled || tokio::time::Instant::now() > deadline {
+                let _ = child.kill().await;
+                sqlx::query("UPDATE cloud_jobs SET status=$2,stage=$2,error_code=$3,lease_until=NULL,updated_at=$4 WHERE id=$1")
+                    .bind(job.id).bind(if cancelled { "cancelled" } else { "failed" })
+                    .bind(if cancelled { None } else { Some("time_budget") })
+                    .bind(unix_time()).execute(&state.db).await?;
                 return Ok(());
             }
-            let error_code: Option<&str> = if manifest.is_some() {
-                None
-            } else if status.success() {
-                Some("missing_result")
-            } else {
-                Some("worker_failed")
-            };
-            sqlx::query("UPDATE cloud_jobs SET status=$2,stage=$3,result_manifest=$4,error_code=$5,lease_until=NULL,updated_at=$6 WHERE id=$1")
-                .bind(job.id).bind(if manifest.is_some() { "completed" } else { "failed" })
-                .bind(if manifest.is_some() { "ready" } else { "generation" })
-                .bind(manifest).bind(error_code)
-                .bind(unix_time()).execute(&state.db).await?;
-            return Ok(());
+            if let Some(status) = child
+                .try_wait()
+                .map_err(|e| ApiError::internal(e.to_string()))?
+            {
+                let manifest = if status.success() {
+                    read_json(&directory.join("manifest.json")).await
+                } else {
+                    None
+                };
+                if let Some(manifest) = manifest {
+                    sqlx::query("UPDATE cloud_jobs SET status='completed',stage='ready',result_manifest=$2,error_code=NULL,lease_until=NULL,updated_at=$3 WHERE id=$1")
+                        .bind(job.id).bind(manifest).bind(unix_time())
+                        .execute(&state.db).await?;
+                    return Ok(());
+                }
+                let error = read_json(&directory.join("error.json"))
+                    .await
+                    .and_then(|value| value["error"].as_str().map(str::to_owned))
+                    .unwrap_or_default();
+                let checkpoint = read_json(&directory.join("checkpoint.json")).await;
+                let resume = read_json(&directory.join("resume-score.json")).await;
+                if recovery_count < MAX_CHECKPOINT_RECOVERIES
+                    && tokio::time::Instant::now() + Duration::from_secs(60) < deadline
+                    && !permanent_worker_error(&error)
+                    && checkpoint
+                        .as_ref()
+                        .zip(resume.as_ref())
+                        .is_some_and(|(checkpoint, resume)| valid_resume(checkpoint, resume))
+                {
+                    recovery_count += 1;
+                    sqlx::query("UPDATE cloud_jobs SET stage='recovery',attempt=attempt+1,lease_until=$2,updated_at=$3 WHERE id=$1 AND status='running'")
+                        .bind(job.id).bind(unix_time()+120).bind(unix_time())
+                        .execute(&state.db).await?;
+                    break;
+                }
+                sqlx::query("UPDATE cloud_jobs SET status='failed',stage='generation',error_code=$2,lease_until=NULL,updated_at=$3 WHERE id=$1")
+                    .bind(job.id)
+                    .bind(if status.success() { "missing_result" } else { "worker_failed" })
+                    .bind(unix_time()).execute(&state.db).await?;
+                return Ok(());
+            }
+            let progress = read_json(&directory.join("progress.json")).await;
+            let stage = progress
+                .as_ref()
+                .and_then(|value| value["stage"].as_str())
+                .unwrap_or("working");
+            let completed = progress
+                .as_ref()
+                .and_then(|value| value["completed"].as_i64())
+                .unwrap_or(0);
+            let total = progress
+                .as_ref()
+                .and_then(|value| value["total"].as_i64())
+                .unwrap_or(0);
+            sqlx::query("UPDATE cloud_jobs SET stage=$2,completed_steps=$3,total_steps=$4,lease_until=$5,updated_at=$6 WHERE id=$1 AND status='running'")
+                .bind(job.id).bind(stage).bind(completed as i32).bind(total as i32)
+                .bind(unix_time()+120).bind(unix_time()).execute(&state.db).await?;
         }
-        let progress = read_json(&directory.join("progress.json")).await;
-        let stage = progress
-            .as_ref()
-            .and_then(|value| value["stage"].as_str())
-            .unwrap_or("working");
-        let completed = progress
-            .as_ref()
-            .and_then(|value| value["completed"].as_i64())
-            .unwrap_or(0);
-        let total = progress
-            .as_ref()
-            .and_then(|value| value["total"].as_i64())
-            .unwrap_or(0);
-        sqlx::query("UPDATE cloud_jobs SET stage=$2,completed_steps=$3,total_steps=$4,lease_until=$5,updated_at=$6 WHERE id=$1 AND status='running'")
-            .bind(job.id).bind(stage).bind(completed as i32).bind(total as i32)
-            .bind(unix_time()+120).bind(unix_time()).execute(&state.db).await?;
     }
 }
 
@@ -544,7 +623,6 @@ mod tests {
     fn cloud_worker_budget_covers_the_ai_only_editorial_ceiling() {
         assert!(CLOUD_WORKER_DEADLINE >= Duration::from_secs(180 * 60));
         assert_eq!(CLOUD_BEHAVIOR, "adaptive");
-        assert!(CLOUD_AI_SOVEREIGN);
     }
     #[test]
     fn cloud_worker_recreates_the_local_editorial_environment_without_server_secrets() {
@@ -554,6 +632,7 @@ mod tests {
             Path::new("job.json"),
             Path::new("jobs/work"),
             Path::new("jobs"),
+            false,
         );
         let env: std::collections::HashMap<_, _> = command
             .as_std()
@@ -572,6 +651,19 @@ mod tests {
             Some("1")
         );
         assert_eq!(
+            env.get("PULSO_LOCAL_EDITORIAL_V2").map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            env.get("PULSO_AI_JOINT_SHORT_CAST").map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            env.get("PULSO_AI_JOINT_NARRATIVE_ANCHORS")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
             env.get("PULSO_DISABLE_SECURE_CREDENTIALS")
                 .map(String::as_str),
             Some("1")
@@ -582,6 +674,54 @@ mod tests {
         );
         assert!(!env.contains_key("DATABASE_URL"));
         assert!(!env.contains_key("STRIPE_SECRET_KEY"));
+    }
+    #[test]
+    fn accepted_checkpoint_only_can_be_retried() {
+        let checkpoint = serde_json::json!({"resumeFile":"resume-score.json",
+            "completed_units":8,"notes":2});
+        let resume = serde_json::json!({"completed_units":8,"notes":[{},{}],
+            "cast_ids":["piano"],"sections":[{"start_bar":0,"bars":4}],
+            "blueprint_json":"{}"});
+        assert!(valid_resume(&checkpoint, &resume));
+        let mut rejected = checkpoint.clone();
+        rejected["resumeFile"] = Value::Null;
+        assert!(!valid_resume(&rejected, &resume));
+        assert!(permanent_worker_error("OpenAI insufficient_quota"));
+        assert!(!permanent_worker_error(
+            "Joint AI score reached its global time budget"
+        ));
+        let retry = worker_command(
+            Path::new("worker"),
+            "test-only",
+            Path::new("job.json"),
+            Path::new("jobs/work"),
+            Path::new("jobs"),
+            true,
+        );
+        let retry_env: std::collections::HashMap<_, _> = retry
+            .as_std()
+            .get_envs()
+            .filter_map(|(key, value)| {
+                value.map(|value| {
+                    (
+                        key.to_string_lossy().into_owned(),
+                        value.to_string_lossy().into_owned(),
+                    )
+                })
+            })
+            .collect();
+        assert_eq!(
+            retry_env
+                .get("PULSO_AUTO_RECOVERY_MAX_SECONDS")
+                .map(String::as_str),
+            Some("600")
+        );
+        assert_eq!(
+            retry_env
+                .get("PULSO_AUTO_RECOVERY_MAX_USD")
+                .map(String::as_str),
+            Some("20")
+        );
     }
     #[test]
     fn input_boundaries_and_idempotency_key() {

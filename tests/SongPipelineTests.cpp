@@ -1,7 +1,9 @@
 #include "plugin/SongGenerationPipeline.h"
 #include "plugin/AiComposer.h"
+#include "plugin/JointWindowRecovery.h"
 #include "core/SovereignScoreRenderer.h"
 
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -101,6 +103,49 @@ int main() {
         _putenv_s("PULSO_AI_COMPACT_WIRE", "");
 #else
         unsetenv("PULSO_AI_COMPACT_WIRE");
+#endif
+        const juce::String denseWire = R"json({"block_id":"test","covered_instrument_ids":["speaker"],"performance_score":{"cells":[{"id":"c1","theme_id":"t1","narrative_function":"establish","length_beats":4,"owned_voices":["lead"],"notes":[{"b":0,"d":1,"p":72,"v":91,"i":3}],"controls":[{"b":0,"cc":11,"v":88,"i":3}]}],"placements":[{"cell_id":"c1","section_index":0,"start_beat":0,"repeats":1,"transpose":0,"velocity_scale":1,"time_scale":1,"purpose":"establish","voice_map":[],"retrograde":false,"invert_contour":false,"inversion_axis":60,"fragment_start":0,"fragment_end":4,"metric_intent":"strict_grid"}]}})json";
+        const auto originalLocalEditorial = juce::SystemStats::getEnvironmentVariable(
+            "PULSO_LOCAL_EDITORIAL_V2", {});
+#if defined(_WIN32)
+        _putenv_s("PULSO_LOCAL_EDITORIAL_V2", "1");
+        _putenv_s("PULSO_AI_DENSE_WIRE", "1");
+#else
+        setenv("PULSO_LOCAL_EDITORIAL_V2", "1", 1);
+        setenv("PULSO_AI_DENSE_WIRE", "1", 1);
+#endif
+        const auto denseSchema = juce::JSON::parse(AiComposer::performanceSchemaFor(orderPlan, {3}));
+        const auto denseProperties = denseSchema.getProperty("properties", {})
+            .getProperty("performance_score", {}).getProperty("properties", {})
+            .getProperty("cells", {}).getProperty("items", {}).getProperty("properties", {})
+            .getProperty("notes", {}).getProperty("items", {}).getProperty("properties", {});
+        const auto denseOwners = denseProperties.getProperty("i", {}).getProperty("enum", {}).getArray();
+        check(denseOwners != nullptr && denseOwners->size() == 1 &&
+              static_cast<int>(denseOwners->getReference(0)) == 3 &&
+              !denseProperties.hasProperty("voice") && !denseProperties.hasProperty("metric_intent") &&
+              static_cast<int>(denseProperties.getProperty("p", {}).getProperty("minimum", {})) == 69 &&
+              static_cast<int>(denseProperties.getProperty("p", {}).getProperty("maximum", {})) == 91,
+              "dense wire schema must preserve assigned owner and register without redundant fields");
+        PerformanceScore denseScore;
+        check(AiComposer::parsePerformanceBlockJson(denseWire, orderPlan, {3}, denseScore, wireError) &&
+              denseScore.cells.size() == 1 && denseScore.cells[0].notes.size() == 1 &&
+              denseScore.cells[0].controls.size() == 1 &&
+              denseScore.cells[0].notes[0].instrumentId == originalScore.cells[0].notes[0].instrumentId &&
+              denseScore.cells[0].notes[0].voice == originalScore.cells[0].notes[0].voice &&
+              denseScore.cells[0].notes[0].pitch == originalScore.cells[0].notes[0].pitch &&
+              denseScore.cells[0].notes[0].beat == originalScore.cells[0].notes[0].beat &&
+              denseScore.cells[0].notes[0].durationBeats == originalScore.cells[0].notes[0].durationBeats &&
+              denseScore.cells[0].notes[0].velocity == originalScore.cells[0].notes[0].velocity &&
+              denseScore.cells[0].controls[0].controller == originalScore.cells[0].controls[0].controller &&
+              denseScore.cells[0].controls[0].value == originalScore.cells[0].controls[0].value,
+              "dense wire must restore exact authored note and expression-control events");
+#if defined(_WIN32)
+        _putenv_s("PULSO_AI_DENSE_WIRE", "");
+        _putenv_s("PULSO_LOCAL_EDITORIAL_V2", originalLocalEditorial.toRawUTF8());
+#else
+        unsetenv("PULSO_AI_DENSE_WIRE");
+        if (originalLocalEditorial.isEmpty()) unsetenv("PULSO_LOCAL_EDITORIAL_V2");
+        else setenv("PULSO_LOCAL_EDITORIAL_V2", originalLocalEditorial.toRawUTF8(), 1);
 #endif
         orderPlan.narrativeSpine.protagonistInstrumentId = "speaker";
         orderPlan.productionLanguage.domain = ProductionDomain::ClubElectronic;
@@ -234,6 +279,150 @@ int main() {
             R"({"bed":[{"beat":0,"duration":1,"pitch":30,"velocity":88}],"bass":[]})",
             direct, owners, 0, 0, 2, authored, error),
             "direct MIDI parser accepted a pitch more than one octave outside its preferred register");
+        TonalIssue collision;
+        collision.kind = "harsh_overlap";
+        collision.beat = 4;
+        collision.partId = 1;
+        collision.otherPartId = 2;
+        collision.overlapBeats = 1;
+        TonalIssue chromatic;
+        chromatic.kind = "unsupported_chromatic";
+        chromatic.beat = 5;
+        chromatic.partId = 3;
+        check(jointWindowRepairOwners({0, 1, 2, 3},
+            {collision, chromatic}, 0, 8) == std::vector<std::size_t>({0, 1, 2}),
+            "joint recovery froze one side of an audible collision");
+        check(jointWindowRepairOwners({0, 1, 2, 3},
+            {collision, chromatic}, 0, 8, 3) ==
+                std::vector<std::size_t>({0, 1, 2, 3}),
+            "joint recovery omitted a missing active owner");
+        collision.beat = 12;
+        check(jointWindowRepairOwners({0, 1, 2, 3},
+            {collision, chromatic}, 0, 8) == std::vector<std::size_t>({2}),
+            "joint recovery included an unrelated window collision");
+        std::vector<TonalIssue> broad;
+        for (std::uint16_t part = 1; part <= 7; ++part) {
+            TonalIssue issue;
+            issue.kind = "strong_non_chord";
+            issue.beat = 2;
+            issue.partId = part;
+            broad.push_back(issue);
+        }
+        check(jointWindowRepairOwners({0, 1, 2, 3, 4, 5, 6, 7},
+            broad, 0, 8).size() == 8,
+            "a wide conflict graph was not returned to the full AI ensemble");
+        SongPlan closedOrchestra;
+        closedOrchestra.instrumentCastAuthored = true;
+        closedOrchestra.preserveAuthoredCast = true;
+        closedOrchestra.instruments = {bed, bass};
+        const auto authoredBedId = closedOrchestra.instruments[0].id;
+        const auto authoredBassId = closedOrchestra.instruments[1].id;
+        SongComposer::normalizePlan(closedOrchestra);
+        check(closedOrchestra.instruments.size() == 2 &&
+            closedOrchestra.instruments[0].id == authoredBedId &&
+            closedOrchestra.instruments[1].id == authoredBassId,
+            "orchestral normalization appended generic parts to a closed AI cast");
+        check(AiComposer::castManifestHasRange(6, 3) &&
+            AiComposer::castManifestHasRange(12, 8),
+            "local compact cast schema raised its six-owner ceiling to eight");
+        SongPlan narrativePromptPlan;
+        narrativePromptPlan.totalBars = 8;
+        narrativePromptPlan.sections.push_back({});
+        narrativePromptPlan.sections[0].name = "Answer";
+        narrativePromptPlan.sections[0].bars = 8;
+        narrativePromptPlan.instruments = {bed, bass};
+        narrativePromptPlan.rhythmLanguage.description =
+            "A short-long tonal question followed by a held answer";
+        NarrativeAct act;
+        act.sectionName = "Answer";
+        act.cause = "The opening phrase stopped before the tonic";
+        act.consequence = "The leading tone now resolves in the melody";
+        act.unresolvedElement = "An unfinished melodic descent";
+        act.resolutionTarget = "A sustained, audible melodic arrival";
+        narrativePromptPlan.narrativeSpine.acts.push_back(act);
+        narrativePromptPlan.narrativeSpine.protagonistInstrumentId = bed.id;
+        const auto narrativePrompt = AiComposer::directWindowPromptFor(
+            "A tonal chamber miniature", narrativePromptPlan, Pattern{}, {0, 1},
+            0, 0, 8);
+        check(narrativePrompt.contains(juce::String::fromUTF8(act.cause.c_str())) &&
+            narrativePrompt.contains(juce::String::fromUTF8(act.consequence.c_str())) &&
+            narrativePrompt.contains(juce::String::fromUTF8(act.resolutionTarget.c_str())) &&
+            narrativePrompt.contains(juce::String::fromUTF8(
+                narrativePromptPlan.rhythmLanguage.description.c_str())) &&
+            !narrativePrompt.contains("ELECTRONIC INTERPLAY"),
+            "orchestral AI window omitted its authored dramatic or rhythmic brief");
+        narrativePromptPlan.productionLanguage.domain = ProductionDomain::Hybrid;
+        narrativePromptPlan.productionLanguage.electronicIntent = .31;
+        check(!AiComposer::directWindowPromptFor("A tonal chamber miniature",
+            narrativePromptPlan, Pattern{}, {0, 1}, 0, 0, 8)
+            .contains("ELECTRONIC INTERPLAY"),
+            "a low-electronic hybrid chamber score received club writing instructions");
+        const auto companionPrompt = AiComposer::directWindowPromptFor(
+            "A tonal chamber miniature", narrativePromptPlan, Pattern{}, {1},
+            0, 0, 8);
+        check(companionPrompt.contains("protagonist is NOT a requested owner") &&
+            companionPrompt.contains("already accepted and immutable"),
+            "companion writing stage did not protect the accepted AI lead");
+        // The blueprint parser normalizes internally. Exercise that path, not
+        // only a SongPlan which already has the closed-cast flag set.
+        juce::String closedBlueprint = R"({"title":"Closed orchestra","key":"C major","root_pitch_class":0,"mode":"major","sections":[{"name":"Opening","bars":8},{"name":"Middle","bars":8},{"name":"Return","bars":8}],"instruments":[)";
+        const std::array<std::pair<const char*, const char*>, 10> authoredCast{{
+            {"violin_1", "lead"}, {"violin_2", "harmonic_upper"},
+            {"viola", "harmonic_foundation"}, {"cello", "movement_bass"},
+            {"contrabass", "sub_bass"}, {"oboe", "countermelody"},
+            {"clarinet", "countermelody"}, {"bassoon", "harmonic_pulse"},
+            {"french_horns", "harmonic_foundation"}, {"flute", "atmosphere"}}};
+        for (std::size_t i = 0; i < authoredCast.size(); ++i) {
+            if (i != 0) closedBlueprint += ",";
+            closedBlueprint += "{\"id\":\"owner_" + juce::String(static_cast<int>(i)) +
+                "\",\"instrument\":\"" + authoredCast[i].first +
+                "\",\"name\":\"Part " + juce::String(static_cast<int>(i)) +
+                "\",\"source_voice\":\"" + authoredCast[i].second + "\"}";
+        }
+        closedBlueprint += "]}";
+        SongPlan parsedClosedCast;
+        parsedClosedCast.preserveAuthoredCast = true;
+        juce::String closedCastError;
+        check(AiComposer::parseSongPlanJson(closedBlueprint, 120, 24, 120.0, 4.0,
+            1, parsedClosedCast, closedCastError) &&
+            parsedClosedCast.preserveAuthoredCast &&
+            parsedClosedCast.instruments.size() == authoredCast.size(),
+            "blueprint parser expanded the AI-authored joint-window ensemble");
+        for (std::size_t i = 0; i < authoredCast.size(); ++i)
+            check(parsedClosedCast.instruments[i].id ==
+                "owner_" + std::to_string(i),
+                "blueprint parser changed an AI-authored instrument owner");
+        // A captured production blueprint can be replayed locally with this
+        // optional path; no network call or fixture with user data is needed.
+        if (const auto* replayPath = std::getenv("PULSO_REPLAY_BLUEPRINT")) {
+            const auto replay = juce::File::getCurrentWorkingDirectory()
+                .getChildFile(juce::String::fromUTF8(replayPath)).loadFileAsString();
+            const auto source = juce::JSON::parse(replay);
+            const auto* sourceInstruments = source.getProperty("instruments", {}).getArray();
+            const auto* sourceSections = source.getProperty("sections", {}).getArray();
+            check(sourceInstruments != nullptr && sourceSections != nullptr,
+                "captured blueprint is missing instruments or sections");
+            auto bars = 0;
+            for (const auto& section : *sourceSections)
+                bars += static_cast<int>(section.getProperty("bars", {}));
+            SongPlan replayed;
+            replayed.preserveAuthoredCast = true;
+            juce::String replayError;
+            check(AiComposer::parseSongPlanJson(replay, 120, bars, 120.0, 4.0,
+                1, replayed, replayError),
+                "captured blueprint failed local parse");
+            check(replayed.instruments.size() ==
+                static_cast<std::size_t>(sourceInstruments->size()),
+                "captured AI cast expanded during blueprint parsing");
+            SongComposer::normalizePlan(replayed);
+            check(replayed.instruments.size() ==
+                static_cast<std::size_t>(sourceInstruments->size()),
+                "captured AI cast expanded during caller normalization");
+            for (int i = 0; i < sourceInstruments->size(); ++i)
+                check(replayed.instruments[static_cast<std::size_t>(i)].id ==
+                    (*sourceInstruments)[i].getProperty("id", {}).toString().toStdString(),
+                    "captured AI owner was replaced during blueprint parsing");
+        }
         check(AiComposer::parseDirectWindowJson(
             R"({"bed":[],"bass":[{"beat":0,"duration":1,"pitch":33,"velocity":92}]})",
             direct, owners, 0, 0, 2, authored, error),

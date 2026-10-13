@@ -405,6 +405,7 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
     if (floorOwners > 0) {
         auto requiredBars = 0;
         auto coveredBars = 0;
+        std::vector<std::pair<double, std::size_t>> sectionalFloorCoverage;
         for (const auto& section : plan.sections) {
             auto sectionRequired = 0;
             auto sectionCovered = 0;
@@ -421,8 +422,14 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
                 ++sectionRequired;
                 if (active >= required) { ++coveredBars; ++sectionCovered; }
             }
+            if (sectionRequired > 0)
+                sectionalFloorCoverage.emplace_back(
+                    static_cast<double>(sectionCovered) / sectionRequired,
+                    static_cast<std::size_t>(&section - plan.sections.data()));
             if (sectionRequired >= 4 && sectionCovered * 100 < sectionRequired * 60) {
                 review.ready = false;
+                review.sectionIndices.push_back(static_cast<std::size_t>(
+                    &section - plan.sections.data()));
                 review.deficit += .6 - static_cast<double>(sectionCovered) / sectionRequired;
                 review.issues.push_back("Harmonic floor is absent in section '" + section.name +
                     "' (" + std::to_string(sectionCovered) + "/" +
@@ -445,18 +452,32 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
             review.issues.push_back("Rendered sustained harmonic coverage is " +
                 std::to_string(static_cast<int>(review.harmonicContinuity * 100)) +
                 "%: bridge unintended gaps with independent chord-compatible voices");
+            if (review.sectionIndices.empty() && !sectionalFloorCoverage.empty()) {
+                const auto worst = std::min_element(sectionalFloorCoverage.begin(),
+                    sectionalFloorCoverage.end());
+                review.sectionIndices.push_back(worst->second);
+                for (std::size_t index = 0; index < plan.instruments.size(); ++index)
+                    if (HarmonicFloorContext::sustainedFloorOwner(plan.instruments[index]))
+                        review.instrumentIndices.push_back(index);
+            }
         }
     }
 
     for (std::size_t climaxIndex = 1; climaxIndex < plan.sections.size(); ++climaxIndex) {
         const auto& climax = plan.sections[climaxIndex];
-        const auto identity = lower(climax.name + " " + climax.function);
-        const auto declaredClimax = identity.find("climax") != std::string::npos ||
-            identity.find("peak") != std::string::npos ||
-            identity.find("culmin") != std::string::npos ||
-            std::any_of(plan.narrativeSpine.acts.begin(), plan.narrativeSpine.acts.end(),
-                [&](const auto& act) { return act.stage == NarrativeStage::Climax &&
-                    act.sectionName == climax.name; });
+        const auto identity = lower(climax.name);
+        const auto declaredAct = std::find_if(plan.narrativeSpine.acts.begin(),
+            plan.narrativeSpine.acts.end(), [&](const auto& act) {
+                return act.sectionName == climax.name;
+            });
+        // A resolution may mention "after the climax" in its function. That
+        // reference must not reclassify the resolution as another peak or
+        // overwrite the measured contrast of the actual climax.
+        const auto declaredClimax = declaredAct != plan.narrativeSpine.acts.end()
+            ? declaredAct->stage == NarrativeStage::Climax
+            : identity.find("climax") != std::string::npos ||
+              identity.find("peak") != std::string::npos ||
+              identity.find("culmin") != std::string::npos;
         if (!declaredClimax || climax.bars < 4 ||
             identity.find("anti-climax") != std::string::npos ||
             identity.find("anticlimax") != std::string::npos) continue;

@@ -7,7 +7,7 @@ const noteKeys = { beat: 'b', duration: 'd', pitch: 'p', velocity: 'v', voice: '
 const controlKeys = { beat: 'b', controller: 'cc', value: 'v', voice: 'r', instrument_id: 'i' };
 const remap = (event, keys) => Object.fromEntries(Object.entries(event).map(([key, value]) => [keys[key] || key, value]));
 const restore = (event, keys) => remap(event, Object.fromEntries(Object.entries(keys).map(([longKey, shortKey]) => [shortKey, longKey])));
-const totals = { cachedPerformanceRequests: 0, validResponses: 0, skippedCompactResponses: 0, notes: 0, controls: 0, originalBytes: 0, normalizedOriginalBytes: 0, compactBytes: 0 };
+const totals = { cachedPerformanceRequests: 0, validResponses: 0, skippedCompactResponses: 0, notes: 0, controls: 0, originalBytes: 0, normalizedOriginalBytes: 0, compactBytes: 0, denseEventBytes: 0, denseSemanticBytes: 0, denseObjectBytes: 0, nonStrictNotes: 0, mismatchedVoiceNotes: 0, unknownOwnerNotes: 0 };
 
 for (const file of readdirSync(dir)) {
   let envelope;
@@ -29,6 +29,31 @@ for (const file of readdirSync(dir)) {
     totals.validResponses++;
     totals.originalBytes += Buffer.byteLength(text);
     totals.normalizedOriginalBytes += Buffer.byteLength(JSON.stringify(score));
+    const exactDense = structuredClone(score);
+    const semanticDense = structuredClone(score);
+    const objectDense = structuredClone(score);
+    const ownerIds = score.covered_instrument_ids || [];
+    for (let index = 0; index < score.performance_score.cells.length; index++) {
+      const cell = score.performance_score.cells[index];
+      exactDense.performance_score.cells[index].notes = (cell.notes || []).map(note =>
+        [note.beat, note.duration, note.pitch, note.velocity, note.voice, note.instrument_id, note.metric_intent].join('|'));
+      exactDense.performance_score.cells[index].controls = (cell.controls || []).map(control =>
+        [control.beat, control.controller, control.value, control.voice, control.instrument_id].join('|'));
+      semanticDense.performance_score.cells[index].notes = (cell.notes || []).map(note => {
+        if (note.metric_intent !== 'strict_grid') totals.nonStrictNotes++;
+        if (!ownerIds.includes(note.instrument_id)) totals.unknownOwnerNotes++;
+        return [note.beat, note.duration, note.pitch, note.velocity, ownerIds.indexOf(note.instrument_id)].join('|');
+      });
+      semanticDense.performance_score.cells[index].controls = (cell.controls || []).map(control =>
+        [control.beat, control.controller, control.value, ownerIds.indexOf(control.instrument_id)].join('|'));
+      objectDense.performance_score.cells[index].notes = (cell.notes || []).map(note =>
+        ({ b: note.beat, d: note.duration, p: note.pitch, v: note.velocity, i: ownerIds.indexOf(note.instrument_id) }));
+      objectDense.performance_score.cells[index].controls = (cell.controls || []).map(control =>
+        ({ b: control.beat, cc: control.controller, v: control.value, i: ownerIds.indexOf(control.instrument_id) }));
+    }
+    totals.denseEventBytes += Buffer.byteLength(JSON.stringify(exactDense));
+    totals.denseSemanticBytes += Buffer.byteLength(JSON.stringify(semanticDense));
+    totals.denseObjectBytes += Buffer.byteLength(JSON.stringify(objectDense));
     for (const cell of score.performance_score.cells) {
       totals.notes += cell.notes?.length || 0;
       totals.controls += cell.controls?.length || 0;
@@ -48,4 +73,7 @@ for (const file of readdirSync(dir)) {
 }
 totals.byteReductionPercent = Number(((1 - totals.compactBytes / totals.originalBytes) * 100).toFixed(1));
 totals.keyOnlyReductionPercent = Number(((1 - totals.compactBytes / totals.normalizedOriginalBytes) * 100).toFixed(1));
+totals.denseExactReductionPercent = Number(((1 - totals.denseEventBytes / totals.normalizedOriginalBytes) * 100).toFixed(1));
+totals.denseSemanticReductionPercent = Number(((1 - totals.denseSemanticBytes / totals.normalizedOriginalBytes) * 100).toFixed(1));
+totals.denseObjectReductionPercent = Number(((1 - totals.denseObjectBytes / totals.normalizedOriginalBytes) * 100).toFixed(1));
 console.log(JSON.stringify(totals, null, 2));

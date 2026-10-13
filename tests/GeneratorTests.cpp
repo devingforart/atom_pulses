@@ -1959,6 +1959,38 @@ void runGeneratorTests() {
     require(auditTonalContract(lowDominantGuideTones, 5, ScaleKind::Major, 4.0,
                               dominantWindow).unintendedHarshOverlaps == 1,
             "Dominant guide tones must still be rejected when voiced too low");
+    Pattern declaredHalfDiminished;
+    declaredHalfDiminished.lengthBeats = 4.0;
+    declaredHalfDiminished.notes = {
+        {0.0, 2.0, 52, 72, 3, VoiceId::HarmonicFoundation}, // E3
+        {0.0, 2.0, 58, 68, 3, VoiceId::HarmonicFoundation}  // Bb3
+    };
+    const std::vector<HarmonicWindow> halfDiminishedWindow{
+        {0.0, 4.0, 4, 4, {4, 7, 10, 2}, HarmonicFunction::Predominant,
+         VoicingStrategy::Open, 0.45, "em7b5", "Em7b5"}
+    };
+    require(auditTonalContract(declaredHalfDiminished, 2, ScaleKind::Minor, 4.0,
+                              halfDiminishedWindow).unintendedHarshOverlaps == 0,
+            "The root/diminished-fifth tritone is part of a declared half-diminished chord");
+    auto lowHalfDiminished = declaredHalfDiminished;
+    for (auto& note : lowHalfDiminished.notes) note.pitch -= 12;
+    require(auditTonalContract(lowHalfDiminished, 2, ScaleKind::Minor, 4.0,
+                              halfDiminishedWindow).unintendedHarshOverlaps == 1,
+            "The same half-diminished tritone remains risky in the bass register");
+    const std::vector<HarmonicWindow> gMinorSixthWindow{
+        {0.0, 4.0, 7, 7, {7, 10, 2, 4}, HarmonicFunction::Colour,
+         VoicingStrategy::Open, 0.48, "gm6", "Gm6"}
+    };
+    auto minorSixthColour = declaredHalfDiminished;
+    minorSixthColour.notes[0].pitch = 58; // Bb3
+    minorSixthColour.notes[1].pitch = 64; // E4
+    require(auditTonalContract(minorSixthColour, 7, ScaleKind::Minor, 4.0,
+                              gMinorSixthWindow).unintendedHarshOverlaps == 0,
+            "The third/sixth upper tritone belongs to a declared minor-sixth chord");
+    for (auto& note : minorSixthColour.notes) note.pitch -= 12;
+    require(auditTonalContract(minorSixthColour, 7, ScaleKind::Minor, 4.0,
+                              gMinorSixthWindow).unintendedHarshOverlaps == 1,
+            "A minor-sixth tritone must not excuse a muddy low-register voicing");
     const std::vector<HarmonicWindow> aFlatNineWindow{
         {0.0, 4.0, 9, 9, {9, 1, 4, 7, 10}, HarmonicFunction::Dominant,
          VoicingStrategy::Open, 0.72, "a7b9", "A7(b9)"}
@@ -2897,6 +2929,21 @@ void runGeneratorTests() {
                 std::find(weakAudit.issues.begin(), weakAudit.issues.end(),
                           "insufficient_ai_phrase_coverage") != weakAudit.issues.end(),
             "A semantic GPT plan without authored phrases must fail the narrative authorship contract");
+
+    Pattern twoIndependentMelodies;
+    twoIndependentMelodies.lengthBeats = 8.0;
+    for (int note = 0; note < 6; ++note) {
+        twoIndependentMelodies.notes.push_back({static_cast<double>(note), .25,
+            60 + note, 84, 2, VoiceId::Lead, 1, false, NoteOrigin::AiAuthored, 1});
+        twoIndependentMelodies.notes.push_back({note + .5, .25,
+            84 + note, 78, 2, VoiceId::Lead, 2, false, NoteOrigin::AiAuthored, 2});
+    }
+    const auto independentMelodyAudit = NarrativeScoreGate::audit(
+        twoIndependentMelodies, weakNarrativePlan);
+    require(independentMelodyAudit.melodicIntervals == 10 &&
+            independentMelodyAudit.melodicStepwiseRatio > .99,
+        "Melodic voice-leading must be measured within each instrument, not "
+        "between interleaved lead tracks");
 
     Pattern falseLabelMemory;
     falseLabelMemory.lengthBeats = 32.0;
@@ -4065,6 +4112,41 @@ void runGeneratorTests() {
     }
     require(deepFloorReport.densityNotesRemoved == 0 && deepFloorReport.floorNotesCreated == 24,
             "Deep-floor completion must add harmonic depth without deleting authored notes");
+
+    SongPlan missingFloor;
+    missingFloor.totalBars = 16;
+    missingFloor.beatsPerBar = 4.0;
+    missingFloor.sections.push_back({"Opening", "opening", "tonic", "state", 0, 8,
+                                     .5, .4, .5});
+    missingFloor.sections.push_back({"Development", "development", "away", "evolve",
+                                     8, 8, .6, .7, .5});
+    InstrumentAssignment missingFloorOwner;
+    missingFloorOwner.id = "chord_body";
+    missingFloorOwner.instrumentId = "analog_pad";
+    missingFloorOwner.name = "Chord body";
+    missingFloorOwner.sourceVoice = VoiceId::HarmonicFoundation;
+    missingFloorOwner.role = "primary_chord_bed";
+    missingFloorOwner.orchestralFunction = "foundation";
+    missingFloorOwner.contentLaneId = missingFloorOwner.id;
+    missingFloor.instruments.push_back(missingFloorOwner);
+    Pattern missingFloorMidi;
+    missingFloorMidi.lengthBeats = 64.0;
+    for (auto bar = 0; bar < 8; ++bar)
+        missingFloorMidi.notes.push_back({bar * 4.0, 3.9, 60, 80, 1,
+            VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
+    const auto missingFloorReview = SelectiveRepair::reviewFinalScore(
+        missingFloor, missingFloorMidi);
+    require(!missingFloorReview.ready &&
+            std::find(missingFloorReview.sectionIndices.begin(),
+                      missingFloorReview.sectionIndices.end(), 1U) !=
+                missingFloorReview.sectionIndices.end(),
+            "The final MIDI review must expose the actual scene needing an AI harmonic revision");
+    auto resolutionReference = missingFloor;
+    resolutionReference.sections[1].name = "Resolution";
+    resolutionReference.sections[1].function = "The answer arrives after the climax";
+    require(SelectiveRepair::reviewFinalScore(
+                resolutionReference, missingFloorMidi).climaxContrast == 1.0,
+            "A resolution mentioning an earlier climax must not overwrite the actual climax contrast");
 
     SongPlan largeCast;
     largeCast.totalBars = 96;

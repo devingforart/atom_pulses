@@ -1,0 +1,253 @@
+{
+  "schema_version": 1,
+  "technical_ready": true,
+  "narrative_ready": true,
+  "motif_closure": 0.6975,
+  "tonal_closure": 1.0,
+  "register_release": 0.205590420081966,
+  "density_release": 0.625,
+  "resolution_score": 0.694118084016393,
+  "causal_narrative": 1.0,
+  "soundscape_ready": false,
+  "declared_layers": 8,
+  "meaningful_layers": 6,
+  "harmonic_floor_coverage": 0.943181818181818,
+  "harmonic_conflicts": 22,
+  "low_register_conflicts": 0,
+  "unsupported_chromatic": 0,
+  "invalid_sustains": 1,
+  "narrative_issues": [
+    "scalar_melody_without_speech"
+  ],
+  "soundscape_issues": [
+    "soundscape_voices_are_only_token_tracks",
+    "electronic_layers_repeat_without_evolution"
+  ],
+  "tonal_issue_examples": [
+    {
+      "kind": "invalid_sustain",
+      "beat": 48.0,
+      "overlap_beats": 0.0,
+      "pitch": 65,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 131.5,
+      "overlap_beats": 0.0,
+      "pitch": 67,
+      "other_pitch": 0,
+      "part_id": 1,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 262.0,
+      "overlap_beats": 0.0,
+      "pitch": 45,
+      "other_pitch": 0,
+      "part_id": 3,
+      "other_part_id": 0
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 118.75,
+      "overlap_beats": 0.25,
+      "pitch": 70,
+      "other_pitch": 45,
+      "part_id": 7,
+      "other_part_id": 1
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 118.75,
+      "overlap_beats": 0.25,
+      "pitch": 70,
+      "other_pitch": 45,
+      "part_id": 7,
+      "other_part_id": 3
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 129.0,
+      "overlap_beats": 0.25,
+      "pitch": 40,
+      "other_pitch": 53,
+      "part_id": 3,
+      "other_part_id": 1
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 131.5,
+      "overlap_beats": 0.25,
+      "pitch": 40,
+      "other_pitch": 53,
+      "part_id": 3,
+      "other_part_id": 4
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 131.5,
+      "overlap_beats": 0.25,
+      "pitch": 77,
+      "other_pitch": 40,
+      "part_id": 5,
+      "other_part_id": 3
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 133.0,
+      "overlap_beats": 0.25,
+      "pitch": 65,
+      "other_pitch": 40,
+      "part_id": 7,
+      "other_part_id": 3
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 133.75,
+      "overlap_beats": 0.25,
+      "pitch": 40,
+      "other_pitch": 53,
+      "part_id": 3,
+      "other_part_id": 1
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 135.25,
+      "overlap_beats": 0.25,
+      "pitch": 77,
+      "other_pitch": 64,
+      "part_id": 5,
+      "other_part_id": 1
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 203.0,
+      "overlap_beats": 0.25,
+      "pitch": 43,
+      "other_pitch": 85,
+      "part_id": 3,
+      "other_part_id": 5
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 203.0,
+      "overlap_beats": 0.25,
+      "pitch": 70,
+      "other_pitch": 45,
+      "part_id": 7,
+      "other_part_id": 1
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 203.75,
+      "overlap_beats": 0.25,
+      "pitch": 82,
+      "other_pitch": 45,
+      "part_id": 5,
+      "other_part_id": 1
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 203.0,
+      "overlap_beats": 0.25,
+      "pitch": 70,
+      "other_pitch": 52,
+      "part_id": 7,
+      "other_part_id": 1
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 203.75,
+      "overlap_beats": 0.25,
+      "pitch": 82,
+      "other_pitch": 52,
+      "part_id": 5,
+      "other_part_id": 1
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 203.0,
+      "overlap_beats": 0.25,
+      "pitch": 73,
+      "other_pitch": 43,
+      "part_id": 8,
+      "other_part_id": 3
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 203.75,
+      "overlap_beats": 0.25,
+      "pitch": 82,
+      "other_pitch": 45,
+      "part_id": 5,
+      "other_part_id": 3
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 204.5,
+      "overlap_beats": 0.25,
+      "pitch": 70,
+      "other_pitch": 45,
+      "part_id": 8,
+      "other_part_id": 1
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 204.5,
+      "overlap_beats": 0.25,
+      "pitch": 70,
+      "other_pitch": 52,
+      "part_id": 8,
+      "other_part_id": 3
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 205.5,
+      "overlap_beats": 0.25,
+      "pitch": 70,
+      "other_pitch": 45,
+      "part_id": 6,
+      "other_part_id": 3
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 207.0,
+      "overlap_beats": 0.25,
+      "pitch": 70,
+      "other_pitch": 45,
+      "part_id": 8,
+      "other_part_id": 1
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 207.0,
+      "overlap_beats": 0.25,
+      "pitch": 70,
+      "other_pitch": 52,
+      "part_id": 8,
+      "other_part_id": 1
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 207.0,
+      "overlap_beats": 0.25,
+      "pitch": 70,
+      "other_pitch": 40,
+      "part_id": 8,
+      "other_part_id": 3
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 235.25,
+      "overlap_beats": 0.25,
+      "pitch": 81,
+      "other_pitch": 82,
+      "part_id": 5,
+      "other_part_id": 5
+    }
+  ]
+}

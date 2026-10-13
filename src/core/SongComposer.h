@@ -149,6 +149,9 @@ struct SongPlan {
     // cast is authoritative per voice: missing ownership is critic feedback, not permission
     // to inject generic instruments behind the composer's back.
     bool instrumentCastAuthored{};
+    // Isolated AI-only trial: normalization may refine authored assignments,
+    // but must not append generic instruments beyond the model's cast contract.
+    bool preserveAuthoredCast{};
     // Local A/B mode: render only AI-authored performance cells and their declared
     // placements. Auditors may report defects but must not compose or reshape MIDI.
     bool aiSovereign{};

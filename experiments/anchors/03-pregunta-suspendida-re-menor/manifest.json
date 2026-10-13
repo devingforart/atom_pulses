@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "render_mode": "ai_sovereign",
+  "ai_authored_or_declared_transform_notes": 1069,
+  "all_midi_notes": 1069,
+  "note_provenance": {
+    "direct_ai": 1069,
+    "reused_ai": 0,
+    "transformed_ai": 0,
+    "reused_transformed_ai": 0,
+    "other": 0
+  },
+  "comparisonFile": "reference-standard.mid",
+  "comparisonNotes": 1034,
+  "engineVersion": "1.0.0",
+  "title": "Pregunta suspendida, Re menor",
+  "key": "D minor",
+  "bpm": 120.0,
+  "bars": 88,
+  "fullFile": "full-song.mid",
+  "planFile": "composition-plan.json",
+  "musicalAuditFile": "musical-audit.json",
+  "tracks": [
+    {
+      "filename": "track-01.mid",
+      "name": "Piano — lecho armónico",
+      "notes": 322
+    },
+    {
+      "filename": "track-02.mid",
+      "name": "Viola — voz interior sostenida",
+      "notes": 115
+    },
+    {
+      "filename": "track-03.mid",
+      "name": "Violonchelo — bajo afinado móvil",
+      "notes": 170
+    },
+    {
+      "filename": "track-04.mid",
+      "name": "Trompa — halo sostenido",
+      "notes": 52
+    },
+    {
+      "filename": "track-05.mid",
+      "name": "Violín I — protagonista",
+      "notes": 189
+    },
+    {
+      "filename": "track-06.mid",
+      "name": "Violín II — respuesta derivada",
+      "notes": 78
+    },
+    {
+      "filename": "track-07.mid",
+      "name": "Clarinete — puente cromático",
+      "notes": 59
+    },
+    {
+      "filename": "track-08.mid",
+      "name": "Arpa — pulso armónico",
+      "notes": 84
+    }
+  ],
+  "editorial": {
+    "technical_ready": true,
+    "legacy_production_ready": false,
+    "creative_ready": false,
+    "narrative_ready": true,
+    "soundscape_ready": false,
+    "track_viability_ready": true,
+    "resolution_score": 0.694118084016393,
+    "dialogue_lines": 3,
+    "underfilled_bars": 0,
+    "ai_authored_note_ratio": 1.0,
+    "musical_review_required": true,
+    "harmonic_conflicts": 22,
+    "low_register_conflicts": 0
+  }
+}

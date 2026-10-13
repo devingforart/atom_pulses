@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "technical_ready": true,
+  "narrative_ready": true,
+  "motif_closure": 0.605,
+  "tonal_closure": 1.0,
+  "register_release": 1.0,
+  "density_release": 0.125,
+  "resolution_score": 0.75025,
+  "causal_narrative": 1.0,
+  "soundscape_ready": true,
+  "declared_layers": 8,
+  "meaningful_layers": 8,
+  "harmonic_floor_coverage": 1.0,
+  "harmonic_conflicts": 5,
+  "low_register_conflicts": 0,
+  "unsupported_chromatic": 1,
+  "invalid_sustains": 0,
+  "narrative_issues": [
+    "disconnected_melody_without_voice_leading"
+  ],
+  "soundscape_issues": [],
+  "tonal_issue_examples": [
+    {
+      "kind": "strong_non_chord",
+      "beat": 82.75,
+      "overlap_beats": 0.0,
+      "pitch": 77,
+      "other_pitch": 0,
+      "part_id": 5,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 85.0,
+      "overlap_beats": 0.0,
+      "pitch": 83,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 102.0,
+      "overlap_beats": 0.0,
+      "pitch": 91,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 35.25,
+      "overlap_beats": 0.25,
+      "pitch": 64,
+      "other_pitch": 65,
+      "part_id": 1,
+      "other_part_id": 4
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 81.5,
+      "overlap_beats": 0.25,
+      "pitch": 77,
+      "other_pitch": 40,
+      "part_id": 6,
+      "other_part_id": 2
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 82.75,
+      "overlap_beats": 0.25,
+      "pitch": 77,
+      "other_pitch": 40,
+      "part_id": 5,
+      "other_part_id": 2
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 82.75,
+      "overlap_beats": 0.25,
+      "pitch": 77,
+      "other_pitch": 76,
+      "part_id": 5,
+      "other_part_id": 6
+    },
+    {
+      "kind": "harsh_overlap",
+      "beat": 95.5,
+      "overlap_beats": 0.25,
+      "pitch": 77,
+      "other_pitch": 40,
+      "part_id": 5,
+      "other_part_id": 3
+    }
+  ]
+}

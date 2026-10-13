@@ -1443,6 +1443,12 @@ int SongComposer::phraseAlignedBars(int rawBars) noexcept {
 }
 
 void SongComposer::normalizePlan(SongPlan& plan) {
+    const auto closedAiCast = plan.preserveAuthoredCast &&
+        plan.instrumentCastAuthored && !plan.instruments.empty();
+    std::set<std::string> authoredInstrumentIds;
+    if (closedAiCast)
+        for (const auto& instrument : plan.instruments)
+            authoredInstrumentIds.insert(instrument.id);
     plan.targetSeconds = std::clamp(plan.targetSeconds, 30, 1800);
     plan.bpm = std::clamp(plan.bpm, 30.0, 300.0);
     plan.beatsPerBar = std::clamp(plan.beatsPerBar, 2.0, 12.0);
@@ -1602,6 +1608,11 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     // normalizing the concrete instrument assignments.
     ElectronicCompositionFabric::normalizePlan(plan);
     if (plan.instruments.size() > 64) plan.instruments.resize(64);
+    if (closedAiCast)
+        plan.instruments.erase(std::remove_if(plan.instruments.begin(),
+            plan.instruments.end(), [&](const auto& instrument) {
+                return !authoredInstrumentIds.contains(instrument.id);
+            }), plan.instruments.end());
     if (plan.timbrePalette.description.empty())
         plan.timbrePalette.description = "coherent, dimensional and natural";
     if (plan.timbrePalette.material.empty())
@@ -1727,7 +1738,7 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     const auto electronicCast = plan.productionLanguage.electronicIntent >= 0.58 &&
         (plan.productionLanguage.domain == ProductionDomain::ClubElectronic ||
          plan.productionLanguage.domain == ProductionDomain::Hybrid);
-    if (!electronicCast) {
+    if (!electronicCast && !closedAiCast) {
         if (!noPercussionIntent) ensureDepartment(ScoreDepartment::Rhythm, 3);
         const auto longForm = plan.totalBars >= 96 && plan.requestedCastCount == 0;
         ensureDepartment(ScoreDepartment::Harmony,
@@ -1736,7 +1747,8 @@ void SongComposer::normalizePlan(SongPlan& plan) {
             longForm ? 6 : (plan.orchestrationLanguage.familyDialogue >= 0.62 ? 4 : 3));
     }
     const auto voiceDefaultsForInstruments = defaultVoicePlan();
-    const auto closedAuthoredCast = electronicCast && plan.instrumentCastAuthored;
+    const auto closedAuthoredCast = plan.instrumentCastAuthored &&
+        (electronicCast || closedAiCast);
     for (auto& instrument : plan.instruments)
         if (std::none_of(plan.voices.begin(), plan.voices.end(), [&](const auto& voice) {
                 return voice.id == instrument.sourceVoice;

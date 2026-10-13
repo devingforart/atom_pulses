@@ -53,6 +53,7 @@ struct AiResumeNote {
 struct AiSongResume {
     juce::String blueprintJson;
     bool blueprintOnly{};
+    std::size_t completedUnits{};
     std::vector<std::string> castIds;
     std::vector<std::pair<int, int>> sections;
     std::vector<AiResumeNote> notes;
@@ -73,6 +74,11 @@ public:
         const SongPlan&, const std::vector<std::size_t>& assignedInstruments);
     [[nodiscard]] static juce::String directWindowSchemaFor(
         const SongPlan&, const std::vector<std::size_t>& assignedInstruments);
+    [[nodiscard]] static juce::String directWindowPromptFor(
+        const juce::String& direction, const SongPlan&, const Pattern& accepted,
+        const std::vector<std::size_t>& assignedInstruments,
+        std::size_t sectionIndex, int firstBar, int bars,
+        const juce::String& feedback = {}, bool focusedRevision = false);
     [[nodiscard]] static bool parseDirectWindowJson(
         const juce::String&, const SongPlan&,
         const std::vector<std::size_t>& assignedInstruments,
@@ -91,6 +97,8 @@ public:
     [[nodiscard]] static std::vector<std::vector<std::size_t>> performanceWritingBlocks(
         const SongPlan&, bool localEditorial, bool singleOwner = false);
     [[nodiscard]] static bool castManifestUsesExactCount(std::size_t instruments) noexcept;
+    [[nodiscard]] static bool castManifestHasRange(std::size_t maximumInstruments,
+                                                   std::size_t expectedMinimum) noexcept;
     [[nodiscard]] static std::size_t requestedInstrumentCount(const juce::String& direction) noexcept;
     static void applyExplicitInstrumentCommitments(SongPlan&,
                                                    const juce::String& creativeDirection);

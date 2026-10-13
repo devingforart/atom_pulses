@@ -259,7 +259,8 @@ juce::var musicalAuditFor(const pulso::Pattern& song,
 }
 
 void writeProvisionalMidi(const juce::File& output, const pulso::SongPlan& plan,
-                          std::size_t checkpointNumber, bool diagnostic, bool proofMode) {
+                          std::size_t checkpointNumber, std::size_t completedUnits,
+                          bool diagnostic, bool proofMode) {
     if (plan.performanceScore.empty() || plan.sections.empty()) return;
     pulso::Pattern song;
     song.lengthBeats = plan.totalBars * plan.beatsPerBar;
@@ -308,6 +309,7 @@ void writeProvisionalMidi(const juce::File& output, const pulso::SongPlan& plan,
     auto* checkpoint = new juce::DynamicObject();
     checkpoint->setProperty("file", filename);
     checkpoint->setProperty("provisional", true);
+    checkpoint->setProperty("completed_units", static_cast<int>(completedUnits));
     checkpoint->setProperty("notes", static_cast<int>(song.notes.size()));
     checkpoint->setProperty("parts", static_cast<int>(std::count_if(
         song.parts.begin(), song.parts.end(), [&](const auto& part) {
@@ -344,6 +346,48 @@ void writeProvisionalMidi(const juce::File& output, const pulso::SongPlan& plan,
         if (output.getChildFile(auditFile).replaceWithText(
                 juce::JSON::toString(proofAuditFor(gate), false), false, false, "\n"))
             checkpoint->setProperty("auditFile", auditFile);
+    }
+    if (!diagnostic) {
+        // A Cloud process can exhaust its request budget after many accepted
+        // windows. Persist the exact AI-authored notes alongside the MIDI so a
+        // bounded retry can continue this same work instead of paying for a
+        // second composition. Diagnostic/rejected passages are never resumable.
+        const auto blueprint = output.getChildFile("accepted-blueprint.json");
+        if (blueprint.existsAsFile() && blueprint.getSize() <= 2 * 1024 * 1024) {
+            auto* resume = new juce::DynamicObject();
+            resume->setProperty("schema_version", 2);
+            resume->setProperty("blueprint_json", blueprint.loadFileAsString());
+            resume->setProperty("completed_units", static_cast<int>(completedUnits));
+            juce::Array<juce::var> cast;
+            for (const auto& instrument : plan.instruments)
+                cast.add(juce::String::fromUTF8(instrument.id.c_str()));
+            resume->setProperty("cast_ids", cast);
+            juce::Array<juce::var> sections;
+            for (const auto& section : plan.sections) {
+                auto* item = new juce::DynamicObject();
+                item->setProperty("start_bar", section.startBar);
+                item->setProperty("bars", section.bars);
+                sections.add(juce::var(item));
+            }
+            resume->setProperty("sections", sections);
+            juce::Array<juce::var> notes;
+            for (const auto& note : song.notes) {
+                if (note.partId == 0 || note.partId > plan.instruments.size()) continue;
+                auto* item = new juce::DynamicObject();
+                item->setProperty("instrument_id", juce::String::fromUTF8(
+                    plan.instruments[note.partId - 1].id.c_str()));
+                item->setProperty("start_beat", note.startBeat);
+                item->setProperty("duration_beats", note.durationBeats);
+                item->setProperty("pitch", note.pitch);
+                item->setProperty("velocity", note.velocity);
+                notes.add(juce::var(item));
+            }
+            if (notes.size() == static_cast<int>(song.notes.size()) &&
+                output.getChildFile("resume-score.json").replaceWithText(
+                    juce::JSON::toString(juce::var(resume), false),
+                    false, false, "\n"))
+                checkpoint->setProperty("resumeFile", "resume-score.json");
+        }
     }
     output.getChildFile(diagnostic ? "diagnostic.json" : "checkpoint.json").replaceWithText(
         juce::JSON::toString(juce::var(checkpoint), false), false, false, "\n");
@@ -415,6 +459,8 @@ int main(int argc, char** argv) {
             return fail(output, "AI resume blueprint is too large");
         request.resume.blueprintJson = blueprintJson;
         request.resume.blueprintOnly = blueprintOnly;
+        request.resume.completedUnits = static_cast<std::size_t>(std::max(0,
+            static_cast<int>(resumeObject->getProperty("completed_units"))));
         if (cast == nullptr || sections == nullptr || notes == nullptr ||
             cast->isEmpty() ||
             (blueprintOnly ? (blueprintJson.isEmpty() || !notes->isEmpty()) :
@@ -453,8 +499,9 @@ int main(int argc, char** argv) {
             writeStatus(output, "running", stage, static_cast<int>(update.completed),
                         static_cast<int>(update.total), update.attempt, update.detail);
         }, [&output, &checkpointNumber, proofMode](const pulso::SongPlan& partial,
-                                        std::size_t, bool, bool diagnostic) {
-            writeProvisionalMidi(output, partial, ++checkpointNumber, diagnostic, proofMode);
+                                        std::size_t completedUnits, bool, bool diagnostic) {
+            writeProvisionalMidi(output, partial, ++checkpointNumber,
+                completedUnits, diagnostic, proofMode);
         }, [&output](const juce::String& exactBlueprint) {
             if (exactBlueprint.isNotEmpty() &&
                 exactBlueprint.getNumBytesAsUTF8() <= 2 * 1024 * 1024)

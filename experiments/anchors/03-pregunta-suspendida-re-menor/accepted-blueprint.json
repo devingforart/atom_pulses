@@ -1,0 +1,1169 @@
+{
+  "chord_palette": [
+    {
+      "id": "i_Dm9",
+      "pitch_classes": [
+        2,
+        5,
+        9,
+        0,
+        4
+      ],
+      "bass_pitch_class": 2,
+      "root_pitch_class": 2,
+      "function": "tonic",
+      "tension": 0.18,
+      "label": "i — Dm(add9)",
+      "voicing": "open"
+    },
+    {
+      "id": "i6_Dm9_F",
+      "pitch_classes": [
+        2,
+        5,
+        9,
+        0,
+        4
+      ],
+      "bass_pitch_class": 5,
+      "root_pitch_class": 2,
+      "function": "tonic",
+      "tension": 0.24,
+      "label": "i6 — Dm(add9)/F",
+      "voicing": "open"
+    },
+    {
+      "id": "iv_Gm9",
+      "pitch_classes": [
+        7,
+        10,
+        2,
+        5,
+        9
+      ],
+      "bass_pitch_class": 7,
+      "root_pitch_class": 7,
+      "function": "predominant",
+      "tension": 0.42,
+      "label": "iv — Gm9",
+      "voicing": "open"
+    },
+    {
+      "id": "VI_Bbmaj7",
+      "pitch_classes": [
+        10,
+        2,
+        5,
+        9
+      ],
+      "bass_pitch_class": 10,
+      "root_pitch_class": 10,
+      "function": "colour",
+      "tension": 0.3,
+      "label": "VI — B♭maj7",
+      "voicing": "mixed"
+    },
+    {
+      "id": "iiø7_E",
+      "pitch_classes": [
+        4,
+        7,
+        10,
+        2
+      ],
+      "bass_pitch_class": 4,
+      "root_pitch_class": 4,
+      "function": "predominant",
+      "tension": 0.53,
+      "label": "iiø7 — Eø7",
+      "voicing": "close"
+    },
+    {
+      "id": "V7sus4_A",
+      "pitch_classes": [
+        9,
+        2,
+        4,
+        7
+      ],
+      "bass_pitch_class": 9,
+      "root_pitch_class": 9,
+      "function": "dominant",
+      "tension": 0.66,
+      "label": "V7sus4 — A7sus4",
+      "voicing": "open"
+    },
+    {
+      "id": "V7b9_A",
+      "pitch_classes": [
+        9,
+        1,
+        4,
+        7,
+        10
+      ],
+      "bass_pitch_class": 9,
+      "root_pitch_class": 9,
+      "function": "dominant",
+      "tension": 0.83,
+      "label": "V7♭9 — A7(♭9)",
+      "voicing": "close"
+    },
+    {
+      "id": "V_iv_D7",
+      "pitch_classes": [
+        2,
+        6,
+        9,
+        0
+      ],
+      "bass_pitch_class": 2,
+      "root_pitch_class": 2,
+      "function": "chromatic",
+      "tension": 0.69,
+      "label": "V/iv — D7",
+      "voicing": "shell"
+    },
+    {
+      "id": "bII_Ebmaj7",
+      "pitch_classes": [
+        3,
+        7,
+        10,
+        2
+      ],
+      "bass_pitch_class": 3,
+      "root_pitch_class": 3,
+      "function": "chromatic",
+      "tension": 0.74,
+      "label": "♭IImaj7 — E♭maj7",
+      "voicing": "open"
+    }
+  ],
+  "key": "D minor",
+  "summary": "Pieza de cámara tonal sin batería ni percusión: un motivo ascendente incompleto plantea su pregunta sobre dominante suspendida, recibe una primera respuesta cadencial, se desestabiliza mediante color cromático controlado y alcanza un clímax contrapuntístico antes de una resolución ampliada en Re menor. Nota métrica: 88 compases de 4/4 a 120 BPM equivalen exactamente a 176 segundos de música medida; 180 segundos no es compatible matemáticamente con esas tres condiciones simultáneas.",
+  "production_language": {
+    "orchestral_allowance": 0.72,
+    "description": "Lenguaje de cámara tonal de respiración amplia: impulso derivado del bajo afinado, cambios armónicos y relevos entre líneas, nunca de percusión.",
+    "dj_utility": 0.02,
+    "low_end_interlock": 0.63,
+    "hook_economy": 0.72,
+    "domain": "orchestral",
+    "spectral_restraint": 0.76,
+    "club_focus": 0.0,
+    "groove_evolution": 0.48,
+    "automation_motion": 0.26,
+    "electronic_intent": 0.08
+  },
+  "root_pitch_class": 2,
+  "sections": [
+    {
+      "motif_treatment": "",
+      "kick_state": "muted",
+      "rhythm_motif_id": "",
+      "tension": 0.34,
+      "harmonic_direction": "La tónica expone el ancla D; la llegada a iv abre la pregunta y V7sus4 evita deliberadamente la tercera definitoria antes de quedar suspendida.",
+      "active_voices": [
+        "movement_bass",
+        "harmonic_foundation",
+        "harmonic_upper",
+        "lead",
+        "atmosphere"
+      ],
+      "kick_continuity": "free",
+      "percussion_density": 0,
+      "harmonic_events": [
+        {
+          "purpose": "Ancla tonal y presentación del protagonista.",
+          "beat_offset": 0,
+          "bar_offset": 0,
+          "emphasis": 0.62,
+          "chord_id": "i_Dm9"
+        },
+        {
+          "purpose": "Primer desplazamiento de color sin abandonar el centro.",
+          "beat_offset": 0,
+          "bar_offset": 4,
+          "emphasis": 0.55,
+          "chord_id": "iv_Gm9"
+        },
+        {
+          "purpose": "La inversión cambia la relación del bajo y prolonga D como memoria tonal.",
+          "beat_offset": 0,
+          "bar_offset": 8,
+          "emphasis": 0.48,
+          "chord_id": "i6_Dm9_F"
+        },
+        {
+          "purpose": "Pregunta armónica audible: dominante sin tercera conclusiva.",
+          "beat_offset": 0,
+          "bar_offset": 12,
+          "emphasis": 0.77,
+          "chord_id": "V7sus4_A"
+        }
+      ],
+      "motif_variant": 0,
+      "rhythmic_syncopation": 0.35,
+      "mode_hint": "minor",
+      "name": "I. Enunciado suspendido",
+      "swing": 0.0,
+      "energy": 0.31,
+      "function": "Establecimiento: presentar la identidad melódica y dejar su última respiración sin respuesta.",
+      "bars": 16,
+      "tonal_center_pitch_class": 2,
+      "density": 0.28,
+      "rhythm_mutations": [],
+      "rhythm_gestures": []
+    },
+    {
+      "motif_treatment": "",
+      "kick_state": "muted",
+      "rhythm_motif_id": "",
+      "tension": 0.48,
+      "harmonic_direction": "La dominante suspendida previa resuelve explícitamente en i; VI e iv ensanchan la frase antes de V7♭9→i, primera respuesta cadencial completa.",
+      "active_voices": [
+        "movement_bass",
+        "harmonic_foundation",
+        "harmonic_upper",
+        "lead",
+        "countermelody",
+        "atmosphere"
+      ],
+      "kick_continuity": "free",
+      "percussion_density": 0,
+      "harmonic_events": [
+        {
+          "purpose": "Respuesta directa a la pregunta suspendida de la sección anterior.",
+          "beat_offset": 0,
+          "bar_offset": 0,
+          "emphasis": 0.84,
+          "chord_id": "i_Dm9"
+        },
+        {
+          "purpose": "Apertura lírica que conserva D como nota compartida.",
+          "beat_offset": 0,
+          "bar_offset": 4,
+          "emphasis": 0.49,
+          "chord_id": "VI_Bbmaj7"
+        },
+        {
+          "purpose": "Preparación funcional del retorno.",
+          "beat_offset": 0,
+          "bar_offset": 8,
+          "emphasis": 0.57,
+          "chord_id": "iv_Gm9"
+        },
+        {
+          "purpose": "Dominante con C♯→D y B♭→A como resoluciones dirigidas.",
+          "beat_offset": 0,
+          "bar_offset": 12,
+          "emphasis": 0.82,
+          "chord_id": "V7b9_A"
+        },
+        {
+          "purpose": "Respuesta cadencial audible y asentamiento del motivo.",
+          "beat_offset": 0,
+          "bar_offset": 14,
+          "emphasis": 0.88,
+          "chord_id": "i_Dm9"
+        }
+      ],
+      "motif_variant": 0,
+      "rhythmic_syncopation": 0.44,
+      "mode_hint": "minor",
+      "name": "II. Respuesta y diálogo",
+      "swing": 0.0,
+      "energy": 0.49,
+      "function": "Desarrollo: confirmar que la pregunta tiene respuesta y abrir espacio para réplicas contrapuntísticas.",
+      "bars": 18,
+      "tonal_center_pitch_class": 2,
+      "density": 0.46,
+      "rhythm_mutations": [],
+      "rhythm_gestures": []
+    },
+    {
+      "motif_treatment": "",
+      "kick_state": "muted",
+      "rhythm_motif_id": "",
+      "tension": 0.69,
+      "harmonic_direction": "Un pedal de D transforma su significado mediante bajo e inversión; V/iv conduce F♯→G, y el único ♭II cromático resuelve inmediatamente E♭→D en la tónica.",
+      "active_voices": [
+        "movement_bass",
+        "harmonic_foundation",
+        "harmonic_upper",
+        "lead",
+        "countermelody",
+        "atmosphere",
+        "transitions"
+      ],
+      "kick_continuity": "free",
+      "percussion_density": 0,
+      "harmonic_events": [
+        {
+          "purpose": "Retorno tonal deliberadamente menos estable tras el diálogo.",
+          "beat_offset": 0,
+          "bar_offset": 0,
+          "emphasis": 0.55,
+          "chord_id": "i_Dm9"
+        },
+        {
+          "purpose": "Dominante secundaria: F♯ queda obligado a ascender por semitono.",
+          "beat_offset": 0,
+          "bar_offset": 4,
+          "emphasis": 0.73,
+          "chord_id": "V_iv_D7"
+        },
+        {
+          "purpose": "Resolución de F♯→G y desplazamiento momentáneo hacia iv.",
+          "beat_offset": 0,
+          "bar_offset": 6,
+          "emphasis": 0.69,
+          "chord_id": "iv_Gm9"
+        },
+        {
+          "purpose": "Contraste cromático: E♭ es la fricción exterior del arco.",
+          "beat_offset": 0,
+          "bar_offset": 10,
+          "emphasis": 0.79,
+          "chord_id": "bII_Ebmaj7"
+        },
+        {
+          "purpose": "Resolución inmediata de E♭→D; se recupera el ancla sin clausurar aún el relato.",
+          "beat_offset": 0,
+          "bar_offset": 12,
+          "emphasis": 0.85,
+          "chord_id": "i_Dm9"
+        },
+        {
+          "purpose": "Nueva presión dominante que deja el material listo para transformación.",
+          "beat_offset": 0,
+          "bar_offset": 15,
+          "emphasis": 0.82,
+          "chord_id": "V7b9_A"
+        }
+      ],
+      "motif_variant": 0,
+      "rhythmic_syncopation": 0.58,
+      "mode_hint": "minor",
+      "name": "III. Desvío y transformación",
+      "swing": 0.0,
+      "energy": 0.68,
+      "function": "Contraste: poner a prueba la identidad mediante predominantes y color cromático con resoluciones obligadas.",
+      "bars": 18,
+      "tonal_center_pitch_class": 2,
+      "density": 0.61,
+      "rhythm_mutations": [],
+      "rhythm_gestures": []
+    },
+    {
+      "motif_treatment": "",
+      "kick_state": "muted",
+      "rhythm_motif_id": "",
+      "tension": 0.91,
+      "harmonic_direction": "La respuesta se vuelve más urgente: i→iv se intensifica con V/iv→iv, iiø7 concentra la preparación y V7♭9 descarga por fin en i en el registro dramático máximo.",
+      "active_voices": [
+        "movement_bass",
+        "harmonic_foundation",
+        "harmonic_pulse",
+        "harmonic_upper",
+        "lead",
+        "countermelody",
+        "atmosphere",
+        "transitions"
+      ],
+      "kick_continuity": "free",
+      "percussion_density": 0,
+      "harmonic_events": [
+        {
+          "purpose": "Entrada del clímax sobre el centro recuperado.",
+          "beat_offset": 0,
+          "bar_offset": 0,
+          "emphasis": 0.78,
+          "chord_id": "i_Dm9"
+        },
+        {
+          "purpose": "Expansión predominante que convoca la consecuencia de todo el recorrido.",
+          "beat_offset": 0,
+          "bar_offset": 4,
+          "emphasis": 0.82,
+          "chord_id": "iv_Gm9"
+        },
+        {
+          "purpose": "Reactivación cromática funcional; F♯ reclama G.",
+          "beat_offset": 0,
+          "bar_offset": 7,
+          "emphasis": 0.9,
+          "chord_id": "V_iv_D7"
+        },
+        {
+          "purpose": "Resolución inmediata y máxima carga contrapuntística sobre iv.",
+          "beat_offset": 0,
+          "bar_offset": 8,
+          "emphasis": 0.93,
+          "chord_id": "iv_Gm9"
+        },
+        {
+          "purpose": "Compresión pre-dominante hacia la cadencia decisiva.",
+          "beat_offset": 0,
+          "bar_offset": 12,
+          "emphasis": 0.91,
+          "chord_id": "iiø7_E"
+        },
+        {
+          "purpose": "Punto de máxima tensión: C♯ y B♭ contienen las resoluciones finales.",
+          "beat_offset": 0,
+          "bar_offset": 15,
+          "emphasis": 1.0,
+          "chord_id": "V7b9_A"
+        },
+        {
+          "purpose": "Descarga inicial, aún no reposo definitivo.",
+          "beat_offset": 0,
+          "bar_offset": 17,
+          "emphasis": 0.97,
+          "chord_id": "i_Dm9"
+        }
+      ],
+      "motif_variant": 0,
+      "rhythmic_syncopation": 0.64,
+      "mode_hint": "minor",
+      "name": "IV. Clímax: la respuesta afirmada",
+      "swing": 0.0,
+      "energy": 0.96,
+      "function": "Clímax: la respuesta melódica y su contrapunto coinciden con la cadencia más fuerte y la mayor amplitud registral.",
+      "bars": 20,
+      "tonal_center_pitch_class": 2,
+      "density": 0.82,
+      "rhythm_mutations": [],
+      "rhythm_gestures": []
+    },
+    {
+      "motif_treatment": "",
+      "kick_state": "muted",
+      "rhythm_motif_id": "",
+      "tension": 0.2,
+      "harmonic_direction": "La energía cede sin perder D: VI e iv recuerdan el trayecto, V7♭9 resuelve una última vez y la tónica final permanece suficiente tiempo para que la respuesta sea consecuencia, no corte.",
+      "active_voices": [
+        "movement_bass",
+        "harmonic_foundation",
+        "harmonic_upper",
+        "lead",
+        "countermelody",
+        "atmosphere"
+      ],
+      "kick_continuity": "free",
+      "percussion_density": 0,
+      "harmonic_events": [
+        {
+          "purpose": "Reentrada serena del centro tonal tras el clímax.",
+          "beat_offset": 0,
+          "bar_offset": 0,
+          "emphasis": 0.69,
+          "chord_id": "i_Dm9"
+        },
+        {
+          "purpose": "Recuerdo cálido de la apertura expansiva.",
+          "beat_offset": 0,
+          "bar_offset": 4,
+          "emphasis": 0.38,
+          "chord_id": "VI_Bbmaj7"
+        },
+        {
+          "purpose": "Última preparación antes del cierre.",
+          "beat_offset": 0,
+          "bar_offset": 8,
+          "emphasis": 0.45,
+          "chord_id": "iv_Gm9"
+        },
+        {
+          "purpose": "Última pregunta abreviada; sus alteraciones tienen resolución inmediata.",
+          "beat_offset": 0,
+          "bar_offset": 10,
+          "emphasis": 0.71,
+          "chord_id": "V7b9_A"
+        },
+        {
+          "purpose": "Resolución final: C♯→D y B♭→A quedan absorbidos por la tónica sostenida.",
+          "beat_offset": 0,
+          "bar_offset": 12,
+          "emphasis": 0.92,
+          "chord_id": "i_Dm9"
+        }
+      ],
+      "motif_variant": 0,
+      "rhythmic_syncopation": 0.26,
+      "mode_hint": "minor",
+      "name": "V. Resolución ganada",
+      "swing": 0.0,
+      "energy": 0.42,
+      "function": "Resolución: conservar la memoria de la pregunta pero concluirla de forma estable en el ancla compartida.",
+      "bars": 16,
+      "tonal_center_pitch_class": 2,
+      "density": 0.37,
+      "rhythm_mutations": [],
+      "rhythm_gestures": []
+    }
+  ],
+  "timbre_palette": {
+    "brightness": 0.46,
+    "material": "Textura de cámara sobria, centrada en líneas afinadas diferenciadas y soporte armónico respirante; ninguna fuente percusiva.",
+    "cohesion": 0.81,
+    "description": "El contraste procede de registro, continuidad de líneas, espesor armónico y espacio de respuesta, no de batería, percusión ni impactos.",
+    "space": "Íntimo al inicio, expandido en el clímax y nuevamente cercano durante la resolución.",
+    "transient_definition": 0.22,
+    "contrast": 0.67,
+    "warmth": 0.72,
+    "acoustic_electronic_balance": 0.7
+  },
+  "motif_intervals": [
+    0,
+    2,
+    3,
+    -2
+  ],
+  "harmonic_language": {
+    "chromaticism": 0.32,
+    "tonal_gravity": 0.89,
+    "description": "Re menor permanece como ancla en toda la obra. La cromaticidad se limita a C♯ de la dominante, B♭ como ♭9 resolviendo a A, F♯ en V/iv resolviendo a G y E♭ del ♭IImaj7 resolviendo a D en el acorde siguiente; ningún color exterior queda sin resolución dirigida.",
+    "pedal_tone_affinity": 0.56,
+    "voice_leading_smoothness": 0.86,
+    "inversion_motion": 0.61,
+    "harmonic_rhythm_activity": 0.47,
+    "cadence_strength": 0.88,
+    "extension_richness": 0.57,
+    "ambiguity": 0.24,
+    "modal_fluidity": 0.12
+  },
+  "narrative_spine": {
+    "climax_consequence": "El clímax no añade una idea ajena: reúne el gesto ascendente inicial y su réplica invertida sobre iiø7–V7♭9–i, con la cadencia y la amplitud dramática más altas de la obra.",
+    "premise": "Una voz protagonista busca afirmarse en Re menor mientras un bajo afinado y una segunda línea convierten los silencios en preguntas y respuestas.",
+    "acts": [
+      {
+        "stage": "premise",
+        "resolution_target": "Dejar A7sus4 sin tercera resolutiva.",
+        "tension_target": 0.34,
+        "resolution_strength": 0.12,
+        "section_name": "I. Enunciado suspendido",
+        "cause": "La frase protagonista se interrumpe antes de completar su descenso.",
+        "consequence": "La armonía llega a dominante suspendida, por lo que el oyente espera una respuesta real.",
+        "unresolved_element": "La sensible C♯ no aparece todavía y la tónica permanece aplazada."
+      },
+      {
+        "stage": "question",
+        "resolution_target": "Resolver la dominante suspendida en i y completar el contorno.",
+        "tension_target": 0.48,
+        "resolution_strength": 0.63,
+        "section_name": "II. Respuesta y diálogo",
+        "cause": "La tónica retoma la nota de llegada que la primera frase dejó en silencio.",
+        "consequence": "La primera cadencia V7♭9→i convierte el motivo en una frase afirmativa y permite contrapunto.",
+        "unresolved_element": "La nueva seguridad todavía puede ser desviada cromáticamente."
+      },
+      {
+        "stage": "departure",
+        "resolution_target": "Volver a D tras el ♭II cromático.",
+        "tension_target": 0.69,
+        "resolution_strength": 0.54,
+        "section_name": "III. Desvío y transformación",
+        "cause": "La respuesta cadencial abre la posibilidad de cuestionar el centro desde su propio pedal.",
+        "consequence": "F♯→G y E♭→D hacen audible que el retorno tonal se ha ganado por conducción de voces.",
+        "unresolved_element": "La dominante final conserva energía sin liberar para el clímax."
+      },
+      {
+        "stage": "climax",
+        "resolution_target": "Hacer coincidir la respuesta contrapuntística con la cadencia máxima a i.",
+        "tension_target": 0.96,
+        "resolution_strength": 0.86,
+        "section_name": "IV. Clímax: la respuesta afirmada",
+        "cause": "La presión dominante acumulada obliga a que todas las líneas respondan simultáneamente.",
+        "consequence": "La caída V7♭9→i ofrece una victoria tonal clara, pero su intensidad necesita decantar.",
+        "unresolved_element": "Queda transformar la victoria en reposo, no repetir el clímax."
+      },
+      {
+        "stage": "resolution",
+        "resolution_target": "Sostener Dm9 como destino final después de la última dominante.",
+        "tension_target": 0.2,
+        "resolution_strength": 1.0,
+        "section_name": "V. Resolución ganada",
+        "cause": "El recuerdo de VI e iv reduce la escala del conflicto sin borrar su recorrido.",
+        "consequence": "La última resolución dominante–tónica deja D como centro inequívoco y sereno.",
+        "unresolved_element": "Ninguno: el silencio posterior pertenece a una tónica ya confirmada."
+      }
+    ],
+    "resolution": "La resolución final V7♭9→Dm9 responde de modo audible a la dominante suspendida inicial: la pregunta que evitaba C♯ recibe finalmente C♯→D, mientras B♭→A cierra la tensión añadida.",
+    "question": "¿Puede el gesto ascendente que se corta en silencio encontrar una llegada estable a D sin perder su impulso interrogativo?",
+    "motif_identity": "Contorno protagonista: parte de una nota de ancla, asciende por segunda y después por tercera menor, y devuelve una segunda descendente hacia el entorno de partida (intervalos 0,+2,+3,-2). Su forma rítmica es ataque breve, segundo ataque breve, nota alta sostenida durante una respiración y silencio contestable al final de la frase; la respuesta posterior rellena ese silencio con el descenso invertido hacia la tónica.",
+    "harmonic_debt": "A7sus4 del enunciado exige su tercera y retorno a i; V/iv exige F♯→G; ♭IImaj7 exige E♭→D; cada deuda cromática se paga en el evento inmediatamente posterior.",
+    "protagonist_instrument_id": "vn1_protagonist"
+  },
+  "mode": "minor",
+  "orchestration_language": {
+    "harmonic_depth": 0.68,
+    "ensemble_scale": 0.44,
+    "tutti_rarity": 0.82,
+    "hybrid_production": 0.08,
+    "divisi_depth": 0.58,
+    "foreground_rotation": 0.72,
+    "doubling_restraint": 0.86,
+    "register_separation": 0.78,
+    "articulation_contrast": 0.51,
+    "description": "Arquitectura de cámara: protagonista, respuesta contrapuntística, bajo afinado y plano armónico intercambian primer plano. No se especifican instrumentos ni se admite percusión.",
+    "family_dialogue": 0.69,
+    "timbral_motion": 0.46,
+    "chamber_contrast": 0.88,
+    "counterpoint_activity": 0.74
+  },
+  "title": "Pregunta suspendida, Re menor",
+  "rhythm_language": {
+    "orchestration_motion": 0.61,
+    "ghost_density": 0.0,
+    "description": "Sin batería ni percusión. El ritmo nace de duraciones armónicas desiguales, entradas y retiros de líneas afinadas, bajo móvil y silencios de respuesta.",
+    "syncopation": 0.43,
+    "call_response": 0.84,
+    "velocity_contrast": 0.42,
+    "silence_bias": 0.63,
+    "backbeat_gravity": 0.0,
+    "timing_freedom": 0.38,
+    "pulse_stability": 0.72
+  },
+  "electronic_soundscape": {
+    "scene": "Cámara tonal acústica sin capa electrónica",
+    "active": false,
+    "percussion_free": true,
+    "target_median_active_layers": 6,
+    "spatial_narrative": "Intimidad inicial, expansión contrapuntística en el clímax y retirada cercana en la resolución.",
+    "layers": [
+      {
+        "minimum_phrases": 4,
+        "relationship": "Sostiene el plano armónico y deja respiraciones para que el protagonista y la respuesta queden al frente.",
+        "kind": "environment",
+        "maximum_static_bars": 4,
+        "foreground_depth": 0.36,
+        "narrative_role": "Base tonal continua y receptora de las resoluciones cadenciales.",
+        "evolution": "De acordes abiertos e íntimos al inicio a una expansión registral contenida en el clímax; vuelve a voicings más cercanos y menos densos en la resolución.",
+        "instrument_id": "pno_chord_bed",
+        "time_scale": "slow",
+        "minimum_active_bars": 2
+      },
+      {
+        "minimum_phrases": 3,
+        "relationship": "Enlaza el piano con el bajo y evita ocupar el registro de ambos violines.",
+        "kind": "voice",
+        "maximum_static_bars": 3,
+        "foreground_depth": 0.45,
+        "narrative_role": "Conducción interior de tensiones y notas de resolución obligada.",
+        "evolution": "Inicialmente discreta y ligada; incrementa la movilidad cromática en III–IV y se simplifica hacia apoyos cálidos al final.",
+        "instrument_id": "vla_inner_voice",
+        "time_scale": "medium",
+        "minimum_active_bars": 2
+      },
+      {
+        "minimum_phrases": 5,
+        "relationship": "Define el fundamento móvil bajo el piano, con espacio suficiente para las voces intermedias.",
+        "kind": "voice",
+        "maximum_static_bars": 2,
+        "foreground_depth": 0.53,
+        "narrative_role": "Impulso tonal melódico, inversiones y preparación de cadencias.",
+        "evolution": "Movimiento cantabile sobrio en I, más dirigido y activo en II–III, máxima insistencia de aproximación en IV y decantación estable sobre D al cierre.",
+        "instrument_id": "vc_moving_bass",
+        "time_scale": "medium",
+        "minimum_active_bars": 2
+      },
+      {
+        "minimum_phrases": 2,
+        "relationship": "Rodea las líneas sin duplicar el motivo ni endurecer las llegadas armónicas.",
+        "kind": "environment",
+        "maximum_static_bars": 6,
+        "foreground_depth": 0.22,
+        "narrative_role": "Halo respirante que amplía el espacio y subraya los destinos armónicos.",
+        "evolution": "Entradas suaves y escasas al comienzo, mayor amplitud dinámica y apertura en IV, retirada gradual a un halo próximo durante V.",
+        "instrument_id": "hn_sustained_air",
+        "time_scale": "slow",
+        "minimum_active_bars": 2
+      },
+      {
+        "minimum_phrases": 5,
+        "relationship": "Permanece claramente delante del conjunto; las demás voces se retiran o responden en sus silencios.",
+        "kind": "voice",
+        "maximum_static_bars": 2,
+        "foreground_depth": 0.94,
+        "narrative_role": "Protagonista de la pregunta ascendente, transformación y resolución final.",
+        "evolution": "Frase interrogativa suspendida en I, afirmación más completa en II, mayor tensión y extensión en III–IV, y última frase amplia que descansa sin teatralidad en V.",
+        "instrument_id": "vn1_protagonist",
+        "time_scale": "medium",
+        "minimum_active_bars": 2
+      },
+      {
+        "minimum_phrases": 3,
+        "relationship": "Responde después de las respiraciones del Violín I, evitando unísonos simultáneos y conservando contraste registral.",
+        "kind": "voice",
+        "maximum_static_bars": 3,
+        "foreground_depth": 0.72,
+        "narrative_role": "Réplica invertida y contrapunto que convierte el silencio del protagonista en respuesta.",
+        "evolution": "Ausencias deliberadas durante el enunciado inicial, respuestas cada vez más articuladas en II–III, máxima interlocución en IV y fraseos breves de asentamiento en V.",
+        "instrument_id": "vn2_answer",
+        "time_scale": "medium",
+        "minimum_active_bars": 1
+      },
+      {
+        "minimum_phrases": 2,
+        "relationship": "Toma brevemente las alteraciones funcionales entre las cuerdas y las devuelve resueltas al tejido armónico.",
+        "kind": "transition",
+        "maximum_static_bars": 2,
+        "foreground_depth": 0.6,
+        "narrative_role": "Puente audible para las desviaciones cromáticas y sus resoluciones inmediatas.",
+        "evolution": "Aparece con discreción en II, enfatiza las conducciones F♯→G y E♭→D en III, y concentra su energía de enlace antes de la cadencia máxima en IV.",
+        "instrument_id": "cl_chromatic_bridge",
+        "time_scale": "event",
+        "minimum_active_bars": 1
+      },
+      {
+        "minimum_phrases": 3,
+        "relationship": "Añade movimiento interno por debajo de las líneas de violín y por encima del fundamento, sin gesto de ataque percusivo.",
+        "kind": "voice",
+        "maximum_static_bars": 1,
+        "foreground_depth": 0.49,
+        "narrative_role": "Pulso armónico no percusivo que intensifica el desarrollo final y el clímax.",
+        "evolution": "Entra de forma reservada al final de III, gana continuidad y brillo cálido en IV, y desaparece antes de la resolución para despejar la llegada final.",
+        "instrument_id": "harp_harmonic_pulse",
+        "time_scale": "fast",
+        "minimum_active_bars": 1
+      }
+    ]
+  },
+  "instruments": [
+    {
+      "orchestral_function": "foundation",
+      "prominence": 0.58,
+      "id": "pno_chord_bed",
+      "instrument": "piano",
+      "timbre_signature": {
+        "spectrum": "warm",
+        "uniqueness": 0.42,
+        "space": "close",
+        "texture": "organic",
+        "envelope": "natural",
+        "motion": "subtle",
+        "source": "acoustic"
+      },
+      "activity": 0.62,
+      "doubling": 0.12,
+      "live_preset_intent": "Piano de cola íntimo y cálido, ataque redondeado, resonancia controlada y pedal sostenido discreto; voicings abiertos sin brillo pop.",
+      "active_sections": [
+        "I. Enunciado suspendido",
+        "II. Respuesta y diálogo",
+        "III. Desvío y transformación",
+        "IV. Clímax: la respuesta afirmada",
+        "V. Resolución ganada"
+      ],
+      "minimum_pitch": 38,
+      "articulation_intent": "sustained",
+      "content_lane_id": "lane_harmonic_chords",
+      "line_relationship": "independent",
+      "live_device": "Sampler",
+      "divisi_voices": 4,
+      "octave_shift": 0,
+      "maximum_pitch": 79,
+      "name": "Piano — lecho armónico",
+      "role": "Cuerpo armónico polifónico central; sostiene las progresiones y las llegadas cadenciales.",
+      "source_voice": "harmonic_foundation"
+    },
+    {
+      "orchestral_function": "body",
+      "prominence": 0.52,
+      "id": "vla_inner_voice",
+      "instrument": "viola",
+      "timbre_signature": {
+        "spectrum": "warm",
+        "uniqueness": 0.59,
+        "space": "close",
+        "texture": "organic",
+        "envelope": "natural",
+        "motion": "evolving",
+        "source": "acoustic"
+      },
+      "activity": 0.58,
+      "doubling": 0.06,
+      "live_preset_intent": "Viola solista cálida de cámara, vibrato tardío muy contenido y legato expresivo; presencia media sin filo agudo.",
+      "active_sections": [
+        "I. Enunciado suspendido",
+        "II. Respuesta y diálogo",
+        "III. Desvío y transformación",
+        "IV. Clímax: la respuesta afirmada",
+        "V. Resolución ganada"
+      ],
+      "minimum_pitch": 48,
+      "articulation_intent": "legato",
+      "content_lane_id": "lane_inner_voice",
+      "line_relationship": "independent",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 73,
+      "name": "Viola — voz interior sostenida",
+      "role": "Contravoz armónica independiente que enlaza tensiones, resoluciones y memoria tonal.",
+      "source_voice": "harmonic_upper"
+    },
+    {
+      "orchestral_function": "foundation",
+      "prominence": 0.67,
+      "id": "vc_moving_bass",
+      "instrument": "cello",
+      "timbre_signature": {
+        "spectrum": "dark",
+        "uniqueness": 0.56,
+        "space": "close",
+        "texture": "organic",
+        "envelope": "natural",
+        "motion": "rhythmic",
+        "source": "acoustic"
+      },
+      "activity": 0.69,
+      "doubling": 0.08,
+      "live_preset_intent": "Violonchelo de cámara centrado y leñoso, articulación natural con legato entre apoyaturas; graves definidos sin subgrave sintético.",
+      "active_sections": [
+        "I. Enunciado suspendido",
+        "II. Respuesta y diálogo",
+        "III. Desvío y transformación",
+        "IV. Clímax: la respuesta afirmada",
+        "V. Resolución ganada"
+      ],
+      "minimum_pitch": 36,
+      "articulation_intent": "natural",
+      "content_lane_id": "lane_moving_bass",
+      "line_relationship": "independent",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 62,
+      "name": "Violonchelo — bajo afinado móvil",
+      "role": "Propulsión tonal mediante bajo melódico, inversiones y conducciones hacia las cadencias.",
+      "source_voice": "movement_bass"
+    },
+    {
+      "orchestral_function": "color",
+      "prominence": 0.32,
+      "id": "hn_sustained_air",
+      "instrument": "french_horns",
+      "timbre_signature": {
+        "spectrum": "warm",
+        "uniqueness": 0.48,
+        "space": "deep",
+        "texture": "organic",
+        "envelope": "swelling",
+        "motion": "subtle",
+        "source": "acoustic"
+      },
+      "activity": 0.38,
+      "doubling": 0.1,
+      "live_preset_intent": "Dos trompas suaves y redondas, ataques fundidos, crescendi lentos y cola corta de sala; evitar acentos heroicos.",
+      "active_sections": [
+        "I. Enunciado suspendido",
+        "II. Respuesta y diálogo",
+        "III. Desvío y transformación",
+        "IV. Clímax: la respuesta afirmada",
+        "V. Resolución ganada"
+      ],
+      "minimum_pitch": 43,
+      "articulation_intent": "swelling",
+      "content_lane_id": "lane_atmospheric_pedal",
+      "line_relationship": "independent",
+      "live_device": "Sampler",
+      "divisi_voices": 2,
+      "octave_shift": 0,
+      "maximum_pitch": 69,
+      "name": "Trompa — halo sostenido",
+      "role": "Atmósfera armónica respirante; amplía las llegadas sin duplicar el discurso melódico.",
+      "source_voice": "atmosphere"
+    },
+    {
+      "orchestral_function": "counterpoint",
+      "prominence": 0.98,
+      "id": "vn1_protagonist",
+      "instrument": "violin_1",
+      "timbre_signature": {
+        "spectrum": "bright",
+        "uniqueness": 0.78,
+        "space": "close",
+        "texture": "organic",
+        "envelope": "natural",
+        "motion": "evolving",
+        "source": "acoustic"
+      },
+      "activity": 0.74,
+      "doubling": 0.0,
+      "live_preset_intent": "Violín solista íntimo y claramente adelantado, legato cantabile, vibrato tardío expresivo y articulación limpia sin reverberación excesiva.",
+      "active_sections": [
+        "I. Enunciado suspendido",
+        "II. Respuesta y diálogo",
+        "III. Desvío y transformación",
+        "IV. Clímax: la respuesta afirmada",
+        "V. Resolución ganada"
+      ],
+      "minimum_pitch": 62,
+      "articulation_intent": "legato",
+      "content_lane_id": "lane_protagonist_motif",
+      "line_relationship": "independent",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 91,
+      "name": "Violín I — protagonista",
+      "role": "Enuncia, transforma y recupera el motivo ascendente interrogativo; conduce la resolución final.",
+      "source_voice": "lead"
+    },
+    {
+      "orchestral_function": "counterpoint",
+      "prominence": 0.75,
+      "id": "vn2_answer",
+      "instrument": "violin_2",
+      "timbre_signature": {
+        "spectrum": "neutral",
+        "uniqueness": 0.66,
+        "space": "close",
+        "texture": "organic",
+        "envelope": "natural",
+        "motion": "evolving",
+        "source": "acoustic"
+      },
+      "activity": 0.62,
+      "doubling": 0.0,
+      "live_preset_intent": "Violín de cámara ligeramente más aterciopelado y menos frontal que el Violín I, legato ágil con vibrato tardío sutil.",
+      "active_sections": [
+        "I. Enunciado suspendido",
+        "II. Respuesta y diálogo",
+        "III. Desvío y transformación",
+        "IV. Clímax: la respuesta afirmada",
+        "V. Resolución ganada"
+      ],
+      "minimum_pitch": 55,
+      "articulation_intent": "legato",
+      "content_lane_id": "lane_motif_answer",
+      "line_relationship": "call_response",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": -12,
+      "maximum_pitch": 84,
+      "name": "Violín II — respuesta derivada",
+      "role": "Único respondedor derivado del motivo; completa silencios del protagonista con réplicas invertidas y contrapunto.",
+      "source_voice": "countermelody"
+    },
+    {
+      "orchestral_function": "transition",
+      "prominence": 0.64,
+      "id": "cl_chromatic_bridge",
+      "instrument": "clarinet",
+      "timbre_signature": {
+        "spectrum": "warm",
+        "uniqueness": 0.7,
+        "space": "close",
+        "texture": "airy",
+        "envelope": "natural",
+        "motion": "evolving",
+        "source": "acoustic"
+      },
+      "activity": 0.47,
+      "doubling": 0.03,
+      "live_preset_intent": "Clarinete en Si♭ de cámara, registro chalumeau y medio cálido, legato continuo y cambios de color discretos; sin brillo estridente.",
+      "active_sections": [
+        "II. Respuesta y diálogo",
+        "III. Desvío y transformación",
+        "IV. Clímax: la respuesta afirmada"
+      ],
+      "minimum_pitch": 52,
+      "articulation_intent": "legato",
+      "content_lane_id": "lane_chromatic_transitions",
+      "line_relationship": "timbral_handoff",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 79,
+      "name": "Clarinete — puente cromático",
+      "role": "Articula las desviaciones funcionales y sus resoluciones obligadas durante el desarrollo y el clímax.",
+      "source_voice": "transitions"
+    },
+    {
+      "orchestral_function": "extension",
+      "prominence": 0.48,
+      "id": "harp_harmonic_pulse",
+      "instrument": "harp",
+      "timbre_signature": {
+        "spectrum": "glassy",
+        "uniqueness": 0.61,
+        "space": "wide",
+        "texture": "organic",
+        "envelope": "pluck",
+        "motion": "rhythmic",
+        "source": "acoustic"
+      },
+      "activity": 0.66,
+      "doubling": 0.05,
+      "live_preset_intent": "Arpa de concierto cálida, pulsos ligados y redondeados con resonancia moderada; energía interior sin ataques de percusión destacados.",
+      "active_sections": [
+        "III. Desvío y transformación",
+        "IV. Clímax: la respuesta afirmada"
+      ],
+      "minimum_pitch": 45,
+      "articulation_intent": "ostinato",
+      "content_lane_id": "lane_climax_harmonic_pulse",
+      "line_relationship": "independent",
+      "live_device": "Sampler",
+      "divisi_voices": 2,
+      "octave_shift": 0,
+      "maximum_pitch": 81,
+      "name": "Arpa — pulso armónico",
+      "role": "Activa movimiento interno independiente en el clímax, reforzando la energía sin función percusiva.",
+      "source_voice": "harmonic_pulse"
+    }
+  ],
+  "rhythm_motifs": [],
+  "voices": [
+    {
+      "brightness": 0.44,
+      "interaction": "Sostiene el plano polifónico central y recibe las resoluciones de todas las líneas.",
+      "id": "harmonic_foundation",
+      "articulation": "sustained",
+      "activity": 0.62,
+      "expression_depth": 0.57,
+      "pitch_gesture": "stable",
+      "minimum_pitch": 0,
+      "sustain_pedal": true,
+      "humanization": 0.0,
+      "vibrato": "none",
+      "syncopation": 0.28,
+      "dynamic_contour": "phrase_arc",
+      "maximum_pitch": 0,
+      "function": "Lecho armónico",
+      "performance_intent": "Continuidad tonal."
+    },
+    {
+      "brightness": 0.48,
+      "interaction": "Conduce voces internas contra el lecho armónico.",
+      "id": "harmonic_upper",
+      "articulation": "legato",
+      "activity": 0.58,
+      "expression_depth": 0.65,
+      "pitch_gesture": "approach",
+      "minimum_pitch": 0,
+      "sustain_pedal": false,
+      "humanization": 0.0,
+      "vibrato": "late_subtle",
+      "syncopation": 0.36,
+      "dynamic_contour": "phrase_arc",
+      "maximum_pitch": 0,
+      "function": "Contravoz armónica",
+      "performance_intent": "Resoluciones dirigidas."
+    },
+    {
+      "brightness": 0.35,
+      "interaction": "Impulsa el cambio armónico y dialoga con el protagonista mediante el bajo.",
+      "id": "movement_bass",
+      "articulation": "natural",
+      "activity": 0.69,
+      "expression_depth": 0.58,
+      "pitch_gesture": "approach",
+      "minimum_pitch": 0,
+      "sustain_pedal": false,
+      "humanization": 0.0,
+      "vibrato": "late_subtle",
+      "syncopation": 0.43,
+      "dynamic_contour": "phrase_arc",
+      "maximum_pitch": 0,
+      "function": "Propulsión tonal",
+      "performance_intent": "Bajo melódico vivo."
+    },
+    {
+      "brightness": 0.41,
+      "interaction": "Ensambla el espacio armónico sin competir por el primer plano.",
+      "id": "atmosphere",
+      "articulation": "swelling",
+      "activity": 0.38,
+      "expression_depth": 0.53,
+      "pitch_gesture": "stable",
+      "minimum_pitch": 0,
+      "sustain_pedal": false,
+      "humanization": 0.0,
+      "vibrato": "late_subtle",
+      "syncopation": 0.12,
+      "dynamic_contour": "swell",
+      "maximum_pitch": 0,
+      "function": "Halo sostenido",
+      "performance_intent": "Amplitud respirante."
+    },
+    {
+      "brightness": 0.68,
+      "interaction": "Formula la pregunta, absorbe las respuestas y retorna transformado en la resolución.",
+      "id": "lead",
+      "articulation": "legato",
+      "activity": 0.74,
+      "expression_depth": 0.82,
+      "pitch_gesture": "gentle_bends",
+      "minimum_pitch": 0,
+      "sustain_pedal": false,
+      "humanization": 0.0,
+      "vibrato": "late_expressive",
+      "syncopation": 0.46,
+      "dynamic_contour": "phrase_arc",
+      "maximum_pitch": 0,
+      "function": "Protagonista melódico",
+      "performance_intent": "Pregunta y afirmación final."
+    },
+    {
+      "brightness": 0.61,
+      "interaction": "Responde al protagonista sin unísono simultáneo y desarrolla su contorno invertido.",
+      "id": "countermelody",
+      "articulation": "legato",
+      "activity": 0.62,
+      "expression_depth": 0.71,
+      "pitch_gesture": "approach",
+      "minimum_pitch": 0,
+      "sustain_pedal": false,
+      "humanization": 0.0,
+      "vibrato": "late_subtle",
+      "syncopation": 0.52,
+      "dynamic_contour": "phrase_arc",
+      "maximum_pitch": 0,
+      "function": "Respuesta contrapuntística",
+      "performance_intent": "Réplica derivada."
+    },
+    {
+      "brightness": 0.56,
+      "interaction": "Enlaza cromatismos funcionales con las voces armónicas y el bajo.",
+      "id": "transitions",
+      "articulation": "legato",
+      "activity": 0.47,
+      "expression_depth": 0.63,
+      "pitch_gesture": "approach",
+      "minimum_pitch": 0,
+      "sustain_pedal": false,
+      "humanization": 0.0,
+      "vibrato": "late_subtle",
+      "syncopation": 0.41,
+      "dynamic_contour": "crescendo",
+      "maximum_pitch": 0,
+      "function": "Puente cromático",
+      "performance_intent": "Tensión y resolución."
+    },
+    {
+      "brightness": 0.58,
+      "interaction": "Añade pulso interior autónomo en el clímax sobre el suelo armónico sostenido.",
+      "id": "harmonic_pulse",
+      "articulation": "detached",
+      "activity": 0.66,
+      "expression_depth": 0.55,
+      "pitch_gesture": "stable",
+      "minimum_pitch": 0,
+      "sustain_pedal": false,
+      "humanization": 0.0,
+      "vibrato": "none",
+      "syncopation": 0.57,
+      "dynamic_contour": "pulsing",
+      "maximum_pitch": 0,
+      "function": "Movimiento armónico interno",
+      "performance_intent": "Intensificación no percusiva."
+    }
+  ],
+  "performance_score": {
+    "cells": [],
+    "placements": []
+  }
+}

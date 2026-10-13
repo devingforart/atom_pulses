@@ -18,6 +18,7 @@ struct SelectiveRepairPlan {
     bool needed{};
     double deficit{};
     std::vector<std::size_t> instrumentIndices;
+    std::vector<std::size_t> sectionIndices;
     std::vector<std::string> issues;
 };
 
@@ -31,6 +32,7 @@ struct FinalScoreReview {
     double climaxContrast{1.0};
     double deficit{};
     std::vector<std::size_t> instrumentIndices;
+    std::vector<std::size_t> sectionIndices;
     std::vector<std::string> issues;
 };
 

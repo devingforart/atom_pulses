@@ -135,3 +135,241 @@ current write-review-rewrite bottleneck. The next optimization should measure
 and redesign the number of paid AI revision cycles while preserving authored
 notes, validation and checkpoint integrity; it must be evaluated with complete
 works and human listening before activation.
+
+## Follow-up screening: model, reasoning and denser wire (2026-10-12)
+
+The ordinary local studio, VST and Cloud still use **GPT-5.6 Terra / medium,
+standard service, original performance JSON**. The following trials used an
+isolated local server and the exact accepted blueprint, prompt, 600-second
+duration, 120 BPM and seed of baseline job
+`d8c6802c-420e-49de-bb5d-4e82a2d4fddf`. They were intentionally stopped
+once the same-stage comparison could not support a speed *and* quality claim;
+an early stop is not evidence of final musical quality.
+
+| Trial | Job | Observation | Decision |
+| --- | --- | --- | --- |
+| GPT-6.1 Sol / medium | `09834d88-be5f-433f-b576-253c54e4c8e3` | Block 1 had not passed after 5.7 min and six API calls; the Terra baseline passed it in about 3.4 min. | Stop; changing to the stronger model alone is not faster here. |
+| GPT-6 Luna / medium | `5a9b4040-3df5-494d-b7b0-0acbf23670bf` | The first five blocks took 8.6 versus 13.3 min, but by block 10 the run took about 24.8 min and repeated tonal revisions had largely erased the lead. At that checkpoint: 14 parts, 4,306 rendered notes, 40 low-register conflicts; Terra's *finished* reference has 3,465 notes and 12 such conflicts. The run was stopped after the next block continued needing revisions. | Faster first drafts do not establish a faster, musically comparable completed work. Do not promote. |
+| Dense event wire / Terra medium | `620deb81-04ae-412b-bd94-2ce332cfeb0a` | First performance response was valid and used 6,119 output tokens versus 7,369 for the reference. Eight calls and 4.7 min still had not accepted block 1, versus seven calls and 3.4 min for the reference. | Stop; fewer event bytes did not remove the repair bottleneck. |
+| Terra / low for writing | `457e4732-d0c1-4841-8c73-a6374ae4de62` | After seven calls and 3.5 min, block 1 was still unaccepted. Those seven calls used 7,110 reasoning tokens versus 2,831 in the reference's seven calls. | Stop; requesting lower effort did not reliably reduce actual work. |
+
+The dense format is a **transport-only** opt-in: every note still carries its
+AI-authored onset, duration, pitch and velocity plus an index into the exact
+instrument cast; expression controls carry their authored timing, controller
+and value. Source voice and `strict_grid` are immutable properties already
+known from that cast, and the existing parser restores them before MIDI
+validation. A unit test checks the strict owner/register schema and exact
+note/control round-trip. Across 80 cached, standard-format performance
+responses with 3,780 notes, this representation would reduce normalized JSON
+bytes by 29.2% (versus 13.7% from short keys alone). Byte savings cannot be
+equated with output-token or end-to-end latency savings, and a format change
+can alter what the AI composes. It remains disabled by default.
+
+The baseline's 48.0-minute wall time comprises about 43.9 minutes inside
+71 API calls. Performance writing alone took 28.9 API minutes across 33 calls;
+compact voicing and final selective repair took another 12.5 API minutes
+across 32 calls. Local rendering, polling and validation account for only
+about 4.1 minutes of the wall time. Background polling already checks every
+two seconds. Thus faster HTTP handling, browser rendering, shorter key names
+or a low-effort setting cannot plausibly deliver the several-fold improvement
+needed for a production-length work.
+
+**No candidate in this follow-up is validated as faster without musical
+regression. Nothing was enabled in the normal product.** The next architectural
+experiment should measure a dependency-aware conductor: finish the harmonic
+and protagonist anchors first, let genuinely independent supporting voices be
+AI-authored against the same immutable anchors in bounded parallel batches,
+then run the existing full-score MIDI audit and focused AI revisions. It must
+preserve every authored note and the explicit cast, and be rejected if it
+increases conflicts, leaves voices undeveloped, or fails musician listening.
+An early playable checkpoint can also reduce *perceived* waiting, but must not
+be reported as reducing full-composition time.
+
+Experimental flags are local-only and off by default:
+`PULSO_AI_EXPERIMENT_MODEL=gpt-6.1-sol|gpt-6-luna`,
+`PULSO_AI_EXPERIMENT_EFFORT=low`, and `PULSO_AI_DENSE_WIRE=1`. Use each on an
+isolated studio process and record job IDs; never enable one in Cloud or the
+VST on the strength of a partial run. OpenAI model availability and pricing
+were checked against the official
+[model pages](https://developers.openai.com/api/docs/models) and
+[pricing](https://developers.openai.com/api/docs/pricing).
+
+## Five-minute joint-window recovery trial (2026-10-12)
+
+The isolated `4183` studio uses coordinated ensemble windows, with a hard
+five-minute/12-track ceiling. It never silently switches to the normal writing
+engine when that ceiling is exceeded. At the time of this 2026-10-12 trial,
+the normal `4179` studio, Cloud and VST remained unchanged; this sentence is
+historical, not the current deployment state.
+
+A 300-second, 12-track D# minor request failed at window 8/11 after one-owner
+revisions repeatedly moved conflicts between the bass, beds and melodic
+voices. Job `b67d9999-c27c-4d1b-988a-e8b859fbeafc` preserved the first
+seven windows (1,092 notes) but spent an estimated USD 1.55 in 20.4 minutes.
+An exact checkpoint replay `9f7bcbbd-5660-47f1-b36e-8b85d8164654` still
+failed at window 8 after seven more paid calls (USD 0.24); the same single-owner
+strategy could not solve a multi-voice conflict graph.
+
+The local recovery now selects **both sides of every sustained collision**,
+plus the owners of unsupported or structural notes, for one bounded AI revision.
+A broad conflict graph returns the entire *unaccepted* window to the AI. The
+request includes a bounded map of actual sounding conflicts and representative
+rejected phrases; previously accepted windows remain immutable. The AI still
+authors every replacement pitch and note, and the normal render/MIDI/tonal
+checks must approve the complete passage before it is checkpointed. Synthetic
+tests cover pairwise, unary, missing-owner and broad-graph selection.
+
+Exact-checkpoint replay `da0b5603-3955-41da-8c67-34ff3a6ac67f` passed
+window 8 and completed all 11 windows. The final "Eje C#" is 152 bars, 12 tracks
+and 1,738 direct-AI notes; its technical audit has zero harmonic conflicts,
+unsupported chromatic notes and invalid sustains. That replay took 16.7 minutes
+and an estimated USD 1.30 across 23 paid calls plus seven locally reused calls.
+This is a successful **failure-recovery and technical-validity** test, not yet a
+claim of production-ready musical quality: the final audit still reports
+`narrative_ready=false` and `soundscape_ready=false` (disconnected melody and
+insufficient evolution in some electronic layers). Human listening and at least
+one clean full run remain required before promotion to the ordinary studio.
+
+An unrelated two-minute orchestral request (`5a3e9893-8507-4377-bc54-cb2f915dc671`)
+then exposed a cast-boundary defect: the AI authored ten instruments, but the
+general orchestral normalizer appended three generic department/coverage
+owners and the twelve-track experimental writer correctly refused to proceed.
+The request stopped before performance MIDI after three planning calls and
+about USD 0.18. The experimental writer now caps the structured cast manifest
+at twelve entries and carries an explicit `preserveAuthoredCast` policy through
+normalization: derived planning metadata may still be normalized, while no
+unrequested instruments are appended to this trial's AI cast. A unit test
+checks a closed orchestral cast survives normalization unchanged. A second
+two-minute request (`ecd17f2a-61f8-4ad2-889f-2760ea4a6eac`) still failed:
+the accepted AI blueprint again contained ten instruments, but the parser's
+*internal* normalization expanded them to fifteen before the caller set the
+closed-cast flag. This cost about USD 0.12 and produced no performance MIDI.
+The closed-cast policy is now passed into the parser and preserved across its
+SongPlan reset, before its first normalization. A parser-level regression test
+and an offline replay of that exact accepted blueprint both preserve all ten
+authored owners and their order. The corrected worker is running on `4183`;
+this specific cast-boundary fix has not yet been tested with another paid
+composition, and it does not establish musical quality.
+
+## One-minute tonal-narrative trial (2026-10-12)
+
+The isolated `4183` writer completed job
+`8ec7b7c0-526d-463a-8ac0-7d5cd3e8dc8c` ("La pregunta de Re") at 120 BPM:
+30 bars, eight AI-declared instruments and 235 notes, all marked `direct_ai`
+with no generated or transformed notes. The MIDI has no invalid sustains,
+unsupported chromatic notes or reported harmonic clashes. Its accepted macro
+plan names a question in D minor, an answer, a climax and a final return.
+
+This is **not yet a validated musical optimum**. The protagonist plays 15
+notes in the premise, none in the second act, ten in the climax and ten in the
+resolution. Its opening D-F-E-A attack pattern returns almost literally near
+the climax and again at the ending; the MIDI audit reports
+`narrative_events_lack_audible_consequence` (`causal_narrative=0.5625`). The
+flute has only two notes despite being counted as an instrument, and only six
+of eight voices are classified as meaningful. A musician still needs to hear
+whether the answer and final cadence make that recurrence feel intentional.
+
+This 60-second work required 24 paid API calls, 21.4 minutes and an estimated
+USD 1.42. Most of the time was spent on AI revisions of vertical harmonic
+clashes within the ensemble windows. The cast was smaller than the preceding
+ten-owner failed trial, but the full-ensemble revision strategy still
+oscillated between small conflicts. **Do not enable this experimental writer
+in the ordinary studio, Cloud or VST on the strength of this result.** The
+next comparison should preserve the accepted macro blueprint and test a
+smaller AI-authored anchor group (protagonist, chord bed and bass) before
+supporting voices are authored against its immutable MIDI. No procedural
+note-writing or automatic musical-fill operation is proposed.
+
+That controlled A/B comparison is job `c506f730-9181-4726-95a4-d24b122d6a1c`.
+It reused the exact accepted macro blueprint, prompt, seed, duration and
+eight-instrument cast from Anclaje 1; only the writing order changed. The
+first group authored protagonist, chord bed and bass, then the AI authored
+the companions against their accepted MIDI. It completed in 18.7 minutes of
+writing (planning was reused), with 22 paid calls and about USD 1.22.
+Its MIDI contains 419 direct-AI notes, versus 235 in Anclaje 1. The local
+audit marks all eight layers meaningful and its coarse causal-narrative
+metric rises from 0.5625 to 1.0, but motif closure falls from 0.9825 to
+0.605, resolution score from 0.883 to 0.750, and the audit reports
+`disconnected_melody_without_voice_leading`. The increase in notes is not
+proof of richer music; human A/B listening must decide. There is no measured
+speed benefit after excluding the reused planning phase, so this grouping
+is **not promoted**. A further isolated trial will ask the AI to cast a
+compact, genuinely developed ensemble for one minute rather than filling
+an eight-owner roster. It does not prescribe note content.
+
+Human A/B listening favored the split-anchor version as the **better musical
+story**, despite its greater note count and weaker numerical motif-closure
+score. Preserve both exported MIDIs: `experiments/anchors/01-la-pregunta-de-re`
+is the first accepted reference and `experiments/anchors/02-la-pregunta-de-re-dialogo`
+is the favored A/B result. The listening result is meaningful evidence for
+musical direction, but it does not resolve the latency or repeated-revision
+cost; keep both architectures experimental until a repeatable shorter-form
+and longer-form comparison is complete.
+
+The compact-cast follow-up (`cbaa0cf6-c37c-49c9-8ed4-1a0a07cfb346`)
+validated a five-instrument AI cast after fixing the experimental structured
+schema's hidden eight-instrument minimum. It was stopped after accepting only
+two of four windows: about 20.1 minutes, 22 paid calls, estimated USD 1.25,
+and 36 recovery events. This is a negative efficiency result, not evidence
+that five instruments are inherently less musical. Most time was spent on
+revising simultaneous harmonic collisions. The partial MIDI and progress
+trace remain in the isolated job directory; do not present them as a song.
+
+The trace also exposed a structural false positive in the tonal audit: the
+root/diminished-fifth tritone of an explicitly declared half-diminished chord
+(E-Bb in Em7b5) was reported as an unintended collision even in a mid-register
+voicing. The third/sixth tritone of a declared minor-sixth chord (Bb-E in
+Gm6) had the same problem. The local code now recognizes those functional
+pairs while still rejecting their low-register equivalents. This changes
+validation, not MIDI authorship; it requires regression tests and a fresh
+controlled comparison before any Cloud/VST promotion. User listening still
+favors the split-anchor A/B result as the current musical reference.
+
+A fresh no-local-response-cache replay of the same accepted blueprint and
+split-anchor writing order (`ab586af1-c80c-4644-8177-a9e86cd1ac78`) completed
+after the functional-harmony audit change. It produced 415 direct-AI notes
+in eight tracks, with no exact eight-bar note repeats and no unterminated
+notes. It took 22.2 minutes, 30 paid calls, 43 recovery events and an
+estimated USD 1.47. The previous listener-favored split-anchor run took
+18.7 minutes, 22 paid calls and USD 1.22. Thus recognizing the declared
+half-diminished and minor-sixth colours fixes a real false positive but does
+**not** solve the end-to-end latency or cost. In the new trace the E3-Bb3
+half-diminished pair is no longer reported; low-register E2-Bb conflicts
+and other real chromatic/voice-interaction issues still are. The final audit
+marks narrative ready but flags weakly developed soundscape voices, while
+the earlier preferred run was soundscape-ready. Do not replace the favored
+A/B anchor or promote this local experiment; await human listening to the
+new MIDI and redesign the ensemble coordination before further costly runs.
+
+## Current musical anchor: Pregunta suspendida (2026-10-13)
+
+The musician preferred the complete three-minute `Pregunta suspendida, Re menor`
+to the previous `The Rest That Returns` comparison. The exact accepted MIDI,
+request, manifest, blueprint, plan and audit are preserved in
+`experiments/anchors/03-pregunta-suspendida-re-menor`. This is a listening
+anchor, not a claim that every future prompt will match its quality.
+
+The selected architecture uses AI-authored coordinated ensemble windows and
+narrative anchors. `pulso_cloud_worker` is shared by Local Studio and Cloud;
+Cloud explicitly enables the same editorial, joint-window and narrative-anchor
+flags for the bounded short-form architecture. Cloud deliberately exposes only
+prompt, duration and tempo; the local studio retains experimental controls.
+For durations outside the joint-window ceiling, the two interfaces are not an
+identical experiment and should not be described as output-equivalent.
+
+Cloud now preserves validated AI checkpoint notes and their blueprint in a
+worker-readable resume file. The backend can retry only a controlled worker
+failure from such a checkpoint, within its recovery budget. No notes are
+procedurally invented for this recovery. The `Tus obras` Cloud library has
+also been aligned with the useful local layout: title, status, date, duration,
+track count and explicit refresh.
+
+The deployed Linux worker was smoke-tested on the public server with a new
+60-second request using the same prompt family and seed, without reusing the
+anchor's notes. It completed with 9 tracks and 537 direct-AI notes; MIDI
+rendering, technical/narrative audit and final-score review all completed.
+The audit marked `technical_ready=true` and `narrative_ready=true`, but
+`soundscape_ready=false` and reported two unsupported chromatic events.
+This validates the deployed path, not flawless musical quality or shorter
+latency: the smoke run took roughly 13 minutes. The accepted three-minute
+MIDI remains the actual listening anchor.

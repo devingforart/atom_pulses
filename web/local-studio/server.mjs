@@ -323,8 +323,8 @@ function mutatingRequestAllowed(req) {
   return req.headers['x-pulso-local'] === '1' && (!origin || origin === `http://127.0.0.1:${port}` || origin === `http://localhost:${port}`);
 }
 
-function serveFile(res, file, type) {
-  res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+function serveFile(res, file, type, cacheControl = 'no-store') {
+  res.writeHead(200, { 'Content-Type': type, 'Cache-Control': cacheControl });
   createReadStream(file).pipe(res);
 }
 
@@ -396,6 +396,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/audio-engine.mjs') return serveFile(res, path.join(shared, 'audio-engine.mjs'), 'text/javascript; charset=utf-8');
     if (req.method === 'GET' && pathname === '/production-audio.mjs') return serveFile(res, path.join(shared, 'production-audio.mjs'), 'text/javascript; charset=utf-8');
     if (req.method === 'GET' && pathname === '/sound-palette.mjs') return serveFile(res, path.join(shared, 'sound-palette.mjs'), 'text/javascript; charset=utf-8');
+    if (req.method === 'GET' && /^\/piano\/INSPiano_Vel03_(?:A0|C[1-8]|Fs[1-7])_01\.ogg$/.test(pathname))
+      return serveFile(res, path.join(here, '../frontend/public', pathname), 'audio/ogg', 'public, max-age=31536000, immutable');
     return json(res, 404, { error: 'Ruta no encontrada.' });
   } catch (error) {
     const isInput = error instanceof InputError;

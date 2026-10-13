@@ -9,11 +9,11 @@ export class ProductionAudio {
   soloed: Set<number>
   position: number
   playing: boolean
-  mode: 'production' | 'neutral'
+  mode: 'production' | 'neutral' | 'piano'
   duration: number
   setSong(midi: MidiScore, tracks: SuiteTrack[]): void
   setVolume(value: number): void
-  setMode(mode: 'production' | 'neutral'): void
+  setMode(mode: 'production' | 'neutral' | 'piano'): Promise<void>
   setPatch(index: number, patchId: string): boolean
   setMute(index: number, value: boolean): void
   setSolo(index: number, value: boolean): void

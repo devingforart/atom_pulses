@@ -3,13 +3,19 @@ import { PATCHES, patchForTrack } from './sound-palette.mjs';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const hertz = pitch => 440 * 2 ** ((pitch - 69) / 12);
+const PIANO_ANCHORS = [21, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102, 108];
+// Peak levels measured from the bundled CC0 samples. Gain matching prevents
+// octave changes from sounding like a different instrument.
+const PIANO_PEAK_DB = [-8.3, -4.9, -5.4, -7.5, -6.1, -4.9, -5.9, -11.7, -7.8, -5.2, -8.6, -15.6, -9.1, -6.2, -12.2, -10.7];
+const pianoName = pitch => pitch === 21 ? 'A0' : `${pitch % 12 === 0 ? 'C' : 'Fs'}${Math.floor(pitch / 12) - 1}`;
+const pianoUrl = pitch => `/piano/INSPiano_Vel03_${pianoName(pitch)}_01.ogg`;
 
 // Local audition engine. Its only input is the published MIDI and track metadata.
 // Sound changes never alter the score, exported notes or the composer.
 export class ProductionAudio extends SuiteAudio {
   constructor(onPosition, onStop) {
     super(onPosition, onStop);
-    this.mode = 'production';
+    this.mode = 'piano';
     this.masterVolume = .72;
   }
 
@@ -18,9 +24,10 @@ export class ProductionAudio extends SuiteAudio {
     super.setSong(midi, tracks);
   }
 
-  setMode(mode) {
-    if (mode !== 'production' && mode !== 'neutral') throw new Error('Modo de escucha desconocido');
+  async setMode(mode) {
+    if (mode !== 'production' && mode !== 'neutral' && mode !== 'piano') throw new Error('Modo de escucha desconocido');
     if (this.mode === mode) return;
+    if (mode === 'piano' && this.context) await this.ensurePiano();
     this.mode = mode;
     this.reschedule();
   }
@@ -36,8 +43,21 @@ export class ProductionAudio extends SuiteAudio {
 
   async ensureAudio() {
     await super.ensureAudio();
+    if (this.mode === 'piano') await this.ensurePiano();
     if (this.productionReady) return;
     this.prepareProduction();
+  }
+
+  async ensurePiano() {
+    if (this.pianoBuffers) return;
+    if (!this.pianoLoading) {
+      this.pianoLoading = Promise.all(PIANO_ANCHORS.map(async pitch => {
+        const response = await fetch(pianoUrl(pitch));
+        if (!response.ok) throw new Error(`No se pudo cargar el piano (${response.status}).`);
+        return [pitch, await this.context.decodeAudioData(await response.arrayBuffer())];
+      })).then(entries => { this.pianoBuffers = new Map(entries); }).finally(() => { this.pianoLoading = null; });
+    }
+    await this.pianoLoading;
   }
 
   prepareProduction() {
@@ -62,7 +82,12 @@ export class ProductionAudio extends SuiteAudio {
     const length = Math.min(clamp(Number(maxSeconds) || 30, 1, 60), Math.max(.1, this.duration - start));
     const sampleRate = 44100;
     const context = new OfflineAudioContext(2, Math.ceil((length + .25) * sampleRate), sampleRate);
+    if (this.mode === 'piano') {
+      await this.ensureAudio();
+    }
     const renderer = new ProductionAudio();
+    renderer.mode = this.mode;
+    renderer.pianoBuffers = this.pianoBuffers;
     renderer.context = context;
     renderer.midi = this.midi;
     renderer.tracks = this.tracks.map(track => ({ ...track }));
@@ -94,6 +119,7 @@ export class ProductionAudio extends SuiteAudio {
 
   note(instrument, note, at, seconds, track = {}) {
     if (this.mode === 'neutral') return super.note(instrument, note, at, seconds);
+    if (this.mode === 'piano') return this.pianoNote(note, at, seconds);
     if (!this.offline && this.voices.size >= 88) return;
     const patch = PATCHES[track.patchId] || PATCHES[patchForTrack(track)];
     if (patch.family === 'drums' || instrument === 'drums' || note.channel === 9) return this.drum(note, at, patch);
@@ -152,6 +178,39 @@ export class ProductionAudio extends SuiteAudio {
       for (const osc of oscillators) osc.disconnect();
       filter.disconnect(); envelope.disconnect(); pan.disconnect();
     };
+  }
+
+  pianoNote(note, at, seconds) {
+    if (!this.offline && this.voices.size >= 96) return;
+    const context = this.context;
+    const pitch = clamp(Math.round(note.pitch), 21, 108);
+    const anchor = PIANO_ANCHORS.reduce((best, candidate) => Math.abs(candidate - pitch) < Math.abs(best - pitch) ? candidate : best);
+    const buffer = this.pianoBuffers?.get(anchor);
+    if (!buffer) return;
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    const velocity = clamp((Number(note.velocity) || 80) / 127, .05, 1);
+    const sampleIndex = PIANO_ANCHORS.indexOf(anchor);
+    const level = .22 * 10 ** ((-6 - PIANO_PEAK_DB[sampleIndex]) / 20) * (.25 + .75 * velocity ** 1.4);
+    const end = at + Math.max(.04, seconds);
+    source.buffer = buffer;
+    source.playbackRate.value = 2 ** ((pitch - anchor) / 12);
+    gain.gain.setValueAtTime(0, at);
+    gain.gain.linearRampToValueAtTime(level, at + .004);
+    gain.gain.setValueAtTime(level, end);
+    gain.gain.setTargetAtTime(0, end, .07);
+    source.connect(gain).connect(this.master);
+    source.start(at);
+    source.stop(Math.min(at + buffer.duration / source.playbackRate.value, end + .45));
+    const voice = { stop: () => {
+      try {
+        gain.gain.cancelScheduledValues(context.currentTime);
+        gain.gain.setTargetAtTime(0, context.currentTime, .008);
+        source.stop(context.currentTime + .05);
+      } catch { /* An already-ended sample is harmless. */ }
+    } };
+    this.voices.add(voice);
+    source.onended = () => { this.voices.delete(voice); source.disconnect(); gain.disconnect(); };
   }
 
   drum(note, at, patch = PATCHES.drums_electronic) {

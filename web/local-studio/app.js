@@ -37,16 +37,16 @@ let jobs = [], selectedId = null, loadedKey = null, loadVersion = 0, current = n
 const audio = new ProductionAudio(updatePosition, () => { ui.play.textContent = '▶'; ui.play.setAttribute('aria-label', 'Reproducir'); });
 const patchStorageKey = (jobId, filename) => `pulso:audition:${SOUND_BANK_VERSION}:${jobId}:${filename}`;
 function updateListeningLabels() {
-  $('#listen-description').textContent = audio.mode === 'production'
-    ? 'Sonidos PULSO elegidos por función musical. Cambiá a MIDI neutro para auditar la partitura; las notas no cambian.'
-    : 'Monitor senoidal: todas las notas tonales usan el mismo sonido. Compará la composición sin color instrumental.';
+  $('#listen-description').textContent = audio.mode === 'piano'
+    ? 'Piano MIDI: todas las pistas suenan con el mismo piano para escuchar la composición con claridad. El MIDI no cambia.'
+    : 'MIDI neutro: monitor senoidal sin color instrumental. El MIDI no cambia.';
   if (!current) return;
   ui.timeline.querySelectorAll('.track-row').forEach((row, index) => {
     const track = current.tracks[index];
     const label = row.querySelector('.sound-label');
     const select = row.querySelector('.sound-select');
-    if (label) label.textContent = audio.mode === 'production' ? PATCHES[track.patchId]?.label || 'Sonido PULSO' : names[track.instrument] || names.synth;
-    if (select) select.disabled = audio.mode !== 'production';
+    if (label) label.textContent = audio.mode === 'piano' ? 'Piano MIDI' : audio.mode === 'production' ? PATCHES[track.patchId]?.label || 'Sonido PULSO' : names[track.instrument] || names.synth;
+    if (select) { select.disabled = audio.mode !== 'production'; select.hidden = audio.mode !== 'production'; }
   });
 }
 
@@ -252,13 +252,14 @@ function renderTimeline() {
     const name = node('div', 'track-name'), dot = node('span', 'track-dot'), title = node('b', '', track.name); title.title = track.name; name.append(dot, title);
     const bottom = node('div', 'track-bottom'), mute = actionButton('M', () => { const value = !audio.muted.has(index); audio.setMute(index, value); mute.classList.toggle('active', value); mute.setAttribute('aria-pressed', String(value)); }), solo = actionButton('S', () => { const value = !audio.soloed.has(index); audio.setSolo(index, value); solo.classList.toggle('active', value); solo.setAttribute('aria-pressed', String(value)); });
     mute.title = `Silenciar ${track.name}`; solo.title = `Escuchar solo ${track.name}`; mute.setAttribute('aria-label', mute.title); solo.setAttribute('aria-label', solo.title); mute.setAttribute('aria-pressed', 'false'); solo.setAttribute('aria-pressed', 'false');
-    const soundLabel = node('small', 'sound-label', audio.mode === 'production' ? PATCHES[track.patchId]?.label || 'Sonido PULSO' : names[track.instrument] || names.synth);
+    const soundLabel = node('small', 'sound-label', audio.mode === 'piano' ? 'Piano MIDI' : audio.mode === 'production' ? PATCHES[track.patchId]?.label || 'Sonido PULSO' : names[track.instrument] || names.synth);
     const patchSelect = node('select', 'sound-select');
     patchSelect.setAttribute('aria-label', `Sonido de ${track.name}`);
     patchSelect.title = `Cambiar el sonido de ${track.name} sin alterar su MIDI`;
     for (const id of patchOptions(PATCHES[track.patchId]?.family || 'synth')) patchSelect.add(new Option(PATCHES[id].label, id));
     patchSelect.value = track.patchId;
     patchSelect.disabled = audio.mode !== 'production';
+    patchSelect.hidden = audio.mode !== 'production';
     patchSelect.addEventListener('change', () => {
       if (!audio.setPatch(index, patchSelect.value)) return;
       soundLabel.textContent = PATCHES[patchSelect.value].label;
@@ -347,7 +348,11 @@ ui.play.addEventListener('click', async () => { try { if (audio.playing) audio.p
 ui.stop.addEventListener('click', () => audio.stop());
 ui.back.addEventListener('click', () => audio.seek(0));
 $('#volume').addEventListener('input', event => audio.setVolume(Number(event.target.value) / 100));
-$('#listen-mode').addEventListener('change', event => { audio.setMode(event.target.value); updateListeningLabels(); });
+$('#listen-mode').addEventListener('change', async event => {
+  const selected = event.target.value;
+  try { await audio.setMode(selected); updateListeningLabels(); }
+  catch (error) { event.target.value = audio.mode; showNotice(error.message || 'No se pudo cargar el piano.'); }
+});
 $('#preview-wav').addEventListener('click', async () => {
   if (!current) return;
   const button = $('#preview-wav');

@@ -68,8 +68,10 @@ la separación entre estáticos y API.
 
 La página autenticada `/cloud` y el estudio local importan el mismo lector MIDI,
 motor `ProductionAudio` y banco de sonidos desde `web/shared`. Ambos ofrecen
-**Producción**, **MIDI neutro**, selección de sonido por pista y una vista previa
-WAV de 30 segundos desde el navegador. Una nueva versión del frontend debe
+**Piano MIDI** (predeterminado) y **MIDI neutro**, además de una vista previa
+WAV de 30 segundos desde el navegador. Las muestras de piano CC0 están incluidas
+en `web/frontend/public/piano` y se sirven desde el mismo origen en ambas interfaces.
+Una nueva versión del frontend debe
 copiar `web/shared` durante el build (incluido en `web/Dockerfile`). Para obras
 Cloud anteriores, el endpoint autenticado de detalle recupera `catalog_id`,
 función e intención tímbrica de los archivos laterales `.pulso.json` existentes.

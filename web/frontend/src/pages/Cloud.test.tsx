@@ -48,6 +48,8 @@ describe('Cloud Suite', () => {
     expect(history).toHaveTextContent('Obra de prueba')
     expect(history).toHaveTextContent('LISTA')
     expect(history).toHaveTextContent('01:00 · 1 pistas')
+    expect(screen.getByRole('button', { name: 'Cerrar historial' })).toHaveClass('cloud-suite-history-close')
+    expect(screen.getByRole('button', { name: /Actualizar/ })).toHaveClass('cloud-suite-history-refresh')
     const callsBeforeRefresh = mock.cloudJobs.mock.calls.length
     fireEvent.click(screen.getByRole('button', { name: /Actualizar/ }))
     await waitFor(() => expect(mock.cloudJobs.mock.calls.length).toBeGreaterThan(callsBeforeRefresh))

@@ -93,7 +93,7 @@ export const api = {
     }),
   portal: () => request<{ url: string }>('/api/billing/portal', { method: 'POST' }),
   cloudJobs: () => request<CloudJob[]>('/api/cloud/jobs'),
-  cloudStatus: () => request<{ available: boolean; dailyJobLimit: number; dailyAttemptLimit: number }>('/api/cloud/status'),
+  cloudStatus: () => request<{ available: boolean; dailyJobLimit: number; unlimited: boolean }>('/api/cloud/status'),
   cloudJob: (id: string) => request<CloudJob>(`/api/cloud/jobs/${id}`),
   createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; idempotencyKey: string }) =>
     request<CloudJob>('/api/cloud/jobs', { method: 'POST', body: JSON.stringify(input) }),

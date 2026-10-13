@@ -28,6 +28,7 @@ pub struct Config {
     pub cloud_beta_studio: bool,
     pub cloud_beta_emails: Vec<String>,
     pub cloud_daily_jobs: i64,
+    pub cloud_unlimited_emails: Vec<String>,
 }
 
 impl Config {
@@ -99,8 +100,14 @@ impl Config {
             cloud_daily_jobs: env::var("PULSO_CLOUD_DAILY_JOBS")
                 .ok()
                 .and_then(|value| value.parse().ok())
-                .filter(|value| (1..=100).contains(value))
+                .filter(|value| (1..=2).contains(value))
                 .unwrap_or(2),
+            cloud_unlimited_emails: env::var("PULSO_CLOUD_UNLIMITED_EMAILS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|email| email.trim().to_ascii_lowercase())
+                .filter(|email| !email.is_empty())
+                .collect(),
         })
     }
 }

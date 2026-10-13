@@ -29,7 +29,7 @@ const job = {
 beforeEach(() => {
   mock.cloudJobs.mockReset().mockResolvedValue([job])
   mock.cloudJob.mockReset().mockResolvedValue(job)
-  mock.cloudStatus.mockReset().mockResolvedValue({ available: true, dailyJobLimit: 3, dailyAttemptLimit: 5 })
+  mock.cloudStatus.mockReset().mockResolvedValue({ available: true, dailyJobLimit: 2, unlimited: false })
   mock.createCloudJob.mockReset().mockResolvedValue({ ...job, id: 'new-job', status: 'queued', resultManifest: null })
   mock.cancelCloudJob.mockReset()
   vi.stubGlobal('fetch', vi.fn(async () => new Response(midi(), { status: 200, headers: { 'Content-Type': 'audio/midi' } })))
@@ -39,6 +39,14 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Cloud Suite', () => {
+  it('shows the correct daily policy for regular and unlimited accounts', async () => {
+    const regular = render(<Cloud />)
+    await waitFor(() => expect(screen.getByText(/hasta 2 obras completadas cada 24 horas/i)).toBeInTheDocument())
+    regular.unmount()
+    mock.cloudStatus.mockResolvedValue({ available: true, dailyJobLimit: 2, unlimited: true })
+    render(<Cloud />)
+    await waitFor(() => expect(screen.getByText(/Acceso ilimitado para esta cuenta/i)).toBeInTheDocument())
+  })
   it('shows the same useful library details as the local studio', async () => {
     render(<Cloud />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Historial' })).toBeInTheDocument())

@@ -1,0 +1,10 @@
+{
+  "name": "ai-only-v2-joint-narrative",
+  "workerEnvironment": {
+    "PULSO_AI_EDITORIAL_V2": "1",
+    "PULSO_LOCAL_EDITORIAL_V2": "1",
+    "PULSO_AI_JOINT_SHORT_CAST": "1",
+    "PULSO_AI_JOINT_NARRATIVE_ANCHORS": "1",
+    "PULSO_DISABLE_SECURE_CREDENTIALS": "1"
+  }
+}

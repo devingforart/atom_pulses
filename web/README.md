@@ -78,13 +78,15 @@ propietario; escuchar o renderizar una obra guardada no crea otra composición
 ni consume la API de IA.
 
 PULSO Cloud expone solamente idea musical, duración y tempo. El servidor fija
-el enfoque `adaptive`, genera una semilla privada por obra y exige autoría
+el enfoque `adaptive`, genera una semilla por obra y exige autoría
 MIDI soberana de la IA. El estudio local conserva los controles avanzados de
 diagnóstico y comparación. Ningún cambio de sonido altera los MIDI exportados.
 
 El proceso Cloud limpia las credenciales del servidor antes de lanzar el worker,
-pero vuelve a establecer explícitamente el perfil editorial `PULSO_AI_EDITORIAL_V2=1`
-que usa el estudio local. El límite externo de ejecución es de 185 minutos:
+pero establece el mismo perfil de composición versionado en
+`web/shared/composer-profile.json` que lee el estudio local. La API Cloud admite
+una semilla opcional en el JSON para comparar dos ejecuciones controladas;
+la interfaz habitual genera una automáticamente. El límite externo de ejecución es de 185 minutos:
 da margen al límite interno de hasta 180 minutos para obras con muchos
 instrumentos, sin interrumpirlas artificialmente a los 45 minutos. La traza
 de la API se conserva en el volumen privado de cada obra y no se expone en la
@@ -95,12 +97,15 @@ estado, fecha, duración, número de pistas y actualización manual. En Cloud
 los trabajos pertenecen a la cuenta autenticada; en local, al almacenamiento
 de pruebas de ese equipo.
 
-Cloud pasa también `PULSO_AI_JOINT_SHORT_CAST=1` y
-`PULSO_AI_JOINT_NARRATIVE_ANCHORS=1` al worker aislado: las obras de hasta cinco
+El perfil compartido activa `PULSO_AI_JOINT_SHORT_CAST=1` y
+`PULSO_AI_JOINT_NARRATIVE_ANCHORS=1` en ambos entornos: las obras de hasta cinco
 minutos usan la misma arquitectura de ventanas y voces que produjo el anclaje
 «Pregunta suspendida, Re menor» en el estudio local. Si una ejecución termina
 con un checkpoint aceptado, Cloud puede reanudar hasta tres veces la misma obra
-sin pedir de nuevo el plan ni las ventanas terminadas. Cada reanudación tiene
+sin pedir de nuevo el plan ni las ventanas terminadas. El checkpoint guarda
+las notas exactas, la identidad de cada pista y el plan aprobado; Cloud lo valida
+antes de continuar. Local prefiere ese mismo checkpoint y conserva la lectura
+del MIDI provisional solo para obras antiguas. Cada reanudación tiene
 un límite propio de diez minutos y USD 20 estimados; la obra completa conserva
 el límite externo de 185 minutos. No se reintenta una interrupción inesperada
 del proceso API ni un error permanente de credenciales o cuota, para evitar

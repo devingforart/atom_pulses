@@ -9,6 +9,7 @@ import { analyzeComposition } from './composition-audit.mjs';
 import { canAutomaticallyRecover, automaticRecoveryRequest,
   AUTOMATIC_RECOVERY_MAX_SECONDS, AUTOMATIC_RECOVERY_MAX_USD } from './recovery-policy.mjs';
 import { parseMidi } from '../shared/midi.mjs';
+import { composerProfile, experimentalProfile, workerEnvironmentFor } from './composer-environment.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -160,10 +161,6 @@ function validate(input) {
   const blueprintFromJob = input.blueprint_from_job === undefined ? null : String(input.blueprint_from_job);
   if (!prompt || prompt.length > 600) throw new InputError('La idea debe contener entre 1 y 600 caracteres.');
   if (!Number.isInteger(duration) || duration < 30 || duration > 900) throw new InputError('La duración debe estar entre 30 y 900 segundos.');
-  if (process.env.PULSO_AI_JOINT_SHORT_CAST === '1' && duration > 300)
-    throw new InputError('Este laboratorio de ventanas conjuntas admite hasta 5 minutos. No se iniciará el motor estándar en su lugar.');
-  if (process.env.PULSO_AI_JOINT_SHORT_CAST === '1' && renderMode !== 'ai_sovereign')
-    throw new InputError('Este laboratorio requiere autoría IA soberana para usar las ventanas conjuntas.');
   if (!Number.isFinite(bpm) || bpm < 60 || bpm > 180) throw new InputError('El tempo debe estar entre 60 y 180 BPM.');
   if (!['adaptive', 'hypnotic', 'narrative'].includes(behavior)) throw new InputError('El enfoque musical no es válido.');
   if (!['ai_sovereign', 'standard'].includes(renderMode)) throw new InputError('El modo de render no es válido.');
@@ -214,6 +211,19 @@ function resumeScoreFromJob(request) {
   const checkpoint = readJson(path.join(previousDirectory, 'checkpoint.json'));
   if (!checkpoint?.file || !/^partial-[0-9]+\.mid$/.test(checkpoint.file))
     throw new InputError('Previous job has no accepted MIDI checkpoint.');
+  const exactResume = readJson(path.join(previousDirectory, 'resume-score.json'));
+  if (checkpoint.resumeFile === 'resume-score.json' &&
+      exactResume?.schema_version === 2 &&
+      exactResume.completed_units === checkpoint.completed_units &&
+      Array.isArray(exactResume.notes) && exactResume.notes.length === checkpoint.notes &&
+      Array.isArray(exactResume.cast_ids) && exactResume.cast_ids.length === checkpoint.parts &&
+      Array.isArray(exactResume.sections) && exactResume.sections.length > 0 &&
+      typeof exactResume.blueprint_json === 'string' && exactResume.blueprint_json.length > 0 &&
+      exactResume.notes.every(note => typeof note.instrument_id === 'string' &&
+        exactResume.cast_ids.includes(note.instrument_id) &&
+        Number.isFinite(note.start_beat) && Number.isFinite(note.duration_beats) &&
+        Number.isInteger(note.pitch) && Number.isInteger(note.velocity)))
+    return exactResume;
   const stem = checkpoint.file.slice(0, -4);
   const plan = readJson(path.join(previousDirectory, `${stem}-plan.json`));
   const score = readJson(path.join(previousDirectory, `${stem}.pulso.json`));
@@ -252,12 +262,11 @@ function resumeScoreFromJob(request) {
 }
 
 function childEnvironment(dir) {
-  const keys = ['OPENAI_API_KEY', 'PATH', 'Path', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData'];
   // Local Studio advertises and checks its environment key. Force the worker to
   // use that same key instead of silently preferring a different VST credential
   // stored in Windows Credential Manager.
   const automatic = readJson(path.join(dir, 'job.json'))?.automatic_recovery_attempt === 1;
-  return { ...Object.fromEntries(keys.filter(key => process.env[key]).map(key => [key, process.env[key]])), PULSO_DISABLE_SECURE_CREDENTIALS: '1', PULSO_LOCAL_EDITORIAL_V2: '1', PULSO_TRACE_PATH: path.join(dir, 'api-events.jsonl'), ...(process.env.PULSO_AI_DISABLE_RESPONSE_CACHE === '1' ? {} : { PULSO_AI_RESPONSE_CACHE_DIR: path.join(dataRoot, 'validated-response-cache') }), ...(process.env.PULSO_AI_SINGLE_OWNER_WRITING === '1' ? { PULSO_AI_SINGLE_OWNER_WRITING: '1' } : {}), ...(process.env.PULSO_AI_FAST_MODE === '1' ? { PULSO_AI_FAST_MODE: '1' } : {}), ...(process.env.PULSO_AI_COMPACT_WIRE === '1' ? { PULSO_AI_COMPACT_WIRE: '1' } : {}), ...(process.env.PULSO_AI_DENSE_WIRE === '1' ? { PULSO_AI_DENSE_WIRE: '1' } : {}), ...(process.env.PULSO_AI_PARALLEL_FRONTIER === '1' ? { PULSO_AI_PARALLEL_FRONTIER: '1' } : {}), ...(process.env.PULSO_AI_JOINT_SHORT_CAST === '1' ? { PULSO_AI_JOINT_SHORT_CAST: '1' } : {}), ...(process.env.PULSO_AI_JOINT_ONE_GROUP === '1' ? { PULSO_AI_JOINT_ONE_GROUP: '1' } : {}), ...(process.env.PULSO_AI_JOINT_NARRATIVE_ANCHORS === '1' ? { PULSO_AI_JOINT_NARRATIVE_ANCHORS: '1' } : {}), ...(process.env.PULSO_AI_JOINT_COMPACT_CAST === '1' ? { PULSO_AI_JOINT_COMPACT_CAST: '1' } : {}), ...(process.env.PULSO_AI_GROUP_SHORT_FOUNDATION === '1' ? { PULSO_AI_GROUP_SHORT_FOUNDATION: '1' } : {}), ...(process.env.PULSO_AI_EXPERIMENT_EFFORT === 'low' ? { PULSO_AI_EXPERIMENT_EFFORT: 'low' } : {}), ...(['gpt-6.1-sol', 'gpt-6-luna'].includes(process.env.PULSO_AI_EXPERIMENT_MODEL) ? { PULSO_AI_EXPERIMENT_MODEL: process.env.PULSO_AI_EXPERIMENT_MODEL } : {}), ...(automatic ? { PULSO_AUTO_RECOVERY_MAX_SECONDS: String(AUTOMATIC_RECOVERY_MAX_SECONDS), PULSO_AUTO_RECOVERY_MAX_USD: String(AUTOMATIC_RECOVERY_MAX_USD) } : {}) };
+  return workerEnvironmentFor(process.env, dir, dataRoot, automatic);
 }
 
 function startAutomaticRecovery(sourceId) {
@@ -326,7 +335,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   const pathname = url.pathname;
   try {
-    if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, editorialProfile: 'ai-only-v2', experimentalArchitecture: process.env.PULSO_AI_JOINT_SHORT_CAST === '1' ? (process.env.PULSO_AI_JOINT_COMPACT_CAST === '1' ? 'compact-ai-ensemble-up-to-90s-max-6-tracks' : process.env.PULSO_AI_JOINT_ONE_GROUP === '1' ? 'joint-ensemble-windows-up-to-300s-max-12-tracks' : process.env.PULSO_AI_JOINT_NARRATIVE_ANCHORS === '1' ? 'narrative-anchors-then-companions-up-to-300s-max-12-tracks' : 'joint-ensemble-windows-up-to-300s-max-12-tracks') : null });
+    if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, editorialProfile: 'ai-only-v2', composerProfile: composerProfile.name, experimentalProfile });
     if (req.method === 'GET' && pathname === '/api/jobs') return json(res, 200, { jobs: listJobs() });
     if (req.method === 'POST' && !mutatingRequestAllowed(req)) return json(res, 403, { error: 'Solicitud local no autorizada.' });
     if (req.method === 'POST' && pathname === '/api/jobs') {

@@ -382,11 +382,13 @@ void writeProvisionalMidi(const juce::File& output, const pulso::SongPlan& plan,
                 item->setProperty("velocity", note.velocity);
                 notes.add(juce::var(item));
             }
-            if (notes.size() == static_cast<int>(song.notes.size()) &&
-                output.getChildFile("resume-score.json").replaceWithText(
-                    juce::JSON::toString(juce::var(resume), false),
-                    false, false, "\n"))
-                checkpoint->setProperty("resumeFile", "resume-score.json");
+            if (notes.size() == static_cast<int>(song.notes.size())) {
+                resume->setProperty("notes", notes);
+                if (output.getChildFile("resume-score.json").replaceWithText(
+                        juce::JSON::toString(juce::var(resume), false),
+                        false, false, "\n"))
+                    checkpoint->setProperty("resumeFile", "resume-score.json");
+            }
         }
     }
     output.getChildFile(diagnostic ? "diagnostic.json" : "checkpoint.json").replaceWithText(

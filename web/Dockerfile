@@ -14,6 +14,7 @@ COPY web/backend/Cargo.toml web/backend/Cargo.lock* ./
 COPY web/backend/build.rs ./build.rs
 COPY web/backend/migrations ./migrations
 COPY web/backend/src ./src
+COPY web/shared/ /source/shared/
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/source/backend/target \

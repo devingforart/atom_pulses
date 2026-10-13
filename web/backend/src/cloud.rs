@@ -38,6 +38,12 @@ pub struct CreateJob {
     duration_seconds: i32,
     bpm: f64,
     idempotency_key: String,
+    seed: Option<String>,
+}
+
+fn composer_profile() -> Value {
+    serde_json::from_str(include_str!("../../shared/composer-profile.json"))
+        .expect("the shared composer profile must be valid JSON")
 }
 
 #[derive(Debug, FromRow, Serialize)]
@@ -72,6 +78,11 @@ fn valid_request(input: &CreateJob) -> bool {
             .idempotency_key
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        && input.seed.as_ref().is_none_or(|seed| {
+            seed.parse::<i64>().is_ok_and(|value| value > 0)
+                && !seed.starts_with('+')
+                && !seed.starts_with('0')
+        })
 }
 
 fn available(state: &AppState, user: &crate::models::AuthenticatedUser) -> bool {
@@ -119,7 +130,8 @@ pub async fn create(
         .bind(user.id).bind(&input.idempotency_key).fetch_optional(&mut *tx).await? {
         if existing.prompt != input.prompt.trim()
             || existing.duration_seconds != input.duration_seconds
-            || existing.bpm != input.bpm {
+            || existing.bpm != input.bpm
+            || input.seed.as_ref().is_some_and(|seed| seed != &existing.seed) {
             return Err(ApiError::public(StatusCode::CONFLICT,
                 "Esta clave de solicitud ya pertenece a otra composición."));
         }
@@ -146,7 +158,11 @@ pub async fn create(
     }
     let mut seed_bytes = [0_u8; 8];
     getrandom::fill(&mut seed_bytes).map_err(|error| ApiError::internal(error.to_string()))?;
-    let seed = (i64::from_le_bytes(seed_bytes) & i64::MAX).max(1);
+    let seed = input
+        .seed
+        .as_ref()
+        .map(|seed| seed.parse::<i64>().expect("validated seed"))
+        .unwrap_or_else(|| (i64::from_le_bytes(seed_bytes) & i64::MAX).max(1));
     let id = Uuid::new_v4();
     let now = unix_time();
     sqlx::query("INSERT INTO cloud_jobs(id,user_id,idempotency_key,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign,status,stage,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued','queued',$10,$10)")
@@ -192,6 +208,7 @@ pub async fn status(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
     Ok(Json(serde_json::json!({
         "available": user.email_verified && available(&state, &user),
         "dailyJobLimit": state.config.cloud_daily_jobs,
+        "composerProfile": composer_profile()["name"],
     })))
 }
 
@@ -361,24 +378,20 @@ fn worker_command(
     command
         .env_clear()
         .env("OPENAI_API_KEY", openai_key)
-        // env_clear() deliberately strips API-server secrets, but it also
-        // strips the editor profile from Compose. Pass the exact profile used
-        // by Local Studio explicitly; otherwise identical requests follow a
-        // different musical path in Cloud.
-        .env("PULSO_AI_EDITORIAL_V2", "1")
-        .env("PULSO_LOCAL_EDITORIAL_V2", "1")
-        // Match the verified Local Studio architecture that authored
-        // "Pregunta suspendida". Long works continue to use the existing
-        // route; the joint-window branch itself is bounded to 300 seconds.
-        .env("PULSO_AI_JOINT_SHORT_CAST", "1")
-        .env("PULSO_AI_JOINT_NARRATIVE_ANCHORS", "1")
-        .env("PULSO_DISABLE_SECURE_CREDENTIALS", "1")
         .env("PULSO_TRACE_PATH", directory.join("api-events.jsonl"))
         .env("HOME", output_root)
         .env("XDG_CONFIG_HOME", output_root)
         .arg(input)
         .arg(directory)
         .kill_on_drop(true);
+    // Local Studio reads this same versioned profile. A single file prevents
+    // silent musical-path drift when one surface gains an editorial flag.
+    for (key, value) in composer_profile()["workerEnvironment"]
+        .as_object()
+        .expect("composer profile needs workerEnvironment")
+    {
+        command.env(key, value.as_str().expect("profile values must be strings"));
+    }
     if recovery {
         command
             .env(
@@ -391,24 +404,41 @@ fn worker_command(
 }
 
 fn valid_resume(checkpoint: &Value, resume: &Value) -> bool {
-    checkpoint["resumeFile"].as_str() == Some("resume-score.json")
+    resume["schema_version"].as_u64() == Some(2)
+        && checkpoint["resumeFile"].as_str() == Some("resume-score.json")
         && checkpoint["completed_units"]
             .as_u64()
             .is_some_and(|n| n > 0)
         && checkpoint["completed_units"] == resume["completed_units"]
         && checkpoint["notes"].as_u64().is_some_and(|n| n > 0)
-        && resume["notes"].as_array().is_some_and(|notes| {
-            notes.len() == checkpoint["notes"].as_u64().unwrap_or_default() as usize
+        && resume["cast_ids"].as_array().is_some_and(|cast| {
+            !cast.is_empty() && Some(cast.len() as u64) == checkpoint["parts"].as_u64()
         })
-        && resume["cast_ids"]
-            .as_array()
-            .is_some_and(|cast| !cast.is_empty())
         && resume["sections"]
             .as_array()
             .is_some_and(|sections| !sections.is_empty())
         && resume["blueprint_json"]
             .as_str()
             .is_some_and(|blueprint| !blueprint.is_empty() && blueprint.len() <= 2 * 1024 * 1024)
+        && resume["notes"].as_array().is_some_and(|notes| {
+            notes.len() == checkpoint["notes"].as_u64().unwrap_or_default() as usize
+                && notes.iter().all(|note| {
+                    note["instrument_id"].as_str().is_some_and(|id| {
+                        resume["cast_ids"]
+                            .as_array()
+                            .is_some_and(|cast| cast.iter().any(|owner| owner.as_str() == Some(id)))
+                    }) && note["start_beat"].as_f64().is_some_and(f64::is_finite)
+                        && note["duration_beats"]
+                            .as_f64()
+                            .is_some_and(|v| v.is_finite() && v > 0.0)
+                        && note["pitch"]
+                            .as_i64()
+                            .is_some_and(|v| (0..=127).contains(&v))
+                        && note["velocity"]
+                            .as_i64()
+                            .is_some_and(|v| (1..=127).contains(&v))
+                })
+        })
 }
 
 fn permanent_worker_error(error: &str) -> bool {
@@ -678,14 +708,19 @@ mod tests {
     #[test]
     fn accepted_checkpoint_only_can_be_retried() {
         let checkpoint = serde_json::json!({"resumeFile":"resume-score.json",
-            "completed_units":8,"notes":2});
-        let resume = serde_json::json!({"completed_units":8,"notes":[{},{}],
+            "completed_units":8,"notes":2,"parts":1});
+        let note = serde_json::json!({"instrument_id":"piano","start_beat":0.0,
+            "duration_beats":1.0,"pitch":60,"velocity":80});
+        let resume = serde_json::json!({"schema_version":2,"completed_units":8,"notes":[note.clone(),note],
             "cast_ids":["piano"],"sections":[{"start_bar":0,"bars":4}],
             "blueprint_json":"{}"});
         assert!(valid_resume(&checkpoint, &resume));
         let mut rejected = checkpoint.clone();
         rejected["resumeFile"] = Value::Null;
         assert!(!valid_resume(&rejected, &resume));
+        let mut missing_notes = resume.clone();
+        missing_notes.as_object_mut().unwrap().remove("notes");
+        assert!(!valid_resume(&checkpoint, &missing_notes));
         assert!(permanent_worker_error("OpenAI insufficient_quota"));
         assert!(!permanent_worker_error(
             "Joint AI score reached its global time budget"
@@ -730,6 +765,7 @@ mod tests {
             duration_seconds: 390,
             bpm: 120.0,
             idempotency_key: Uuid::new_v4().to_string(),
+            seed: None,
         };
         assert!(valid_request(&valid));
         assert!(!valid_request(&CreateJob {
@@ -742,6 +778,18 @@ mod tests {
         }));
         assert!(!valid_request(&CreateJob {
             bpm: f64::NAN,
+            ..valid.clone()
+        }));
+        assert!(valid_request(&CreateJob {
+            seed: Some("1168010360189720986".into()),
+            ..valid.clone()
+        }));
+        assert!(!valid_request(&CreateJob {
+            seed: Some("0".into()),
+            ..valid.clone()
+        }));
+        assert!(!valid_request(&CreateJob {
+            seed: Some("9223372036854775808".into()),
             ..valid
         }));
     }

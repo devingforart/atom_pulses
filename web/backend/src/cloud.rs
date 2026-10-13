@@ -30,6 +30,9 @@ const CLOUD_WORKER_DEADLINE: Duration = Duration::from_secs(185 * 60);
 const MAX_CHECKPOINT_RECOVERIES: u8 = 3;
 const RECOVERY_CALL_SECONDS: u64 = 600;
 const RECOVERY_CALL_USD: u64 = 20;
+// A rejected score or upstream outage must not consume the entire beta allowance,
+// but retries still need a firm cost ceiling for each account.
+const CLOUD_EXTRA_FAILED_ATTEMPTS: i64 = 2;
 
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -101,6 +104,18 @@ fn available(state: &AppState, user: &crate::models::AuthenticatedUser) -> bool 
                 .any(|email| email == &user.email.to_ascii_lowercase()))
 }
 
+fn quota_problem(attempts: i64, completed: i64, active: i64, completed_limit: i64) -> Option<&'static str> {
+    if active > 0 {
+        Some("Ya tienes una composición en curso. Espera a que termine o cancélala.")
+    } else if completed >= completed_limit {
+        Some("Alcanzaste el cupo de obras completadas de las últimas 24 horas.")
+    } else if attempts >= completed_limit + CLOUD_EXTRA_FAILED_ATTEMPTS {
+        Some("Alcanzaste el límite de intentos Cloud de las últimas 24 horas. Las obras fallidas no consumen el cupo de obras completadas, pero sí un intento de seguridad.")
+    } else {
+        None
+    }
+}
+
 pub async fn create(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -138,8 +153,8 @@ pub async fn create(
         tx.commit().await?;
         return Ok((StatusCode::OK, Json(existing)));
     }
-    let daily: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM cloud_jobs WHERE user_id=$1 AND created_at >= $2")
+    let (daily_attempts, daily_completed): (i64, i64) =
+        sqlx::query_as("SELECT COUNT(*), COUNT(*) FILTER (WHERE status='completed') FROM cloud_jobs WHERE user_id=$1 AND created_at >= $2")
             .bind(user.id)
             .bind(unix_time() - 86_400)
             .fetch_one(&mut *tx)
@@ -150,10 +165,10 @@ pub async fn create(
     .bind(user.id)
     .fetch_one(&mut *tx)
     .await?;
-    if daily >= state.config.cloud_daily_jobs || active > 0 {
+    if let Some(problem) = quota_problem(daily_attempts, daily_completed, active, state.config.cloud_daily_jobs) {
         return Err(ApiError::public(
             StatusCode::TOO_MANY_REQUESTS,
-            "Alcanzaste el límite de obras o ya tienes una composición en curso.",
+            problem,
         ));
     }
     let mut seed_bytes = [0_u8; 8];
@@ -208,6 +223,7 @@ pub async fn status(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
     Ok(Json(serde_json::json!({
         "available": user.email_verified && available(&state, &user),
         "dailyJobLimit": state.config.cloud_daily_jobs,
+        "dailyAttemptLimit": state.config.cloud_daily_jobs + CLOUD_EXTRA_FAILED_ATTEMPTS,
         "composerProfile": composer_profile()["name"],
     })))
 }
@@ -649,6 +665,14 @@ pub async fn worker_loop(state: AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_cloud_jobs_get_bounded_retries_without_using_the_completed_quota() {
+        assert!(quota_problem(2, 0, 0, 2).is_none());
+        assert!(quota_problem(3, 1, 0, 2).is_none());
+        assert!(quota_problem(4, 0, 0, 2).unwrap().contains("intentos"));
+        assert!(quota_problem(2, 2, 0, 2).unwrap().contains("completadas"));
+        assert!(quota_problem(1, 0, 1, 2).unwrap().contains("en curso"));
+    }
     #[test]
     fn cloud_worker_budget_covers_the_ai_only_editorial_ceiling() {
         assert!(CLOUD_WORKER_DEADLINE >= Duration::from_secs(180 * 60));

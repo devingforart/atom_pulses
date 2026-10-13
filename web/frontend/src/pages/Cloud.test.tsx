@@ -29,7 +29,7 @@ const job = {
 beforeEach(() => {
   mock.cloudJobs.mockReset().mockResolvedValue([job])
   mock.cloudJob.mockReset().mockResolvedValue(job)
-  mock.cloudStatus.mockReset().mockResolvedValue({ available: true, dailyJobLimit: 3 })
+  mock.cloudStatus.mockReset().mockResolvedValue({ available: true, dailyJobLimit: 3, dailyAttemptLimit: 5 })
   mock.createCloudJob.mockReset().mockResolvedValue({ ...job, id: 'new-job', status: 'queued', resultManifest: null })
   mock.cancelCloudJob.mockReset()
   vi.stubGlobal('fetch', vi.fn(async () => new Response(midi(), { status: 200, headers: { 'Content-Type': 'audio/midi' } })))

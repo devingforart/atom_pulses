@@ -96,7 +96,7 @@ export function Cloud() {
   const [bpm, setBpm] = useState(120)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [cloudStatus, setCloudStatus] = useState<{ available: boolean; dailyJobLimit: number } | null>(null)
+  const [cloudStatus, setCloudStatus] = useState<{ available: boolean; dailyJobLimit: number; dailyAttemptLimit: number } | null>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
   const playheadRef = useRef<HTMLDivElement>(null)
   const timeRef = useRef<HTMLSpanElement>(null)
@@ -216,7 +216,7 @@ export function Cloud() {
         <div className="cloud-suite-field-pair"><div><label htmlFor="cloud-duration">Duración</label><select id="cloud-duration" value={durationSeconds} onChange={event => setDurationSeconds(Number(event.target.value))}>{[[60, '1 minuto'], [120, '2 minutos'], [180, '3 minutos'], [300, '5 minutos'], [390, '6 min 30 s'], [600, '10 minutos'], [900, '15 minutos']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
           <div><label htmlFor="cloud-bpm">Tempo</label><div className="cloud-suite-unit"><input id="cloud-bpm" type="number" min="60" max="180" value={bpm} onChange={event => setBpm(Number(event.target.value))} /><span>BPM</span></div></div></div>
         <button className="cloud-suite-compose-button" disabled={busy || !prompt.trim() || cloudStatus?.available !== true}>{busy ? 'Enviando…' : '✦  Componer obra ↗'}</button>
-        <p className="cloud-suite-cost">{cloudStatus?.available ? `Beta: ${cloudStatus.dailyJobLimit} obras cada 24 horas por cuenta.` : 'Cloud no está habilitado para esta cuenta.'} Escuchar obras guardadas no consume créditos. La composición continúa aunque cierres la página.</p>
+        <p className="cloud-suite-cost">{cloudStatus?.available ? `Beta: hasta ${cloudStatus.dailyJobLimit} obras completadas cada 24 horas y ${cloudStatus.dailyAttemptLimit} intentos totales para contemplar fallos.` : 'Cloud no está habilitado para esta cuenta.'} Escuchar obras guardadas no consume créditos. La composición continúa aunque cierres la página.</p>
         {error && <p className="cloud-suite-error" role="alert">{error}</p>}
       </form></div>
       <div className="cloud-suite-session"><div className="cloud-suite-kicker"><span>02 / SESIÓN</span><span>{jobs.length} OBRAS</span></div>

@@ -92,7 +92,13 @@ export class SuiteAudio {
     if (!this.playing) return;
     const position = this.currentPosition();
     this.onPosition?.(position);
-    if (position >= this.duration - 0.005) { this.stop(); return; }
+    // Keep the transport at the MIDI boundary while the last instrument release
+    // decays. Stopping voices exactly at the final tick makes a written cadence
+    // sound like an edit, even when its note-off is musically correct.
+    if (this.context.currentTime - this.origin >= this.duration + (this.playbackTailSeconds || 0) - 0.005) {
+      this.stop();
+      return;
+    }
     this.frame = requestAnimationFrame(() => this.animate());
   }
   schedule() {

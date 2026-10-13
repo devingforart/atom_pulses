@@ -2099,6 +2099,26 @@ void runSelectiveRepairTests() {
                 completeReview.harmonicContinuity > .95,
             "Developed independent voices and a sectionally sustained harmonic floor should pass");
 
+    auto unfinishedStory = finalPlan;
+    unfinishedStory.aiSovereign = true;
+    unfinishedStory.productionModeSource = "gpt_plan";
+    unfinishedStory.narrativeSpine.authored = true;
+    unfinishedStory.sections.back().name = "resolution";
+    unfinishedStory.narrativeSpine.acts = {
+        NarrativeAct{.sectionName = "opening", .stage = NarrativeStage::Premise},
+        NarrativeAct{.sectionName = "preparation", .stage = NarrativeStage::Climax},
+        NarrativeAct{.sectionName = "resolution", .stage = NarrativeStage::Resolution}
+    };
+    const auto unfinishedReview = SelectiveRepair::reviewFinalScore(
+        unfinishedStory, finalMidi);
+    require(!unfinishedReview.ready && !unfinishedReview.terminalPhraseReady &&
+                unfinishedReview.harmonicContinuity > .95 &&
+                unfinishedReview.developedVoices == 3 &&
+                std::find(unfinishedReview.instrumentIndices.begin(),
+                          unfinishedReview.instrumentIndices.end(), 2) !=
+                    unfinishedReview.instrumentIndices.end(),
+            "A score with developed voices and continuous harmony must still reject an abrupt, unconnected ending");
+
     auto transformedReprise = finalMidi;
     for (auto& note : transformedReprise.notes)
         if (note.partId == 3 && note.startBeat >= 16.0)

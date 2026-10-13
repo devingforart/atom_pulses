@@ -30,6 +30,8 @@ struct FinalScoreReview {
     std::size_t expectedVoices{};
     double harmonicContinuity{1.0};
     double climaxContrast{1.0};
+    double resolutionScore{1.0};
+    bool terminalPhraseReady{true};
     double deficit{};
     std::vector<std::size_t> instrumentIndices;
     std::vector<std::size_t> sectionIndices;

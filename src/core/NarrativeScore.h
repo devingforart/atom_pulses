@@ -60,6 +60,7 @@ struct NarrativeScoreReport {
     double registerRelease{};
     double densityRelease{};
     double resolutionScore{};
+    bool terminalPhraseReady{};
     double score{};
     bool foregroundExpected{};
     bool movementBassExpected{};

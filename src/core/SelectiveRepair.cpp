@@ -3,6 +3,7 @@
 #include "ElectronicCompositionFabric.h"
 #include "ElectronicRoleContract.h"
 #include "HarmonicFloorContext.h"
+#include "NarrativeScore.h"
 #include "PerformanceScore.h"
 #include "Scale.h"
 #include "TrackViability.h"
@@ -518,6 +519,46 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
                     instrument.id == plan.narrativeSpine.protagonistInstrumentId)
                     review.instrumentIndices.insert(review.instrumentIndices.begin(), index);
             }
+        }
+    }
+    // The ensemble may meet its track, floor and climax quotas while the
+    // promised ending remains an unresolved label. In sovereign mode this is
+    // a publication defect: only an AI-authored final scene may repair it.
+    const auto endingAct = std::find_if(plan.narrativeSpine.acts.begin(),
+        plan.narrativeSpine.acts.end(), [&](const NarrativeAct& act) {
+            return act.stage == NarrativeStage::Resolution &&
+                act.sectionName == plan.sections.back().name;
+        });
+    if (plan.aiSovereign && plan.narrativeSpine.authored &&
+        endingAct != plan.narrativeSpine.acts.end()) {
+        const auto narrative = NarrativeScoreGate::audit(pattern, plan);
+        review.resolutionScore = narrative.resolutionScore;
+        review.terminalPhraseReady = narrative.terminalPhraseReady;
+        const auto declaredEnding = lower(plan.narrativeSpine.resolution + " " +
+            endingAct->resolutionTarget);
+        const auto deliberatelyOpen = declaredEnding.find("open") != std::string::npos ||
+            declaredEnding.find("suspend") != std::string::npos ||
+            declaredEnding.find("modal") != std::string::npos ||
+            declaredEnding.find("unresolved") != std::string::npos ||
+            declaredEnding.find("abiert") != std::string::npos;
+        const auto minimumResolution = deliberatelyOpen ? .45 : .58;
+        if (!narrative.terminalPhraseReady ||
+            narrative.resolutionScore < minimumResolution ||
+            narrative.causalNarrative < .62) {
+            review.ready = false;
+            review.deficit += std::max(0.0, minimumResolution -
+                narrative.resolutionScore) +
+                std::max(0.0, .62 - narrative.causalNarrative) +
+                (narrative.terminalPhraseReady ? 0.0 : .25);
+            review.sectionIndices.push_back(plan.sections.size() - 1);
+            review.issues.push_back("The final MIDI does not enact its declared ending: "
+                "return and transform the opening idea, answer the harmonic question "
+                "with a connected terminal phrase, then release the ensemble; "
+                "preserve all accepted earlier scenes");
+            for (std::size_t index = 0; index < plan.instruments.size(); ++index)
+                if (plan.instruments[index].id ==
+                    plan.narrativeSpine.protagonistInstrumentId)
+                    review.instrumentIndices.push_back(index);
         }
     }
     std::set<std::size_t> seen;

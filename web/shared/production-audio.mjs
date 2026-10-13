@@ -17,6 +17,7 @@ export class ProductionAudio extends SuiteAudio {
     super(onPosition, onStop);
     this.mode = 'piano';
     this.masterVolume = .72;
+    this.playbackTailSeconds = .55;
   }
 
   setSong(midi, tracks) {

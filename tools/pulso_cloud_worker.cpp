@@ -223,6 +223,7 @@ juce::var musicalAuditFor(const pulso::Pattern& song,
     result->setProperty("register_release", audit.narrative.registerRelease);
     result->setProperty("density_release", audit.narrative.densityRelease);
     result->setProperty("resolution_score", audit.narrative.resolutionScore);
+    result->setProperty("terminal_phrase_ready", audit.narrative.terminalPhraseReady);
     result->setProperty("causal_narrative", audit.narrative.causalNarrative);
     result->setProperty("soundscape_ready", audit.soundscape.ready);
     result->setProperty("declared_layers", static_cast<int>(audit.soundscape.declaredLayers));
@@ -546,6 +547,8 @@ int main(int argc, char** argv) {
         evidence->setProperty("expected_voices", static_cast<int>(review.expectedVoices));
         evidence->setProperty("harmonic_continuity", review.harmonicContinuity);
         evidence->setProperty("climax_contrast", review.climaxContrast);
+        evidence->setProperty("resolution_score", review.resolutionScore);
+        evidence->setProperty("terminal_phrase_ready", review.terminalPhraseReady);
         juce::Array<juce::var> findings;
         for (const auto& issue : review.issues)
             findings.add(juce::String::fromUTF8(issue.c_str()));

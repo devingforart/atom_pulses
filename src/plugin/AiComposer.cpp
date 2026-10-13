@@ -3327,6 +3327,17 @@ juce::String jointWindowPrompt(const juce::String& direction, const SongPlan& pl
             "harmonic bed and a complementary upper layer should sustain the "
             "tonal floor when the arrangement is meant to be full; deliberate "
             "withdrawals may expose the bass and protagonist.\n";
+    if (sectionIndex + 1 == plan.sections.size()) {
+        prompt << "ENDING RESPONSIBILITY: This is the final scene, not another "
+            "loop. Make its last phrase a consequence of the actual opening "
+            "gesture and the declared harmonic debt. Coordinate protagonist, "
+            "bass and supporting harmony so the last arrival is audible and "
+            "stable, then give the ensemble a deliberate release. If this "
+            "window is not the final window of the scene, develop the setup "
+            "for that arrival without pretending the song has ended yet. "
+            "Write the notes and rests that make this happen; no later stage "
+            "will synthesize a cadence for you.\n";
+    }
     for (const auto& act : plan.narrativeSpine.acts) {
         if (act.sectionName != section.name) continue;
         prompt << "THIS SECTION'S DRAMATIC CAUSE: " <<
@@ -9469,6 +9480,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 remaining > std::chrono::seconds(65)) {
                 const auto sectionIndex = result.sections.size() - 1;
                 const auto& lastSection = result.sections.back();
+                // Review the terminal authored window. Short codas are
+                // rewritten as a whole; long codas retain their accepted
+                // earlier windows so the edit stays bounded and auditable.
                 const auto firstBar = ((lastSection.bars - 1) / barsPerWindow) * barsPerWindow;
                 const auto bars = lastSection.bars - firstBar;
                 const auto localStart = firstBar * result.beatsPerBar;
@@ -9491,7 +9505,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         revisionOwners.push_back(owner);
                 }
                 auto base = score;
-                std::set<std::string> removed;
+                std::set<std::string> revisedCells;
                 for (const auto& cell : base.cells) {
                     const auto revisedOwner = std::any_of(
                         cell.notes.begin(), cell.notes.end(), [&](const auto& note) {
@@ -9505,16 +9519,26 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         if (placement.cellId == cell.id &&
                             placement.sectionIndex == static_cast<int>(sectionIndex) &&
                             std::abs(placement.startBeat - localStart) < .001)
-                            removed.insert(cell.id);
+                            revisedCells.insert(cell.id);
                 }
-                if (!removed.empty()) {
-                    base.cells.erase(std::remove_if(base.cells.begin(), base.cells.end(),
-                        [&](const auto& cell) { return removed.contains(cell.id); }),
-                        base.cells.end());
+                if (!revisedCells.empty()) {
+                    // Remove only placements in this ending. A cell may also
+                    // carry accepted notes in an earlier scene; deleting the
+                    // cell itself would silently erase that earlier music.
                     base.placements.erase(std::remove_if(base.placements.begin(),
                         base.placements.end(), [&](const auto& placement) {
-                            return removed.contains(placement.cellId);
+                            return revisedCells.contains(placement.cellId) &&
+                                placement.sectionIndex == static_cast<int>(sectionIndex) &&
+                                std::abs(placement.startBeat - localStart) < .001;
                         }), base.placements.end());
+                    base.cells.erase(std::remove_if(base.cells.begin(), base.cells.end(),
+                        [&](const auto& cell) {
+                            return revisedCells.contains(cell.id) &&
+                                std::none_of(base.placements.begin(), base.placements.end(),
+                                    [&](const auto& placement) {
+                                        return placement.cellId == cell.id;
+                                    });
+                        }), base.cells.end());
                     auto basePlan = result;
                     basePlan.performanceScore = base;
                     const auto immutable = SongComposer{}.render(basePlan, foundation);

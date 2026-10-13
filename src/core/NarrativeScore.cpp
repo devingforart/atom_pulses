@@ -551,6 +551,7 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
         codaTheme.back()->startBeat >= totalBeats - plan.beatsPerBar * 2.0 &&
         stableTerminalPitchClasses.contains(
             positiveModulo(codaTheme.back()->pitch, 12));
+    report.terminalPhraseReady = protagonistCloses;
     if (!premiseTheme.empty() && !codaTheme.empty())
         report.motifClosure = contourClosure(premiseTheme, codaTheme);
     if (!codaTheme.empty()) {

@@ -7,7 +7,7 @@ const $ = selector => document.querySelector(selector);
 // A short, affordable proof of musical coherence is the safest default while
 // the full-length writer is being evaluated. At 120 BPM, 32 s is ~16 bars.
 $('#duration').add(new Option('Prueba corta · ~16 compases (120 BPM)', '32', true, true), 0);
-const ui = { form: $('#compose-form'), prompt: $('#prompt'), submit: $('#submit'), notice: $('#notice'), health: $('#health'), jobs: $('#jobs'), session: $('#session-content'), timeline: $('#timeline'), play: $('#play'), stop: $('#stop'), back: $('#back'), export: $('#export-all'), history: $('#history-panel') };
+const ui = { form: $('#compose-form'), prompt: $('#prompt'), submit: $('#submit'), notice: $('#notice'), health: $('#health'), jobs: $('#jobs'), session: $('#session-content'), timeline: $('#timeline'), play: $('#play'), stop: $('#stop'), back: $('#back'), export: $('#export-all'), exportOne: $('#export-one'), history: $('#history-panel') };
 ui.prompt.placeholder = 'Prueba corta: una melodía protagonista, un bajo y acordes que evolucionan con una resolución clara.';
 const proofLabel = document.createElement('label');
 proofLabel.className = 'proof-option';
@@ -53,6 +53,7 @@ function updateListeningLabels() {
 async function api(url, options = {}) { const response = await fetch(url, { cache: 'no-store', ...options }); const result = await response.json(); if (!response.ok) throw new Error(result.error || `Error HTTP ${response.status}`); return result; }
 function showNotice(message) { ui.notice.textContent = message || ''; ui.notice.hidden = !message; }
 function setExport(job, filename) {
+  ui.exportOne.disabled = !job?.manifest?.fullFile || filename !== job.manifest.fullFile || !current || current.job.id !== job.id;
   if (filename) { ui.export.classList.remove('disabled'); ui.export.removeAttribute('aria-disabled'); ui.export.href = fileUrl(job, filename); ui.export.download = filename; }
   else { ui.export.classList.add('disabled'); ui.export.setAttribute('aria-disabled', 'true'); ui.export.removeAttribute('href'); ui.export.removeAttribute('download'); }
 }
@@ -131,11 +132,11 @@ function renderSession(job) {
   if (job.recovery?.jobId) actions.append(actionButton('Ver recuperación', () => {
     selectedId = job.recovery.jobId; loadedKey = null; previewDiagnostic = false; showSelected();
   }));
-  if (job.manifest?.fullFile) actions.append(download(job, job.manifest.fullFile, '↓ Obra completa MIDI', 'primary-link'));
   if (job.manifest?.fullFile) actions.append(actionButton('↓ Todas las notas · 1 pista MIDI', async () => {
     try { await downloadSingleTrackMidi(fileUrl(job, job.manifest.fullFile), `pulso-${job.id.slice(0, 8)}-todas-las-notas.mid`); }
     catch (error) { showNotice(`No se pudo crear el MIDI de una pista: ${error.message}`); }
-  }));
+  }, 'primary-link'));
+  if (job.manifest?.fullFile) actions.append(download(job, job.manifest.fullFile, '↓ Obra original · multipista'));
   if (job.checkpoint?.file && !job.manifest) actions.append(download(job, job.checkpoint.file, '↓ MIDI provisional'));
   if (job.diagnostic?.file && !job.manifest) actions.append(download(job, job.diagnostic.file, '↓ MIDI rechazado (diagnóstico)'));
   if (job.diagnostic?.planFile && !job.manifest) actions.append(download(job, job.diagnostic.planFile, 'Plan del candidato'));
@@ -189,7 +190,7 @@ function mergedMidi(parts, manifest) {
 async function loadSong(job, diagnostic = false) {
   const version = ++loadVersion;
   audio.stop(); current = null; playhead = null;
-  ui.play.disabled = true; $('#preview-wav').disabled = true; $('#full-wav').disabled = true;
+  ui.play.disabled = true; ui.exportOne.disabled = true; $('#preview-wav').disabled = true; $('#full-wav').disabled = true;
   ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Leyendo las notas MIDI de esta obra…'));
   $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
   $('#song-subtitle').textContent = 'Preparando partitura y monitor senoidal…';
@@ -353,6 +354,14 @@ $('#refresh').addEventListener('click', refresh);
 ui.play.addEventListener('click', async () => { try { if (audio.playing) audio.pause(); else await audio.play(); ui.play.textContent = audio.playing ? 'Ⅱ' : '▶'; ui.play.setAttribute('aria-label', audio.playing ? 'Pausar' : 'Reproducir'); } catch (error) { showNotice(`No se pudo iniciar el audio: ${error.message}`); } });
 ui.stop.addEventListener('click', () => audio.stop());
 ui.back.addEventListener('click', () => audio.seek(0));
+ui.exportOne.addEventListener('click', async () => {
+  if (!current?.job.manifest?.fullFile) return;
+  const job = current.job;
+  ui.exportOne.disabled = true;
+  try { await downloadSingleTrackMidi(fileUrl(job, job.manifest.fullFile), `pulso-${job.id.slice(0, 8)}-todas-las-notas.mid`); }
+  catch (error) { showNotice(`No se pudo crear el MIDI de una pista: ${error.message}`); }
+  finally { ui.exportOne.disabled = !current || current.job.id !== job.id; }
+});
 $('#volume').addEventListener('input', event => audio.setVolume(Number(event.target.value) / 100));
 $('#listen-mode').addEventListener('change', async event => {
   const selected = event.target.value;

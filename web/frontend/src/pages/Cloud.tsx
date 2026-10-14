@@ -232,8 +232,8 @@ export function Cloud() {
   return <section className="cloud-suite">
     <header className="cloud-suite-bar">
       <div className="cloud-suite-brand"><Logo /><span className="cloud-suite-brand-divider" /><strong>SUITE / CLOUD</strong></div>
-      <div className="cloud-suite-global"><span className="cloud-suite-online">● EN TU CUENTA</span><button type="button" onClick={() => setHistoryOpen(value => !value)}>Historial</button>
-        {selected?.status === 'completed' && selected.resultManifest ? <a className="cloud-suite-export" href={trackUrl(selected.id, selected.resultManifest.fullFile)}>↓ Exportar obra MIDI</a> : <span className="cloud-suite-export disabled">↓ Exportar obra MIDI</span>}</div>
+      <div className="cloud-suite-global"><span className="cloud-suite-online">● EN TU CUENTA</span><button type="button" onClick={() => setHistoryOpen(value => !value)}>Historial</button><button type="button" className="cloud-suite-export-one" disabled={!activeScore || downloadingSingleMidi} onClick={() => void downloadMergedMidi()} title="Todas las notas en una pista para tocar con un instrumento">↓ 1 pista MIDI</button>
+        {selected?.status === 'completed' && selected.resultManifest ? <a className="cloud-suite-export" href={trackUrl(selected.id, selected.resultManifest.fullFile)} title="Obra original multipista con sus controles expresivos">↓ Multipista</a> : <span className="cloud-suite-export disabled">↓ Multipista</span>}</div>
     </header>
     <div className="cloud-suite-layout"><aside className="cloud-suite-sidebar"><div className="cloud-suite-side-scroll"><div className="cloud-suite-compose">
       <div className="cloud-suite-kicker"><span>01 / DIRECCIÓN</span><span>CREACIÓN</span></div><h1>Tu próxima<br /><em>obra.</em></h1>

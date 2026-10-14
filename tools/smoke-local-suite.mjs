@@ -44,6 +44,18 @@ try {
     for (let i = 0; i < 80; i++) { tracks = await evaluate("document.querySelectorAll('.track-row').length"); if (tracks) break; await wait(100); }
   }
   if (!tracks) throw new Error('No se dibujaron pistas MIDI.');
+  if (await evaluate("document.querySelector('#export-one')?.disabled")) {
+    await evaluate(`(async()=>{
+      const { jobs } = await (await fetch('/api/jobs')).json();
+      const index = jobs.findIndex(job => job.state === 'completed' && job.manifest?.fullFile);
+      if (index >= 0) document.querySelectorAll('.history-job')[index]?.click();
+    })()`);
+    for (let i = 0; i < 80 && await evaluate("document.querySelector('#export-one')?.disabled"); i++) await wait(100);
+    tracks = await evaluate("document.querySelectorAll('.track-row').length");
+  }
+  const exportChoices = await evaluate("({ single: !document.querySelector('#export-one')?.disabled, multi: document.querySelector('#export-all')?.textContent?.trim() })");
+  if (!exportChoices.single || !exportChoices.multi?.includes('Multipista'))
+    throw new Error(`Las dos opciones MIDI no están visibles: ${JSON.stringify(exportChoices)}`);
   const initialMode = await evaluate("document.querySelector('#listen-mode').value");
   if (initialMode !== 'piano') throw new Error('Piano MIDI no es la escucha predeterminada.');
   const assignedPatches = await evaluate("[...document.querySelectorAll('.sound-select')].map(select => select.value)");
@@ -148,7 +160,7 @@ try {
   const stopped = await evaluate("document.querySelector('#time-display').textContent");
   if (!stopped.startsWith('00:00')) throw new Error(`Stop no volvió al inicio: ${stopped}`);
   if (exceptions.length) throw new Error(`Excepción del navegador: ${exceptions[0]}`);
-  console.log(JSON.stringify({ tracks, initialMode, assignedPatches: assignedPatches.length, renderedBytes, fullWav, mergedMidi, modeDifference, mix, durationDefault, proofDefault, before, after, muted, soloed, stopped, browserExceptions: 0 }));
+  console.log(JSON.stringify({ tracks, exportChoices, initialMode, assignedPatches: assignedPatches.length, renderedBytes, fullWav, mergedMidi, modeDifference, mix, durationDefault, proofDefault, before, after, muted, soloed, stopped, browserExceptions: 0 }));
 } finally {
   socket?.close();
   child.kill();

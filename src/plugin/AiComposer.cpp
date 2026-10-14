@@ -3640,6 +3640,62 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
     return true;
 }
 
+// The local melodic A/B editor removes only one authored owner's notes in one
+// window. A restored MIDI checkpoint may keep a whole section in one cell, so
+// deleting its placement would erase otherwise accepted music. Shared or
+// transformed cells are deliberately not editable by this bounded experiment.
+bool removeDirectOwnerWindow(PerformanceScore& score, const SongPlan& plan,
+                             std::size_t ownerIndex, std::size_t sectionIndex,
+                             int firstBar, int bars) {
+    if (ownerIndex >= plan.instruments.size() || sectionIndex >= plan.sections.size())
+        return false;
+    const auto& ownerId = plan.instruments[ownerIndex].id;
+    const auto begin = firstBar * plan.beatsPerBar;
+    const auto end = (firstBar + bars) * plan.beatsPerBar;
+    auto removed = std::size_t{};
+    std::set<std::string> touched;
+    for (const auto& placement : score.placements) {
+        if (placement.sectionIndex != static_cast<int>(sectionIndex) ||
+            placement.repeats != 1 || placement.transpose != 0 ||
+            placement.retrograde || placement.invertContour ||
+            std::abs(placement.timeScale - 1.0) > .001 ||
+            std::count_if(score.placements.begin(), score.placements.end(),
+                [&](const auto& item) { return item.cellId == placement.cellId; }) != 1)
+            continue;
+        auto cell = std::find_if(score.cells.begin(), score.cells.end(),
+            [&](const auto& item) { return item.id == placement.cellId; });
+        if (cell == score.cells.end() || placement.fragmentStart > .001 ||
+            std::abs(placement.fragmentEnd - cell->lengthBeats) > .001)
+            continue;
+        const auto before = cell->notes.size();
+        std::erase_if(cell->notes, [&](const auto& note) {
+            const auto beat = placement.startBeat + note.beat;
+            return note.instrumentId == ownerId &&
+                beat >= begin - .001 && beat < end - .001;
+        });
+        if (cell->notes.size() == before) continue;
+        removed += before - cell->notes.size();
+        std::erase_if(cell->controls, [&](const auto& control) {
+            const auto beat = placement.startBeat + control.beat;
+            return control.instrumentId == ownerId &&
+                beat >= begin - .001 && beat < end - .001;
+        });
+        touched.insert(cell->id);
+    }
+    if (removed == 0) return false;
+    std::set<std::string> orphaned;
+    for (const auto& cell : score.cells)
+        if (touched.contains(cell.id) && cell.notes.empty() && cell.controls.empty())
+            orphaned.insert(cell.id);
+    std::erase_if(score.placements, [&](const auto& placement) {
+        return orphaned.contains(placement.cellId);
+    });
+    std::erase_if(score.cells, [&](const auto& cell) {
+        return orphaned.contains(cell.id);
+    });
+    return true;
+}
+
 struct DirectPitchTarget {
     std::string cellId;
     std::size_t noteIndex{};
@@ -9690,6 +9746,647 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                     true, true);
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+        // The shared Cloud/local profile can enable this bounded narrative
+        // editor. It first judges the accepted protagonist and answering
+        // phrases, then asks the AI to replace only selected MIDI windows.
+        // Rejected revisions leave every accepted note unchanged. Full-scene
+        // rewriting and free-text focus remain local experiments.
+        const auto globalNarrativeExperiment =
+            juce::SystemStats::getEnvironmentVariable(
+                "PULSO_AI_GLOBAL_NARRATIVE_EDITOR", {}) == "1" ||
+            juce::SystemStats::getEnvironmentVariable(
+                "PULSO_AI_GLOBAL_NARRATIVE_EXPERIMENT", {}) == "1";
+        const auto fullSceneNarrativeExperiment = globalNarrativeExperiment &&
+            juce::SystemStats::getEnvironmentVariable(
+                "PULSO_AI_NARRATIVE_FULL_SCENE", {}) == "1";
+        if ((globalNarrativeExperiment ||
+             juce::SystemStats::getEnvironmentVariable(
+                 "PULSO_AI_MELODIC_EXPERIMENT", {}) == "1") &&
+            !result.sections.empty()) {
+            const auto protagonist = std::find_if(result.instruments.begin(),
+                result.instruments.end(), [&](const auto& instrument) {
+                    return instrument.id == result.narrativeSpine.protagonistInstrumentId;
+                });
+            if (protagonist != result.instruments.end()) {
+                const auto owner = static_cast<std::size_t>(
+                    std::distance(result.instruments.begin(), protagonist));
+                std::vector<std::size_t> narrativeOwners{owner};
+                if (globalNarrativeExperiment) {
+                    const auto answerer = std::find_if(result.instruments.begin(),
+                        result.instruments.end(), [&](const auto& instrument) {
+                            return instrument.lineRelationship == "call_response" &&
+                                instrument.id != protagonist->id;
+                        });
+                    if (answerer != result.instruments.end())
+                        narrativeOwners.push_back(static_cast<std::size_t>(
+                            std::distance(result.instruments.begin(), answerer)));
+                }
+                GenerationContext foundation;
+                foundation.role = Role::Ensemble;
+                foundation.rootPitchClass = result.rootPitchClass;
+                foundation.scale = result.scale;
+                foundation.beatsPerBar = result.beatsPerBar;
+                foundation.seed = result.seed;
+                foundation.humanize = 0.0;
+                auto current = result;
+                current.performanceScore = score;
+                CompositionRenderReport before;
+                auto currentMidi = SongComposer{}.render(current, foundation, {}, &before);
+                const auto narrativeFocus = juce::SystemStats::getEnvironmentVariable(
+                    "PULSO_AI_NARRATIVE_FOCUS", {}).trim();
+                const auto plannedNarrativeWindows = std::min<std::size_t>(
+                    narrativeFocus.isNotEmpty() ? 2 : 4,
+                    result.sections.size() > 1 ? result.sections.size() - 1 : 0);
+                juce::String criticPrompt;
+                criticPrompt << "You are reviewing the actual AI-authored narrative MIDI "
+                    "of an otherwise accepted song for a controlled A/B experiment. "
+                    << (globalNarrativeExperiment && narrativeFocus.isNotEmpty() ?
+                        juce::String(
+                        "This is a FOCUSED FOLLOW-UP to an independently reviewed "
+                        "A/B. Select exactly TWO windows: the exact section_index, "
+                        "first_bar and instrument_id selectors stated in the REVIEW "
+                        "FOCUS below. Do not reinterpret the focus as permission to "
+                        "change other scenes. The opening statement, existing useful "
+                        "dialogue and final answer are anchors. The selected windows "
+                        "still contain literal recurrence or an episode disconnected "
+                        "from the opening motif. Give each a consequential transformation "
+                        "of specific pitch-and-onset material, not more decoration. "
+                        "Describe how the two edits link to the rest of the actual MIDI. ") :
+                        globalNarrativeExperiment ? juce::String(
+                        "Select exactly " +
+                        juce::String(static_cast<int>(plannedNarrativeWindows)) +
+                        " NON-FINAL windows across AT LEAST THREE DIFFERENT scenes. "
+                        "Order them chronologically; include the answering voice in "
+                        "at least one target. Two targets may lie in different windows "
+                        "of the same scene when a literal refrain spans that scene. "
+                        "Do not select the opening merely to satisfy coverage if it "
+                        "already states the motif well. Diagnose the ACTUAL MIDI: "
+                        "find the opening pitch-and-ONSET signature, distinguish its "
+                        "literal returns from real transformations, and select the "
+                        "windows where repetitive or unrelated writing most weakens "
+                        "the causal story. Treat all revisions as ONE dramatic argument: "
+                        "the question changes meaning through audible rhythmic or "
+                        "intervallic consequences, the answerer disputes or completes "
+                        "it, and the existing final scene feels earned. Write an ARC "
+                        "grounded in exact pitch/rhythm evidence, naming the listener's "
+                        "question, the turning point, the cost of that turn, and why "
+                        "the final resolution answers the opening. Give each target "
+                        "one particular motif transformation or response and cite "
+                        "the existing notes that currently fail to express it. "
+                        "No generic 'more tension' or 'make it expressive' prose. ") :
+                        juce::String(
+                        "Select exactly ONE NON-FINAL window with the greatest potential "
+                        "for a distinct, more consequential phrase interpretation. "))
+                    <<
+                    "The original is valid and will remain available; do not call its "
+                    "angularity, repetitions or rests defects merely because they "
+                    "are unconventional. Do not optimize "
+                    "a stepwise-motion quota: angular music can be excellent. "
+                    "State a concrete alternative phrase intent and the particular "
+                    "musical opportunity you hear in its present MIDI. Only listed section_index, "
+                    "first_bar and instrument_id combinations are valid. Do not select the final scene. "
+                    "No MIDI is requested in this phase. Return a concise ARC grounded "
+                    "in the listed notes, not generic emotional adjectives.\nUSER DIRECTION: " << direction
+                    << "\nMOTIF: " << juce::String::fromUTF8(
+                        result.narrativeSpine.motifIdentity.c_str())
+                    << "\nHARMONIC DEBT: " << juce::String::fromUTF8(
+                        result.narrativeSpine.harmonicDebt.c_str()) << "\n";
+                if (narrativeFocus.isNotEmpty())
+                    criticPrompt << "INDEPENDENT REVIEW FOCUS: " << narrativeFocus << "\n";
+                for (std::size_t sectionIndex = 0;
+                     sectionIndex < result.sections.size(); ++sectionIndex) {
+                    const auto& section = result.sections[sectionIndex];
+                    criticPrompt << "SCENE " << static_cast<int>(sectionIndex)
+                        << " " << juce::String::fromUTF8(section.name.c_str())
+                        << " bars=" << section.bars << " form="
+                        << juce::String::fromUTF8(section.function.c_str())
+                        << " motif_treatment=" <<
+                            juce::String::fromUTF8(section.motifTreatment.c_str())
+                        << " harmony=";
+                    for (const auto& event : section.harmonicEvents)
+                        criticPrompt << event.barOffset << ":" <<
+                            juce::String::fromUTF8(event.chordId.c_str()) << " ";
+                    criticPrompt << "\n";
+                    for (const auto& act : result.narrativeSpine.acts)
+                        if (act.sectionName == section.name)
+                            criticPrompt << " dramatic_cause=" <<
+                                juce::String::fromUTF8(act.cause.c_str()) <<
+                                " consequence=" <<
+                                juce::String::fromUTF8(act.consequence.c_str()) << "\n";
+                }
+                for (std::size_t sectionIndex = 0;
+                     sectionIndex + 1 < result.sections.size(); ++sectionIndex) {
+                    const auto& section = result.sections[sectionIndex];
+                    for (auto firstBar = 0; firstBar < section.bars;
+                         firstBar += fullSceneNarrativeExperiment ?
+                             section.bars : barsPerWindow) {
+                        const auto bars = fullSceneNarrativeExperiment ?
+                            section.bars : std::min(barsPerWindow,
+                                section.bars - firstBar);
+                        const auto start = (section.startBar + firstBar) *
+                            result.beatsPerBar;
+                        const auto end = start + bars * result.beatsPerBar;
+                        for (const auto narrativeOwner : narrativeOwners) {
+                            auto notes = 0;
+                            juce::String excerpt;
+                            for (const auto& note : currentMidi.notes) {
+                                if (note.partId != narrativeOwner + 1 ||
+                                    note.startBeat < start - .001 ||
+                                    note.startBeat >= end - .001) continue;
+                                excerpt << juce::String(note.startBeat - start, 2)
+                                    << ":" << note.pitch << "/"
+                                    << juce::String(note.durationBeats, 2) << " ";
+                                ++notes;
+                            }
+                            if (notes < 6) continue;
+                            criticPrompt << "WINDOW section_index="
+                                << static_cast<int>(sectionIndex) << " first_bar="
+                                << firstBar << " bars=" << bars << " section="
+                                << juce::String::fromUTF8(section.name.c_str())
+                                << " instrument_id=" << juce::String::fromUTF8(
+                                    result.instruments[narrativeOwner].id.c_str())
+                                << " treatment=" << juce::String::fromUTF8(
+                                    section.motifTreatment.c_str())
+                                << " notes=" << excerpt << "\n";
+                        }
+                    }
+                }
+                const auto criticSchema = juce::String(R"json({
+                  "type":"object","properties":{"arc":{"type":"string"},
+                  "targets":{"type":"array",
+                  "minItems":1,"maxItems":3,"items":{"type":"object","properties":{
+                  "section_index":{"type":"integer"},"first_bar":{"type":"integer"},
+                  "instrument_id":{"type":"string"},
+                  "intent":{"type":"string"},"reason":{"type":"string"}},
+                  "required":["section_index","first_bar","instrument_id","intent","reason"],
+                  "additionalProperties":false}}},"required":["arc","targets"],
+                  "additionalProperties":false})json")
+                    .replace("\"minItems\":1", globalNarrativeExperiment ?
+                        "\"minItems\":" +
+                            juce::String(static_cast<int>(plannedNarrativeWindows)) :
+                        "\"minItems\":1")
+                    .replace("\"maxItems\":3", globalNarrativeExperiment ?
+                        "\"maxItems\":" +
+                            juce::String(static_cast<int>(plannedNarrativeWindows)) :
+                        "\"maxItems\":1");
+                const auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
+                    aiStarted + totalAiBudget - std::chrono::steady_clock::now());
+                if (remaining > std::chrono::seconds(90)) {
+                    if (progress) progress({AiSongStage::Recovery, windowCount,
+                        windowCount, 1, "AI reviewing protagonist phrases"});
+                    const auto body = juce::String("{\"model\":\"") + model +
+                        "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
+                        realizationReasoningEffort +
+                        "\"},\"max_output_tokens\":" +
+                        juce::String(globalNarrativeExperiment ? 4500 : 2500) +
+                        ",\"input\":" +
+                        juce::JSON::toString(juce::var(criticPrompt)) +
+                        ",\"text\":{\"format\":{\"type\":\"json_schema\","
+                        "\"name\":\"pulso_melodic_editorial\",\"strict\":true,\"schema\":" +
+                        criticSchema + "}}}";
+                    const auto response = performRequest(body, apiKey, token,
+                        std::min(remaining, std::chrono::seconds(150)));
+                    const auto output = response.connected && response.status == 200 ?
+                        extractOutputText(juce::JSON::parse(response.body)) :
+                        juce::String{};
+                    const auto parsed = juce::JSON::parse(output);
+                    const auto* root = parsed.getDynamicObject();
+                    const auto editorialArc = root == nullptr ? juce::String{} :
+                        root->getProperty("arc").toString();
+                    const auto* targets = root == nullptr ? nullptr :
+                        root->getProperty("targets").getArray();
+                    if (targets == nullptr)
+                        OperationalJournal::write("WARN", "MELODIC_EDITORIAL",
+                            "AI phrase diagnosis unavailable; accepted song preserved");
+                    else
+                        OperationalJournal::write("INFO", "MELODIC_EDITORIAL",
+                            "AI proposed " + juce::String(targets->size()) +
+                            " narrative window(s) for local A/B");
+                    auto orderedTargets = std::vector<juce::var>{};
+                    if (targets != nullptr)
+                        for (const auto& target : *targets)
+                            orderedTargets.push_back(target);
+                    std::stable_sort(orderedTargets.begin(), orderedTargets.end(),
+                        [](const auto& left, const auto& right) {
+                            const auto* a = left.getDynamicObject();
+                            const auto* b = right.getDynamicObject();
+                            if (a == nullptr || b == nullptr) return a != nullptr;
+                            const auto leftSection = static_cast<int>(
+                                a->getProperty("section_index"));
+                            const auto rightSection = static_cast<int>(
+                                b->getProperty("section_index"));
+                            if (leftSection != rightSection)
+                                return leftSection < rightSection;
+                            return static_cast<int>(a->getProperty("first_bar")) <
+                                static_cast<int>(b->getProperty("first_bar"));
+                        });
+                    auto globalContractReady = !globalNarrativeExperiment;
+                    if (globalNarrativeExperiment &&
+                        orderedTargets.size() == plannedNarrativeWindows &&
+                        narrativeOwners.size() > 1 &&
+                        editorialArc.isNotEmpty()) {
+                        auto sections = std::set<int>{};
+                        auto answererCount = std::size_t{};
+                        auto valid = true;
+                        for (const auto& item : orderedTargets) {
+                            const auto* target = item.getDynamicObject();
+                            if (target == nullptr) { valid = false; break; }
+                            const auto section = static_cast<int>(
+                                target->getProperty("section_index"));
+                            const auto firstBar = static_cast<int>(
+                                target->getProperty("first_bar"));
+                            const auto instrumentId = target->getProperty(
+                                "instrument_id").toString();
+                            const auto selector = "section_index=" +
+                                juce::String(section) + " first_bar=" +
+                                juce::String(firstBar) + " instrument_id=" +
+                                instrumentId;
+                            if (section < 0 || section >=
+                                    static_cast<int>(result.sections.size()) - 1) {
+                                valid = false;
+                                break;
+                            }
+                            if (narrativeFocus.isNotEmpty() &&
+                                !narrativeFocus.contains(selector)) {
+                                valid = false;
+                                break;
+                            }
+                            sections.insert(section);
+                            if (target->getProperty("instrument_id").toString().toStdString() ==
+                                result.instruments[narrativeOwners[1]].id)
+                                ++answererCount;
+                        }
+                        globalContractReady = valid &&
+                            sections.size() >= std::min<std::size_t>(
+                                narrativeFocus.isNotEmpty() ? 2 : 3,
+                                plannedNarrativeWindows) &&
+                            (narrativeFocus.isNotEmpty() ||
+                                (answererCount >= 1 &&
+                                 answererCount < plannedNarrativeWindows));
+                    }
+                    if (!globalContractReady)
+                        OperationalJournal::write("WARN", "MELODIC_EDITORIAL",
+                            "AI global narrative plan did not cover enough scenes "
+                            "and an answering voice; accepted song preserved");
+                    juce::String globalTargetMap;
+                    if (globalNarrativeExperiment)
+                        for (const auto& item : orderedTargets)
+                            if (const auto* target = item.getDynamicObject();
+                                target != nullptr)
+                                globalTargetMap << "\nscene " <<
+                                    target->getProperty("section_index").toString() <<
+                                    " bar " << target->getProperty("first_bar").toString() <<
+                                    " " << target->getProperty("instrument_id").toString() <<
+                                    ": " << target->getProperty("intent").toString();
+                    auto reviewed = std::set<std::pair<int, int>>{};
+                    juce::String acceptedNarrativeDecisions;
+                    if (globalContractReady) for (const auto& item : orderedTargets) {
+                        const auto* target = item.getDynamicObject();
+                        if (target == nullptr) continue;
+                        const auto sectionIndex = static_cast<int>(
+                            target->getProperty("section_index"));
+                        const auto firstBar = static_cast<int>(
+                            target->getProperty("first_bar"));
+                        const auto instrumentId = target->getProperty(
+                            "instrument_id").toString().toStdString();
+                        const auto selected = std::find_if(narrativeOwners.begin(),
+                            narrativeOwners.end(), [&](const auto index) {
+                                return result.instruments[index].id == instrumentId;
+                            });
+                        OperationalJournal::write("INFO", "MELODIC_EDITORIAL",
+                            "AI selected section=" + juce::String(sectionIndex) +
+                            " first_bar=" + juce::String(firstBar) +
+                            " owner=" + juce::String::fromUTF8(instrumentId.c_str()));
+                        if (sectionIndex < 0 || sectionIndex >=
+                                static_cast<int>(result.sections.size()) - 1 ||
+                            firstBar < 0 || firstBar % barsPerWindow != 0 ||
+                            (fullSceneNarrativeExperiment && firstBar != 0) ||
+                            firstBar >= result.sections[sectionIndex].bars ||
+                            selected == narrativeOwners.end() ||
+                            !reviewed.insert({sectionIndex, firstBar}).second) {
+                            OperationalJournal::write("WARN", "MELODIC_EDITORIAL",
+                                "AI selected a window outside the editable A/B set");
+                            continue;
+                        }
+                        const auto editOwner = *selected;
+                        const auto bars = fullSceneNarrativeExperiment ?
+                            result.sections[sectionIndex].bars :
+                            std::min(barsPerWindow,
+                                result.sections[sectionIndex].bars - firstBar);
+                        const auto start = (result.sections[sectionIndex].startBar +
+                            firstBar) * result.beatsPerBar;
+                        const auto end = start + bars * result.beatsPerBar;
+                        const auto remainingForEdit =
+                            std::chrono::duration_cast<std::chrono::seconds>(
+                                aiStarted + totalAiBudget -
+                                std::chrono::steady_clock::now());
+                        if (remainingForEdit <= std::chrono::seconds(70)) break;
+                        auto base = score;
+                        if (!removeDirectOwnerWindow(base, result, editOwner,
+                                static_cast<std::size_t>(sectionIndex), firstBar, bars)) {
+                            OperationalJournal::write("WARN", "MELODIC_EDITORIAL",
+                                "selected protagonist window has no directly editable notes");
+                            continue;
+                        }
+                        auto basePlan = result;
+                        basePlan.performanceScore = base;
+                        const auto immutable = SongComposer{}.render(basePlan, foundation);
+                        if (std::any_of(immutable.notes.begin(), immutable.notes.end(),
+                                [&](const auto& note) {
+                                    return note.partId == editOwner + 1 &&
+                                        note.startBeat >= start - .001 &&
+                                        note.startBeat < end - .001;
+                                })) {
+                            OperationalJournal::write("WARN", "MELODIC_EDITORIAL",
+                                "selected protagonist window still contains notes after isolation");
+                            continue;
+                        }
+                        auto rewritePrompt = jointWindowPrompt(direction, result,
+                            immutable, {editOwner}, static_cast<std::size_t>(sectionIndex),
+                            firstBar, bars, {}, false);
+                        if (globalNarrativeExperiment)
+                            rewritePrompt << "\nGLOBAL MIDI-GROUNDED NARRATIVE ARC: "
+                                << editorialArc << "\nPLANNED CONNECTED SCENE DECISIONS: "
+                                << globalTargetMap <<
+                                "\nEARLIER ACCEPTED NARRATIVE DECISIONS: "
+                                << (acceptedNarrativeDecisions.isEmpty() ?
+                                    juce::String("none yet") : acceptedNarrativeDecisions)
+                                << "\nMake this passage legibly recall, contradict or "
+                                   "resolve a particular earlier PITCH-AND-RHYTHM gesture. "
+                                   "The listener must be able to perceive the relationship "
+                                   "without reading labels. If the present window merely "
+                                   "repeats the opening figure at the same intervals and "
+                                   "onsets, transform its rhythmic consequence, contour, "
+                                   "cadence or answering rest so the scene changes its "
+                                   "meaning rather than adding incidental notes after it. "
+                                   "Preserve the existing final scene as the destination.\n";
+                        if (fullSceneNarrativeExperiment)
+                            rewritePrompt << "\nFULL-SCENE AUTHORSHIP: rewrite this "
+                                "narrative voice over the entire selected scene, "
+                                "not just its first motif. One audible sentence must "
+                                "cause the next across the scene's harmonic turns; "
+                                "retain a recognisable opening reference but transform "
+                                "later returns instead of recycling identical loops. "
+                                "All other parts and scenes stay fixed.\n";
+                        rewritePrompt << "\nFOCUSED MELODIC EDITORIAL EXPERIMENT. "
+                            "A separate AI critic identified this window's dramatic "
+                            "intent: " << target->getProperty("intent").toString()
+                            << ". Its specific concern: " <<
+                                target->getProperty("reason").toString()
+                            << ". Rewrite only this named narrative voice's MIDI in this window. "
+                            "Keep the recognisable motif and the strong choices; "
+                            "give characteristic leaps an audible consequence when "
+                            "musically appropriate. Never add scalar filler to satisfy "
+                            "a metric. The critic selected this window because its "
+                            "dramatic role can change audibly: reauthor the decisive "
+                            "phrase shape or answering silence, not just its label "
+                            "or one incidental pitch. Keep an identifiable musical "
+                            "kinship with the source while giving the listener an "
+                            "actual before/after interpretation. Do not return the "
+                            "original note array unchanged. All other notes, the harmony and the final "
+                            "scene remain immutable. Original notes (absolute beat, "
+                            "pitch, duration, velocity): ";
+                        for (const auto& note : currentMidi.notes)
+                            if (note.partId == editOwner + 1 &&
+                                note.startBeat >= start - .001 &&
+                                note.startBeat < end - .001)
+                                rewritePrompt << juce::String(note.startBeat, 2)
+                                    << "," << note.pitch << ","
+                                    << juce::String(note.durationBeats, 2) << ","
+                                    << note.velocity << "; ";
+                        for (auto melodicAttempt = 0; melodicAttempt < 2 &&
+                             !token.stop_requested(); ++melodicAttempt) {
+                        const auto editBody = juce::String("{\"model\":\"") + model +
+                            "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
+                            realizationReasoningEffort +
+                            "\"},\"max_output_tokens\":" +
+                            juce::String(fullSceneNarrativeExperiment ? 12000 : 8500) +
+                            ",\"input\":" +
+                            juce::JSON::toString(juce::var(rewritePrompt)) +
+                            ",\"text\":{\"format\":{\"type\":\"json_schema\","
+                            "\"name\":\"pulso_direct_window\",\"strict\":true,\"schema\":" +
+                            directWindowSchema(result, {editOwner}) + "}}}";
+                        if (progress) progress({AiSongStage::Recovery, windowCount,
+                            windowCount, 2, "AI rewriting one protagonist phrase window"});
+                        const auto editResponse = performRequest(editBody, apiKey,
+                            token, std::min(remainingForEdit,
+                                std::chrono::seconds(165)));
+                        const auto editOutput = editResponse.connected &&
+                            editResponse.status == 200 ? extractOutputText(
+                                juce::JSON::parse(editResponse.body)) : juce::String{};
+                        PerformanceScore replacement;
+                        juce::String editError;
+                        if (editOutput.isEmpty() || !parseDirectWindow(editOutput,
+                                result, {editOwner}, static_cast<std::size_t>(sectionIndex),
+                                firstBar, bars, replacement, editError)) {
+                            OperationalJournal::write("WARN", "MELODIC_EDITORIAL",
+                                "AI phrase replacement unavailable; original retained | " +
+                                editError);
+                            continue;
+                        }
+                        auto revised = base;
+                        mergePerformanceBlock(revised, std::move(replacement), serial++);
+                        const auto normalized = PerformanceScoreEngine::normalize(
+                            revised, result.sections.size(), sectionLengths, true);
+                        if (normalized.cellsRejected || normalized.placementsRejected)
+                            continue;
+                        auto candidate = result;
+                        candidate.performanceScore = revised;
+                        CompositionRenderReport after;
+                        const auto revisedMidi = SongComposer{}.render(candidate,
+                            foundation, {}, &after);
+                        const auto signatures = [&](const Pattern& pattern, bool targetOnly) {
+                            std::vector<std::tuple<std::uint16_t, long long, long long,
+                                int, int>> values;
+                            for (const auto& note : pattern.notes) {
+                                const auto targeted = note.partId == editOwner + 1 &&
+                                    note.startBeat >= start - .001 &&
+                                    note.startBeat < end - .001;
+                                if (targeted != targetOnly) continue;
+                                values.emplace_back(note.partId,
+                                    std::llround(note.startBeat * 1000000.0),
+                                    std::llround(note.durationBeats * 1000000.0),
+                                    note.pitch, note.velocity);
+                            }
+                            std::sort(values.begin(), values.end());
+                            return values;
+                        };
+                        const auto unchangedElsewhere =
+                            signatures(currentMidi, false) ==
+                                signatures(revisedMidi, false);
+                        const auto genuinelyRevised =
+                            signatures(currentMidi, true) !=
+                                signatures(revisedMidi, true);
+                        const auto safe = unchangedElsewhere && genuinelyRevised &&
+                            EditorialSafety::technicallySafeAiScore(revisedMidi, after) &&
+                            after.finalTonalPass.after.unintendedHarshOverlaps <=
+                                before.finalTonalPass.after.unintendedHarshOverlaps &&
+                            after.finalTonalPass.after.unsupportedChromaticNotes <=
+                                before.finalTonalPass.after.unsupportedChromaticNotes &&
+                            (!before.narrative.narrativeSpineReady ||
+                                after.narrative.narrativeSpineReady) &&
+                            after.narrative.resolutionScore + .02 >=
+                                before.narrative.resolutionScore &&
+                            after.narrative.motifClosure + .03 >=
+                                before.narrative.motifClosure &&
+                            after.narrative.causalNarrative + .05 >=
+                                before.narrative.causalNarrative &&
+                            (!SelectiveRepair::reviewFinalScore(result,
+                                currentMidi).ready ||
+                                SelectiveRepair::reviewFinalScore(candidate,
+                                    revisedMidi).ready);
+                        if (!safe && melodicAttempt == 0 && unchangedElsewhere &&
+                            genuinelyRevised &&
+                            after.finalTonalPass.after.unintendedHarshOverlaps >
+                                before.finalTonalPass.after.unintendedHarshOverlaps) {
+                            const auto remainingForPitch =
+                                std::chrono::duration_cast<std::chrono::seconds>(
+                                    aiStarted + totalAiBudget -
+                                    std::chrono::steady_clock::now());
+                            if (auto pitchEdit = proposeAiPitchEdit(revised, result,
+                                    before.finalTonalPass.after,
+                                    after.finalTonalPass.after, {editOwner},
+                                    static_cast<std::size_t>(sectionIndex), firstBar,
+                                    bars, model, realizationReasoningEffort, apiKey,
+                                    token, remainingForPitch)) {
+                                auto pitchedPlan = result;
+                                pitchedPlan.performanceScore = *pitchEdit;
+                                CompositionRenderReport pitchedReport;
+                                const auto pitchedMidi = SongComposer{}.render(
+                                    pitchedPlan, foundation, {}, &pitchedReport);
+                                const auto pitchedSafe =
+                                    signatures(currentMidi, false) ==
+                                        signatures(pitchedMidi, false) &&
+                                    signatures(currentMidi, true) !=
+                                        signatures(pitchedMidi, true) &&
+                                    EditorialSafety::technicallySafeAiScore(
+                                        pitchedMidi, pitchedReport) &&
+                                    pitchedReport.finalTonalPass.after.unintendedHarshOverlaps <=
+                                        before.finalTonalPass.after.unintendedHarshOverlaps &&
+                                    pitchedReport.finalTonalPass.after.unsupportedChromaticNotes <=
+                                        before.finalTonalPass.after.unsupportedChromaticNotes &&
+                                    (!before.narrative.narrativeSpineReady ||
+                                        pitchedReport.narrative.narrativeSpineReady) &&
+                                    pitchedReport.narrative.resolutionScore + .02 >=
+                                        before.narrative.resolutionScore &&
+                                    pitchedReport.narrative.motifClosure + .03 >=
+                                        before.narrative.motifClosure &&
+                                    pitchedReport.narrative.causalNarrative + .05 >=
+                                        before.narrative.causalNarrative &&
+                                    (!SelectiveRepair::reviewFinalScore(result,
+                                        currentMidi).ready ||
+                                        SelectiveRepair::reviewFinalScore(pitchedPlan,
+                                            pitchedMidi).ready);
+                                if (pitchedSafe) {
+                                    score = std::move(*pitchEdit);
+                                    currentMidi = pitchedMidi;
+                                    before = pitchedReport;
+                                    acceptedNarrativeDecisions << "\nscene " <<
+                                        juce::String(sectionIndex) << " " <<
+                                        juce::String::fromUTF8(instrumentId.c_str()) <<
+                                        ": " << target->getProperty("intent").toString();
+                                    OperationalJournal::write("OK", "MELODIC_EDITORIAL",
+                                        "AI-authored phrase and focused AI pitch decision "
+                                        "accepted | section=" + juce::String(sectionIndex) +
+                                        " first_bar=" + juce::String(firstBar));
+                                    if (checkpoint) {
+                                        pitchedPlan.performanceScore = score;
+                                        checkpoint(pitchedPlan, windowCount + 1,
+                                            true, false);
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        if (!safe) {
+                            OperationalJournal::write("WARN", "MELODIC_EDITORIAL",
+                                "AI phrase revision retained original | elsewhere=" +
+                                juce::String(unchangedElsewhere ? 1 : 0) +
+                                " changed=" + juce::String(genuinelyRevised ? 1 : 0) +
+                                " technical=" + juce::String(
+                                    EditorialSafety::technicallySafeAiScore(revisedMidi, after) ? 1 : 0) +
+                                " harsh=" + juce::String(
+                                    before.finalTonalPass.after.unintendedHarshOverlaps) +
+                                "->" + juce::String(
+                                    after.finalTonalPass.after.unintendedHarshOverlaps) +
+                                " chromatic=" + juce::String(
+                                    before.finalTonalPass.after.unsupportedChromaticNotes) +
+                                "->" + juce::String(
+                                    after.finalTonalPass.after.unsupportedChromaticNotes) +
+                                " spine=" + juce::String(before.narrative.narrativeSpineReady ? 1 : 0) +
+                                "->" + juce::String(after.narrative.narrativeSpineReady ? 1 : 0) +
+                                " resolution=" + juce::String(before.narrative.resolutionScore, 3) +
+                                "->" + juce::String(after.narrative.resolutionScore, 3) +
+                                " motif=" + juce::String(before.narrative.motifClosure, 3) +
+                                "->" + juce::String(after.narrative.motifClosure, 3) +
+                                " causal=" + juce::String(before.narrative.causalNarrative, 3) +
+                                "->" + juce::String(after.narrative.causalNarrative, 3) +
+                                " review=" + juce::String(
+                                    SelectiveRepair::reviewFinalScore(candidate, revisedMidi).ready ? 1 : 0));
+                            if (melodicAttempt == 0 && unchangedElsewhere) {
+                                rewritePrompt << "\nYOUR FIRST ALTERNATIVE WAS NOT ACCEPTED. ";
+                                if (!genuinelyRevised)
+                                    rewritePrompt << "It returned the original audible "
+                                        "phrase unchanged. Reconsider the critic's "
+                                        "dramatic intent and create a distinguishable "
+                                        "pitch-and-rhythm interpretation of this "
+                                        "particular window; don't simply add ornament "
+                                        "or shift velocity. The unchanged original is "
+                                        "already preserved as the A/B reference.\n";
+                                else
+                                    rewritePrompt << "Preserve its expressive phrase "
+                                        "intention, but reauthor the complete narrative "
+                                        "window against the immutable harmony. Its newly "
+                                        "introduced dissonances were:\n";
+                                auto listed = 0;
+                                for (const auto& issue :
+                                     after.finalTonalPass.after.issues) {
+                                    if (issue.beat < start - .001 ||
+                                        issue.beat >= end - .001 ||
+                                        (issue.partId != editOwner + 1 &&
+                                         issue.otherPartId != editOwner + 1) ||
+                                        ++listed > 18) continue;
+                                    rewritePrompt << "beat=" <<
+                                        juce::String(issue.beat, 2) <<
+                                        " kind=" <<
+                                        juce::String::fromUTF8(issue.kind.c_str()) <<
+                                        " pitch=" << issue.pitch <<
+                                        " other_pitch=" << issue.otherPitch <<
+                                        " overlap=" <<
+                                        juce::String(issue.overlapBeats, 2) << "\n";
+                                }
+                                rewritePrompt << "At each new attack, check its real "
+                                    "simultaneous chord and other sounding pitches. "
+                                    "If a pitch is decorative or chromatic, make it "
+                                    "brief and resolve it audibly; do not sustain it "
+                                    "through the next chord. Retain the original's "
+                                    "good tonal relationships when in doubt. "
+                                    "Return the whole revised window, not patches.\n";
+                            }
+                            continue;
+                        }
+                        score = std::move(revised);
+                        currentMidi = revisedMidi;
+                        before = after;
+                        acceptedNarrativeDecisions << "\nscene " <<
+                            juce::String(sectionIndex) << " " <<
+                            juce::String::fromUTF8(instrumentId.c_str()) <<
+                            ": " << target->getProperty("intent").toString();
+                        OperationalJournal::write("OK", "MELODIC_EDITORIAL",
+                            "AI-authored A/B phrase accepted | section=" +
+                            juce::String(sectionIndex) + " first_bar=" +
+                            juce::String(firstBar) + " | intent=" +
+                            target->getProperty("intent").toString());
+                        if (checkpoint) {
+                            candidate.performanceScore = score;
+                            checkpoint(candidate, windowCount + 1, true, false);
+                        }
+                        break;
                         }
                     }
                 }

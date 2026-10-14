@@ -720,6 +720,11 @@ mod tests {
             Some("1")
         );
         assert_eq!(
+            env.get("PULSO_AI_GLOBAL_NARRATIVE_EDITOR")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
             env.get("PULSO_DISABLE_SECURE_CREDENTIALS")
                 .map(String::as_str),
             Some("1")

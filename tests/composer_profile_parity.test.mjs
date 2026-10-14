@@ -5,7 +5,11 @@ import { composerProfile, workerEnvironmentFor } from '../web/local-studio/compo
 
 test('local production worker uses exactly the shared Cloud composer profile', () => {
   const source = { OPENAI_API_KEY: 'test-only', PATH: '/bin',
-    PULSO_AI_FAST_MODE: '1', PULSO_AI_EXPERIMENT_MODEL: 'gpt-6-luna' };
+    PULSO_AI_FAST_MODE: '1', PULSO_AI_EXPERIMENT_MODEL: 'gpt-6-luna',
+    PULSO_AI_MELODIC_EXPERIMENT: '1',
+    PULSO_AI_GLOBAL_NARRATIVE_EXPERIMENT: '1',
+    PULSO_AI_NARRATIVE_FULL_SCENE: '1',
+    PULSO_AI_NARRATIVE_FOCUS: 'example' };
   const env = workerEnvironmentFor(source, '/jobs/one', '/data', false, false);
   for (const [key, value] of Object.entries(composerProfile.workerEnvironment))
     assert.equal(env[key], value, key);
@@ -13,12 +17,26 @@ test('local production worker uses exactly the shared Cloud composer profile', (
   assert.equal(env.PULSO_TRACE_PATH, path.join('/jobs/one', 'api-events.jsonl'));
   assert.equal(env.PULSO_AI_FAST_MODE, undefined);
   assert.equal(env.PULSO_AI_EXPERIMENT_MODEL, undefined);
+  assert.equal(env.PULSO_AI_GLOBAL_NARRATIVE_EDITOR, '1');
+  assert.equal(env.PULSO_AI_MELODIC_EXPERIMENT, undefined);
+  assert.equal(env.PULSO_AI_GLOBAL_NARRATIVE_EXPERIMENT, undefined);
+  assert.equal(env.PULSO_AI_NARRATIVE_FULL_SCENE, undefined);
+  assert.equal(env.PULSO_AI_NARRATIVE_FOCUS, undefined);
   assert.equal(env.PULSO_AI_RESPONSE_CACHE_DIR, undefined);
 });
 
 test('an explicitly experimental local worker is visibly outside production parity', () => {
-  const env = workerEnvironmentFor({ PULSO_AI_FAST_MODE: '1' }, '/jobs/two', '/data', true, true);
+  const env = workerEnvironmentFor({ PULSO_AI_FAST_MODE: '1',
+    PULSO_AI_MELODIC_EXPERIMENT: '1',
+    PULSO_AI_GLOBAL_NARRATIVE_EXPERIMENT: '1',
+    PULSO_AI_NARRATIVE_FULL_SCENE: '1',
+    PULSO_AI_NARRATIVE_FOCUS: 'example' }, '/jobs/two', '/data', true, true);
   assert.equal(env.PULSO_AI_FAST_MODE, '1');
+  assert.equal(env.PULSO_AI_MELODIC_EXPERIMENT, '1');
+  assert.equal(env.PULSO_AI_GLOBAL_NARRATIVE_EXPERIMENT, '1');
+  assert.equal(env.PULSO_AI_GLOBAL_NARRATIVE_EDITOR, '1');
+  assert.equal(env.PULSO_AI_NARRATIVE_FULL_SCENE, '1');
+  assert.equal(env.PULSO_AI_NARRATIVE_FOCUS, 'example');
   assert.equal(env.PULSO_AUTO_RECOVERY_MAX_SECONDS, '600');
   assert.equal(env.PULSO_AUTO_RECOVERY_MAX_USD, '20');
 });

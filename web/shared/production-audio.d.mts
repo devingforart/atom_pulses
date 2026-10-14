@@ -23,4 +23,5 @@ export class ProductionAudio {
   pause(): void
   stop(): void
   renderPreview(startSeconds?: number, maxSeconds?: number): Promise<Blob>
+  renderFullWav(onProgress?: (progress: number) => void, signal?: AbortSignal): Promise<Blob>
 }

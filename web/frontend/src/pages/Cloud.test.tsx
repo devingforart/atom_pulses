@@ -70,6 +70,7 @@ describe('Cloud Suite', () => {
     expect(screen.getByLabelText('Modo de escucha')).toHaveValue('piano')
     expect(screen.getAllByText('Piano MIDI').length).toBeGreaterThan(1)
     expect(screen.getByRole('button', { name: 'WAV 30 s' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /Exportar audio completo · WAV/ })).not.toBeDisabled()
     expect(screen.queryByLabelText('Sonido de Protagonist lead')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: '↓ Exportar obra MIDI' })).toHaveAttribute('href', `/api/cloud/jobs/${job.id}/tracks/full-song.mid`)
     expect(screen.getByRole('button', { name: 'Escuchar solo Protagonist lead' })).toHaveAttribute('aria-pressed', 'false')

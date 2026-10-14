@@ -185,7 +185,7 @@ function mergedMidi(parts, manifest) {
 async function loadSong(job, diagnostic = false) {
   const version = ++loadVersion;
   audio.stop(); current = null; playhead = null;
-  ui.play.disabled = true; $('#preview-wav').disabled = true;
+  ui.play.disabled = true; $('#preview-wav').disabled = true; $('#full-wav').disabled = true;
   ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Leyendo las notas MIDI de esta obra…'));
   $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
   $('#song-subtitle').textContent = 'Preparando partitura y monitor senoidal…';
@@ -227,6 +227,7 @@ async function loadSong(job, diagnostic = false) {
     $('#track-summary').textContent = `${tracks.length} pistas · ${fmt(audio.duration)}`;
     ui.play.disabled = false;
     $('#preview-wav').disabled = false;
+    $('#full-wav').disabled = !job.manifest || diagnostic;
     setExport(job, diagnostic ? job.diagnostic?.file : job.manifest?.fullFile || job.checkpoint?.file);
     updatePosition(0);
   } catch (error) {
@@ -311,6 +312,7 @@ async function refresh() {
         audio.stop(); current = null; playhead = null; loadedKey = null; ++loadVersion;
         ui.play.disabled = true; setExport(null, null);
         $('#preview-wav').disabled = true;
+        $('#full-wav').disabled = true;
         ui.session.replaceChildren(node('div', 'empty-session', 'El historial está vacío. Comienza una nueva obra para escucharla aquí.'));
         ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Todavía no hay MIDI en el historial local.'));
         $('#song-title').textContent = 'El estudio está listo';
@@ -369,6 +371,23 @@ $('#preview-wav').addEventListener('click', async () => {
     showNotice(`Vista previa WAV lista: ${fmt(start)} a ${fmt(Math.min(audio.duration, start + 30))}. No se cambió el MIDI.`);
   } catch (error) { showNotice(`No se pudo crear el WAV: ${error.message}`); }
   finally { button.textContent = 'WAV 30 s'; button.disabled = !current; }
+});
+$('#full-wav').addEventListener('click', async () => {
+  if (!current?.job.manifest) return;
+  const jobId = current.job.id;
+  const button = $('#full-wav');
+  button.disabled = true; button.textContent = 'Exportando WAV 0%';
+  try {
+    const blob = await audio.renderFullWav(progress => { button.textContent = `Exportando WAV ${Math.round(progress * 100)}%`; });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pulso-${jobId.slice(0, 8)}-obra-completa.wav`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    showNotice('Obra completa WAV lista. Se exportó la mezcla audible, sin modificar el MIDI ni consumir API.');
+  } catch (error) { showNotice(`No se pudo exportar el audio completo: ${error.message}`); }
+  finally { button.textContent = 'WAV completo'; button.disabled = !current?.job.manifest; }
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden && audio.playing) { audio.pause(); ui.play.textContent = '▶'; } });
 refresh(); setInterval(refresh, 4000);

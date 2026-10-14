@@ -77,6 +77,20 @@ try {
     return bytes.length > 44 && String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' ? bytes.length : 0;
   })()`);
   if (renderedBytes < 1000) throw new Error('La vista previa WAV local no produjo audio.');
+  const fullWav = await evaluate(`(async()=>{
+    const { ProductionAudio } = await import('/production-audio.mjs');
+    const engine = new ProductionAudio();
+    engine.mode = 'neutral';
+    engine.setSong({ lengthBeats: 2, beatToSeconds: beat => beat * .5 }, [{ name: 'Lead', instrument: 'lead', notes: [{ startBeat: 0, durationBeats: 1, pitch: 69, velocity: 100, channel: 0 }] }]);
+    const progress = [];
+    const wav = await engine.renderFullWav(value => progress.push(value));
+    const view = new DataView(await wav.arrayBuffer());
+    let peak = 0;
+    for (let offset = 44; offset < view.byteLength; offset += 2) peak = Math.max(peak, Math.abs(view.getInt16(offset, true)));
+    return { bytes: wav.size, frames: view.getUint32(40, true) / 4, rate: view.getUint32(24, true), peak, progress };
+  })()`);
+  if (fullWav.frames !== Math.ceil(3.5 * 44100) || fullWav.rate !== 44100 || fullWav.peak < 100 || fullWav.progress.at(-1) !== 1)
+    throw new Error(`La exportación WAV completa no produjo audio válido: ${JSON.stringify(fullWav)}`);
   const modeDifference = await evaluate(`(async()=>{
     const { ProductionAudio } = await import('/production-audio.mjs');
     const engine = new ProductionAudio();
@@ -121,7 +135,7 @@ try {
   const stopped = await evaluate("document.querySelector('#time-display').textContent");
   if (!stopped.startsWith('00:00')) throw new Error(`Stop no volvió al inicio: ${stopped}`);
   if (exceptions.length) throw new Error(`Excepción del navegador: ${exceptions[0]}`);
-  console.log(JSON.stringify({ tracks, initialMode, assignedPatches: assignedPatches.length, renderedBytes, modeDifference, mix, durationDefault, proofDefault, before, after, muted, soloed, stopped, browserExceptions: 0 }));
+  console.log(JSON.stringify({ tracks, initialMode, assignedPatches: assignedPatches.length, renderedBytes, fullWav, modeDifference, mix, durationDefault, proofDefault, before, after, muted, soloed, stopped, browserExceptions: 0 }));
 } finally {
   socket?.close();
   child.kill();

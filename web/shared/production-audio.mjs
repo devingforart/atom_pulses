@@ -82,8 +82,52 @@ export class ProductionAudio extends SuiteAudio {
     const start = clamp(Number(startSeconds) || 0, 0, Math.max(0, this.duration - .1));
     const length = Math.min(clamp(Number(maxSeconds) || 30, 1, 60), Math.max(.1, this.duration - start));
     const sampleRate = 44100;
-    const context = new OfflineAudioContext(2, Math.ceil((length + .25) * sampleRate), sampleRate);
-    if (this.mode === 'piano') {
+    const frames = Math.ceil((length + .25) * sampleRate);
+    const buffer = await this.renderOfflineSlice(Math.floor(start * sampleRate), frames, 0, sampleRate);
+    return new Blob([encodeWavHeader(frames, sampleRate), encodePcm16(buffer, 0, frames)], { type: 'audio/wav' });
+  }
+
+  // Bounded slices avoid allocating a 15-minute stereo AudioBuffer at once.
+  // Preroll primes held notes and the reverb before each exported boundary.
+  async renderFullWav(onProgress = () => {}, signal) {
+    if (!this.midi || !this.tracks.length) throw new Error('Primero abrí una obra MIDI.');
+    if (typeof OfflineAudioContext === 'undefined') throw new Error('Este navegador no admite exportar audio WAV.');
+    const sampleRate = 44100;
+    const totalFrames = Math.ceil((this.duration + 2.5) * sampleRate);
+    if (totalFrames <= 0 || totalFrames * 4 > 0xffffffff - 36)
+      throw new Error('La obra supera el límite del formato WAV PCM.');
+    const sliceFrames = 20 * sampleRate;
+    const overlapFrames = 4 * sampleRate;
+    const source = new ProductionAudio();
+    source.midi = this.midi;
+    source.tracks = this.tracks.map(track => ({ ...track }));
+    source.mode = this.mode;
+    source.masterVolume = this.masterVolume;
+    source.pianoBuffers = this.pianoBuffers;
+    source.muted = new Set(this.muted);
+    source.soloed = new Set(this.soloed);
+    const parts = [encodeWavHeader(totalFrames, sampleRate)];
+    try {
+      for (let startFrame = 0; startFrame < totalFrames; startFrame += sliceFrames) {
+        if (signal?.aborted) throw new DOMException('Exportación cancelada.', 'AbortError');
+        const frames = Math.min(sliceFrames, totalFrames - startFrame);
+        const preRoll = Math.min(startFrame, overlapFrames);
+        const buffer = await source.renderOfflineSlice(startFrame, frames, preRoll, sampleRate);
+        parts.push(encodePcm16(buffer, preRoll, frames));
+        onProgress(Math.min(1, (startFrame + frames) / totalFrames));
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    } finally {
+      if (source.context?.state !== 'closed') await source.context?.close();
+    }
+    return new Blob(parts, { type: 'audio/wav' });
+  }
+
+  async renderOfflineSlice(startFrame, frameCount, preRollFrames, sampleRate) {
+    const renderStart = (startFrame - preRollFrames) / sampleRate;
+    const renderLength = (frameCount + preRollFrames) / sampleRate;
+    const context = new OfflineAudioContext(2, frameCount + preRollFrames, sampleRate);
+    if (this.mode === 'piano' && !this.pianoBuffers) {
       await this.ensureAudio();
     }
     const renderer = new ProductionAudio();
@@ -92,7 +136,7 @@ export class ProductionAudio extends SuiteAudio {
     renderer.context = context;
     renderer.midi = this.midi;
     renderer.tracks = this.tracks.map(track => ({ ...track }));
-    renderer.origin = -start;
+    renderer.origin = -renderStart;
     renderer.offline = true;
     renderer.master = context.createGain();
     renderer.master.gain.value = this.masterVolume;
@@ -105,17 +149,16 @@ export class ProductionAudio extends SuiteAudio {
       const track = renderer.tracks[index];
       for (const note of track.notes) {
         const noteStart = renderer.midi.beatToSeconds(note.startBeat);
-        if (noteStart >= start + length) break;
+        if (noteStart >= renderStart + renderLength) break;
         const noteEnd = renderer.midi.beatToSeconds(note.startBeat + note.durationBeats);
-        if (noteEnd <= start || (track.instrument === 'drums' && noteStart < start)) continue;
-        const at = Math.max(0, noteStart - start);
-        const remaining = Math.min(noteEnd - Math.max(noteStart, start), length - at);
+        if (noteEnd <= renderStart || (track.instrument === 'drums' && noteStart < renderStart)) continue;
+        const at = Math.max(0, noteStart - renderStart);
+        const remaining = Math.min(noteEnd - Math.max(noteStart, renderStart), renderLength - at);
         renderer.note(track.instrument, note, at, remaining, track);
-        if (++scheduled > 6000) throw new Error('La vista previa contiene demasiados eventos; elegí un pasaje más breve.');
+        if (++scheduled > 12000) throw new Error('Demasiados eventos para renderizar este tramo.');
       }
     }
-    const buffer = await context.startRendering();
-    return new Blob([encodeWav(buffer)], { type: 'audio/wav' });
+    return context.startRendering();
   }
 
   note(instrument, note, at, seconds, track = {}) {
@@ -313,21 +356,27 @@ function makeImpulse(context) {
   return buffer;
 }
 
-function encodeWav(buffer) {
+function encodeWavHeader(frames, sampleRate) {
   const channels = 2;
-  const dataSize = buffer.length * channels * 2;
-  const bytes = new ArrayBuffer(44 + dataSize);
+  const dataSize = frames * channels * 2;
+  const bytes = new ArrayBuffer(44);
   const view = new DataView(bytes);
   const word = (offset, value) => view.setUint16(offset, value, true);
   const dword = (offset, value) => view.setUint32(offset, value, true);
   for (const [offset, value] of [[0, 'RIFF'], [8, 'WAVE'], [12, 'fmt '], [36, 'data']])
     for (let index = 0; index < 4; index++) view.setUint8(offset + index, value.charCodeAt(index));
   dword(4, 36 + dataSize); dword(16, 16); word(20, 1); word(22, channels);
-  dword(24, buffer.sampleRate); dword(28, buffer.sampleRate * channels * 2);
+  dword(24, sampleRate); dword(28, sampleRate * channels * 2);
   word(32, channels * 2); word(34, 16); dword(40, dataSize);
+  return bytes;
+}
+
+function encodePcm16(buffer, startFrame, frames) {
+  const bytes = new ArrayBuffer(frames * 4);
+  const view = new DataView(bytes);
   const left = buffer.getChannelData(0), right = buffer.getChannelData(1);
-  let offset = 44;
-  for (let index = 0; index < buffer.length; index++) {
+  let offset = 0;
+  for (let index = startFrame; index < startFrame + frames; index++) {
     for (const sample of [left[index], right[index]]) {
       const value = clamp(sample, -1, 1);
       view.setInt16(offset, value < 0 ? value * 32768 : value * 32767, true);

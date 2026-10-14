@@ -1,4 +1,4 @@
-import { parseMidi } from './midi.mjs';
+import { parseMidi, downloadSingleTrackMidi } from './midi.mjs';
 import { instrumentFor } from './audio-engine.mjs';
 import { ProductionAudio } from './production-audio.mjs';
 import { PATCHES, SOUND_BANK_VERSION, patchOptions, patchForTrack } from './sound-palette.mjs';
@@ -132,6 +132,10 @@ function renderSession(job) {
     selectedId = job.recovery.jobId; loadedKey = null; previewDiagnostic = false; showSelected();
   }));
   if (job.manifest?.fullFile) actions.append(download(job, job.manifest.fullFile, '↓ Obra completa MIDI', 'primary-link'));
+  if (job.manifest?.fullFile) actions.append(actionButton('↓ Todas las notas · 1 pista MIDI', async () => {
+    try { await downloadSingleTrackMidi(fileUrl(job, job.manifest.fullFile), `pulso-${job.id.slice(0, 8)}-todas-las-notas.mid`); }
+    catch (error) { showNotice(`No se pudo crear el MIDI de una pista: ${error.message}`); }
+  }));
   if (job.checkpoint?.file && !job.manifest) actions.append(download(job, job.checkpoint.file, '↓ MIDI provisional'));
   if (job.diagnostic?.file && !job.manifest) actions.append(download(job, job.diagnostic.file, '↓ MIDI rechazado (diagnóstico)'));
   if (job.diagnostic?.planFile && !job.manifest) actions.append(download(job, job.diagnostic.planFile, 'Plan del candidato'));

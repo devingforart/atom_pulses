@@ -88,3 +88,76 @@ export function parseMidi(input) {
   };
   return { format, division, tracks, beatsPerBar, lengthBeats: lastTick / division, beatToSeconds, secondsToBeat, tempos };
 }
+
+// Audition-only Type 0 MIDI: the entire score as one pitched-instrument clip.
+// Keep full-song.mid untouched; adding this lane to it would double playback.
+const midiClamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const midiU16 = value => [(value >>> 8) & 255, value & 255];
+const midiU32 = value => [(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255];
+const midiVlq = value => {
+  if (!Number.isInteger(value) || value < 0 || value > 0x0fffffff) throw new Error('Tiempo MIDI fuera de rango.');
+  const bytes = [value & 127];
+  while ((value >>>= 7)) bytes.unshift((value & 127) | 128);
+  return bytes;
+};
+
+export function singleTrackMidi(score, tracks) {
+  const division = score?.division;
+  if (!Number.isInteger(division) || division < 1 || division > 0x7fff || !Array.isArray(tracks))
+    throw new Error('Partitura MIDI no compatible.');
+  const events = [];
+  const name = new TextEncoder().encode('PULSO - Todas las notas');
+  events.push({ tick: 0, order: 0, bytes: [0xff, 0x03, ...midiVlq(name.length), ...name] });
+  const numerator = midiClamp(Math.round(score.beatsPerBar || 4), 1, 255);
+  events.push({ tick: 0, order: 1, bytes: [0xff, 0x58, 4, numerator, 2, 24, 8] });
+  const tempos = new Map();
+  for (const tempo of score.tempos || []) {
+    if (Number.isInteger(tempo.tick) && tempo.tick >= 0 && Number.isInteger(tempo.microseconds))
+      tempos.set(tempo.tick, midiClamp(tempo.microseconds, 1, 0xffffff));
+  }
+  if (!tempos.has(0)) tempos.set(0, 500000);
+  for (const [tick, microseconds] of tempos)
+    events.push({ tick, order: 2, bytes: [0xff, 0x51, 3, (microseconds >>> 16) & 255, (microseconds >>> 8) & 255, microseconds & 255] });
+
+  let noteCount = 0;
+  for (const track of tracks) for (const note of track.notes || []) {
+    if (!Number.isFinite(note.startBeat) || !Number.isFinite(note.durationBeats) ||
+        note.startBeat < 0 || note.durationBeats <= 0 || !Number.isInteger(note.pitch) || note.pitch < 0 || note.pitch > 127) continue;
+    const start = Math.round(note.startBeat * division);
+    const end = Math.max(start + 1, Math.round((note.startBeat + note.durationBeats) * division));
+    const pitch = note.pitch;
+    const velocity = midiClamp(Math.round(Number(note.velocity) || 80), 1, 127);
+    // Channel 1 makes former drum notes pitched notes on the chosen instrument.
+    events.push({ tick: start, order: 4, bytes: [0x90, pitch, velocity] });
+    events.push({ tick: end, order: 3, bytes: [0x80, pitch, 0] });
+    noteCount++;
+  }
+  if (!noteCount) throw new Error('Esta obra no tiene notas para combinar.');
+  events.sort((a, b) => a.tick - b.tick || a.order - b.order);
+  const trackBytes = [];
+  let previousTick = 0;
+  for (const event of events) {
+    trackBytes.push(...midiVlq(event.tick - previousTick), ...event.bytes);
+    previousTick = event.tick;
+  }
+  const songEnd = Math.max(previousTick, Math.round((score.lengthBeats || 0) * division));
+  trackBytes.push(...midiVlq(songEnd - previousTick), 0xff, 0x2f, 0);
+  return Uint8Array.from([
+    0x4d, 0x54, 0x68, 0x64, ...midiU32(6), ...midiU16(0), ...midiU16(1), ...midiU16(division),
+    0x4d, 0x54, 0x72, 0x6b, ...midiU32(trackBytes.length), ...trackBytes,
+  ]);
+}
+
+export async function downloadSingleTrackMidi(sourceUrl, filename) {
+  const response = await fetch(sourceUrl, { credentials: 'include', cache: 'no-store' });
+  if (!response.ok) throw new Error(`No se pudo leer la obra MIDI (HTTP ${response.status}).`);
+  const score = parseMidi(await response.arrayBuffer());
+  const bytes = singleTrackMidi(score, score.tracks);
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/midi' }));
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+  } finally { setTimeout(() => URL.revokeObjectURL(url), 60000); }
+}

@@ -91,6 +91,19 @@ try {
   })()`);
   if (fullWav.frames !== Math.ceil(3.5 * 44100) || fullWav.rate !== 44100 || fullWav.peak < 100 || fullWav.progress.at(-1) !== 1)
     throw new Error(`La exportación WAV completa no produjo audio válido: ${JSON.stringify(fullWav)}`);
+  const mergedMidi = await evaluate(`(async()=>{
+    const { parseMidi, singleTrackMidi } = await import('/midi.mjs');
+    const { jobs } = await (await fetch('/api/jobs')).json();
+    const job = jobs.find(item => item.manifest?.fullFile);
+    const original = parseMidi(await (await fetch('/api/jobs/' + job.id + '/files/' + job.manifest.fullFile)).arrayBuffer());
+    const merged = parseMidi(singleTrackMidi(original, original.tracks));
+    return { tracks: merged.tracks.length, notes: merged.tracks[0].notes.length,
+      originalNotes: original.tracks.reduce((count, track) => count + track.notes.length, 0),
+      duration: merged.beatToSeconds(merged.lengthBeats), originalDuration: original.beatToSeconds(original.lengthBeats) };
+  })()`);
+  if (mergedMidi.tracks !== 1 || mergedMidi.notes !== mergedMidi.originalNotes ||
+      Math.abs(mergedMidi.duration - mergedMidi.originalDuration) > .001)
+    throw new Error(`El MIDI de una pista no conserva la obra: ${JSON.stringify(mergedMidi)}`);
   const modeDifference = await evaluate(`(async()=>{
     const { ProductionAudio } = await import('/production-audio.mjs');
     const engine = new ProductionAudio();
@@ -135,7 +148,7 @@ try {
   const stopped = await evaluate("document.querySelector('#time-display').textContent");
   if (!stopped.startsWith('00:00')) throw new Error(`Stop no volvió al inicio: ${stopped}`);
   if (exceptions.length) throw new Error(`Excepción del navegador: ${exceptions[0]}`);
-  console.log(JSON.stringify({ tracks, initialMode, assignedPatches: assignedPatches.length, renderedBytes, fullWav, modeDifference, mix, durationDefault, proofDefault, before, after, muted, soloed, stopped, browserExceptions: 0 }));
+  console.log(JSON.stringify({ tracks, initialMode, assignedPatches: assignedPatches.length, renderedBytes, fullWav, mergedMidi, modeDifference, mix, durationDefault, proofDefault, before, after, muted, soloed, stopped, browserExceptions: 0 }));
 } finally {
   socket?.close();
   child.kill();

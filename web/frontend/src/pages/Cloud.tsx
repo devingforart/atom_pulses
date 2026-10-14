@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { api, type CloudJob, type CloudTrack } from '../api'
 import { useAuth } from '../auth'
 import { Logo } from '../components/Logo'
-import { parseMidi, type MidiNote, type MidiScore } from '../../../shared/midi.mjs'
+import { parseMidi, downloadSingleTrackMidi, type MidiNote, type MidiScore } from '../../../shared/midi.mjs'
 import { instrumentFor, type SuiteTrack } from '../../../shared/audio-engine.mjs'
 import { ProductionAudio } from '../../../shared/production-audio.mjs'
 import { PATCHES, SOUND_BANK_VERSION, patchForTrack, patchOptions } from '../../../shared/sound-palette.mjs'
@@ -93,6 +93,7 @@ export function Cloud() {
   const [renderingWav, setRenderingWav] = useState(false)
   const [renderingFullWav, setRenderingFullWav] = useState(false)
   const [fullWavProgress, setFullWavProgress] = useState(0)
+  const [downloadingSingleMidi, setDownloadingSingleMidi] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [durationSeconds, setDurationSeconds] = useState(390)
   const [bpm, setBpm] = useState(120)
@@ -216,6 +217,15 @@ export function Cloud() {
     } catch (problem) { setScoreError(problem instanceof Error ? problem.message : 'No se pudo exportar el audio completo.') }
     finally { setRenderingFullWav(false) }
   }
+  async function downloadMergedMidi() {
+    if (!activeScore || !selected?.resultManifest?.fullFile || downloadingSingleMidi) return
+    setDownloadingSingleMidi(true); setScoreError('')
+    try {
+      await downloadSingleTrackMidi(trackUrl(activeScore.jobId, selected.resultManifest.fullFile),
+        `pulso-${activeScore.jobId.slice(0, 8)}-todas-las-notas.mid`)
+    } catch (problem) { setScoreError(problem instanceof Error ? problem.message : 'No se pudo crear el MIDI de una pista.') }
+    finally { setDownloadingSingleMidi(false) }
+  }
   const status = selected?.status === 'completed' ? 'LISTA' : selected?.status === 'failed' ? 'NO COMPLETADA' :
     selected?.status === 'cancelled' ? 'CANCELADA' : selected ? stageText[selected.stage] || 'COMPONIENDO' : 'SIN OBRAS'
 
@@ -242,7 +252,7 @@ export function Cloud() {
           {(selected.status === 'running' || selected.status === 'queued') && <div className="cloud-suite-progress"><progress value={selected.completedSteps} max={Math.max(selected.totalSteps, 1)} /><span>{stageText[selected.stage] || 'Componiendo'} · {selected.completedSteps}/{selected.totalSteps}</span><button type="button" onClick={async () => { try { await api.cancelCloudJob(selected.id); setJobs(await api.cloudJobs()) } catch (problem) { setError(problem instanceof Error ? problem.message : 'No se pudo cancelar.') } }}>Cancelar</button></div>}
           {selected.status === 'completed' && selected.resultManifest && <div className="cloud-suite-session-actions"><a href={trackUrl(selected.id, selected.resultManifest.fullFile)}>↓ Obra completa MIDI</a><span>{selected.resultManifest.tracks.length} pistas · {selected.resultManifest.key}</span></div>}
           {selected.status === 'failed' && <p className="cloud-suite-error">La composición no se completó. No se publicó una obra incompleta.</p>}</> : <p className="cloud-suite-empty-copy">Tus obras aparecerán aquí cuando empieces a componer.</p>}</div>
-      {activeScore && <div className="cloud-suite-audio-export"><button type="button" className="cloud-suite-preview-wav" disabled={renderingFullWav} onClick={() => void downloadFullWav()} title="Exportar toda la obra en WAV estéreo con el modo de escucha, volumen y pistas audibles actuales. No consume API.">{renderingFullWav ? `Exportando WAV ${fullWavProgress}%` : '↓ Exportar audio completo · WAV'}</button><span>44,1 kHz · 16-bit estéreo · se genera en este dispositivo</span></div>}
+      {activeScore && <div className="cloud-suite-audio-export"><button type="button" className="cloud-suite-preview-wav" disabled={renderingFullWav} onClick={() => void downloadFullWav()} title="Exportar toda la obra en WAV estéreo con el modo de escucha, volumen y pistas audibles actuales. No consume API.">{renderingFullWav ? `Exportando WAV ${fullWavProgress}%` : '↓ Exportar audio completo · WAV'}</button><button type="button" disabled={downloadingSingleMidi} onClick={() => void downloadMergedMidi()} title="Descargar todas las notas en una sola pista MIDI para probar la obra con un instrumento. El MIDI multipista original no cambia.">{downloadingSingleMidi ? 'Preparando MIDI…' : '↓ Todas las notas · 1 pista MIDI'}</button><span>WAV o MIDI de una pista · se generan en este dispositivo</span></div>}
     </div></aside>
       <div className="cloud-suite-arrangement"><div className="cloud-suite-transport"><div className="cloud-suite-player"><button type="button" onClick={() => audio.seek(0)} disabled={!activeScore} aria-label="Volver al inicio">⏮</button><button type="button" className="cloud-suite-play" onClick={() => void togglePlay()} disabled={!activeScore} aria-label={playing ? 'Pausar' : 'Reproducir'}>{playing ? 'Ⅱ' : '▶'}</button><button type="button" onClick={() => { audio.stop(); setPlaying(false) }} disabled={!activeScore} aria-label="Detener">■</button><span ref={timeRef} className="cloud-suite-time">00:00 / {fmt(duration)}</span></div><div className="cloud-suite-transport-meta"><label htmlFor="cloud-listen-mode">Escucha</label><select id="cloud-listen-mode" aria-label="Modo de escucha" value={listeningMode} onChange={event => { const mode = event.target.value as 'piano' | 'neutral'; void audio.setMode(mode).then(() => setListeningMode(mode)).catch(problem => setScoreError(problem instanceof Error ? problem.message : 'No se pudo cargar el piano.')) }}><option value="piano">Piano MIDI</option><option value="neutral">MIDI neutro</option></select><button type="button" className="cloud-suite-preview-wav" disabled={!activeScore || renderingWav} onClick={() => void downloadWav()} title="Descargar 30 segundos de audio WAV desde la posición actual, con el modo de escucha elegido. No consume API.">{renderingWav ? 'Renderizando…' : 'WAV 30 s'}</button><span>{selected?.resultManifest?.bpm || selected?.bpm || '—'} BPM</span><span>{selected?.resultManifest?.key || '—'}</span><label htmlFor="cloud-volume">Volumen</label><input id="cloud-volume" type="range" min="0" max="100" defaultValue="72" onChange={event => audio.setVolume(Number(event.target.value) / 100)} /></div></div>
         <div className="cloud-suite-score-head"><div><div className="cloud-suite-kicker">03 / PARTITURA</div><h2>{selected?.resultManifest?.title || 'El estudio está listo'}</h2><p>{activeScore ? `${selected?.resultManifest?.key || '—'} · ${bars} compases · ${activeScore.tracks.length} pistas con notas` : selected?.status === 'completed' ? 'Preparando las pistas MIDI…' : 'Elige una obra terminada para escuchar su partitura.'}</p></div><span>{activeScore ? `${activeScore.tracks.reduce((total, track) => total + track.notes.length, 0).toLocaleString('es-AR')} NOTAS · ${activeScore.tracks.length} PISTAS` : 'MIDI REAL · ESCUCHA PULSO'}</span></div>

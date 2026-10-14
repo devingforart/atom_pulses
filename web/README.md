@@ -69,8 +69,8 @@ la separación entre estáticos y API.
 La página autenticada `/cloud` y el estudio local importan el mismo lector MIDI,
 motor `ProductionAudio` y banco de sonidos desde `web/shared`. Ambos ofrecen
 **Piano MIDI** (predeterminado) y **MIDI neutro**, además de una vista previa
-WAV de 30 segundos o la obra completa en PCM estéreo desde el navegador. La exportación completa se procesa en tramos acotados, respeta el modo de escucha y Mute/Solo, y no consume llamadas de IA. Las muestras de piano CC0 están incluidas
-en `web/frontend/public/piano` y se sirven desde el mismo origen en ambas interfaces.
+WAV de 30 segundos o la obra completa en PCM estéreo desde el navegador. La exportación completa se procesa en tramos acotados, respeta el modo de escucha y Mute/Solo, y no consume llamadas de IA. Las muestras de piano CC0 están incluidas en `web/frontend/public/piano` y se sirven desde el mismo origen en ambas interfaces.
+Ambas interfaces también permiten descargar un MIDI tipo 0 de **una sola pista con todas las notas** de cualquier obra terminada, para probarla con un instrumento en Live. Este archivo de audición conserva notas y tempo, pero no la expresión independiente de cada pista; el `full-song.mid` original multipista no cambia ni duplica notas.
 Una nueva versión del frontend debe
 copiar `web/shared` durante el build (incluido en `web/Dockerfile`). Para obras
 Cloud anteriores, el endpoint autenticado de detalle recupera `catalog_id`,

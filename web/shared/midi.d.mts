@@ -19,3 +19,5 @@ export type MidiScore = {
 }
 
 export function parseMidi(input: ArrayBuffer | Uint8Array): MidiScore
+export function singleTrackMidi(score: MidiScore, tracks: { notes: MidiNote[] }[]): Uint8Array
+export function downloadSingleTrackMidi(sourceUrl: string, filename: string): Promise<void>

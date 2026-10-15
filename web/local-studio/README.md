@@ -1,6 +1,41 @@
 # PULSO Local Studio
 
-## Compositor AI soberano (experimental)
+## Compositor AI soberano
+
+### Primera pasada por defecto
+
+En Local y Cloud, una obra normal de IA soberana conserva la primera escritura
+musical que supere la integridad técnica. La prueba de coherencia local es una
+ruta distinta. El modo de primera pasada
+conserva la primera escritura musical que pase la validación técnica; omite la
+revisión armónica por ventana, las reescrituras editoriales globales y el veto
+musical final. Sigue rechazando JSON/MIDI inválido, notas fuera de rango,
+eventos huérfanos y duraciones inseguras. Por tanto, una respuesta técnicamente
+inválida puede necesitar otro intento, pero no se reescribe por puntuación
+musical. Cuando el primer borrador completo supera la integridad MIDI, el
+worker publica las pistas y termina: no ejecuta revisión musical final,
+render comparativo. Local no inicia recuperación editorial automática en este modo; Cloud conserva la reanudación acotada de checkpoints técnicos. La obra se etiqueta como
+*requiere revisión musical* en el manifiesto.
+El VST conserva su comportamiento anterior. La semilla no garantiza respuestas
+idénticas del modelo; la comparación musical requiere escucha A/B.
+
+### Plan de frases y diálogo
+
+En una obra normal de IA soberana, Local y Cloud generan el plan de frases por defecto. Después del plan general y del elenco, una llamada adicional a la IA propone frases por sección: portavoz, eventual voz que responde, ubicación, contorno, ritmo, registro, silencio y consecuencia dramática. El escritor recibe las intenciones pertinentes a cada ventana y sigue decidiendo **todas** las notas. El plan no crea MIDI procedural ni impone saltos de octava, arpegios o densidad por cuota.
+
+Cada obra con plan guarda `phrase-architecture.json`. Local ofrece su descarga en la sesión y prepara `phrase-audit.json`: compara presencia de notas, respuesta y registro observado por frase. El informe es **orientativo**: no puede determinar si una respuesta realmente emociona o si la melodía cuenta una historia. Si la IA no entrega un plan válido, el intento falla explícitamente; no inventamos uno localmente. La reanudación exacta guarda el mismo plan junto a las notas aceptadas.
+
+### Desarrollo de obras largas
+
+El estudio no muestra un selector de cadencias. Para obras de más de tres
+minutos, el compositor calcula una escala aproximada de desarrollo a partir de
+la duración, los compases y el enfoque musical. Esa escala orienta a la IA en
+el plano global y al escribir cada pasaje, pero no inserta notas, no fija una
+cadencia cada N compases y no sustituye el criterio compositivo de la IA. Los
+límites de las ventanas MIDI son técnicos: no deben convertirse en nuevos
+inicios o finales de una canción. La escena anterior y su deuda pendiente se
+transmiten a la siguiente ventana. La escucha de obras largas sigue siendo la
+prueba necesaria para valorar si ese arco es realmente perceptible.
 
 La suite local usa el mismo `SongGenerationPipeline` que el worker Cloud. En el
 modo `ai_sovereign`, la IA define la forma, los acordes, el reparto instrumental
@@ -46,6 +81,14 @@ local, esta dentro de `build/` y no se distribuye con el producto.
 Suite local de composición y escucha en `http://127.0.0.1:4177`, sin abrir Ableton, compilar el VST, ejecutar CMake, instalar Docker/PostgreSQL o desplegar Cloud. La interfaz invoca el **ejecutable headless existente** `build-cloud/Release/pulso_cloud_worker.exe`; ese ejecutable llama a `SongGenerationPipeline`, el mismo núcleo musical que usa la versión Cloud. No existe un segundo compositor web.
 
 ## Iniciar
+
+La biblioteca local separa **Personal** (obras iniciadas desde la interfaz) de
+**Auto** (experimentos iniciados por el agente). Ambos usan el mismo compositor;
+la diferencia es solo la procedencia del trabajo. Las pruebas del agente se
+envían a `POST /api/auto/jobs` con el mismo JSON y encabezado
+`X-Pulso-Local: 1` de `POST /api/jobs`. Las recuperaciones automáticas heredan
+la procedencia de su obra original. Los trabajos antiguos sin marca se muestran
+en Personal. Esto no afecta la biblioteca de Cloud.
 
 Desde la raíz del repositorio, en PowerShell:
 
@@ -291,9 +334,11 @@ La traza contiene identificadores de respuesta, estados y uso; **no guarda la cl
 
 Si OpenAI indica que el proyecto no tiene créditos, el estudio muestra esa causa **en la obra fallida**. El estado superior solo indica que hay una clave configurada; no comprueba el saldo ni mantiene un aviso antiguo como si fuera actual. El worker local usa exactamente la clave de entorno que comprobó el estudio, aunque el VST tenga otra guardada en el Administrador de credenciales de Windows. Los errores internos inesperados llevan un ID de diagnóstico; su detalle técnico queda en `build/local-studio-data/server-errors.jsonl` (o en `PULSO_LOCAL_DATA_DIR` si está definido), sin guardar la clave ni el cuerpo de la solicitud.
 
-El estudio local y Cloud usan el mismo `pulso_cloud_worker`, el mismo perfil musical versionado en `web/shared/composer-profile.json` y el mismo formato de checkpoint AI con notas. En ambos, el pedido predeterminado es `ai_sovereign` + `adaptive`; Cloud acepta `seed` opcional en la API para comparaciones controladas, aunque la interfaz genera una semilla automática. El editor narrativo acotado (`PULSO_AI_GLOBAL_NARRATIVE_EDITOR`) forma parte de ese perfil compartido: revisa pasajes de las voces protagonistas con la IA, conserva la partitura aceptada si una revisión empeora la auditoría y no activa la reescritura experimental de escenas completas. Local conserva los controles avanzados para experimentar; si se elige otro enfoque o modo, ya no es la misma solicitud. Las variables experimentales locales solo se transmiten al worker cuando `PULSO_LOCAL_EXPERIMENTAL=1`; el estado `/api/status` lo declara. Sin ese modo, Local no reutiliza respuestas guardadas que Cloud no pueda reutilizar. Las dos superficies permiten hasta tres reanudaciones automáticas del checkpoint aceptado, con el mismo límite de diez minutos y USD 20 estimados por reanudación; no se reintentan solicitudes manualmente reanudadas ni errores permanentes. **La misma semilla no garantiza notas idénticas** si la IA responde distinto: se garantiza la misma ruta y el mismo contrato, no determinismo de la API. Cualquier cambio en C++ requiere recompilar el worker local y desplegar el mismo commit en Cloud antes de comparar.
+El estudio local y Cloud usan el mismo `pulso_cloud_worker`, el perfil versionado en `web/shared/composer-profile.json` y el mismo formato de checkpoint AI. Ambos usan `ai_sovereign` + `adaptive`, plan de frases IA y primera pasada por defecto; Cloud acepta una `seed` opcional en la API. El editor narrativo acotado permanece en el perfil para rutas que no sean primera pasada, pero no reescribe estas obras. Local conserva herramientas avanzadas de prueba; elegir otra ruta deja de ser comparable con Cloud. Las variables experimentales locales solo se transmiten al worker cuando `PULSO_LOCAL_EXPERIMENTAL=1`. **La misma semilla no garantiza notas idénticas** si la IA responde distinto: se garantiza la misma ruta y el mismo contrato, no determinismo de la API. Cualquier cambio en C++ requiere recompilar el worker local y desplegar el mismo commit en Cloud antes de comparar.
 
 ## Comparación musical A/B
+
+Para comparar la primera pasada con la revisión del **mismo** material, el estudio local admite `review_from_job` en `POST /api/jobs`. La fuente debe ser una primera pasada terminada; prompt, duración, BPM, enfoque y semilla deben coincidir. El nuevo job recupera el plan y todas las notas aceptadas, omite la composición de nuevas ventanas y ejecuta únicamente la revisión musical IA. La versión original no se modifica. La publicación de esta audición exige integridad técnica MIDI; el dictamen editorial final queda registrado como asesoramiento para poder escuchar el resultado incluso si la revisión no alcanza el objetivo. Esta ruta es exclusiva del estudio local y no cambia el flujo Cloud.
 
 La obra anterior `0472bbb4-6bac-43f5-9fc7-f4617bd5bff1` sirve como referencia local. Tocá **Repetir ajustes** en su tarjeta: rellena el formulario sin enviar nada. Para evaluar el cambio de coherencia, conservá **exactamente** su prompt, duración de 390 s, 120 BPM, enfoque adaptativo y semilla `4403862266792290272`. La generación implica gasto real; no se inicia al abrir la web ni al copiar los ajustes. Al terminar, compará ambos jobs desde la raíz del repositorio:
 

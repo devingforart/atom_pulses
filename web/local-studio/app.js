@@ -4,15 +4,12 @@ import { ProductionAudio } from './production-audio.mjs';
 import { PATCHES, SOUND_BANK_VERSION, patchOptions, patchForTrack } from './sound-palette.mjs';
 
 const $ = selector => document.querySelector(selector);
-// A short, affordable proof of musical coherence is the safest default while
-// the full-length writer is being evaluated. At 120 BPM, 32 s is ~16 bars.
-$('#duration').add(new Option('Prueba corta · ~16 compases (120 BPM)', '32', true, true), 0);
 const ui = { form: $('#compose-form'), prompt: $('#prompt'), submit: $('#submit'), notice: $('#notice'), health: $('#health'), jobs: $('#jobs'), session: $('#session-content'), timeline: $('#timeline'), play: $('#play'), stop: $('#stop'), back: $('#back'), export: $('#export-all'), exportOne: $('#export-one'), history: $('#history-panel') };
-ui.prompt.placeholder = 'Prueba corta: una melodía protagonista, un bajo y acordes que evolucionan con una resolución clara.';
+ui.prompt.placeholder = 'Describí la obra, su energía, el recorrido emocional y lo que debería cambiar hasta el final.';
 const proofLabel = document.createElement('label');
 proofLabel.className = 'proof-option';
 const proofInput = document.createElement('input');
-proofInput.type = 'checkbox'; proofInput.id = 'proof-mode'; proofInput.checked = true;
+proofInput.type = 'checkbox'; proofInput.id = 'proof-mode'; proofInput.checked = false;
 const proofText = document.createElement('span');
 proofText.textContent = 'Prueba de coherencia · 3 pistas: acordes, bajo y melodía';
 proofLabel.append(proofInput, proofText);
@@ -24,6 +21,7 @@ const syncProofMode = () => {
 };
 $('#duration').addEventListener('change', syncProofMode);
 $('#render-mode').addEventListener('change', syncProofMode);
+proofInput.addEventListener('change', syncProofMode);
 syncProofMode();
 const states = { queued: 'EN COLA', running: 'COMPONIENDO', completed: 'LISTA', failed: 'FALLIDA', interrupted: 'INTERRUMPIDA', cancelled: 'CANCELADA' };
 const palette = { pad: '#dfb64e', bass: '#71a1d0', keys: '#8b9dca', pluck: '#cc8b6e', lead: '#d84f2b', drums: '#75b57c', synth: '#a899c7' };
@@ -33,7 +31,8 @@ const node = (tag, className, value) => { const el = document.createElement(tag)
 const fileUrl = (job, filename) => `/api/jobs/${job.id}/files/${encodeURIComponent(filename)}`;
 const download = (job, filename, label, className = '') => { const a = node('a', className, label); a.href = fileUrl(job, filename); a.download = filename; return a; };
 const number = value => new Intl.NumberFormat('es-AR').format(Number(value) || 0);
-let jobs = [], selectedId = null, loadedKey = null, loadVersion = 0, current = null, barPx = 22, playhead = null, previewDiagnostic = false, lastAutoRecoverySelection = null;
+const linkedJobId = new URLSearchParams(location.search).get('job');
+let jobs = [], selectedId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(linkedJobId || '') ? linkedJobId : null, loadedKey = null, loadVersion = 0, current = null, barPx = 22, playhead = null, previewDiagnostic = false, lastAutoRecoverySelection = null, historyCategory = 'personal';
 const audio = new ProductionAudio(updatePosition, () => { ui.play.textContent = '▶'; ui.play.setAttribute('aria-label', 'Reproducir'); });
 const patchStorageKey = (jobId, filename) => `pulso:audition:${SOUND_BANK_VERSION}:${jobId}:${filename}`;
 function updateListeningLabels() {
@@ -71,12 +70,11 @@ function actionButton(label, callback, className = '') { const button = node('bu
 function reuse(job) {
   ui.prompt.value = job.request.prompt;
   $('#duration').value = String(job.request.duration_seconds);
+  $('#render-mode').value = job.request.ai_sovereign ? 'ai_sovereign' : 'standard';
   proofInput.checked = Boolean(job.request.proof_mode);
   syncProofMode();
   $('#bpm').value = String(job.request.bpm);
   $('#behavior').value = job.request.behavior || 'adaptive';
-  $('#render-mode').value = job.request.ai_sovereign ? 'ai_sovereign' : 'standard';
-  syncProofMode();
   $('#seed').value = job.request.seed;
   $('#prompt-count').textContent = `${ui.prompt.value.length} / 600`;
   ui.history.hidden = true;
@@ -87,11 +85,21 @@ function renderSession(job) {
   if (!job) return;
   ui.session.replaceChildren();
   ui.session.append(node('h3', 'session-title', job.manifest?.title || 'Composición en curso'));
-  ui.session.append(node('div', `session-status ${job.state}`, states[job.state] || job.state.toUpperCase()));
+  ui.session.append(node('div', `session-status ${job.state}`,
+    job.state === 'completed' && job.manifest?.first_pass_audition
+      ? 'PRIMERA PASADA' : job.state === 'completed' && job.manifest?.review_audition
+        ? 'REVISIÓN A/B' : states[job.state] || job.state.toUpperCase()));
   ui.session.append(node('p', 'session-prompt', job.request.prompt));
   const date = new Date(job.request.created_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
   ui.session.append(node('p', 'session-meta', `${date} · ${fmt(job.request.duration_seconds)} · ${job.request.bpm} BPM · semilla ${job.request.seed}`));
   if (job.request.editorial_profile === 'ai-only-v2') ui.session.append(node('p', 'session-note', 'Perfil editorial local IA v2 · cada nota es autoría IA.'));
+  if (job.request.first_pass_audition) ui.session.append(node('p', 'session-note', 'Primera pasada IA: sin reescritura musical. La integridad técnica MIDI permanece activa.'));
+  if (job.request.review_from_job) ui.session.append(node('p', 'session-note',
+    `Revisión A/B de la primera pasada ${job.request.review_from_job.slice(0, 8)}: se conserva el mismo plan y solo la revisión IA puede cambiar notas.`));
+  if (job.request.phrase_architecture_experiment) ui.session.append(node('p', 'session-note',
+    'Plan de frases y relaciones entre voces escrito por la IA antes del MIDI. Las notas siguen siendo íntegramente autoría de la IA.'));
+  if (job.phraseAudit) ui.session.append(node('p', 'session-note',
+    `Plan de frases: ${job.phraseAudit.phrases.length} intenciones; ${job.phraseAudit.silentSpeakerPhrases} sin notas del portavoz y ${job.phraseAudit.plannedResponsesWithoutNotes} respuestas sin notas. Estos datos no califican la musicalidad: escuchá el diálogo real.`));
   if (job.state === 'running' || job.state === 'queued') {
     const elapsed = Math.max(0, (Date.now() - Date.parse(job.request.created_at)) / 1000);
     ui.session.append(node('p', 'session-note', `${job.stage || 'Iniciando'} · ${fmt(elapsed)}${job.total ? ` · ${job.completed}/${job.total}` : ''}`));
@@ -146,6 +154,8 @@ function renderSession(job) {
   }));
   if (job.manifest?.comparisonFile) actions.append(download(job, job.manifest.comparisonFile, 'Referencia A/B'));
   if (job.manifest?.planFile) actions.append(download(job, job.manifest.planFile, 'Plan compositivo'));
+  if (job.manifest?.phraseArchitectureFile) actions.append(download(job, job.manifest.phraseArchitectureFile, 'Plan de frases IA'));
+  if (job.phraseAudit) actions.append(download(job, 'phrase-audit.json', 'Contraste plan/MIDI'));
   if (job.manifest?.auditFile) actions.append(download(job, job.manifest.auditFile, 'Auditoría musical'));
   if (job.compositionAudit) actions.append(download(job, 'composition-audit.json', 'Desarrollo MIDI'));
   if (job.manifest) actions.append(download(job, 'manifest.json', 'Manifiesto'));
@@ -167,13 +177,26 @@ function renderSession(job) {
 }
 function renderHistory() {
   ui.jobs.replaceChildren();
-  if (!jobs.length) { ui.jobs.append(node('p', 'session-note', 'Todavía no hay obras guardadas.')); return; }
-  for (const job of jobs) {
+  const personal = jobs.filter(job => job.origin !== 'auto');
+  const auto = jobs.filter(job => job.origin === 'auto');
+  $('#personal-count').textContent = String(personal.length);
+  $('#auto-count').textContent = String(auto.length);
+  for (const category of ['personal', 'auto']) {
+    const tab = $(`#history-${category}`);
+    const active = historyCategory === category;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  }
+  const visible = historyCategory === 'auto' ? auto : personal;
+  if (!visible.length) { ui.jobs.append(node('p', 'session-note', historyCategory === 'auto' ? 'Todavía no hay pruebas automáticas.' : 'Todavía no hay obras personales.')); return; }
+  for (const job of visible) {
     const button = node('button', `history-job ${selectedId === job.id ? 'selected' : ''}`);
     button.type = 'button';
     button.append(node('strong', '', job.manifest?.title || job.request.prompt.slice(0, 68)));
-    button.append(node('span', 'status ' + job.state, states[job.state] || job.state));
-    button.append(node('span', '', `${new Date(job.request.created_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt(job.request.duration_seconds)} · ${job.manifest?.tracks?.length || job.checkpoint?.parts || 0} pistas`));
+    button.append(node('span', 'status ' + job.state, job.manifest?.review_audition
+      ? 'REVISIÓN A/B' : job.manifest?.first_pass_audition
+        ? 'PRIMERA PASADA' : states[job.state] || job.state));
+    button.append(node('span', '', `${new Date(job.request.created_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt(job.request.duration_seconds)} · ${job.manifest?.tracks?.length || job.checkpoint?.parts || 0} pistas${job.origin === 'auto' ? ` · prueba ${job.id.slice(0, 8)}` : ''}`));
     button.addEventListener('click', () => { selectedId = job.id; loadedKey = null; previewDiagnostic = false; ui.history.hidden = true; showSelected(); renderHistory(); });
     ui.jobs.append(button);
   }
@@ -225,7 +248,7 @@ async function loadSong(job, diagnostic = false) {
     renderTimeline();
     updateListeningLabels();
     $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
-    $('#song-subtitle').textContent = diagnostic ? `Candidato rechazado · ${tracks.length} pistas con notas · NO aprobado` : job.manifest ? `${job.manifest.key || 'Tonalidad no declarada'} · ${job.manifest.bars || Math.ceil(timing.lengthBeats / timing.beatsPerBar)} compases · ${tracks.length} pistas con notas` : `Escucha provisional · ${tracks.length} pistas con notas · sin aprobación musical final`;
+    $('#song-subtitle').textContent = diagnostic ? `Candidato rechazado · ${tracks.length} pistas con notas · NO aprobado` : job.manifest?.first_pass_audition ? `Primera pasada IA · ${tracks.length} pistas con notas · sin revisión musical` : job.manifest ? `${job.manifest.key || 'Tonalidad no declarada'} · ${job.manifest.bars || Math.ceil(timing.lengthBeats / timing.beatsPerBar)} compases · ${tracks.length} pistas con notas` : `Escucha provisional · ${tracks.length} pistas con notas · sin aprobación musical final`;
     $('#song-bpm').textContent = `${Math.round(job.manifest?.bpm || 60e6 / timing.tempos[0].microseconds)} BPM`;
     $('#song-key').textContent = job.manifest?.key || 'MIDI provisional';
     $('#song-stat').textContent = `${number(tracks.reduce((sum, track) => sum + track.notes.length, 0))} NOTAS · ${tracks.length} PISTAS`;
@@ -349,6 +372,10 @@ ui.form.addEventListener('submit', async event => {
 });
 ui.prompt.addEventListener('input', () => { $('#prompt-count').textContent = `${ui.prompt.value.length} / 600`; });
 $('#history-toggle').addEventListener('click', () => { ui.history.hidden = !ui.history.hidden; });
+for (const category of ['personal', 'auto']) $('#history-' + category).addEventListener('click', () => {
+  historyCategory = category;
+  renderHistory();
+});
 $('#history-close').addEventListener('click', () => { ui.history.hidden = true; });
 $('#refresh').addEventListener('click', refresh);
 ui.play.addEventListener('click', async () => { try { if (audio.playing) audio.pause(); else await audio.play(); ui.play.textContent = audio.playing ? 'Ⅱ' : '▶'; ui.play.setAttribute('aria-label', audio.playing ? 'Pausar' : 'Reproducir'); } catch (error) { showNotice(`No se pudo iniciar el audio: ${error.message}`); } });
@@ -403,4 +430,4 @@ $('#full-wav').addEventListener('click', async () => {
   finally { button.textContent = 'WAV completo'; button.disabled = !current?.job.manifest; }
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden && audio.playing) { audio.pause(); ui.play.textContent = '▶'; } });
-refresh(); setInterval(refresh, 4000);
+refresh(); setInterval(refresh, 2000);

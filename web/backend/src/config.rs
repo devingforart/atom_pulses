@@ -25,7 +25,6 @@ pub struct Config {
     pub mail_from: String,
     pub cloud_worker_path: Option<PathBuf>,
     pub cloud_output_dir: PathBuf,
-    pub cloud_beta_studio: bool,
     pub cloud_beta_emails: Vec<String>,
     pub cloud_daily_jobs: i64,
     pub cloud_unlimited_emails: Vec<String>,
@@ -88,9 +87,6 @@ impl Config {
             cloud_output_dir: env::var_os("PULSO_CLOUD_OUTPUT_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| PathBuf::from("./cloud-jobs")),
-            cloud_beta_studio: env::var("PULSO_CLOUD_BETA_STUDIO")
-                .map(|value| value == "true")
-                .unwrap_or(false),
             cloud_beta_emails: env::var("PULSO_CLOUD_BETA_EMAILS")
                 .unwrap_or_default()
                 .split(',')

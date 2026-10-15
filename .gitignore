@@ -1,5 +1,6 @@
 /build/
 /build-cloud/
+/build-cloud-verify/
 /.vs/
 /.vscode/
 /out/

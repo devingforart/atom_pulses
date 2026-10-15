@@ -3,9 +3,10 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const [baselineDir, candidateDir] = process.argv.slice(2);
+const independent = process.argv.includes('--independent');
+const [baselineDir, candidateDir] = process.argv.slice(2).filter(arg => arg !== '--independent');
 if (!baselineDir || !candidateDir) {
-  console.error('Usage: node tools/evaluate-narrative-ab.mjs BASELINE_JOB_DIR CANDIDATE_JOB_DIR');
+  console.error('Usage: node tools/evaluate-narrative-ab.mjs BASELINE_JOB_DIR CANDIDATE_JOB_DIR [--independent]');
   process.exit(2);
 }
 const apiKey = process.env.OPENAI_API_KEY;
@@ -41,7 +42,10 @@ async function readScore(directory) {
 }
 
 const [a, b] = await Promise.all([readScore(baselineDir), readScore(candidateDir)]);
-const prompt = `Independent blind comparison of TWO symbolic MIDI scores. A and B share the same harmony, cast and structure; only their lead and answering voices are shown. Judge the likely AUDIBLE long-form narrative, not spelling, verbosity or note quantity. Identify a distinctive opening pitch-and-onset gesture from the actual MIDI; test whether later scenes recall and transform it in an intelligible causal sequence and whether the final scene answers it. An unchanged repeated lick is not development; unrelated virtuosic phrases are not a story. Don't infer anything about timbre or mix from this symbolic score. Ground each claim in scene numbers and specific pitches/rhythms. If neither is convincingly narrative, say tie and explain the remaining defect.\n\nSCORE A\n${a}\n\nSCORE B\n${b}`;
+const comparisonContract = independent
+  ? 'A and B are independently composed responses to the SAME user request and may have different harmony, cast, sections and motifs. Only their protagonist and answering voices plus section harmony are shown. Compare each score on its own narrative terms; do not reward similarity to the other or assume the same blueprint.'
+  : 'A and B share the same harmony, cast and structure; only their lead and answering voices are shown.';
+const prompt = `Independent blind comparison of TWO symbolic MIDI scores. ${comparisonContract} Judge the likely AUDIBLE long-form narrative, not spelling, verbosity or note quantity. Identify a distinctive opening pitch-and-onset gesture from the actual MIDI; test whether later scenes recall and transform it in an intelligible causal sequence and whether the final scene answers it. An unchanged repeated lick is not development; unrelated virtuosic phrases are not a story. Don't infer anything about timbre or mix from this symbolic score. Ground each claim in scene numbers and specific pitches/rhythms. If neither is convincingly narrative, say tie and explain the remaining defect.\n\nSCORE A\n${a}\n\nSCORE B\n${b}`;
 const schema = {
   type: 'object', additionalProperties: false,
   properties: {

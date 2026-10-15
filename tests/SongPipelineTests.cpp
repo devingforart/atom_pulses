@@ -1,5 +1,6 @@
 #include "plugin/SongGenerationPipeline.h"
 #include "plugin/AiComposer.h"
+#include "plugin/AiPhraseArchitecture.h"
 #include "plugin/JointWindowRecovery.h"
 #include "core/SovereignScoreRenderer.h"
 
@@ -54,6 +55,56 @@ int main() {
         orderPlan.instruments[0].role = "primary_chord_bed";
         orderPlan.instruments[3].minimumPitch = 69;
         orderPlan.instruments[3].maximumPitch = 91;
+        SongSection opening;
+        opening.name = "opening";
+        opening.startBar = 0;
+        opening.bars = 8;
+        SongSection answer;
+        answer.name = "answer";
+        answer.startBar = 8;
+        answer.bars = 8;
+        orderPlan.sections = {opening, answer};
+        const auto phraseSchema = juce::JSON::parse(AiPhraseArchitecture::schema());
+        check(!phraseSchema.isVoid(), "AI phrase architecture schema must be valid JSON");
+        const juce::String phraseJson = R"json({
+          "motif_clue":"ascending third with a delayed final attack",
+          "dramatic_question":"the third never reaches its expected landing",
+          "answer_principle":"answer that interruption with a changed descent",
+          "phrases":[
+            {"section_index":0,"local_start_bar":1,"bars":4,
+             "speaker_id":"speaker","response_id":"bed",
+             "gesture":"state the interrupted ascent","rhythm_shape":"two attacks then a rest",
+             "contour":"rise then withhold","register_low":69,"register_high":84,
+             "silence_strategy":"leave bar five open","relationship":"bed sustains the question",
+             "consequence":"unresolved at the section boundary"},
+            {"section_index":1,"local_start_bar":0,"bars":6,
+             "speaker_id":"speaker","response_id":"moving_bass",
+             "gesture":"transform the ascent into a descending answer",
+             "rhythm_shape":"one held attack followed by two short notes",
+             "contour":"high to low","register_low":72,"register_high":91,
+             "silence_strategy":"rest before final arrival","relationship":"bass answers after the lead",
+             "consequence":"arrive below the opening register"}
+          ]})json";
+        juce::String phraseError;
+        check(AiPhraseArchitecture::validate(phraseJson, orderPlan, phraseError),
+              "AI phrase architecture should validate for known owners and sections");
+        check(AiPhraseArchitecture::windowBrief(phraseJson, orderPlan, 0, 0, 8)
+                  .contains("state the interrupted ascent") &&
+              !AiPhraseArchitecture::windowBrief(phraseJson, orderPlan, 0, 0, 8)
+                  .contains("transform the ascent"),
+              "window writer should receive only the relevant phrase intentions");
+        const auto crossingPhraseJson = phraseJson.replace(
+            "\"local_start_bar\":1,\"bars\":4",
+            "\"local_start_bar\":5,\"bars\":4");
+        check(AiPhraseArchitecture::validate(crossingPhraseJson, orderPlan, phraseError) &&
+              AiPhraseArchitecture::windowBrief(crossingPhraseJson, orderPlan, 1, 0, 8)
+                  .contains("state the interrupted ascent"),
+              "a phrase may cross a section boundary without losing its intention");
+        check(!AiPhraseArchitecture::validate(
+            phraseJson.replace("\"response_id\":\"bed\"",
+                               "\"response_id\":\"unknown\""),
+            orderPlan, phraseError),
+            "AI phrase architecture must reject invented instrument relationships");
         const auto focusedSchema = juce::JSON::parse(
             AiComposer::performanceSchemaFor(orderPlan, {3}));
         const auto focusedPitch = focusedSchema.getProperty("properties", {})

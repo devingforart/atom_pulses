@@ -61,9 +61,11 @@ try {
   const assignedPatches = await evaluate("[...document.querySelectorAll('.sound-select')].map(select => select.value)");
   if (assignedPatches.length !== tracks || assignedPatches.some(value => !value)) throw new Error('Faltan sonidos asignados a pistas MIDI.');
   const durationDefault = await evaluate("document.querySelector('#duration').value");
-  if (durationDefault !== '32') throw new Error(`La prueba corta no es la seleccion predeterminada: ${durationDefault}`);
+  if (durationDefault !== '390') throw new Error(`La obra completa no es la duración predeterminada: ${durationDefault}`);
   const proofDefault = await evaluate("document.querySelector('#proof-mode').checked");
-  if (!proofDefault) throw new Error('La prueba de tres pistas no esta activa por defecto.');
+  if (proofDefault) throw new Error('La prueba de tres pistas no debe estar activa por defecto.');
+  const hiddenEditorialChoices = await evaluate("!document.querySelector('#first-pass-audition') && !document.querySelector('#phrase-architecture-experiment')");
+  if (!hiddenEditorialChoices) throw new Error('La primera pasada y el plan de frases no deben requerir selectores.');
   const before = await evaluate("document.querySelector('#time-display').textContent");
   await evaluate("document.querySelector('#play').click()");
   await wait(1400);

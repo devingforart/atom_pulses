@@ -6,7 +6,8 @@ export function canAutomaticallyRecover(job, hasExactBlueprint) {
   const attempt = job?.request?.automatic_recovery_attempt || 0;
   if (!job || job.state !== 'failed' || !hasExactBlueprint ||
       !job.checkpoint?.file || job.manifest ||
-      !job.request?.ai_sovereign || job.request.proof_mode ||
+      !job.request?.ai_sovereign || job.request.proof_mode || job.request.first_pass_audition ||
+      job.request.review_from_job ||
       !Number.isInteger(attempt) || attempt >= MAX_CHECKPOINT_RECOVERIES ||
       (job.request.resume_from_job && attempt === 0)) return false;
   return !/no credits remaining|insufficient_quota|créditos disponibles|invalid api key|authentication|unauthorized/i

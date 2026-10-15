@@ -17,20 +17,19 @@ Sitio comercial y portal de clientes de PULSO. React entrega la interfaz; la API
 - Consulta de la última GitHub Release y proxy de descarga autorizado, compatible con repositorios privados.
 - Imagen Docker multi-stage, Compose local y CI para React, Rust, contenedor y releases del VST.
 
-### PULSO Cloud beta
+### PULSO Cloud
 
-Para una prueba privada, deja `PULSO_CLOUD_BETA_STUDIO=false` y define
-`PULSO_CLOUD_BETA_EMAILS` con los correos verificados autorizados, separados
-por comas. Asi Cloud no se habilita para todos los compradores de Studio. Usa
-una clave de proyecto OpenAI dedicada con limite de gasto antes de iniciar
-solicitudes reales.
+Todas las licencias Studio activas y las suscripciones Cloud activas o en prueba
+pueden componer. `PULSO_CLOUD_BETA_EMAILS` permite invitar, por separado,
+cuentas verificadas sin licencia Studio. Usa una clave de proyecto OpenAI con
+límite de gasto antes de iniciar solicitudes reales.
 
 La ruta `/cloud` permite a una cuenta autorizada solicitar una composición en segundo plano, cerrar el navegador y volver a descargar cada pista MIDI no vacía. La API Rust guarda la cola, el estado, la idempotencia y el manifiesto en PostgreSQL. Un proceso C++ aislado reutiliza exactamente `AiComposer`, `SongComposer` y `MidiExporter` del VST. La salida MIDI permanece en el volumen persistente `pulso-cloud-jobs`.
 
 Desde 0.58.56, VST y Cloud también comparten `SongGenerationPipeline`: la preparación del prompt, el cálculo de duración en compases, la finalización del plan y el contexto del render. La prueba `pulso_pipeline_tests` comprueba sin llamadas pagas que una misma solicitud y un mismo plan rinden las mismas notas. La información de Live, cuando existe, es una entrada adicional del VST; y dos respuestas independientes de la IA no prometen un MIDI idéntico.
 La imagen de Cloud compila y ejecuta las pruebas del núcleo y de paridad en Linux antes de empaquetar el worker; un fallo interrumpe la construcción.
 
-Para probar la beta con licencias Studio, configura `OPENAI_API_KEY` exclusivamente en el entorno del servidor y `PULSO_CLOUD_BETA_STUDIO=true`. Por defecto la beta está cerrada y cada cuenta tiene dos obras **completadas** por 24 horas y una composición simultánea. Los intentos fallidos y cancelados no consumen ese cupo; `PULSO_CLOUD_DAILY_JOBS` ajusta el máximo de obras completadas. `PULSO_CLOUD_UNLIMITED_EMAILS` acepta correos verificados separados por comas para eximirlos del cupo diario; **no** exime del límite de una composición simultánea. La instalación de producción configura `devingforart@gmail.com` como cuenta ilimitada mediante este ajuste. Los planes Cloud de Stripe continúan deshabilitados hasta fijar precios y presupuestos a partir de consumos medidos.
+Configura `OPENAI_API_KEY` exclusivamente en el entorno del servidor. Cada cuenta tiene dos obras **completadas** por 24 horas y una composición simultánea. Los intentos fallidos y cancelados no consumen ese cupo; `PULSO_CLOUD_DAILY_JOBS` ajusta el máximo de obras completadas. `PULSO_CLOUD_UNLIMITED_EMAILS` acepta correos verificados separados por comas para eximirlos del cupo diario; **no** exime del límite de una composición simultánea. La instalación de producción configura `devingforart@gmail.com` como cuenta ilimitada mediante este ajuste. Los planes Cloud de Stripe continúan deshabilitados hasta fijar precios y presupuestos a partir de consumos medidos.
 
 Una interrupción inesperada del proceso API se marca como fallida y no se reintenta a ciegas, porque una solicitud remota aún en curso podría duplicar el cobro. En cambio, una salida controlada del worker con un checkpoint aceptado puede reanudarse de forma acotada. Los resultados terminados, el progreso y la solicitud idempotente sobreviven al cierre del navegador. La integración de activación del VST con esta cola continúa pendiente; no se debe comercializar Cloud como terminado sin verificarla.
 

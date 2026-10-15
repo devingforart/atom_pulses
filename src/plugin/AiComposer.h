@@ -52,6 +52,7 @@ struct AiResumeNote {
 
 struct AiSongResume {
     juce::String blueprintJson;
+    juce::String phraseArchitectureJson;
     bool blueprintOnly{};
     std::size_t completedUnits{};
     std::vector<std::string> castIds;

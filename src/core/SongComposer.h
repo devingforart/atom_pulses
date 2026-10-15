@@ -138,6 +138,9 @@ struct SongPlan {
     std::vector<InstrumentAssignment> instruments;
     ElectronicSoundscapePlan soundscape;
     NarrativeSpine narrativeSpine;
+    // Optional local experiment: an AI-authored phrase/voice-relations plan.
+    // It guides the sovereign note writer; the renderer never converts it to notes.
+    std::string phraseArchitectureJson;
     // Explicit user constraint propagated independently of genre classification. A
     // percussion-free electronic piece must not be graded as a failed club track.
     bool percussionFreeIntent{};

@@ -92,20 +92,29 @@ fn available(state: &AppState, user: &crate::models::AuthenticatedUser) -> bool 
         .as_ref()
         .is_some_and(|path| path.is_file())
         && std::env::var("OPENAI_API_KEY").is_ok_and(|key| !key.trim().is_empty())
-        && (matches!(user.subscription.as_str(), "active" | "trialing")
-            || (state.config.cloud_beta_studio && user.studio_owned)
-            || state
-                .config
-                .cloud_beta_emails
-                .iter()
-                .any(|email| email == &user.email.to_ascii_lowercase()))
+        && license_allows_cloud(user, &state.config.cloud_beta_emails)
+}
+
+fn license_allows_cloud(user: &crate::models::AuthenticatedUser, beta_emails: &[String]) -> bool {
+    user.studio_owned
+        || matches!(user.subscription.as_str(), "active" | "trialing")
+        || beta_emails
+            .iter()
+            .any(|email| email.eq_ignore_ascii_case(&user.email))
 }
 
 fn unlimited_for(email: &str, allowlist: &[String]) -> bool {
-    allowlist.iter().any(|allowed| allowed.eq_ignore_ascii_case(email.trim()))
+    allowlist
+        .iter()
+        .any(|allowed| allowed.eq_ignore_ascii_case(email.trim()))
 }
 
-fn quota_problem(completed: i64, active: i64, completed_limit: i64, unlimited: bool) -> Option<&'static str> {
+fn quota_problem(
+    completed: i64,
+    active: i64,
+    completed_limit: i64,
+    unlimited: bool,
+) -> Option<&'static str> {
     if active > 0 {
         Some("Ya tienes una composición en curso. Espera a que termine o cancélala.")
     } else if !unlimited && completed >= completed_limit {
@@ -164,12 +173,13 @@ pub async fn create(
     .bind(user.id)
     .fetch_one(&mut *tx)
     .await?;
-    if let Some(problem) = quota_problem(daily_completed, active, state.config.cloud_daily_jobs,
-        unlimited_for(&user.email, &state.config.cloud_unlimited_emails)) {
-        return Err(ApiError::public(
-            StatusCode::TOO_MANY_REQUESTS,
-            problem,
-        ));
+    if let Some(problem) = quota_problem(
+        daily_completed,
+        active,
+        state.config.cloud_daily_jobs,
+        unlimited_for(&user.email, &state.config.cloud_unlimited_emails),
+    ) {
+        return Err(ApiError::public(StatusCode::TOO_MANY_REQUESTS, problem));
     }
     let mut seed_bytes = [0_u8; 8];
     getrandom::fill(&mut seed_bytes).map_err(|error| ApiError::internal(error.to_string()))?;
@@ -408,6 +418,12 @@ fn worker_command(
     {
         command.env(key, value.as_str().expect("profile values must be strings"));
     }
+    if composer_profile()["defaultFirstPass"].as_bool() == Some(true) {
+        command.env("PULSO_AI_FIRST_PASS_AUDITION", "1");
+    }
+    if composer_profile()["defaultPhraseArchitecture"].as_bool() == Some(true) {
+        command.env("PULSO_AI_PHRASE_ARCHITECTURE_EXPERIMENT", "1");
+    }
     if recovery {
         command
             .env(
@@ -479,6 +495,7 @@ async fn run_one(state: &AppState, job: ClaimedJob) -> ApiResult<()> {
         "prompt": job.prompt, "duration_seconds": job.duration_seconds,
         "bpm": job.bpm, "behavior": job.behavior, "seed": job.seed.to_string(),
         "ai_sovereign": job.ai_sovereign,
+        "first_pass_audition": composer_profile()["defaultFirstPass"].as_bool() == Some(true),
     });
     let worker = state
         .config
@@ -666,14 +683,42 @@ pub async fn worker_loop(state: AppState) {
 mod tests {
     use super::*;
     #[test]
+    fn active_studio_entitlement_grants_cloud_without_beta_allowlist() {
+        let mut user = crate::models::AuthenticatedUser {
+            id: Uuid::nil(),
+            email: "studio@example.com".into(),
+            display_name: "Studio".into(),
+            stripe_customer_id: None,
+            subscription: "none".into(),
+            email_verified: true,
+            studio_owned: true,
+            studio_updates_until: None,
+        };
+        assert!(license_allows_cloud(&user, &[]));
+        user.studio_owned = false;
+        assert!(!license_allows_cloud(&user, &[]));
+        user.subscription = "active".into();
+        assert!(license_allows_cloud(&user, &[]));
+    }
+    #[test]
     fn only_completed_cloud_jobs_consume_the_daily_quota() {
         assert!(quota_problem(0, 0, 2, false).is_none());
         assert!(quota_problem(1, 0, 2, false).is_none());
-        assert!(quota_problem(2, 0, 2, false).unwrap().contains("completadas"));
+        assert!(
+            quota_problem(2, 0, 2, false)
+                .unwrap()
+                .contains("completadas")
+        );
         assert!(quota_problem(2, 0, 2, true).is_none());
         assert!(quota_problem(0, 1, 2, true).unwrap().contains("en curso"));
-        assert!(unlimited_for("DevingForArt@gmail.com", &["devingforart@gmail.com".into()]));
-        assert!(!unlimited_for("another@example.com", &["devingforart@gmail.com".into()]));
+        assert!(unlimited_for(
+            "DevingForArt@gmail.com",
+            &["devingforart@gmail.com".into()]
+        ));
+        assert!(!unlimited_for(
+            "another@example.com",
+            &["devingforart@gmail.com".into()]
+        ));
     }
     #[test]
     fn cloud_worker_budget_covers_the_ai_only_editorial_ceiling() {
@@ -721,6 +766,15 @@ mod tests {
         );
         assert_eq!(
             env.get("PULSO_AI_GLOBAL_NARRATIVE_EDITOR")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            env.get("PULSO_AI_FIRST_PASS_AUDITION").map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            env.get("PULSO_AI_PHRASE_ARCHITECTURE_EXPERIMENT")
                 .map(String::as_str),
             Some("1")
         );

@@ -358,6 +358,9 @@ void writeProvisionalMidi(const juce::File& output, const pulso::SongPlan& plan,
             auto* resume = new juce::DynamicObject();
             resume->setProperty("schema_version", 2);
             resume->setProperty("blueprint_json", blueprint.loadFileAsString());
+            if (!plan.phraseArchitectureJson.empty())
+                resume->setProperty("phrase_architecture_json",
+                    juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()));
             resume->setProperty("completed_units", static_cast<int>(completedUnits));
             juce::Array<juce::var> cast;
             for (const auto& instrument : plan.instruments)
@@ -422,6 +425,16 @@ int main(int argc, char** argv) {
     pulso::plugin::SongGenerationRequest request;
     request.direction = prompt;
     const auto proofMode = object->getProperty("proof_mode") == juce::var(true);
+    const auto firstPassAudition =
+        object->getProperty("first_pass_audition") == juce::var(true) &&
+        juce::SystemStats::getEnvironmentVariable("PULSO_AI_FIRST_PASS_AUDITION", {}) == "1";
+    const auto reviewSourceId = object->getProperty("review_from_job").toString();
+    const auto reviewAudition = reviewSourceId.isNotEmpty() &&
+        juce::SystemStats::getEnvironmentVariable("PULSO_AI_REVIEW_AUDITION", {}) == "1";
+    if (reviewSourceId.isNotEmpty() && !reviewAudition)
+        return fail(output, "Controlled review is only available in the local studio");
+    if (firstPassAudition && proofMode)
+        return fail(output, "First-pass audition and proof mode cannot be combined");
     if (proofMode) {
         if (duration > 60) return fail(output, "Proof mode requires at most 60 seconds");
         const auto explicitCount = pulso::plugin::AiComposer::requestedInstrumentCount(prompt);
@@ -461,6 +474,8 @@ int main(int argc, char** argv) {
         if (blueprintJson.getNumBytesAsUTF8() > 2 * 1024 * 1024)
             return fail(output, "AI resume blueprint is too large");
         request.resume.blueprintJson = blueprintJson;
+        request.resume.phraseArchitectureJson = resumeObject == nullptr ? juce::String{} :
+            resumeObject->getProperty("phrase_architecture_json").toString();
         request.resume.blueprintOnly = blueprintOnly;
         request.resume.completedUnits = static_cast<std::size_t>(std::max(0,
             static_cast<int>(resumeObject->getProperty("completed_units"))));
@@ -514,6 +529,11 @@ int main(int argc, char** argv) {
     if (error.isNotEmpty() || plan.instruments.empty())
         return fail(output, error.isNotEmpty() ? error : "AI returned an empty score");
     pulso::plugin::SongGenerationPipeline::finalizePlan(plan, request);
+    if (!plan.phraseArchitectureJson.empty() &&
+        !output.getChildFile("phrase-architecture.json").replaceWithText(
+            juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()),
+            false, false, "\n"))
+        return fail(output, "Could not save AI phrase architecture");
     if (request.aiSovereign && !plan.instrumentCastAuthored)
         return fail(output, "AI-sovereign mode requires an AI-authored instrument cast");
     if (request.aiSovereign && plan.implicitPerformanceNotesPruned > 0)
@@ -539,10 +559,11 @@ int main(int argc, char** argv) {
         }));
     if (request.aiSovereign && aiNotes != song.notes.size())
         return fail(output, "AI-sovereign render produced non-AI notes; publication stopped");
-    if (request.aiSovereign) {
+    if (request.aiSovereign && !firstPassAudition) {
         const auto review = pulso::SelectiveRepair::reviewFinalScore(plan, song);
         auto* evidence = new juce::DynamicObject();
         evidence->setProperty("ready", review.ready);
+        evidence->setProperty("advisory_only", reviewAudition);
         evidence->setProperty("developed_voices", static_cast<int>(review.developedVoices));
         evidence->setProperty("expected_voices", static_cast<int>(review.expectedVoices));
         evidence->setProperty("harmonic_continuity", review.harmonicContinuity);
@@ -556,12 +577,15 @@ int main(int argc, char** argv) {
         if (!output.getChildFile("final-score-review.json").replaceWithText(
                 juce::JSON::toString(juce::var(evidence), false), false, false, "\n"))
             return fail(output, "Could not save final MIDI review");
-        if (!review.ready) {
+        if (!review.ready && !reviewAudition) {
             const auto firstFinding = review.issues.empty() ? juce::String("musical brief incomplete") :
                 juce::String::fromUTF8(review.issues.front().c_str());
             return fail(output, "Final MIDI review requires a focused musical revision: " + firstFinding);
         }
     }
+    if ((firstPassAudition || reviewAudition) &&
+        !pulso::EditorialSafety::technicallySafeAiScore(song, finalAudit))
+        return fail(output, "Audition MIDI failed technical integrity; no audition published");
     const auto countNotes = [&](auto predicate) {
         return static_cast<int>(std::count_if(song.notes.begin(), song.notes.end(), predicate));
     };
@@ -614,7 +638,7 @@ int main(int argc, char** argv) {
 
     juce::String comparisonFile;
     int comparisonNotes = 0;
-    if (request.aiSovereign) {
+    if (request.aiSovereign && !firstPassAudition) {
         try {
             auto referencePlan = plan;
             referencePlan.aiSovereign = false;
@@ -682,6 +706,13 @@ int main(int argc, char** argv) {
         manifest->setProperty("comparisonNotes", comparisonNotes);
     }
     manifest->setProperty("engineVersion", PULSO_VERSION_STRING);
+    manifest->setProperty("first_pass_audition", firstPassAudition);
+    manifest->setProperty("phrase_architecture_experiment",
+        !plan.phraseArchitectureJson.empty());
+    if (!plan.phraseArchitectureJson.empty())
+        manifest->setProperty("phraseArchitectureFile", "phrase-architecture.json");
+    manifest->setProperty("review_audition", reviewAudition);
+    if (reviewAudition) manifest->setProperty("review_from_job", reviewSourceId);
     manifest->setProperty("title", juce::String::fromUTF8(plan.title.c_str()));
     manifest->setProperty("key", juce::String::fromUTF8(plan.key.c_str()));
     manifest->setProperty("bpm", plan.bpm);
@@ -704,9 +735,10 @@ int main(int argc, char** argv) {
     editorial->setProperty("underfilled_bars", static_cast<int>(song.underfilledBarsAfter));
     editorial->setProperty("ai_authored_note_ratio", song.aiAuthoredNoteRatio);
     if (request.aiSovereign && !proofGate) {
-        editorial->setProperty("musical_review_required", !song.productionReady ||
+        editorial->setProperty("musical_review_required", firstPassAudition || !song.productionReady ||
             !song.creativeReady || !song.narrativeSpineReady ||
             !song.soundscapeReady || !song.trackViabilityReady);
+        editorial->setProperty("musical_gate_bypassed", firstPassAudition || reviewAudition);
         editorial->setProperty("harmonic_conflicts", finalAudit.production.unintendedHarshOverlaps);
         editorial->setProperty("low_register_conflicts",
             static_cast<int>(finalAudit.production.lowRegisterVerticalClashes));

@@ -6,10 +6,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dataRoot, jobsRoot, jobDirectory, listJobIds } from './storage.mjs';
 import { analyzeComposition } from './composition-audit.mjs';
+import { analyzePhraseArchitectureFiles } from './phrase-audit.mjs';
 import { canAutomaticallyRecover, automaticRecoveryRequest,
   AUTOMATIC_RECOVERY_MAX_SECONDS, AUTOMATIC_RECOVERY_MAX_USD } from './recovery-policy.mjs';
 import { parseMidi } from '../shared/midi.mjs';
-import { composerProfile, experimentalProfile, workerEnvironmentFor } from './composer-environment.mjs';
+import { composerProfile, defaultEditorialSettings, experimentalProfile, workerEnvironmentFor } from './composer-environment.mjs';
+import { originForJob, originForRoute } from './job-origin.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -90,6 +92,7 @@ function jobDetails(id) {
   if (!dir) return null;
   const request = readJson(path.join(dir, 'job.json'));
   if (!request) return null;
+  const origin = originForJob(readJson(path.join(dir, 'local-origin.json')));
   const manifest = readJson(path.join(dir, 'manifest.json'));
   let compositionAudit = readJson(path.join(dir, 'composition-audit.json'));
   if (manifest && !compositionAudit) {
@@ -97,6 +100,13 @@ function jobDetails(id) {
       compositionAudit = analyzeComposition(dir, manifest);
       writeFileSync(path.join(dir, 'composition-audit.json'), JSON.stringify(compositionAudit, null, 2));
     } catch { /* An optional audit must never hide a completed MIDI score. */ }
+  }
+  let phraseAudit = readJson(path.join(dir, 'phrase-audit.json'));
+  if (manifest?.phraseArchitectureFile && !phraseAudit) {
+    try {
+      phraseAudit = analyzePhraseArchitectureFiles(dir);
+      writeFileSync(path.join(dir, 'phrase-audit.json'), JSON.stringify(phraseAudit, null, 2));
+    } catch { /* Optional audit must never hide a completed MIDI score. */ }
   }
   // MIDI sidecars are produced by the existing exporter. Read them server-side
   // so older jobs also get sound-role metadata without rebuilding the worker.
@@ -126,15 +136,16 @@ function jobDetails(id) {
     try { endedAt = statSync(path.join(dir, terminalFile)).mtimeMs; } catch { /* Keep elapsed time. */ }
   }
   const trace = traceFor(id, request.created_at, endedAt);
-  return { id, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, compositionAudit, checkpoint, recovery, diagnostic, telemetry: trace.summary, error: state === 'cancelled' ? null : explainJobFailure(failure?.error) || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
+  return { id, origin, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, compositionAudit, phraseAudit, checkpoint, recovery, diagnostic, telemetry: trace.summary, error: state === 'cancelled' ? null : explainJobFailure(failure?.error) || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
 }
 
 function listJobs() {
+  const counts = { personal: 0, auto: 0 };
   return listJobIds()
     .map(id => jobDetails(id))
     .filter(Boolean)
     .sort((a, b) => b.request.created_at.localeCompare(a.request.created_at))
-    .slice(0, 50);
+    .filter(job => ++counts[job.origin] <= 50);
 }
 
 async function bodyJson(req) {
@@ -157,8 +168,12 @@ function validate(input) {
   const renderMode = input.render_mode || 'ai_sovereign';
   const suppliedSeed = input.seed === undefined || input.seed === '' ? null : String(input.seed);
   const proofMode = input.proof_mode === true;
+  const { firstPass: firstPassAudition,
+    phraseArchitecture: phraseArchitectureExperiment } =
+    defaultEditorialSettings(input, proofMode, renderMode);
   const resumeFromJob = input.resume_from_job === undefined ? null : String(input.resume_from_job);
   const blueprintFromJob = input.blueprint_from_job === undefined ? null : String(input.blueprint_from_job);
+  const reviewFromJob = input.review_from_job === undefined ? null : String(input.review_from_job);
   if (!prompt || prompt.length > 600) throw new InputError('La idea debe contener entre 1 y 600 caracteres.');
   if (!Number.isInteger(duration) || duration < 30 || duration > 900) throw new InputError('La duración debe estar entre 30 y 900 segundos.');
   if (!Number.isFinite(bpm) || bpm < 60 || bpm > 180) throw new InputError('El tempo debe estar entre 60 y 180 BPM.');
@@ -167,13 +182,20 @@ function validate(input) {
   if (suppliedSeed !== null && (!/^[1-9][0-9]{0,18}$/.test(suppliedSeed) || BigInt(suppliedSeed) > 9223372036854775807n)) throw new InputError('La semilla debe ser un entero positivo de 64 bits.');
   const seed = suppliedSeed || String((randomBytes(8).readBigUInt64LE() & 9223372036854775807n) || 1n);
   if (proofMode && duration > 60) throw new InputError('La prueba de coherencia solo admite obras de hasta 60 segundos.');
+  if (firstPassAudition && (proofMode || renderMode !== 'ai_sovereign'))
+    throw new InputError('La escucha de primera pasada requiere IA soberana y prueba de coherencia desactivada.');
+  if (phraseArchitectureExperiment && (proofMode || renderMode !== 'ai_sovereign'))
+    throw new InputError('El plan de frases experimental requiere IA soberana y prueba de coherencia desactivada.');
   if (proofMode && renderMode !== 'ai_sovereign') throw new InputError('La prueba de coherencia requiere el modo de autoría IA.');
   if (resumeFromJob !== null && (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(resumeFromJob) || renderMode !== 'ai_sovereign' || proofMode))
     throw new InputError('Invalid local AI resume job.');
   if (blueprintFromJob !== null && (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(blueprintFromJob) ||
       resumeFromJob !== null || renderMode !== 'ai_sovereign' || proofMode))
     throw new InputError('Invalid controlled A/B blueprint job.');
-  return { prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, created_at: new Date().toISOString() };
+  if (reviewFromJob !== null && (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(reviewFromJob) ||
+      resumeFromJob !== null || blueprintFromJob !== null || firstPassAudition || proofMode || renderMode !== 'ai_sovereign'))
+    throw new InputError('Invalid first-pass review source.');
+  return { prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, first_pass_audition: firstPassAudition, phrase_architecture_experiment: phraseArchitectureExperiment, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, review_from_job: reviewFromJob, created_at: new Date().toISOString() };
 }
 
 function blueprintOnlyScoreFromJob(request) {
@@ -201,13 +223,20 @@ function blueprintOnlyScoreFromJob(request) {
     notes: [] };
 }
 
-function resumeScoreFromJob(request) {
-  const previousDirectory = jobDirectory(request.resume_from_job);
+function resumeScoreFromJob(request, controlledReview = false) {
+  const previousDirectory = jobDirectory(controlledReview ? request.review_from_job : request.resume_from_job);
   if (!previousDirectory || !existsSync(previousDirectory)) throw new InputError('Previous local job was not found.');
   const previous = readJson(path.join(previousDirectory, 'job.json'));
   const same = ['prompt', 'duration_seconds', 'bpm', 'behavior', 'seed', 'ai_sovereign']
-    .every(field => previous?.[field] === request[field]);
+    .every(field => previous?.[field] === request[field]) &&
+    Boolean(previous?.phrase_architecture_experiment) === Boolean(request.phrase_architecture_experiment) &&
+    (controlledReview ? previous?.first_pass_audition === true && request.first_pass_audition === false :
+      Boolean(previous?.first_pass_audition) === Boolean(request.first_pass_audition));
   if (!same) throw new InputError('Prompt, duration, tempo, seed and mode must match the accepted checkpoint.');
+  if (controlledReview && (!existsSync(path.join(previousDirectory, 'manifest.json')) ||
+      !existsSync(path.join(previousDirectory, 'full-song.mid')) ||
+      readJson(path.join(previousDirectory, 'manifest.json'))?.first_pass_audition !== true))
+    throw new InputError('Review source must be a completed first-pass composition.');
   const checkpoint = readJson(path.join(previousDirectory, 'checkpoint.json'));
   if (!checkpoint?.file || !/^partial-[0-9]+\.mid$/.test(checkpoint.file))
     throw new InputError('Previous job has no accepted MIDI checkpoint.');
@@ -223,7 +252,16 @@ function resumeScoreFromJob(request) {
         exactResume.cast_ids.includes(note.instrument_id) &&
         Number.isFinite(note.start_beat) && Number.isFinite(note.duration_beats) &&
         Number.isInteger(note.pitch) && Number.isInteger(note.velocity)))
-    return exactResume;
+    {
+      if (controlledReview) {
+        const expectedWindows = exactResume.sections.reduce((sum, section) =>
+          sum + Math.ceil(section.bars / 16), 0);
+        if (exactResume.completed_units !== expectedWindows)
+          throw new InputError('Review source does not contain every completed musical window.');
+      }
+      return exactResume;
+    }
+  if (controlledReview) throw new InputError('Controlled review requires the exact completed AI score.');
   const stem = checkpoint.file.slice(0, -4);
   const plan = readJson(path.join(previousDirectory, `${stem}-plan.json`));
   const score = readJson(path.join(previousDirectory, `${stem}.pulso.json`));
@@ -265,8 +303,11 @@ function childEnvironment(dir) {
   // Local Studio advertises and checks its environment key. Force the worker to
   // use that same key instead of silently preferring a different VST credential
   // stored in Windows Credential Manager.
-  const automatic = (readJson(path.join(dir, 'job.json'))?.automatic_recovery_attempt || 0) > 0;
-  return workerEnvironmentFor(process.env, dir, dataRoot, automatic);
+  const job = readJson(path.join(dir, 'job.json'));
+  const automatic = (job?.automatic_recovery_attempt || 0) > 0;
+  return workerEnvironmentFor(process.env, dir, dataRoot, automatic, experimentalProfile,
+    job?.first_pass_audition === true, typeof job?.review_from_job === 'string',
+    job?.phrase_architecture_experiment === true);
 }
 
 function startAutomaticRecovery(sourceId) {
@@ -281,6 +322,7 @@ function startAutomaticRecovery(sourceId) {
     const id = randomUUID();
     const dir = path.join(jobsRoot, id);
     mkdirSync(dir, { recursive: false });
+    writeFileSync(path.join(dir, 'local-origin.json'), JSON.stringify({ origin: source.origin }));
     request.resume_checkpoint_file = path.join(dir, 'resume-score.json');
     writeFileSync(request.resume_checkpoint_file, JSON.stringify(resumeScore));
     writeFileSync(path.join(dir, 'job.json'), JSON.stringify(request, null, 2));
@@ -338,16 +380,18 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, editorialProfile: 'ai-only-v2', composerProfile: composerProfile.name, experimentalProfile });
     if (req.method === 'GET' && pathname === '/api/jobs') return json(res, 200, { jobs: listJobs() });
     if (req.method === 'POST' && !mutatingRequestAllowed(req)) return json(res, 403, { error: 'Solicitud local no autorizada.' });
-    if (req.method === 'POST' && pathname === '/api/jobs') {
+    if (req.method === 'POST' && (pathname === '/api/jobs' || pathname === '/api/auto/jobs')) {
       if (active) return json(res, 409, { error: 'Ya hay una composición en curso. Esperá a que termine o cancelala.' });
       if (!existsSync(worker)) return json(res, 503, { error: 'No se encontró el generador local. Revisá PULSO_LOCAL_WORKER_PATH.' });
       if (!process.env.OPENAI_API_KEY) return json(res, 503, { error: 'OPENAI_API_KEY no está configurada en este proceso.' });
       const request = validate(await bodyJson(req));
-      const resumeScore = request.resume_from_job ? resumeScoreFromJob(request) :
+      const resumeScore = request.review_from_job ? resumeScoreFromJob(request, true) :
+        request.resume_from_job ? resumeScoreFromJob(request) :
         request.blueprint_from_job ? blueprintOnlyScoreFromJob(request) : null;
       const id = randomUUID();
       const dir = path.join(jobsRoot, id);
       mkdirSync(dir, { recursive: false });
+      writeFileSync(path.join(dir, 'local-origin.json'), JSON.stringify({ origin: originForRoute(pathname) }));
       if (resumeScore) {
         request.resume_checkpoint_file = path.join(dir, 'resume-score.json');
         writeFileSync(request.resume_checkpoint_file, JSON.stringify(resumeScore));
@@ -381,7 +425,7 @@ const server = http.createServer(async (req, res) => {
       const job = jobDetails(fileMatch[1]);
       if (!job) return json(res, 404, { error: 'Composición no encontrada.' });
       const filename = decodeURIComponent(fileMatch[2]);
-      const allowed = new Set(['job.json', 'manifest.json', 'checkpoint.json', 'diagnostic.json', job.compositionAudit && 'composition-audit.json', job.checkpoint?.file, job.diagnostic?.file, job.diagnostic?.planFile, job.diagnostic?.auditFile, job.manifest?.planFile, job.manifest?.auditFile, job.manifest?.fullFile, job.manifest?.comparisonFile, ...(job.manifest?.tracks || []).map(track => track.filename)]);
+      const allowed = new Set(['job.json', 'manifest.json', 'checkpoint.json', 'diagnostic.json', job.compositionAudit && 'composition-audit.json', job.phraseAudit && 'phrase-audit.json', job.checkpoint?.file, job.diagnostic?.file, job.diagnostic?.planFile, job.diagnostic?.auditFile, job.manifest?.planFile, job.manifest?.phraseArchitectureFile, job.manifest?.auditFile, job.manifest?.fullFile, job.manifest?.comparisonFile, ...(job.manifest?.tracks || []).map(track => track.filename)]);
       if (!allowed.has(filename) || !/^[a-zA-Z0-9._-]+$/.test(filename)) return json(res, 404, { error: 'Archivo no disponible.' });
       const file = path.join(jobDirectory(job.id), filename);
       if (!existsSync(file)) return json(res, 404, { error: 'Archivo no disponible.' });

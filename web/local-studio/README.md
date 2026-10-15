@@ -4,8 +4,8 @@
 
 ### Primera pasada por defecto
 
-En Local y Cloud, una obra normal de IA soberana conserva la primera escritura
-musical que supere la integridad técnica. La prueba de coherencia local es una
+En Local y Cloud, una obra normal de IA soberana conserva por defecto la primera escritura
+musical que supere la integridad técnica. En Local podés desactivar **Primera pasada · sin revisión musical** para comparar una versión con revisión IA; el plan de frases permanece activo. Cloud conserva la primera pasada como comportamiento fijo. La prueba de coherencia local es una
 ruta distinta. El modo de primera pasada
 conserva la primera escritura musical que pase la validación técnica; omite la
 revisión armónica por ventana, las reescrituras editoriales globales y el veto

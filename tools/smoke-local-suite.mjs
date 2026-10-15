@@ -64,8 +64,10 @@ try {
   if (durationDefault !== '390') throw new Error(`La obra completa no es la duración predeterminada: ${durationDefault}`);
   const proofDefault = await evaluate("document.querySelector('#proof-mode').checked");
   if (proofDefault) throw new Error('La prueba de tres pistas no debe estar activa por defecto.');
-  const hiddenEditorialChoices = await evaluate("!document.querySelector('#first-pass-audition') && !document.querySelector('#phrase-architecture-experiment')");
-  if (!hiddenEditorialChoices) throw new Error('La primera pasada y el plan de frases no deben requerir selectores.');
+  const firstPassDefault = await evaluate("document.querySelector('#first-pass-audition')?.checked");
+  if (!firstPassDefault) throw new Error('La primera pasada debe estar activa por defecto en Local.');
+  const phrasePlanHidden = await evaluate("!document.querySelector('#phrase-architecture-experiment')");
+  if (!phrasePlanHidden) throw new Error('El plan de frases no debe requerir selector.');
   const before = await evaluate("document.querySelector('#time-display').textContent");
   await evaluate("document.querySelector('#play').click()");
   await wait(1400);

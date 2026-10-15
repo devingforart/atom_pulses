@@ -14,14 +14,26 @@ const proofText = document.createElement('span');
 proofText.textContent = 'Prueba de coherencia · 3 pistas: acordes, bajo y melodía';
 proofLabel.append(proofInput, proofText);
 $('#compose-form .field-pair').after(proofLabel);
+const firstPassLabel = document.createElement('label');
+firstPassLabel.className = 'proof-option';
+firstPassLabel.title = 'Activada: conservar la primera interpretación MIDI técnicamente válida. Desactivada: permitir la revisión musical IA. El plan de frases sigue activo en ambos casos.';
+const firstPassInput = document.createElement('input');
+firstPassInput.type = 'checkbox'; firstPassInput.id = 'first-pass-audition';
+let firstPassPreference = true;
+firstPassLabel.append(firstPassInput, document.createTextNode('Primera pasada · sin revisión musical'));
+proofLabel.after(firstPassLabel);
 const syncProofMode = () => {
   proofInput.disabled = Number($('#duration').value) > 60 || $('#render-mode').value !== 'ai_sovereign';
   if (proofInput.disabled) proofInput.checked = false;
   proofLabel.classList.toggle('disabled', proofInput.disabled);
+  firstPassInput.disabled = $('#render-mode').value !== 'ai_sovereign' || proofInput.checked;
+  firstPassInput.checked = !firstPassInput.disabled && firstPassPreference;
+  firstPassLabel.classList.toggle('disabled', firstPassInput.disabled);
 };
 $('#duration').addEventListener('change', syncProofMode);
 $('#render-mode').addEventListener('change', syncProofMode);
 proofInput.addEventListener('change', syncProofMode);
+firstPassInput.addEventListener('change', () => { firstPassPreference = firstPassInput.checked; });
 syncProofMode();
 const states = { queued: 'EN COLA', running: 'COMPONIENDO', completed: 'LISTA', failed: 'FALLIDA', interrupted: 'INTERRUMPIDA', cancelled: 'CANCELADA' };
 const palette = { pad: '#dfb64e', bass: '#71a1d0', keys: '#8b9dca', pluck: '#cc8b6e', lead: '#d84f2b', drums: '#75b57c', synth: '#a899c7' };
@@ -72,6 +84,7 @@ function reuse(job) {
   $('#duration').value = String(job.request.duration_seconds);
   $('#render-mode').value = job.request.ai_sovereign ? 'ai_sovereign' : 'standard';
   proofInput.checked = Boolean(job.request.proof_mode);
+  firstPassPreference = Boolean(job.request.first_pass_audition);
   syncProofMode();
   $('#bpm').value = String(job.request.bpm);
   $('#behavior').value = job.request.behavior || 'adaptive';
@@ -366,7 +379,7 @@ async function refresh() {
 }
 ui.form.addEventListener('submit', async event => {
   event.preventDefault(); showNotice(''); ui.submit.disabled = true;
-  const payload = { prompt: ui.prompt.value, duration_seconds: Number($('#duration').value), bpm: Number($('#bpm').value), behavior: $('#behavior').value, render_mode: $('#render-mode').value, seed: $('#seed').value.trim(), proof_mode: proofInput.checked && !proofInput.disabled };
+  const payload = { prompt: ui.prompt.value, duration_seconds: Number($('#duration').value), bpm: Number($('#bpm').value), behavior: $('#behavior').value, render_mode: $('#render-mode').value, seed: $('#seed').value.trim(), proof_mode: proofInput.checked && !proofInput.disabled, first_pass_audition: firstPassInput.checked && !firstPassInput.disabled };
   try { const result = await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Pulso-Local': '1' }, body: JSON.stringify(payload) }); selectedId = result.job.id; loadedKey = null; previewDiagnostic = false; await refresh(); }
   catch (error) { showNotice(error.message); ui.submit.disabled = false; }
 });

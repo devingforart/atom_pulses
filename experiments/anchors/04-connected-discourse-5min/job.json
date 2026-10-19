@@ -1,0 +1,18 @@
+{
+  "prompt": "musica como bela bartok",
+  "duration_seconds": 300,
+  "bpm": 120,
+  "behavior": "adaptive",
+  "seed": "4203976088674690812",
+  "ai_sovereign": true,
+  "editorial_profile": "ai-only-v2",
+  "proof_mode": false,
+  "first_pass_audition": true,
+  "phrase_architecture_experiment": true,
+  "replan_phrases": false,
+  "compare_editorial_modes": false,
+  "resume_from_job": null,
+  "blueprint_from_job": null,
+  "review_from_job": null,
+  "created_at": "2026-10-19T15:16:44.201Z"
+}

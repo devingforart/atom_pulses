@@ -119,7 +119,83 @@ aceptado y obliga a escribir nuevamente todas las notas. Es una herramienta
 de ensayo aislada, no una opción de publicación ni un atajo para recuperar
 notas de otra obra.
 
+### Ensayo local A/B de continuidad en obras largas
+
+Con `PULSO_LOCAL_EXPERIMENTAL=1` y `PULSO_AI_LONG_FORM_CONTINUITY=1`, un
+worker local separado prueba continuidad en obras de más de 180 segundos.
+Cada ataque MIDI sigue siendo escrito por la IA: se le entregan las notas
+melódicas aceptadas de las escenas anteriores y las notas que todavía suenan
+al empezar la ventana. Una nota puede sostenerse a través de un límite
+**técnico** de 16 compases, pero nunca atravesar el siguiente evento armónico
+ni el final de su sección. El MIDI estable, Cloud y VST no cambian.
+
+Para comparar sin alterar forma, armonía, elenco ni plan de frases, iniciar
+el estudio experimental con su propio `PULSO_LOCAL_WORKER_PATH` y puerto, y
+enviar una obra con `blueprint_from_job` apuntando a la referencia terminada.
+Prompt, duración, tempo, semilla, primera pasada y plan de frases deben ser
+idénticos. El estudio reutiliza solo el blueprint y el plan de frases; la IA
+vuelve a componer todas las notas. Comparar el MIDI completo al oído antes de
+activar esta opción fuera de local.
+
+El plan de enlace entre actos usa otra variable aislada,
+`PULSO_AI_LONG_FORM_ARC=1`. La IA recibe el mismo blueprint y las mismas
+frases de referencia, pero escribe una relación causal entre secciones antes
+de componer notas. Para probar una arquitectura de frases nueva sobre el mismo
+blueprint, enviar `replan_phrases: true` junto con `blueprint_from_job` a la
+API local experimental; no está disponible en Cloud. No agrega MIDI por código.
+Puede probarse sin
+`PULSO_AI_LONG_FORM_CONTINUITY` para separar el efecto del plan narrativo del
+efecto de los sostenidos entre ventanas. En el primer ensayo combinado, la
+IA relevó el motivo entre demasiados instrumentos y la escucha provisional
+fue insatisfactoria; ese resultado se canceló y no se habilitó en Cloud/VST.
+
+El ensayo de 390 s `5c95da23-bc4e-4370-8630-be9702b7ddb6` usa una forma
+nueva y una primera pasada con revisión IA limitada a choques graves sostenidos.
+Frente a la referencia `56823515-c735-4c3b-831e-79b9009767c0`, pasó de
+310 a 122 conflictos armónicos y de 23 a 2 graves, pero la cobertura del
+colchón bajó de 97,9 % a 83,9 % y su auditoría aún señala una narrativa
+incompleta del protagonista. Es una muestra A/B para escucha, no un candidato
+aprobado para activar en Cloud o VST. Los conflictos agudos largos del clímax
+siguen fuera de esa revisión limitada.
+
 Opcional: `./scripts/start-local-studio.ps1 -Port 4180`. Para usar otro worker existente, definí `PULSO_LOCAL_WORKER_PATH` antes de iniciar. El script no compila nada.
+
+### Revision tematica experimental
+
+`PULSO_AI_THEMATIC_REVIEW=1` habilita solo en un estudio local experimental
+una lectura adicional de la voz protagonista despues de escribir cada ventana.
+Tambien da al escritor un resumen de las notas reales de las escenas previas,
+sin permitir notas sostenidas mas alla de la ventana tecnica: la memoria
+tematica y el experimento de sostenidos se controlan por separado.
+La IA recibe las notas MIDI reales de la apertura, del pasaje previo, del
+pasaje nuevo y del acompanamiento. Puede conservar una repeticion intencional
+o pedir una reescritura focalizada de la voz protagonista. El codigo no
+genera ni mueve notas; si esa reescritura no supera la integridad tecnica,
+conserva la primera pasada valida. El registro marca `THEMATIC_REVIEW` y
+permite auditar cada decision. Requiere escucha A/B antes de activarse en Cloud.
+
+### Historia basada en las notas reales (solo local)
+
+`PULSO_AI_GROUNDED_STORY_EXPERIMENT=1` y `PULSO_LOCAL_EXPERIMENTAL=1`
+habilitan una prueba aislada para obras de más de tres minutos con plan de
+frases. La primera ventana MIDI se escribe normalmente. Después, la IA lee
+esas notas aceptadas, la armonía y el elenco y propone una relación causal
+entre una idea principal y otra relacionada, más un giro central y una
+consecuencia final. Cada ventana posterior recibe ese plan y un resumen del
+MIDI melódico realmente escrito, no solamente los títulos de las secciones.
+El código no añade, mueve ni elimina notas. El plan se guarda con el
+checkpoint exacto; si falta o falla, el experimento se detiene sin presentar
+la obra como terminada. Cloud y VST conservan el comportamiento anterior.
+Las ventanas de esta prueba comprueban choques graves prolongados y semitonos sostenidos
+entre voces del mismo registro antes de aceptarse: un acorde puede contener
+ambas clases de altura y, sin embargo, necesitar otra disposición. Si aparece
+ese problema, la IA reescribe las voces implicadas; el código nunca reubica
+notas por su cuenta. La apertura se checkpointa antes de pedir el plan
+fundamentado, por lo que un fallo de esa llamada puede retomarse sin perderla.
+Las notas cromáticas breves del bajo no disparan esta revisión solo por ser
+cromáticas: pueden ser apoyaturas o conducciones perfectamente musicales.
+Esta es una hipótesis musical para comparar al oído, no una garantía de
+narrativa ni una configuración lista para producción.
 
 ## Ciclo de trabajo
 
@@ -338,7 +414,16 @@ El estudio local y Cloud usan el mismo `pulso_cloud_worker`, el perfil versionad
 
 ## Comparación musical A/B
 
+El anclaje aprobado de cinco minutos del 19/10/2026 está conservado en
+`experiments/anchors/04-connected-discourse-5min`. El perfil compartido
+`ai-only-v2-connected-discourse` activa el plan de articulación y diálogo
+entre voces también en Cloud. El lanzador del laboratorio en 4193 conserva
+los controles locales; no añade otras instrucciones musicales al perfil
+aprobado. Las duraciones, alturas y silencios siguen siendo decisiones IA.
+
 Para comparar la primera pasada con la revisión del **mismo** material, el estudio local admite `review_from_job` en `POST /api/jobs`. La fuente debe ser una primera pasada terminada; prompt, duración, BPM, enfoque y semilla deben coincidir. El nuevo job recupera el plan y todas las notas aceptadas, omite la composición de nuevas ventanas y ejecuta únicamente la revisión musical IA. La versión original no se modifica. La publicación de esta audición exige integridad técnica MIDI; el dictamen editorial final queda registrado como asesoramiento para poder escuchar el resultado incluso si la revisión no alcanza el objetivo. Esta ruta es exclusiva del estudio local y no cambia el flujo Cloud.
+
+Para una comparación **solo de articulación** sin recomponer notas ni activar la revisión musical completa, desde la raíz del proyecto ejecutá `node web/local-studio/articulation-review-ab.mjs --source=ID_DE_OBRA_TERMINADA`. La IA examina la voz protagonista, el plan de frases y la armonía, y decide si modifica algunas duraciones de notas breves. El experimento rechaza cualquier cambio de altura, comienzo, velocidad, cantidad de notas, pista o expresión MIDI, y cualquier nueva superposición de semitono sostenido. Crea otra obra en el historial **Auto** con enlaces ORIGINAL > REVISIÓN; la obra fuente queda intacta. Requiere `OPENAI_API_KEY` en el proceso local y genera una llamada de pago. Este ensayo no cambia el compositor predeterminado ni Cloud: primero corresponde comparar ambas versiones al oído.
 
 La obra anterior `0472bbb4-6bac-43f5-9fc7-f4617bd5bff1` sirve como referencia local. Tocá **Repetir ajustes** en su tarjeta: rellena el formulario sin enviar nada. Para evaluar el cambio de coherencia, conservá **exactamente** su prompt, duración de 390 s, 120 BPM, enfoque adaptativo y semilla `4403862266792290272`. La generación implica gasto real; no se inicia al abrir la web ni al copiar los ajustes. Al terminar, compará ambos jobs desde la raíz del repositorio:
 

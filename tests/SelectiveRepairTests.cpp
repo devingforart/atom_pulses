@@ -5,6 +5,7 @@
 #include "core/EnsembleReference.h"
 #include "core/ArrangementDensityPlanner.h"
 #include "core/AttentionDirector.h"
+#include "core/NarrativeScore.h"
 #include "core/SelectiveRepair.h"
 #include "core/SovereignScoreRenderer.h"
 #include "core/TrackViability.h"
@@ -12,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace pulso;
@@ -2118,6 +2120,106 @@ void runSelectiveRepairTests() {
                           unfinishedReview.instrumentIndices.end(), 2) !=
                     unfinishedReview.instrumentIndices.end(),
             "A score with developed voices and continuous harmony must still reject an abrupt, unconnected ending");
+
+    // A real final-act relay is not a missing protagonist ending. The main
+    // voice can reprise its idea and then yield the final words to a named
+    // answering line, provided that line actually reaches a stable cadence.
+    auto relayedStory = unfinishedStory;
+    auto finalAnswer = speaker;
+    finalAnswer.id = "final_answer";
+    finalAnswer.sourceVoice = VoiceId::Countermelody;
+    relayedStory.instruments.push_back(finalAnswer);
+    relayedStory.narrativeSpine.terminalSpeakerInstrumentId = "final_answer";
+    relayedStory.narrativeSpine.terminalPhraseStartBar = 22;
+    auto relayedMidi = finalMidi;
+    std::erase_if(relayedMidi.notes, [](const auto& note) {
+        return note.partId == 3 && note.startBeat >= 88.0;
+    });
+    for (const auto [beat, pitch] :
+         {std::pair{89.0, 67}, std::pair{90.0, 71}, std::pair{91.0, 72}})
+        relayedMidi.notes.push_back({beat, .5, pitch, 78, 4,
+            VoiceId::Countermelody, 4, false, NoteOrigin::AiAuthored});
+    require(NarrativeScoreGate::audit(relayedMidi, relayedStory).terminalPhraseReady,
+            "the final MIDI audit must recognize an audible AI-planned handoff");
+    auto overriddenHandoff = relayedMidi;
+    overriddenHandoff.notes.push_back({93.0, .5, 72, 78, 3,
+        VoiceId::Lead, 3, false, NoteOrigin::AiAuthored});
+    const auto overriddenReview = NarrativeScoreGate::audit(
+        overriddenHandoff, relayedStory);
+    require(!overriddenReview.terminalPhraseReady &&
+                !overriddenReview.terminalHandoffHonored,
+            "a later protagonist attack must not override the designated final speaker");
+    auto isolatedTerminalTag = relayedMidi;
+    isolatedTerminalTag.notes.push_back({94.5, .5, 72, 78, 4,
+        VoiceId::Countermelody, 4, false, NoteOrigin::AiAuthored});
+    require(!NarrativeScoreGate::audit(isolatedTerminalTag, relayedStory).terminalPhraseReady,
+            "an earlier connected answer must not legitimize a detached last tonic note");
+    auto missingAnswer = relayedMidi;
+    std::erase_if(missingAnswer.notes, [](const auto& note) {
+        return note.partId == 4;
+    });
+    require(!NarrativeScoreGate::audit(missingAnswer, relayedStory).terminalPhraseReady,
+            "a named but silent final speaker must never satisfy the handoff contract");
+
+    auto collectiveCut = finalMidi;
+    for (auto& note : collectiveCut.notes)
+        if (note.startBeat >= 92.0)
+            note.durationBeats = note.partId == 3 ? 3.0 : 4.0;
+    const auto collectiveCutReview = SelectiveRepair::reviewFinalScore(
+        unfinishedStory, collectiveCut);
+    require(!collectiveCutReview.ensembleReleaseReady &&
+                !collectiveCutReview.ready &&
+                collectiveCutReview.simultaneousTerminalOwners == 3 &&
+                collectiveCutReview.terminalReleaseOwnerIndices.size() == 3,
+            "A tonic landing must not approve three sustained owners cut at the final MIDI tick");
+
+    auto disguisedCut = collectiveCut;
+    for (auto& note : disguisedCut.notes)
+        if (note.startBeat >= 92.0 && note.partId == 1)
+            note.durationBeats = 3.5;
+        else if (note.startBeat >= 92.0 && note.partId == 2)
+            note.durationBeats = 3.25;
+    require(!SelectiveRepair::reviewFinalScore(
+                unfinishedStory, disguisedCut).ensembleReleaseReady,
+            "Moving the collective cutoff slightly before the final tick is not an authored release");
+
+    auto stagedRelease = collectiveCut;
+    for (auto& note : stagedRelease.notes)
+        if (note.startBeat >= 92.0 && note.partId == 1)
+            note.durationBeats = 1.0;
+        else if (note.startBeat >= 92.0 && note.partId == 2)
+            note.durationBeats = 1.5;
+        else if (note.startBeat >= 92.0 && note.partId == 3)
+            note.durationBeats = 1.0;
+    require(SelectiveRepair::reviewFinalScore(
+                unfinishedStory, stagedRelease).ensembleReleaseReady,
+            "A musically staged ensemble release with an audible final rest should pass");
+    auto collectiveCadenceWithBreath = collectiveCut;
+    for (auto& note : collectiveCadenceWithBreath.notes)
+        if (note.startBeat >= 92.0)
+            note.durationBeats = note.partId == 3 ? 1.0 : 2.0;
+    const auto cadenceWithBreathReview = SelectiveRepair::reviewFinalScore(
+        unfinishedStory, collectiveCadenceWithBreath);
+    require(cadenceWithBreathReview.ensembleReleaseReady &&
+                cadenceWithBreathReview.harmonicContinuity > .99,
+            "A resolved cadence with a full terminal rest must not be mistaken for missing harmonic floor");
+
+    auto loneCutoff = stagedRelease;
+    for (auto& note : loneCutoff.notes)
+        if (note.startBeat >= 92.0 && note.partId == 3)
+            note.durationBeats = 3.0;
+    const auto loneCutoffReview = SelectiveRepair::reviewFinalScore(
+        unfinishedStory, loneCutoff);
+    require(!loneCutoffReview.ensembleReleaseReady &&
+                loneCutoffReview.terminalReleaseOwnerIndices.size() == 1 &&
+                loneCutoffReview.terminalReleaseOwnerIndices.front() == 2,
+            "A solo tonic note cut at the MIDI boundary is abrupt despite a staged ensemble");
+
+    auto deliberateCutPlan = unfinishedStory;
+    deliberateCutPlan.narrativeSpine.resolution = "deliberate hard cut to silence";
+    require(SelectiveRepair::reviewFinalScore(
+                deliberateCutPlan, collectiveCut).ensembleReleaseReady,
+            "An explicitly authored hard stop remains a valid musical ending");
 
     auto transformedReprise = finalMidi;
     for (auto& note : transformedReprise.notes)

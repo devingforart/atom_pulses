@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { spawn } from 'node:child_process';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, createReadStream, mkdirSync, readFileSync, statSync, writeFileSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,7 @@ import { canAutomaticallyRecover, automaticRecoveryRequest,
 import { parseMidi } from '../shared/midi.mjs';
 import { composerProfile, defaultEditorialSettings, experimentalProfile, workerEnvironmentFor } from './composer-environment.mjs';
 import { originForJob, originForRoute } from './job-origin.mjs';
+import { blueprintRequestMatchesSource, exactResumeMatchesCheckpoint } from './checkpoint-integrity.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -173,6 +174,8 @@ function validate(input) {
     defaultEditorialSettings(input, proofMode, renderMode);
   const resumeFromJob = input.resume_from_job === undefined ? null : String(input.resume_from_job);
   const blueprintFromJob = input.blueprint_from_job === undefined ? null : String(input.blueprint_from_job);
+  const replanPhrases = input.replan_phrases === true;
+  const compareEditorialModes = input.compare_editorial_modes === true;
   const reviewFromJob = input.review_from_job === undefined ? null : String(input.review_from_job);
   if (!prompt || prompt.length > 600) throw new InputError('La idea debe contener entre 1 y 600 caracteres.');
   if (!Number.isInteger(duration) || duration < 30 || duration > 900) throw new InputError('La duración debe estar entre 30 y 900 segundos.');
@@ -192,17 +195,22 @@ function validate(input) {
   if (blueprintFromJob !== null && (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(blueprintFromJob) ||
       resumeFromJob !== null || renderMode !== 'ai_sovereign' || proofMode))
     throw new InputError('Invalid controlled A/B blueprint job.');
+  if (replanPhrases && (!experimentalProfile || !blueprintFromJob || !phraseArchitectureExperiment))
+    throw new InputError('Phrase replanning is available only for a controlled experimental local A/B.');
+  if (compareEditorialModes && (!experimentalProfile || !blueprintFromJob))
+    throw new InputError('Editorial-mode comparison requires an explicit experimental local blueprint A/B.');
   if (reviewFromJob !== null && (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(reviewFromJob) ||
       resumeFromJob !== null || blueprintFromJob !== null || firstPassAudition || proofMode || renderMode !== 'ai_sovereign'))
     throw new InputError('Invalid first-pass review source.');
-  return { prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, first_pass_audition: firstPassAudition, phrase_architecture_experiment: phraseArchitectureExperiment, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, review_from_job: reviewFromJob, created_at: new Date().toISOString() };
+  return { prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, first_pass_audition: firstPassAudition, phrase_architecture_experiment: phraseArchitectureExperiment, replan_phrases: replanPhrases, compare_editorial_modes: compareEditorialModes, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, review_from_job: reviewFromJob, created_at: new Date().toISOString() };
 }
 
 function blueprintOnlyScoreFromJob(request) {
   const sourceDir = jobDirectory(request.blueprint_from_job);
   const source = sourceDir && readJson(path.join(sourceDir, 'job.json'));
-  if (!source || !['prompt', 'duration_seconds', 'bpm', 'behavior', 'seed', 'ai_sovereign']
-      .every(field => source[field] === request[field]))
+  const allowEditorialChange = experimentalProfile && request.compare_editorial_modes === true &&
+    existsSync(path.join(sourceDir, 'manifest.json'));
+  if (!blueprintRequestMatchesSource(source, request, allowEditorialChange))
     throw new InputError('Controlled A/B request must match the source prompt, duration, tempo, seed and mode.');
   const blueprintFile = path.join(sourceDir, 'accepted-blueprint.json');
   const blueprintJson = existsSync(blueprintFile) && statSync(blueprintFile).size <= 2 * 1024 * 1024
@@ -214,12 +222,41 @@ function blueprintOnlyScoreFromJob(request) {
       ? checkpoint.planFile : null;
   const plan = readJson(path.join(sourceDir, 'composition-plan.json')) ||
     (checkpointPlan ? readJson(path.join(sourceDir, checkpointPlan)) : null);
-  if (!blueprint || !Array.isArray(plan?.cast) || !Array.isArray(plan?.sections) ||
-      !plan.cast.length || !plan.sections.length)
+  // A failure in the first writing window has no MIDI checkpoint yet. The
+  // accepted macro/cast is still valuable and can be retried without paying
+  // for the same blueprint again; a new phrase plan is authored if none was
+  // persisted. No provisional notes are promoted by this route.
+  const cast = Array.isArray(plan?.cast) ? plan.cast : blueprint?.instruments;
+  let offset = 0;
+  const sections = Array.isArray(plan?.sections) ? plan.sections :
+    Array.isArray(blueprint?.sections) ? blueprint.sections.map(section => {
+      const item = { start_bar: offset, bars: section.bars };
+      offset += section.bars;
+      return item;
+    }) : null;
+  if (!blueprint || !Array.isArray(cast) || !Array.isArray(sections) ||
+      !cast.length || !sections.length ||
+      cast.some(part => typeof part?.id !== 'string' || !part.id) ||
+      sections.some(section => !Number.isInteger(section?.start_bar) ||
+        !Number.isInteger(section?.bars) || section.bars < 1))
     throw new InputError('Source job has no complete accepted AI blueprint.');
+  const phraseFile = path.join(sourceDir, 'phrase-architecture.json');
+  const sourceCheckpointFile = path.join(sourceDir, 'resume-score.json');
+  const checkpointPhrase = experimentalProfile &&
+    existsSync(sourceCheckpointFile) && statSync(sourceCheckpointFile).size <= 2 * 1024 * 1024
+      ? readJson(sourceCheckpointFile)?.phrase_architecture_json : null;
+  const phraseArchitectureJson = request.phrase_architecture_experiment && !request.replan_phrases &&
+    existsSync(phraseFile) && statSync(phraseFile).size <= 2 * 1024 * 1024
+      ? readFileSync(phraseFile, 'utf8') :
+        request.phrase_architecture_experiment && !request.replan_phrases &&
+        typeof checkpointPhrase === 'string' ? checkpointPhrase : null;
+  if (request.phrase_architecture_experiment && !request.replan_phrases &&
+      !phraseArchitectureJson && (checkpoint || plan))
+    throw new InputError('Source job has no accepted phrase architecture for an exact A/B.');
   return { schema_version: 2, blueprint_only: true, blueprint_json: blueprintJson,
-    cast_ids: plan.cast.map(part => part.id),
-    sections: plan.sections.map(section => ({ start_bar: section.start_bar, bars: section.bars })),
+    ...(phraseArchitectureJson ? { phrase_architecture_json: phraseArchitectureJson } : {}),
+    cast_ids: cast.map(part => part.id),
+    sections: sections.map(section => ({ start_bar: section.start_bar, bars: section.bars })),
     notes: [] };
 }
 
@@ -241,18 +278,7 @@ function resumeScoreFromJob(request, controlledReview = false) {
   if (!checkpoint?.file || !/^partial-[0-9]+\.mid$/.test(checkpoint.file))
     throw new InputError('Previous job has no accepted MIDI checkpoint.');
   const exactResume = readJson(path.join(previousDirectory, 'resume-score.json'));
-  if (checkpoint.resumeFile === 'resume-score.json' &&
-      exactResume?.schema_version === 2 &&
-      exactResume.completed_units === checkpoint.completed_units &&
-      Array.isArray(exactResume.notes) && exactResume.notes.length === checkpoint.notes &&
-      Array.isArray(exactResume.cast_ids) && exactResume.cast_ids.length === checkpoint.parts &&
-      Array.isArray(exactResume.sections) && exactResume.sections.length > 0 &&
-      typeof exactResume.blueprint_json === 'string' && exactResume.blueprint_json.length > 0 &&
-      exactResume.notes.every(note => typeof note.instrument_id === 'string' &&
-        exactResume.cast_ids.includes(note.instrument_id) &&
-        Number.isFinite(note.start_beat) && Number.isFinite(note.duration_beats) &&
-        Number.isInteger(note.pitch) && Number.isInteger(note.velocity)))
-    {
+  if (exactResumeMatchesCheckpoint(checkpoint, exactResume)) {
       if (controlledReview) {
         const expectedWindows = exactResume.sections.reduce((sum, section) =>
           sum + Math.ceil(section.bars / 16), 0);
@@ -341,7 +367,14 @@ function startAutomaticRecovery(sourceId) {
 }
 
 function launch(id, dir) {
-  const child = spawn(worker, [path.join(dir, 'job.json'), dir], { env: childEnvironment(dir), windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+  const environment = childEnvironment(dir);
+  if (experimentalProfile) writeFileSync(path.join(dir, 'experiment-context.json'), JSON.stringify({
+    composerProfile: composerProfile.name,
+    workerSha256: createHash('sha256').update(readFileSync(worker)).digest('hex'),
+    workerPath: worker,
+    aiFlags: Object.fromEntries(Object.entries(environment).filter(([key]) => key.startsWith('PULSO_AI_'))),
+  }, null, 2));
+  const child = spawn(worker, [path.join(dir, 'job.json'), dir], { env: environment, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
   active = { id, child, cancelled: false };
   let diagnostic = '';
   child.stderr.on('data', chunk => { diagnostic = (diagnostic + chunk.toString()).slice(-4000); });
@@ -377,7 +410,8 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   const pathname = url.pathname;
   try {
-    if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, editorialProfile: 'ai-only-v2', composerProfile: composerProfile.name, experimentalProfile });
+    if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, editorialProfile: 'ai-only-v2', composerProfile: composerProfile.name, experimentalProfile,
+      musicalProfile: experimentalProfile && process.env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT === '1' ? 'connected-discourse' : 'shared-default' });
     if (req.method === 'GET' && pathname === '/api/jobs') return json(res, 200, { jobs: listJobs() });
     if (req.method === 'POST' && !mutatingRequestAllowed(req)) return json(res, 403, { error: 'Solicitud local no autorizada.' });
     if (req.method === 'POST' && (pathname === '/api/jobs' || pathname === '/api/auto/jobs')) {

@@ -13,6 +13,13 @@ test('local production worker uses exactly the shared Cloud composer profile', (
     PULSO_AI_NARRATIVE_FULL_SCENE: '1',
     PULSO_AI_RHYTHMIC_ARC_EXPERIMENT: '1',
     PULSO_AI_NARRATIVE_FINALE_EXPERIMENT: '1',
+    PULSO_AI_TERMINAL_CRITIC_EXPERIMENT: '1',
+    PULSO_AI_EXPRESSIVE_ENSEMBLE_EXPERIMENT: '1',
+    PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT: '1',
+    PULSO_AI_LONG_FORM_CONTINUITY: '1',
+    PULSO_AI_LONG_FORM_ARC: '1',
+    PULSO_AI_THEMATIC_REVIEW: '1',
+    PULSO_AI_GROUNDED_STORY_EXPERIMENT: '1',
     PULSO_AI_NARRATIVE_FOCUS: 'example' };
   const env = workerEnvironmentFor(source, '/jobs/one', '/data', false, false);
   for (const [key, value] of Object.entries(composerProfile.workerEnvironment))
@@ -27,9 +34,29 @@ test('local production worker uses exactly the shared Cloud composer profile', (
   assert.equal(env.PULSO_AI_NARRATIVE_FULL_SCENE, undefined);
   assert.equal(env.PULSO_AI_RHYTHMIC_ARC_EXPERIMENT, undefined);
   assert.equal(env.PULSO_AI_NARRATIVE_FINALE_EXPERIMENT, undefined);
+  assert.equal(env.PULSO_AI_TERMINAL_CRITIC_EXPERIMENT, undefined);
+  assert.equal(env.PULSO_AI_EXPRESSIVE_ENSEMBLE_EXPERIMENT, '1');
+  assert.equal(env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT, '1');
+  assert.equal(env.PULSO_AI_JOINT_ONE_GROUP, '1');
+  assert.equal(env.PULSO_AI_LONG_FORM_CONTINUITY, undefined);
+  assert.equal(env.PULSO_AI_THEMATIC_REVIEW, undefined);
+  assert.equal(env.PULSO_AI_GROUNDED_STORY_EXPERIMENT, undefined);
   assert.equal(env.PULSO_AI_NARRATIVE_FOCUS, undefined);
   assert.equal(env.PULSO_AI_RESPONSE_CACHE_DIR, undefined);
   assert.equal(env.PULSO_AI_FIRST_PASS_AUDITION, undefined);
+});
+
+test('the accepted discourse profile matches the five-minute listening anchor', () => {
+  assert.equal(composerProfile.name, 'ai-only-v2-connected-discourse');
+  const normal = workerEnvironmentFor({}, '/jobs/cloud-parity', '/data', false, false,
+    true, false, true);
+  const experimental = workerEnvironmentFor({
+    PULSO_AI_JOINT_ONE_GROUP: '1',
+    PULSO_AI_EXPRESSIVE_ENSEMBLE_EXPERIMENT: '1',
+    PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT: '1',
+    PULSO_AI_DISABLE_RESPONSE_CACHE: '1',
+  }, '/jobs/cloud-parity', '/data', false, true, true, false, true);
+  assert.deepEqual(normal, experimental);
 });
 
 test('first-pass audition is an explicit per-job local override, never inherited from process environment', () => {
@@ -89,6 +116,13 @@ test('an explicitly experimental local worker is visibly outside production pari
     PULSO_AI_NARRATIVE_FULL_SCENE: '1',
     PULSO_AI_RHYTHMIC_ARC_EXPERIMENT: '1',
     PULSO_AI_NARRATIVE_FINALE_EXPERIMENT: '1',
+    PULSO_AI_TERMINAL_CRITIC_EXPERIMENT: '1',
+    PULSO_AI_EXPRESSIVE_ENSEMBLE_EXPERIMENT: '1',
+    PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT: '1',
+    PULSO_AI_LONG_FORM_CONTINUITY: '1',
+    PULSO_AI_LONG_FORM_ARC: '1',
+    PULSO_AI_THEMATIC_REVIEW: '1',
+    PULSO_AI_GROUNDED_STORY_EXPERIMENT: '1',
     PULSO_AI_NARRATIVE_FOCUS: 'example' }, '/jobs/two', '/data', true, true);
   assert.equal(env.PULSO_AI_FAST_MODE, '1');
   assert.equal(env.PULSO_AI_MELODIC_EXPERIMENT, '1');
@@ -97,6 +131,13 @@ test('an explicitly experimental local worker is visibly outside production pari
   assert.equal(env.PULSO_AI_NARRATIVE_FULL_SCENE, '1');
   assert.equal(env.PULSO_AI_RHYTHMIC_ARC_EXPERIMENT, '1');
   assert.equal(env.PULSO_AI_NARRATIVE_FINALE_EXPERIMENT, '1');
+  assert.equal(env.PULSO_AI_TERMINAL_CRITIC_EXPERIMENT, '1');
+  assert.equal(env.PULSO_AI_EXPRESSIVE_ENSEMBLE_EXPERIMENT, '1');
+  assert.equal(env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT, '1');
+  assert.equal(env.PULSO_AI_LONG_FORM_CONTINUITY, '1');
+  assert.equal(env.PULSO_AI_LONG_FORM_ARC, '1');
+  assert.equal(env.PULSO_AI_THEMATIC_REVIEW, '1');
+  assert.equal(env.PULSO_AI_GROUNDED_STORY_EXPERIMENT, '1');
   assert.equal(env.PULSO_AI_NARRATIVE_FOCUS, 'example');
   assert.equal(env.PULSO_AUTO_RECOVERY_MAX_SECONDS, '600');
   assert.equal(env.PULSO_AUTO_RECOVERY_MAX_USD, '20');

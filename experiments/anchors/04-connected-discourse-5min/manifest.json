@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "render_mode": "ai_sovereign",
+  "ai_authored_or_declared_transform_notes": 2329,
+  "all_midi_notes": 2329,
+  "note_provenance": {
+    "direct_ai": 2329,
+    "reused_ai": 0,
+    "transformed_ai": 0,
+    "reused_transformed_ai": 0,
+    "other": 0
+  },
+  "engineVersion": "1.0.0",
+  "first_pass_audition": true,
+  "phrase_architecture_experiment": true,
+  "phraseArchitectureFile": "phrase-architecture.json",
+  "review_audition": false,
+  "title": "The Pedal's Unanswered Ascent",
+  "key": "D minor",
+  "bpm": 120.0,
+  "bars": 152,
+  "fullFile": "full-song.mid",
+  "planFile": "composition-plan.json",
+  "musicalAuditFile": "musical-audit.json",
+  "tracks": [
+    {
+      "filename": "track-01.mid",
+      "name": "Piano chord ground",
+      "notes": 486
+    },
+    {
+      "filename": "track-02.mid",
+      "name": "Viola inner body",
+      "notes": 165
+    },
+    {
+      "filename": "track-03.mid",
+      "name": "Second violin upper counterpoint",
+      "notes": 299
+    },
+    {
+      "filename": "track-04.mid",
+      "name": "First violin protagonist",
+      "notes": 323
+    },
+    {
+      "filename": "track-05.mid",
+      "name": "Cello motif answerer",
+      "notes": 273
+    },
+    {
+      "filename": "track-06.mid",
+      "name": "Clarinet conversational line",
+      "notes": 209
+    },
+    {
+      "filename": "track-07.mid",
+      "name": "Contrabass pedal",
+      "notes": 152
+    },
+    {
+      "filename": "track-08.mid",
+      "name": "Bassoon moving bass",
+      "notes": 147
+    },
+    {
+      "filename": "track-09.mid",
+      "name": "Marimba harmonic pulse",
+      "notes": 161
+    },
+    {
+      "filename": "track-10.mid",
+      "name": "Timpani structural impulse",
+      "notes": 60
+    },
+    {
+      "filename": "track-11.mid",
+      "name": "Low orchestral percussion",
+      "notes": 35
+    },
+    {
+      "filename": "track-12.mid",
+      "name": "Cymbal crisis color",
+      "notes": 19
+    }
+  ],
+  "editorial": {
+    "technical_ready": true,
+    "legacy_production_ready": false,
+    "creative_ready": false,
+    "narrative_ready": true,
+    "soundscape_ready": true,
+    "track_viability_ready": false,
+    "resolution_score": 0.799,
+    "dialogue_lines": 0,
+    "underfilled_bars": 0,
+    "ai_authored_note_ratio": 1.0,
+    "musical_review_required": true,
+    "musical_gate_bypassed": true,
+    "harmonic_conflicts": 505,
+    "low_register_conflicts": 52
+  }
+}

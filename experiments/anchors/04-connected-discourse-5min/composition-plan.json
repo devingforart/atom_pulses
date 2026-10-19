@@ -1,0 +1,808 @@
+{
+  "schema_version": 2,
+  "title": "The Pedal's Unanswered Ascent",
+  "key": "D minor",
+  "root_pitch_class": 2,
+  "tonal_policy": "consolidated",
+  "total_bars": 152,
+  "requested_cast_count": 0,
+  "beats_per_bar": 4.0,
+  "protagonist_id": "vln1_protagonist",
+  "motif_identity": "A short pitched contour begins on its home pitch, rises by whole step then semitone, drops by a fourth, rebounds by whole step, and turns down by semitone. Its rhythm is a compact opening gesture followed by a held, breath-bearing upper tone, a small rest, and a longer answering descent. The opening statement reaches a provisional destination; later complete phrases extend it, oppose it with an inverted-bearing counterline, and finally continue beyond the old held tone into a settled descent to D.",
+  "harmonic_debt": "The work accumulates an A-based dominant obligation after the Neapolitan and diminished contradictions. It is intentionally carried through the climax and paid only at the opening of the final resolution section.",
+  "resolution_intent": "A7 flat 9 resolves at the final section opening into D minor; the initial melodic contour then receives its altered consequence by continuing past its former suspended goal and descending to D. The last D-minor add-9 event confirms that the premise and counterargument now share the same tonal ground.",
+  "narrative_acts": [
+    {
+      "section": "I. Bearing the Question",
+      "stage": "premise",
+      "cause": "The initial D pedal grants identity but withholds harmonic certainty.",
+      "consequence": "The line can speak fully enough to be remembered, yet its ending remains structurally exposed.",
+      "unresolved": "Whether the upper resting point belongs to tonic completion or an impending departure.",
+      "resolution_target": "A provisional upper melodic resting point over D, not a cadence."
+    },
+    {
+      "section": "II. The Incomplete Reply",
+      "stage": "question",
+      "cause": "B-flat and G-minor colouring recast the premise from inside its own tonal field.",
+      "consequence": "The melodic continuation becomes a counterargument, and the 38-bar preparation makes departure consequential.",
+      "unresolved": "The D pedal still lacks a final bass-and-line agreement.",
+      "resolution_target": "A local descent that stops short of stable D-minor closure."
+    },
+    {
+      "section": "III. Departure and Local Ground",
+      "stage": "departure",
+      "cause": "The premise is extended beyond its original horizon into F-major colour.",
+      "consequence": "E-flat-major contradiction and A7 flat 9 reveal that local repose cannot settle the D-minor question.",
+      "unresolved": "D returns, but only as aftermath rather than answer.",
+      "resolution_target": "A real local resting point in F, followed by redirection."
+    },
+    {
+      "section": "IV. Encounter",
+      "stage": "transformation",
+      "cause": "Premise and counterargument are made simultaneous rather than sequential.",
+      "consequence": "The melodic identity becomes active discourse; diminished compression proves its tones can be transformed by stepwise resolution.",
+      "unresolved": "The two lines still seek incompatible kinds of arrival.",
+      "resolution_target": "A changed D-minor recollection after direct chromatic resolution."
+    },
+    {
+      "section": "V. Counterargument's Clearing",
+      "stage": "question",
+      "cause": "The counterargument is allowed a complete, generous sentence.",
+      "consequence": "Its credible local cadence makes the later return to D psychologically necessary rather than arbitrary.",
+      "unresolved": "Whether local consolation can replace tonal home.",
+      "resolution_target": "A local F/B-flat clearing that is explicitly insufficient."
+    },
+    {
+      "section": "VI. Narrowing the Gate",
+      "stage": "transformation",
+      "cause": "The two sentence-types interleave and the pedal loses its innocence.",
+      "consequence": "A7 flat 9 becomes accumulated harmonic debt rather than a passing event.",
+      "unresolved": "The transformed continuation needs to pass through dominant pressure before it can descend to D.",
+      "resolution_target": "Dominant exposure without release."
+    },
+    {
+      "section": "VII. Confrontation and Climax",
+      "stage": "climax",
+      "cause": "The premise and counterargument fuse under the highest chromatic and dominant weight.",
+      "consequence": "The old provisional upper goal is carried beyond itself, preparing the final changed descent.",
+      "unresolved": "The sustained A-based relation demands an answer in D but does not yet receive one.",
+      "resolution_target": "Maximum confrontation, deliberately denied stable tonic."
+    },
+    {
+      "section": "VIII. Answer and Aftermath",
+      "stage": "resolution",
+      "cause": "The climax has exhausted the alternative harmonic claims and sustained dominant debt.",
+      "consequence": "D minor returns as consequence, not repetition; D minor 6 preserves memory of change before the final tonic release.",
+      "unresolved": "Only residual afterimage remains, not an active harmonic question.",
+      "resolution_target": "The original contour's transformed descent arrives on D within a settled tonic field."
+    }
+  ],
+  "chord_palette": [
+    {
+      "id": "Dmin_add9",
+      "label": "D minor add 9",
+      "root_pitch_class": 2,
+      "bass_pitch_class": 2,
+      "function": "tonic",
+      "voicing": "open",
+      "tension": 0.24,
+      "pitch_classes": [
+        2,
+        5,
+        9,
+        0,
+        4
+      ]
+    },
+    {
+      "id": "Dmin_C",
+      "label": "D minor add 9 over C pedal",
+      "root_pitch_class": 2,
+      "bass_pitch_class": 0,
+      "function": "pedal",
+      "voicing": "open",
+      "tension": 0.38,
+      "pitch_classes": [
+        2,
+        5,
+        9,
+        0,
+        4
+      ]
+    },
+    {
+      "id": "Gmin11",
+      "label": "G minor 11",
+      "root_pitch_class": 7,
+      "bass_pitch_class": 7,
+      "function": "predominant",
+      "voicing": "open",
+      "tension": 0.43,
+      "pitch_classes": [
+        7,
+        10,
+        2,
+        5,
+        9
+      ]
+    },
+    {
+      "id": "BbMaj7",
+      "label": "B-flat major 7",
+      "root_pitch_class": 10,
+      "bass_pitch_class": 10,
+      "function": "modal",
+      "voicing": "open",
+      "tension": 0.36,
+      "pitch_classes": [
+        10,
+        2,
+        5,
+        9
+      ]
+    },
+    {
+      "id": "F6",
+      "label": "F major 6",
+      "root_pitch_class": 5,
+      "bass_pitch_class": 5,
+      "function": "modal",
+      "voicing": "open",
+      "tension": 0.3,
+      "pitch_classes": [
+        5,
+        9,
+        0,
+        2
+      ]
+    },
+    {
+      "id": "Cmaj",
+      "label": "C major",
+      "root_pitch_class": 0,
+      "bass_pitch_class": 0,
+      "function": "transitional",
+      "voicing": "close",
+      "tension": 0.48,
+      "pitch_classes": [
+        0,
+        4,
+        7
+      ]
+    },
+    {
+      "id": "EbMaj",
+      "label": "E-flat major, Neapolitan colour",
+      "root_pitch_class": 3,
+      "bass_pitch_class": 3,
+      "function": "chromatic",
+      "voicing": "close",
+      "tension": 0.71,
+      "pitch_classes": [
+        3,
+        7,
+        10
+      ]
+    },
+    {
+      "id": "A7b9",
+      "label": "A dominant 7 flat 9",
+      "root_pitch_class": 9,
+      "bass_pitch_class": 9,
+      "function": "dominant",
+      "voicing": "mixed",
+      "tension": 0.72,
+      "pitch_classes": [
+        9,
+        1,
+        4,
+        7,
+        10
+      ]
+    },
+    {
+      "id": "Csharp_dim7",
+      "label": "C-sharp diminished 7",
+      "root_pitch_class": 1,
+      "bass_pitch_class": 1,
+      "function": "chromatic",
+      "voicing": "open",
+      "tension": 0.72,
+      "pitch_classes": [
+        1,
+        4,
+        7,
+        10
+      ]
+    },
+    {
+      "id": "D5_A",
+      "label": "D fifth over A",
+      "root_pitch_class": 2,
+      "bass_pitch_class": 9,
+      "function": "pedal",
+      "voicing": "open",
+      "tension": 0.51,
+      "pitch_classes": [
+        2,
+        9,
+        5
+      ]
+    },
+    {
+      "id": "Dmin6",
+      "label": "D minor 6",
+      "root_pitch_class": 2,
+      "bass_pitch_class": 2,
+      "function": "tonic",
+      "voicing": "open",
+      "tension": 0.32,
+      "pitch_classes": [
+        2,
+        5,
+        9
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "name": "I. Bearing the Question",
+      "function": "premise",
+      "harmonic_direction": "D minor is established through prolonged tonic bearing; the later G-minor colour widens the field without dislodging D as the shared anchor.",
+      "motif_treatment": "The premise states the complete opening thought rather than a fragment: the contour rises cautiously, folds inward, and reaches a provisional upper resting point that does not settle the D pedal beneath it.",
+      "start_bar": 0,
+      "bars": 19,
+      "energy": 0.22,
+      "tension": 0.26,
+      "density": 0.24,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 0.0,
+          "chord_id": "Dmin_add9",
+          "purpose": "Establish the unresolved D-minor premise and its bearing tone."
+        },
+        {
+          "bar_offset": 8,
+          "beat_offset": 0.0,
+          "absolute_beat": 32.0,
+          "chord_id": "Dmin_C",
+          "purpose": "Alter the pedal relation while preserving the opening harmonic material."
+        },
+        {
+          "bar_offset": 13,
+          "beat_offset": 0.0,
+          "absolute_beat": 52.0,
+          "chord_id": "Gmin11",
+          "purpose": "Open the first local phrase toward a darker neighbouring field."
+        },
+        {
+          "bar_offset": 17,
+          "beat_offset": 0.0,
+          "absolute_beat": 68.0,
+          "chord_id": "Dmin_C",
+          "purpose": "Leave the premise suspended rather than cadenced."
+        }
+      ]
+    },
+    {
+      "name": "II. The Incomplete Reply",
+      "function": "question",
+      "harmonic_direction": "The first 38-bar preparation completes here: D remains audible, but B-flat and G minor recast its upper tones as a question about whether the line belongs to tonic or predominant space.",
+      "motif_treatment": "A continuation extends the initial line beyond its first provisional destination. Its answer-like descent stops one degree short of secure closure, while a related lower counterargument insists on the pedal’s instability.",
+      "start_bar": 19,
+      "bars": 19,
+      "energy": 0.34,
+      "tension": 0.43,
+      "density": 0.34,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 76.0,
+          "chord_id": "Dmin_C",
+          "purpose": "Resume the suspended premise without resetting its story."
+        },
+        {
+          "bar_offset": 6,
+          "beat_offset": 0.0,
+          "absolute_beat": 100.0,
+          "chord_id": "BbMaj7",
+          "purpose": "Let the counterargument occupy the relative-major edge of the field."
+        },
+        {
+          "bar_offset": 11,
+          "beat_offset": 0.0,
+          "absolute_beat": 120.0,
+          "chord_id": "Gmin11",
+          "purpose": "Deepen the question through predominant gravity."
+        },
+        {
+          "bar_offset": 16,
+          "beat_offset": 0.0,
+          "absolute_beat": 140.0,
+          "chord_id": "Dmin_add9",
+          "purpose": "Restore D as anchor while retaining the unclosed melodic implication."
+        }
+      ]
+    },
+    {
+      "name": "III. Departure and Local Ground",
+      "function": "departure",
+      "harmonic_direction": "The prepared arrival at bar 38 is a modal sidestep to F; C then redirects the music, and the foreign E-flat-major window resolves directly into A dominant by semitone motion before D returns.",
+      "motif_treatment": "The melody departs in a longer sentence: its rising premise is made more lyrical, then answered by a smoother descending continuation that reaches a local destination in F without resolving the original D-minor question.",
+      "start_bar": 38,
+      "bars": 20,
+      "energy": 0.45,
+      "tension": 0.48,
+      "density": 0.43,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 152.0,
+          "chord_id": "F6",
+          "purpose": "Make the first consequential departure and local melodic destination audible."
+        },
+        {
+          "bar_offset": 7,
+          "beat_offset": 0.0,
+          "absolute_beat": 180.0,
+          "chord_id": "Cmaj",
+          "purpose": "Turn the local answer outward instead of allowing it to become global resolution."
+        },
+        {
+          "bar_offset": 12,
+          "beat_offset": 0.0,
+          "absolute_beat": 200.0,
+          "chord_id": "EbMaj",
+          "purpose": "Introduce the declared Neapolitan colour as a concentrated contradiction."
+        },
+        {
+          "bar_offset": 14,
+          "beat_offset": 0.0,
+          "absolute_beat": 208.0,
+          "chord_id": "A7b9",
+          "purpose": "Resolve E-flat to E and B-flat to A inside an intensified dominant window."
+        },
+        {
+          "bar_offset": 18,
+          "beat_offset": 0.0,
+          "absolute_beat": 224.0,
+          "chord_id": "Dmin_add9",
+          "purpose": "Return to D only as an incomplete consequence of the departure."
+        }
+      ]
+    },
+    {
+      "name": "IV. Encounter",
+      "function": "transformation",
+      "harmonic_direction": "A pedal-derived D/A relation makes tonic less settled; diminished colour is immediately resolved into D minor, proving that the harmonic question can be redirected but not yet discharged.",
+      "motif_treatment": "The original contour now encounters its counterargument directly: one line sustains the former provisional goal while another continues past it. Their exchange changes the premise from hesitant inquiry into an active, contested proposition.",
+      "start_bar": 58,
+      "bars": 19,
+      "energy": 0.55,
+      "tension": 0.57,
+      "density": 0.53,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 232.0,
+          "chord_id": "D5_A",
+          "purpose": "Recast the tonic as a divided bass relation rather than a resting place."
+        },
+        {
+          "bar_offset": 5,
+          "beat_offset": 0.0,
+          "absolute_beat": 252.0,
+          "chord_id": "Gmin11",
+          "purpose": "Bring the counterargument into a dark predominant field."
+        },
+        {
+          "bar_offset": 10,
+          "beat_offset": 0.0,
+          "absolute_beat": 272.0,
+          "chord_id": "Csharp_dim7",
+          "purpose": "Compress the opposing lines into the declared chromatic hinge."
+        },
+        {
+          "bar_offset": 11,
+          "beat_offset": 0.0,
+          "absolute_beat": 276.0,
+          "chord_id": "Dmin_add9",
+          "purpose": "Resolve every foreign diminished pitch by step into a D-minor scale tone."
+        },
+        {
+          "bar_offset": 15,
+          "beat_offset": 0.0,
+          "absolute_beat": 292.0,
+          "chord_id": "Dmin_C",
+          "purpose": "Keep the transformed premise mobile rather than cadential."
+        }
+      ]
+    },
+    {
+      "name": "V. Counterargument's Clearing",
+      "function": "question",
+      "harmonic_direction": "B-flat and F provide the clearest local repose of the work, yet the return through G minor prevents this repose from becoming the answer to D’s larger question.",
+      "motif_treatment": "A broad counterstatement takes priority over the opening line. It preserves the premise’s intervallic family but reverses its emotional bearing, landing clearly on a local goal before the original voice returns in altered perspective.",
+      "start_bar": 77,
+      "bars": 18,
+      "energy": 0.49,
+      "tension": 0.5,
+      "density": 0.48,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 308.0,
+          "chord_id": "BbMaj7",
+          "purpose": "State the counterargument’s temporary ground."
+        },
+        {
+          "bar_offset": 5,
+          "beat_offset": 0.0,
+          "absolute_beat": 328.0,
+          "chord_id": "F6",
+          "purpose": "Give its full sentence a genuine but local resting point."
+        },
+        {
+          "bar_offset": 10,
+          "beat_offset": 0.0,
+          "absolute_beat": 348.0,
+          "chord_id": "Gmin11",
+          "purpose": "Turn the local cadence into renewed D-minor gravity."
+        },
+        {
+          "bar_offset": 15,
+          "beat_offset": 0.0,
+          "absolute_beat": 368.0,
+          "chord_id": "Dmin_add9",
+          "purpose": "Bring back the premise, now informed by the counterstatement."
+        }
+      ]
+    },
+    {
+      "name": "VI. Narrowing the Gate",
+      "function": "transformation",
+      "harmonic_direction": "The harmonic field narrows from pedal ambiguity to dominant pressure. A7 flat 9 is held as an earned demand, not an automatic cadence, so D minor remains deferred.",
+      "motif_treatment": "The two prior sentences interleave rather than alternate. The opening contour is lengthened into a more decisive ascent; the counterline shadows it, then yields space for a newly consequential downward continuation.",
+      "start_bar": 95,
+      "bars": 19,
+      "energy": 0.68,
+      "tension": 0.67,
+      "density": 0.65,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 380.0,
+          "chord_id": "Dmin_C",
+          "purpose": "Resume the shared anchor in its most unstable pedal form."
+        },
+        {
+          "bar_offset": 5,
+          "beat_offset": 0.0,
+          "absolute_beat": 400.0,
+          "chord_id": "Gmin11",
+          "purpose": "Draw the interleaved lines into predominant pressure."
+        },
+        {
+          "bar_offset": 10,
+          "beat_offset": 0.0,
+          "absolute_beat": 420.0,
+          "chord_id": "A7b9",
+          "purpose": "Expose the dominant problem without resolving it."
+        },
+        {
+          "bar_offset": 15,
+          "beat_offset": 0.0,
+          "absolute_beat": 440.0,
+          "chord_id": "D5_A",
+          "purpose": "Maintain dominant debt through a shifted bass relation."
+        }
+      ]
+    },
+    {
+      "name": "VII. Confrontation and Climax",
+      "function": "climax",
+      "harmonic_direction": "This is the work's climax: chromatic compression, predominant force, and extended dominant bearing exceed the final section’s intensity. D is glimpsed but not granted stable tonic function until afterward.",
+      "motif_treatment": "The premise and counterargument are fused into their most expansive sentence. The former suspended upper note is carried through confrontation rather than withheld; its changed continuation falls through the line that will later become the audible answer.",
+      "start_bar": 114,
+      "bars": 20,
+      "energy": 0.96,
+      "tension": 0.93,
+      "density": 0.91,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 456.0,
+          "chord_id": "BbMaj7",
+          "purpose": "Make the last stable recollection of the counterargument before collision."
+        },
+        {
+          "bar_offset": 4,
+          "beat_offset": 0.0,
+          "absolute_beat": 472.0,
+          "chord_id": "Gmin11",
+          "purpose": "Force the field toward its dominant-side confrontation."
+        },
+        {
+          "bar_offset": 8,
+          "beat_offset": 0.0,
+          "absolute_beat": 488.0,
+          "chord_id": "EbMaj",
+          "purpose": "Present the Neapolitan contradiction at maximal structural weight."
+        },
+        {
+          "bar_offset": 10,
+          "beat_offset": 0.0,
+          "absolute_beat": 496.0,
+          "chord_id": "A7b9",
+          "purpose": "Resolve the chromatic colour directly into dominant force, with E-flat moving to E and B-flat moving to A."
+        },
+        {
+          "bar_offset": 15,
+          "beat_offset": 0.0,
+          "absolute_beat": 516.0,
+          "chord_id": "D5_A",
+          "purpose": "Sustain the unresolved dominant relation past the point where a routine cadence would occur."
+        }
+      ]
+    },
+    {
+      "name": "VIII. Answer and Aftermath",
+      "function": "resolution",
+      "harmonic_direction": "The climax's A-based pressure resolves into D minor at the section opening. D minor 6 then retains the shared identity while changing its colour; the final D-minor add-9 return is a release rather than a restart.",
+      "motif_treatment": "The transformed return gives the melodic question its audible answer: the ascent no longer stops at the old provisional pitch, but continues through a calm descending consequence to D. The counterargument becomes supportive rather than oppositional, and the final phrase releases after its destination is unmistakable.",
+      "start_bar": 134,
+      "bars": 18,
+      "energy": 0.38,
+      "tension": 0.18,
+      "density": 0.31,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 536.0,
+          "chord_id": "Dmin_add9",
+          "purpose": "Decisively resolve the sustained dominant debt and state the transformed D-minor return."
+        },
+        {
+          "bar_offset": 7,
+          "beat_offset": 0.0,
+          "absolute_beat": 564.0,
+          "chord_id": "Dmin6",
+          "purpose": "Let the answer breathe in a changed tonic colour rather than immediately ending."
+        },
+        {
+          "bar_offset": 12,
+          "beat_offset": 0.0,
+          "absolute_beat": 584.0,
+          "chord_id": "Dmin_C",
+          "purpose": "Briefly recall the earlier pedal ambiguity as memory, now without threat."
+        },
+        {
+          "bar_offset": 15,
+          "beat_offset": 0.0,
+          "absolute_beat": 596.0,
+          "chord_id": "Dmin_add9",
+          "purpose": "Complete the final release on the original tonic identity, newly earned."
+        }
+      ]
+    }
+  ],
+  "cast": [
+    {
+      "id": "pno_chord_ground",
+      "name": "Piano chord ground",
+      "role": "Primary harmonic floor, sustaining the complete chordal argument and its structural changes. | | primary_chord_bed",
+      "minimum_pitch": 38,
+      "maximum_pitch": 79,
+      "content_lane_id": "lane_harmonic_ground",
+      "line_relationship": "independent",
+      "active_sections": [
+        "I. Bearing the Question",
+        "II. The Incomplete Reply",
+        "III. Departure and Local Ground",
+        "IV. Encounter",
+        "V. Counterargument's Clearing",
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax",
+        "VIII. Answer and Aftermath"
+      ]
+    },
+    {
+      "id": "vla_inner_body",
+      "name": "Viola inner body",
+      "role": "Sustained inner harmonic body with independent contrary-moving inner motion.",
+      "minimum_pitch": 48,
+      "maximum_pitch": 74,
+      "content_lane_id": "lane_inner_body",
+      "line_relationship": "independent",
+      "active_sections": [
+        "I. Bearing the Question",
+        "II. The Incomplete Reply",
+        "III. Departure and Local Ground",
+        "IV. Encounter",
+        "V. Counterargument's Clearing",
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax",
+        "VIII. Answer and Aftermath"
+      ]
+    },
+    {
+      "id": "vln2_upper_counterpoint",
+      "name": "Second violin upper counterpoint",
+      "role": "Upper harmonic extension that progressively becomes an independent conversational counterline.",
+      "minimum_pitch": 55,
+      "maximum_pitch": 86,
+      "content_lane_id": "lane_upper_counterpoint",
+      "line_relationship": "independent",
+      "active_sections": [
+        "I. Bearing the Question",
+        "II. The Incomplete Reply",
+        "III. Departure and Local Ground",
+        "IV. Encounter",
+        "V. Counterargument's Clearing",
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax",
+        "VIII. Answer and Aftermath"
+      ]
+    },
+    {
+      "id": "vln1_protagonist",
+      "name": "First violin protagonist",
+      "role": "Bearer of the opening folk-derived premise, its transformations, confrontation, and resolved final return.",
+      "minimum_pitch": 62,
+      "maximum_pitch": 96,
+      "content_lane_id": "lane_protagonist_premise",
+      "line_relationship": "independent",
+      "active_sections": [
+        "I. Bearing the Question",
+        "II. The Incomplete Reply",
+        "III. Departure and Local Ground",
+        "IV. Encounter",
+        "V. Counterargument's Clearing",
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax",
+        "VIII. Answer and Aftermath"
+      ]
+    },
+    {
+      "id": "vc_motif_answerer",
+      "name": "Cello motif answerer",
+      "role": "Motif-derived lower counterargument: initially destabilizing the premise, then becoming its supportive answer.",
+      "minimum_pitch": 36,
+      "maximum_pitch": 65,
+      "content_lane_id": "lane_motif_answer",
+      "line_relationship": "call_response",
+      "active_sections": [
+        "II. The Incomplete Reply",
+        "III. Departure and Local Ground",
+        "IV. Encounter",
+        "V. Counterargument's Clearing",
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax",
+        "VIII. Answer and Aftermath"
+      ]
+    },
+    {
+      "id": "cl_conversational_line",
+      "name": "Clarinet conversational line",
+      "role": "Independent agile conversational partner, introducing displaced continuations and chromatic replies.",
+      "minimum_pitch": 55,
+      "maximum_pitch": 84,
+      "content_lane_id": "lane_clarinet_dialogue",
+      "line_relationship": "call_response",
+      "active_sections": [
+        "II. The Incomplete Reply",
+        "III. Departure and Local Ground",
+        "IV. Encounter",
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax",
+        "VIII. Answer and Aftermath"
+      ]
+    },
+    {
+      "id": "cb_d_pedal",
+      "name": "Contrabass pedal",
+      "role": "Low D-centered pedal authority and structural bass grounding, destabilized only where the harmonic argument requires it.",
+      "minimum_pitch": 28,
+      "maximum_pitch": 45,
+      "content_lane_id": "lane_pedal_bass",
+      "line_relationship": "independent",
+      "active_sections": [
+        "I. Bearing the Question",
+        "II. The Incomplete Reply",
+        "III. Departure and Local Ground",
+        "IV. Encounter",
+        "V. Counterargument's Clearing",
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax",
+        "VIII. Answer and Aftermath"
+      ]
+    },
+    {
+      "id": "bn_moving_bass",
+      "name": "Bassoon moving bass",
+      "role": "Pitched low-register propulsion that emerges after the opening as a mobile counterpart to the pedal bass.",
+      "minimum_pitch": 34,
+      "maximum_pitch": 59,
+      "content_lane_id": "lane_moving_bass",
+      "line_relationship": "independent",
+      "active_sections": [
+        "III. Departure and Local Ground",
+        "IV. Encounter",
+        "V. Counterargument's Clearing",
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax",
+        "VIII. Answer and Aftermath"
+      ]
+    },
+    {
+      "id": "mar_harmonic_pulse",
+      "name": "Marimba harmonic pulse",
+      "role": "Articulated harmonic pulse that clarifies changing harmonic pressure without replacing the sustained chord bodies.",
+      "minimum_pitch": 48,
+      "maximum_pitch": 78,
+      "content_lane_id": "lane_harmonic_pulse",
+      "line_relationship": "independent",
+      "active_sections": [
+        "III. Departure and Local Ground",
+        "IV. Encounter",
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax"
+      ]
+    },
+    {
+      "id": "tmp_structural_impulse",
+      "name": "Timpani structural impulse",
+      "role": "Sparse structural low-percussion punctuation, intensifying into the climactic confrontation and withdrawing for the answer.",
+      "minimum_pitch": 36,
+      "maximum_pitch": 50,
+      "content_lane_id": "lane_structural_impulse",
+      "line_relationship": "independent",
+      "active_sections": [
+        "IV. Encounter",
+        "V. Counterargument's Clearing",
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax",
+        "VIII. Answer and Aftermath"
+      ]
+    },
+    {
+      "id": "orc_low_percussion",
+      "name": "Low orchestral percussion",
+      "role": "Independent low-percussion weight for encounter, narrowing, and climax; absent from the opening premise.",
+      "minimum_pitch": 35,
+      "maximum_pitch": 55,
+      "content_lane_id": "lane_low_percussion",
+      "line_relationship": "independent",
+      "active_sections": [
+        "V. Counterargument's Clearing",
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax"
+      ]
+    },
+    {
+      "id": "cym_crisis_color",
+      "name": "Cymbal crisis color",
+      "role": "High-percussion color marking the tightening chromatic field and its climactic release.",
+      "minimum_pitch": 57,
+      "maximum_pitch": 57,
+      "content_lane_id": "lane_crisis_color",
+      "line_relationship": "independent",
+      "active_sections": [
+        "VI. Narrowing the Gate",
+        "VII. Confrontation and Climax",
+        "VIII. Answer and Aftermath"
+      ]
+    }
+  ],
+  "performance_cells": 142,
+  "performance_placements": 142
+}

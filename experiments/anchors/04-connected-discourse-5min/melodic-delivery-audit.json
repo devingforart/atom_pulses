@@ -1,0 +1,2489 @@
+{
+  "jobId": "6130e724-f8b3-4cd4-b504-b5d0ccb786e4",
+  "title": "The Pedal's Unanswered Ascent",
+  "schemaVersion": 1,
+  "advisoryOnly": true,
+  "method": "MIDI durations converted through its tempo map. Short notes, detached links and rapid runs are listening evidence, not errors. No numeric value establishes narrative quality.",
+  "tracks": [
+    {
+      "id": "pno_chord_ground",
+      "name": "PULSO Piano chord ground",
+      "notes": 486,
+      "medianDurationSeconds": 2,
+      "soundingSeconds": 291.5,
+      "under200ms": 0,
+      "under300ms": 1,
+      "monophonicTransitions": 0,
+      "medianArticulationRatio": null,
+      "separatedShortLinks": {
+        "count": 0,
+        "examples": []
+      },
+      "rapidRuns": {
+        "count": 0,
+        "examples": []
+      }
+    },
+    {
+      "id": "vla_inner_body",
+      "name": "PULSO Viola inner body",
+      "notes": 165,
+      "medianDurationSeconds": 1,
+      "soundingSeconds": 205,
+      "under200ms": 4,
+      "under300ms": 10,
+      "monophonicTransitions": 154,
+      "medianArticulationRatio": 1,
+      "separatedShortLinks": {
+        "count": 0,
+        "examples": []
+      },
+      "rapidRuns": {
+        "count": 0,
+        "examples": []
+      }
+    },
+    {
+      "id": "vln2_upper_counterpoint",
+      "name": "PULSO Second violin upper counterpoint",
+      "notes": 299,
+      "medianDurationSeconds": 1,
+      "soundingSeconds": 255.625,
+      "under200ms": 3,
+      "under300ms": 13,
+      "monophonicTransitions": 298,
+      "medianArticulationRatio": 1,
+      "separatedShortLinks": {
+        "count": 0,
+        "examples": []
+      },
+      "rapidRuns": {
+        "count": 3,
+        "examples": [
+          {
+            "startBeat": 70.5,
+            "endBeat": 71.5,
+            "attacks": 3
+          },
+          {
+            "startBeat": 297.75,
+            "endBeat": 298.75,
+            "attacks": 3
+          },
+          {
+            "startBeat": 378.75,
+            "endBeat": 380,
+            "attacks": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": "vln1_protagonist",
+      "name": "PULSO First violin protagonist",
+      "notes": 323,
+      "medianDurationSeconds": 0.5,
+      "soundingSeconds": 207.75,
+      "under200ms": 30,
+      "under300ms": 96,
+      "monophonicTransitions": 322,
+      "medianArticulationRatio": 1,
+      "separatedShortLinks": {
+        "count": 5,
+        "examples": [
+          {
+            "beat": 26,
+            "nextBeat": 28,
+            "pitches": [
+              62,
+              72
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.5,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 152,
+            "nextBeat": 153,
+            "pitches": [
+              62,
+              65
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 459,
+            "nextBeat": 460,
+            "pitches": [
+              86,
+              82
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 469,
+            "nextBeat": 470,
+            "pitches": [
+              86,
+              81
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 514,
+            "nextBeat": 516,
+            "pitches": [
+              93,
+              93
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.5,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.5
+          }
+        ]
+      },
+      "rapidRuns": {
+        "count": 24,
+        "examples": [
+          {
+            "startBeat": 0,
+            "endBeat": 0.75,
+            "attacks": 3
+          },
+          {
+            "startBeat": 2.75,
+            "endBeat": 3.75,
+            "attacks": 3
+          },
+          {
+            "startBeat": 64,
+            "endBeat": 64.75,
+            "attacks": 3
+          },
+          {
+            "startBeat": 66.25,
+            "endBeat": 68,
+            "attacks": 5
+          },
+          {
+            "startBeat": 69,
+            "endBeat": 70,
+            "attacks": 3
+          },
+          {
+            "startBeat": 76,
+            "endBeat": 77,
+            "attacks": 3
+          },
+          {
+            "startBeat": 140,
+            "endBeat": 140.75,
+            "attacks": 3
+          },
+          {
+            "startBeat": 142.75,
+            "endBeat": 144.25,
+            "attacks": 4
+          },
+          {
+            "startBeat": 221,
+            "endBeat": 222.25,
+            "attacks": 4
+          },
+          {
+            "startBeat": 232,
+            "endBeat": 233,
+            "attacks": 4
+          },
+          {
+            "startBeat": 276,
+            "endBeat": 276.75,
+            "attacks": 3
+          },
+          {
+            "startBeat": 278.25,
+            "endBeat": 279.5,
+            "attacks": 4
+          },
+          {
+            "startBeat": 297.5,
+            "endBeat": 298.75,
+            "attacks": 4
+          },
+          {
+            "startBeat": 368,
+            "endBeat": 368.75,
+            "attacks": 3
+          },
+          {
+            "startBeat": 370.5,
+            "endBeat": 371.5,
+            "attacks": 3
+          },
+          {
+            "startBeat": 380,
+            "endBeat": 381,
+            "attacks": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "vc_motif_answerer",
+      "name": "PULSO Cello motif answerer",
+      "notes": 273,
+      "medianDurationSeconds": 0.75,
+      "soundingSeconds": 215.875,
+      "under200ms": 8,
+      "under300ms": 19,
+      "monophonicTransitions": 272,
+      "medianArticulationRatio": 1,
+      "separatedShortLinks": {
+        "count": 2,
+        "examples": [
+          {
+            "beat": 261.75,
+            "nextBeat": 263,
+            "pitches": [
+              47,
+              50
+            ],
+            "onsetIntervalSeconds": 0.625,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.375,
+            "articulationRatio": 0.4
+          },
+          {
+            "beat": 297.5,
+            "nextBeat": 299.25,
+            "pitches": [
+              45,
+              48
+            ],
+            "onsetIntervalSeconds": 0.875,
+            "soundingSeconds": 0.375,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.4286
+          }
+        ]
+      },
+      "rapidRuns": {
+        "count": 2,
+        "examples": [
+          {
+            "startBeat": 373.5,
+            "endBeat": 374.75,
+            "attacks": 4
+          },
+          {
+            "startBeat": 379,
+            "endBeat": 379.5,
+            "attacks": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "cl_conversational_line",
+      "name": "PULSO Clarinet conversational line",
+      "notes": 209,
+      "medianDurationSeconds": 0.5,
+      "soundingSeconds": 114.5,
+      "under200ms": 12,
+      "under300ms": 53,
+      "monophonicTransitions": 208,
+      "medianArticulationRatio": 1,
+      "separatedShortLinks": {
+        "count": 11,
+        "examples": [
+          {
+            "beat": 108.5,
+            "nextBeat": 110.5,
+            "pitches": [
+              62,
+              65
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.5,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 250,
+            "nextBeat": 252,
+            "pitches": [
+              62,
+              67
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.5,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 270,
+            "nextBeat": 272,
+            "pitches": [
+              70,
+              67
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.5,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 390.75,
+            "nextBeat": 392,
+            "pitches": [
+              77,
+              74
+            ],
+            "onsetIntervalSeconds": 0.625,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.375,
+            "articulationRatio": 0.4
+          },
+          {
+            "beat": 446.5,
+            "nextBeat": 448.25,
+            "pitches": [
+              74,
+              73
+            ],
+            "onsetIntervalSeconds": 0.875,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.625,
+            "articulationRatio": 0.2857
+          },
+          {
+            "beat": 458.5,
+            "nextBeat": 459.5,
+            "pitches": [
+              77,
+              74
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 459.5,
+            "nextBeat": 461,
+            "pitches": [
+              74,
+              69
+            ],
+            "onsetIntervalSeconds": 0.75,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.3333
+          },
+          {
+            "beat": 467,
+            "nextBeat": 468,
+            "pitches": [
+              69,
+              74
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 509,
+            "nextBeat": 511,
+            "pitches": [
+              81,
+              85
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.5,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 514,
+            "nextBeat": 516,
+            "pitches": [
+              85,
+              81
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.5,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 516,
+            "nextBeat": 518,
+            "pitches": [
+              81,
+              77
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.5,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.5
+          }
+        ]
+      },
+      "rapidRuns": {
+        "count": 9,
+        "examples": [
+          {
+            "startBeat": 301,
+            "endBeat": 302,
+            "attacks": 3
+          },
+          {
+            "startBeat": 382.5,
+            "endBeat": 383.25,
+            "attacks": 3
+          },
+          {
+            "startBeat": 401,
+            "endBeat": 401.75,
+            "attacks": 3
+          },
+          {
+            "startBeat": 445.5,
+            "endBeat": 446.5,
+            "attacks": 4
+          },
+          {
+            "startBeat": 448.25,
+            "endBeat": 449.25,
+            "attacks": 4
+          },
+          {
+            "startBeat": 451.75,
+            "endBeat": 452.5,
+            "attacks": 3
+          },
+          {
+            "startBeat": 496,
+            "endBeat": 496.75,
+            "attacks": 3
+          },
+          {
+            "startBeat": 523.75,
+            "endBeat": 524.5,
+            "attacks": 3
+          },
+          {
+            "startBeat": 602.75,
+            "endBeat": 603.75,
+            "attacks": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "cb_d_pedal",
+      "name": "PULSO Contrabass pedal",
+      "notes": 152,
+      "medianDurationSeconds": 2,
+      "soundingSeconds": 290.5,
+      "under200ms": 9,
+      "under300ms": 20,
+      "monophonicTransitions": 151,
+      "medianArticulationRatio": 1,
+      "separatedShortLinks": {
+        "count": 0,
+        "examples": []
+      },
+      "rapidRuns": {
+        "count": 0,
+        "examples": []
+      }
+    },
+    {
+      "id": "bn_moving_bass",
+      "name": "PULSO Bassoon moving bass",
+      "notes": 147,
+      "medianDurationSeconds": 0.5,
+      "soundingSeconds": 102.625,
+      "under200ms": 22,
+      "under300ms": 50,
+      "monophonicTransitions": 146,
+      "medianArticulationRatio": 1,
+      "separatedShortLinks": {
+        "count": 4,
+        "examples": [
+          {
+            "beat": 447.25,
+            "nextBeat": 448,
+            "pitches": [
+              50,
+              45
+            ],
+            "onsetIntervalSeconds": 0.375,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.3333
+          },
+          {
+            "beat": 451.25,
+            "nextBeat": 452,
+            "pitches": [
+              44,
+              45
+            ],
+            "onsetIntervalSeconds": 0.375,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.3333
+          },
+          {
+            "beat": 513,
+            "nextBeat": 514,
+            "pitches": [
+              55,
+              45
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 514,
+            "nextBeat": 516,
+            "pitches": [
+              45,
+              45
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.5,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.5
+          }
+        ]
+      },
+      "rapidRuns": {
+        "count": 11,
+        "examples": [
+          {
+            "startBeat": 218,
+            "endBeat": 219,
+            "attacks": 3
+          },
+          {
+            "startBeat": 222,
+            "endBeat": 223,
+            "attacks": 3
+          },
+          {
+            "startBeat": 227,
+            "endBeat": 228,
+            "attacks": 3
+          },
+          {
+            "startBeat": 300.25,
+            "endBeat": 301.5,
+            "attacks": 6
+          },
+          {
+            "startBeat": 304.75,
+            "endBeat": 305.75,
+            "attacks": 4
+          },
+          {
+            "startBeat": 373.25,
+            "endBeat": 374.25,
+            "attacks": 4
+          },
+          {
+            "startBeat": 378.5,
+            "endBeat": 380,
+            "attacks": 5
+          },
+          {
+            "startBeat": 446.5,
+            "endBeat": 447.25,
+            "attacks": 3
+          },
+          {
+            "startBeat": 450.5,
+            "endBeat": 451.25,
+            "attacks": 3
+          },
+          {
+            "startBeat": 453.5,
+            "endBeat": 454.5,
+            "attacks": 4
+          },
+          {
+            "startBeat": 511.5,
+            "endBeat": 513,
+            "attacks": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": "mar_harmonic_pulse",
+      "name": "PULSO Marimba harmonic pulse",
+      "notes": 161,
+      "medianDurationSeconds": 0.5,
+      "soundingSeconds": 49.625,
+      "under200ms": 0,
+      "under300ms": 22,
+      "monophonicTransitions": 1,
+      "medianArticulationRatio": 1,
+      "separatedShortLinks": {
+        "count": 0,
+        "examples": []
+      },
+      "rapidRuns": {
+        "count": 0,
+        "examples": []
+      }
+    },
+    {
+      "id": "tmp_structural_impulse",
+      "name": "PULSO Timpani structural impulse",
+      "notes": 60,
+      "medianDurationSeconds": 0.25,
+      "soundingSeconds": 16.125,
+      "under200ms": 18,
+      "under300ms": 44,
+      "monophonicTransitions": 59,
+      "medianArticulationRatio": 0.3333,
+      "separatedShortLinks": {
+        "count": 16,
+        "examples": [
+          {
+            "beat": 274.5,
+            "nextBeat": 276,
+            "pitches": [
+              37,
+              38
+            ],
+            "onsetIntervalSeconds": 0.75,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.3333
+          },
+          {
+            "beat": 379.5,
+            "nextBeat": 380,
+            "pitches": [
+              41,
+              36
+            ],
+            "onsetIntervalSeconds": 0.25,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.125,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 510,
+            "nextBeat": 511.75,
+            "pitches": [
+              45,
+              44
+            ],
+            "onsetIntervalSeconds": 0.875,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.625,
+            "articulationRatio": 0.2857
+          },
+          {
+            "beat": 512,
+            "nextBeat": 513.75,
+            "pitches": [
+              45,
+              47
+            ],
+            "onsetIntervalSeconds": 0.875,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.625,
+            "articulationRatio": 0.2857
+          },
+          {
+            "beat": 514,
+            "nextBeat": 516,
+            "pitches": [
+              45,
+              45
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.375,
+            "gapSeconds": 0.625,
+            "articulationRatio": 0.375
+          },
+          {
+            "beat": 520,
+            "nextBeat": 522,
+            "pitches": [
+              38,
+              41
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.75,
+            "articulationRatio": 0.25
+          },
+          {
+            "beat": 522,
+            "nextBeat": 523.5,
+            "pitches": [
+              41,
+              38
+            ],
+            "onsetIntervalSeconds": 0.75,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.625,
+            "articulationRatio": 0.1667
+          },
+          {
+            "beat": 523.5,
+            "nextBeat": 525,
+            "pitches": [
+              38,
+              43
+            ],
+            "onsetIntervalSeconds": 0.75,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.625,
+            "articulationRatio": 0.1667
+          },
+          {
+            "beat": 525,
+            "nextBeat": 526.5,
+            "pitches": [
+              43,
+              38
+            ],
+            "onsetIntervalSeconds": 0.75,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.3333
+          },
+          {
+            "beat": 526.5,
+            "nextBeat": 527.5,
+            "pitches": [
+              38,
+              45
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.375,
+            "articulationRatio": 0.25
+          },
+          {
+            "beat": 527.5,
+            "nextBeat": 528.5,
+            "pitches": [
+              45,
+              38
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.375,
+            "articulationRatio": 0.25
+          },
+          {
+            "beat": 528.5,
+            "nextBeat": 529.5,
+            "pitches": [
+              38,
+              43
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 529.5,
+            "nextBeat": 530.5,
+            "pitches": [
+              43,
+              45
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.375,
+            "articulationRatio": 0.25
+          },
+          {
+            "beat": 530.5,
+            "nextBeat": 531.5,
+            "pitches": [
+              45,
+              38
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.375,
+            "articulationRatio": 0.25
+          },
+          {
+            "beat": 531.5,
+            "nextBeat": 532.5,
+            "pitches": [
+              38,
+              46
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 532.5,
+            "nextBeat": 533.25,
+            "pitches": [
+              46,
+              41
+            ],
+            "onsetIntervalSeconds": 0.375,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.3333
+          }
+        ]
+      },
+      "rapidRuns": {
+        "count": 0,
+        "examples": []
+      }
+    },
+    {
+      "id": "orc_low_percussion",
+      "name": "PULSO Low orchestral percussion",
+      "notes": 35,
+      "medianDurationSeconds": 0.25,
+      "soundingSeconds": 11.25,
+      "under200ms": 5,
+      "under300ms": 20,
+      "monophonicTransitions": 34,
+      "medianArticulationRatio": 0.3095,
+      "separatedShortLinks": {
+        "count": 10,
+        "examples": [
+          {
+            "beat": 510.5,
+            "nextBeat": 512.5,
+            "pitches": [
+              45,
+              43
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.375,
+            "gapSeconds": 0.625,
+            "articulationRatio": 0.375
+          },
+          {
+            "beat": 512.5,
+            "nextBeat": 514.25,
+            "pitches": [
+              43,
+              45
+            ],
+            "onsetIntervalSeconds": 0.875,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.625,
+            "articulationRatio": 0.2857
+          },
+          {
+            "beat": 514.25,
+            "nextBeat": 516,
+            "pitches": [
+              45,
+              45
+            ],
+            "onsetIntervalSeconds": 0.875,
+            "soundingSeconds": 0.375,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.4286
+          },
+          {
+            "beat": 523,
+            "nextBeat": 524.75,
+            "pitches": [
+              40,
+              45
+            ],
+            "onsetIntervalSeconds": 0.875,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.75,
+            "articulationRatio": 0.1429
+          },
+          {
+            "beat": 524.75,
+            "nextBeat": 526.25,
+            "pitches": [
+              45,
+              42
+            ],
+            "onsetIntervalSeconds": 0.75,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.5,
+            "articulationRatio": 0.3333
+          },
+          {
+            "beat": 526.25,
+            "nextBeat": 528,
+            "pitches": [
+              42,
+              47
+            ],
+            "onsetIntervalSeconds": 0.875,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.75,
+            "articulationRatio": 0.1429
+          },
+          {
+            "beat": 528,
+            "nextBeat": 529,
+            "pitches": [
+              47,
+              43
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 529,
+            "nextBeat": 531,
+            "pitches": [
+              43,
+              48
+            ],
+            "onsetIntervalSeconds": 1,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.875,
+            "articulationRatio": 0.125
+          },
+          {
+            "beat": 531,
+            "nextBeat": 532,
+            "pitches": [
+              48,
+              45
+            ],
+            "onsetIntervalSeconds": 0.5,
+            "soundingSeconds": 0.25,
+            "gapSeconds": 0.25,
+            "articulationRatio": 0.5
+          },
+          {
+            "beat": 532,
+            "nextBeat": 533.5,
+            "pitches": [
+              45,
+              40
+            ],
+            "onsetIntervalSeconds": 0.75,
+            "soundingSeconds": 0.125,
+            "gapSeconds": 0.625,
+            "articulationRatio": 0.1667
+          }
+        ]
+      },
+      "rapidRuns": {
+        "count": 0,
+        "examples": []
+      }
+    },
+    {
+      "id": "cym_crisis_color",
+      "name": "PULSO Cymbal crisis color",
+      "notes": 19,
+      "medianDurationSeconds": 0.375,
+      "soundingSeconds": 7.375,
+      "under200ms": 1,
+      "under300ms": 8,
+      "monophonicTransitions": 18,
+      "medianArticulationRatio": null,
+      "separatedShortLinks": {
+        "count": 0,
+        "examples": []
+      },
+      "rapidRuns": {
+        "count": 0,
+        "examples": []
+      }
+    }
+  ],
+  "phrases": [
+    {
+      "index": 0,
+      "startBeat": 0,
+      "endBeat": 64,
+      "speaker": "vln1_protagonist",
+      "respondent": "vln2_upper_counterpoint",
+      "delivery": {
+        "structural_tones": [
+          {
+            "duration": 0.5,
+            "purpose": "home-pitch assertion",
+            "pitch": 62,
+            "beat": 0
+          },
+          {
+            "duration": 0.25,
+            "purpose": "whole-step lift",
+            "pitch": 64,
+            "beat": 0.5
+          },
+          {
+            "duration": 1.5,
+            "purpose": "breath-bearing upper tone",
+            "pitch": 65,
+            "beat": 0.75
+          },
+          {
+            "duration": 0.5,
+            "purpose": "fourth-drop wound",
+            "pitch": 60,
+            "beat": 2.75
+          },
+          {
+            "duration": 0.5,
+            "purpose": "rebound",
+            "pitch": 62,
+            "beat": 3.25
+          },
+          {
+            "duration": 1,
+            "purpose": "turned-down uncertainty",
+            "pitch": 61,
+            "beat": 3.75
+          },
+          {
+            "duration": 2.5,
+            "purpose": "provisional upper destination",
+            "pitch": 69,
+            "beat": 6
+          }
+        ],
+        "continuation": "The compact cell is not abandoned after C-sharp: a linked, more spacious ascent reaches A and holds it against the D-bearing ground, making the upper arrival feel earned but unratified.",
+        "arrival": "A4 is a suspended local destination over D minor, deliberately lacking a cadential descent.",
+        "connection": "The F is the first true bearing tone; the C-to-D rebound is connected in one bow impulse, while the C-sharp is separated by the stated breath. vln2 enters underneath the held A with a quiet contrary descent toward F.",
+        "dialogue": "vln2_upper_counterpoint answers the violin's held A with an audible contrary-moving F–E inflection, retaining the upper-tone pressure while refusing to certify A as repose.",
+        "proposition": "The D–E–F rise in compressed rhythm claims D as home, but its held F and later C–D–C-sharp turn expose the tonic as a question."
+      },
+      "observed": {
+        "notes": 28,
+        "medianDurationSeconds": 0.75,
+        "soundingSeconds": 24.75,
+        "under200ms": 1,
+        "under300ms": 6,
+        "monophonicTransitions": 27,
+        "medianArticulationRatio": 1,
+        "separatedShortLinks": {
+          "count": 1,
+          "examples": [
+            {
+              "beat": 26,
+              "nextBeat": 28,
+              "pitches": [
+                62,
+                72
+              ],
+              "onsetIntervalSeconds": 1,
+              "soundingSeconds": 0.5,
+              "gapSeconds": 0.5,
+              "articulationRatio": 0.5
+            }
+          ]
+        },
+        "rapidRuns": {
+          "count": 2,
+          "examples": [
+            {
+              "startBeat": 0,
+              "endBeat": 0.75,
+              "attacks": 3
+            },
+            {
+              "startBeat": 2.75,
+              "endBeat": 3.75,
+              "attacks": 3
+            }
+          ]
+        }
+      },
+      "bearingTones": [
+        {
+          "beat": 0,
+          "pitch": 62,
+          "intendedDuration": 0.5,
+          "purpose": "home-pitch assertion",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 0.5,
+          "pitch": 64,
+          "intendedDuration": 0.25,
+          "purpose": "whole-step lift",
+          "actualDurations": [
+            0.25
+          ]
+        },
+        {
+          "beat": 0.75,
+          "pitch": 65,
+          "intendedDuration": 1.5,
+          "purpose": "breath-bearing upper tone",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 2.75,
+          "pitch": 60,
+          "intendedDuration": 0.5,
+          "purpose": "fourth-drop wound",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 3.25,
+          "pitch": 62,
+          "intendedDuration": 0.5,
+          "purpose": "rebound",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 3.75,
+          "pitch": 61,
+          "intendedDuration": 1,
+          "purpose": "turned-down uncertainty",
+          "actualDurations": [
+            1
+          ]
+        },
+        {
+          "beat": 6,
+          "pitch": 69,
+          "intendedDuration": 2.5,
+          "purpose": "provisional upper destination",
+          "actualDurations": [
+            2.5
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "startBeat": 76,
+      "endBeat": 152,
+      "speaker": "vln1_protagonist",
+      "respondent": "vc_motif_answerer",
+      "delivery": {
+        "structural_tones": [
+          {
+            "duration": 0.5,
+            "purpose": "inherited turned-down pickup",
+            "pitch": 61,
+            "beat": 0
+          },
+          {
+            "duration": 0.5,
+            "purpose": "rebound retained from premise",
+            "pitch": 62,
+            "beat": 0.5
+          },
+          {
+            "duration": 1.25,
+            "purpose": "continuation beyond old turn",
+            "pitch": 64,
+            "beat": 1
+          },
+          {
+            "duration": 1.5,
+            "purpose": "renewed bearing F",
+            "pitch": 65,
+            "beat": 2.5
+          },
+          {
+            "duration": 2,
+            "purpose": "expanded upper claim",
+            "pitch": 69,
+            "beat": 5
+          },
+          {
+            "duration": 1,
+            "purpose": "answer-like descent begins",
+            "pitch": 67,
+            "beat": 8
+          },
+          {
+            "duration": 2.5,
+            "purpose": "one-degree-short arrival",
+            "pitch": 64,
+            "beat": 10
+          }
+        ],
+        "continuation": "Instead of stopping at the old held F, the line passes through it to A, then gives its descent enough breadth to sound answer-like; E, however, remains a deliberate one-degree-short substitute for D.",
+        "arrival": "E4 settles locally against the renewed D sonority but defers tonal closure.",
+        "connection": "F and A are tied by a single rising impulse; after A, the descent is slower and articulated as a sentence rather than a copied cell. The cello enters under the violin's high bearing point, not after its disappearance.",
+        "dialogue": "vc_motif_answerer retains the premise's falling-fourth energy in the low register, pushing D down toward A and B-flat before climbing back to C; this destabilizes the violin's E arrival and makes its missing D audible.",
+        "proposition": "The initial C-sharp-to-D rebound and held-F profile are inherited, but the premise now insists on continuation upward before it attempts to answer itself."
+      },
+      "observed": {
+        "notes": 45,
+        "medianDurationSeconds": 0.75,
+        "soundingSeconds": 31.375,
+        "under200ms": 1,
+        "under300ms": 10,
+        "monophonicTransitions": 44,
+        "medianArticulationRatio": 1,
+        "separatedShortLinks": {
+          "count": 0,
+          "examples": []
+        },
+        "rapidRuns": {
+          "count": 3,
+          "examples": [
+            {
+              "startBeat": 76,
+              "endBeat": 77,
+              "attacks": 3
+            },
+            {
+              "startBeat": 140,
+              "endBeat": 140.75,
+              "attacks": 3
+            },
+            {
+              "startBeat": 142.75,
+              "endBeat": 144.25,
+              "attacks": 4
+            }
+          ]
+        }
+      },
+      "bearingTones": [
+        {
+          "beat": 76,
+          "pitch": 61,
+          "intendedDuration": 0.5,
+          "purpose": "inherited turned-down pickup",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 76.5,
+          "pitch": 62,
+          "intendedDuration": 0.5,
+          "purpose": "rebound retained from premise",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 77,
+          "pitch": 64,
+          "intendedDuration": 1.25,
+          "purpose": "continuation beyond old turn",
+          "actualDurations": [
+            1.25
+          ]
+        },
+        {
+          "beat": 78.5,
+          "pitch": 65,
+          "intendedDuration": 1.5,
+          "purpose": "renewed bearing F",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 81,
+          "pitch": 69,
+          "intendedDuration": 2,
+          "purpose": "expanded upper claim",
+          "actualDurations": [
+            2
+          ]
+        },
+        {
+          "beat": 84,
+          "pitch": 67,
+          "intendedDuration": 1,
+          "purpose": "answer-like descent begins",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 86,
+          "pitch": 64,
+          "intendedDuration": 2.5,
+          "purpose": "one-degree-short arrival",
+          "actualDurations": [
+            2.5
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "startBeat": 152,
+      "endBeat": 232,
+      "speaker": "vln1_protagonist",
+      "respondent": "cl_conversational_line",
+      "delivery": {
+        "structural_tones": [
+          {
+            "duration": 0.5,
+            "purpose": "inherited rebound launch",
+            "pitch": 62,
+            "beat": 0
+          },
+          {
+            "duration": 1,
+            "purpose": "prepared local-ground tone",
+            "pitch": 65,
+            "beat": 1
+          },
+          {
+            "duration": 2,
+            "purpose": "lyrical expansion",
+            "pitch": 69,
+            "beat": 3
+          },
+          {
+            "duration": 1.5,
+            "purpose": "upper-span apex",
+            "pitch": 81,
+            "beat": 6
+          },
+          {
+            "duration": 1,
+            "purpose": "descent begins",
+            "pitch": 79,
+            "beat": 9
+          },
+          {
+            "duration": 1,
+            "purpose": "foreign-window colour",
+            "pitch": 75,
+            "beat": 11
+          },
+          {
+            "duration": 1,
+            "purpose": "dominant-directed inflection",
+            "pitch": 73,
+            "beat": 13
+          },
+          {
+            "duration": 3,
+            "purpose": "local F destination",
+            "pitch": 77,
+            "beat": 16
+          }
+        ],
+        "continuation": "The original rise is stretched across a prepared register crossing; after the high A, the sentence acquires a smoother, modal descent that accepts E-flat colour before the C-sharp redirects it.",
+        "arrival": "F5 is held as a lucid F-major local destination, explicitly leaving the D-minor premise unresolved.",
+        "connection": "The low D-to-F opening is connected to the eventual high A by broad intervallic arches, not a run. The E-flat is a clear colour-bearing event; C-sharp immediately turns that colour toward A pressure.",
+        "dialogue": "cl_conversational_line answers the violin's two-beat release with a displaced version of the earlier C–D rebound, now E-flat–F–E, then hands its E into the violin's descending route. Its chromatic reply makes the F arrival a sidestep rather than a verdict.",
+        "proposition": "The Section II upward continuation is made lyrical and wide: its F-bearing identity is retained, but the phrase claims a temporary F horizon."
+      },
+      "observed": {
+        "notes": 52,
+        "medianDurationSeconds": 0.5,
+        "soundingSeconds": 32,
+        "under200ms": 1,
+        "under300ms": 11,
+        "monophonicTransitions": 51,
+        "medianArticulationRatio": 1,
+        "separatedShortLinks": {
+          "count": 1,
+          "examples": [
+            {
+              "beat": 152,
+              "nextBeat": 153,
+              "pitches": [
+                62,
+                65
+              ],
+              "onsetIntervalSeconds": 0.5,
+              "soundingSeconds": 0.25,
+              "gapSeconds": 0.25,
+              "articulationRatio": 0.5
+            }
+          ]
+        },
+        "rapidRuns": {
+          "count": 1,
+          "examples": [
+            {
+              "startBeat": 221,
+              "endBeat": 222.25,
+              "attacks": 4
+            }
+          ]
+        }
+      },
+      "bearingTones": [
+        {
+          "beat": 152,
+          "pitch": 62,
+          "intendedDuration": 0.5,
+          "purpose": "inherited rebound launch",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 153,
+          "pitch": 65,
+          "intendedDuration": 1,
+          "purpose": "prepared local-ground tone",
+          "actualDurations": [
+            1.25
+          ]
+        },
+        {
+          "beat": 155,
+          "pitch": 69,
+          "intendedDuration": 2,
+          "purpose": "lyrical expansion",
+          "actualDurations": [
+            2
+          ]
+        },
+        {
+          "beat": 158,
+          "pitch": 81,
+          "intendedDuration": 1.5,
+          "purpose": "upper-span apex",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 161,
+          "pitch": 79,
+          "intendedDuration": 1,
+          "purpose": "descent begins",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 163,
+          "pitch": 75,
+          "intendedDuration": 1,
+          "purpose": "foreign-window colour",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 165,
+          "pitch": 73,
+          "intendedDuration": 1,
+          "purpose": "dominant-directed inflection",
+          "actualDurations": []
+        },
+        {
+          "beat": 168,
+          "pitch": 77,
+          "intendedDuration": 3,
+          "purpose": "local F destination",
+          "actualDurations": []
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "startBeat": 232,
+      "endBeat": 276,
+      "speaker": "vln1_protagonist",
+      "respondent": "vc_motif_answerer",
+      "delivery": {
+        "structural_tones": [
+          {
+            "duration": 0.5,
+            "purpose": "compressed inherited rise start",
+            "pitch": 69,
+            "beat": 0
+          },
+          {
+            "duration": 0.5,
+            "purpose": "whole-step memory",
+            "pitch": 71,
+            "beat": 0.5
+          },
+          {
+            "duration": 1.5,
+            "purpose": "semitone-bearing summit",
+            "pitch": 72,
+            "beat": 1
+          },
+          {
+            "duration": 3.5,
+            "purpose": "former provisional goal held through encounter",
+            "pitch": 81,
+            "beat": 3
+          },
+          {
+            "duration": 1,
+            "purpose": "post-encounter descent",
+            "pitch": 79,
+            "beat": 8
+          },
+          {
+            "duration": 2.5,
+            "purpose": "redirected D-minor landing",
+            "pitch": 74,
+            "beat": 10
+          }
+        ],
+        "continuation": "The old held goal is no longer a resting point: it remains exposed while another voice moves beneath it, after which the violin can descend as a changed proposition.",
+        "arrival": "D5 is a redirected local landing after diminished colour, firm enough to regroup but not a final discharge.",
+        "connection": "The opening ascent is tight and deliberate; A is sustained across the cello's active answer. The ensuing G-to-D descent is connected and deliberately unvirtuosic, making the encounter's result audible.",
+        "dialogue": "vc_motif_answerer enters during the held A with the premise's falling-fourth relation inverted in bearing: it rises from low D toward G while its rhythm lengthens, then resolves its own tension toward A. It argues that continuation, not suspension, is the live action.",
+        "proposition": "The exact rise-and-held-upper-tone profile from Section I is retained, but its held goal is made the site of confrontation."
+      },
+      "observed": {
+        "notes": 25,
+        "medianDurationSeconds": 0.5,
+        "soundingSeconds": 16.5,
+        "under200ms": 3,
+        "under300ms": 6,
+        "monophonicTransitions": 24,
+        "medianArticulationRatio": 1,
+        "separatedShortLinks": {
+          "count": 0,
+          "examples": []
+        },
+        "rapidRuns": {
+          "count": 1,
+          "examples": [
+            {
+              "startBeat": 232,
+              "endBeat": 233,
+              "attacks": 4
+            }
+          ]
+        }
+      },
+      "bearingTones": [
+        {
+          "beat": 232,
+          "pitch": 69,
+          "intendedDuration": 0.5,
+          "purpose": "compressed inherited rise start",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 232.5,
+          "pitch": 71,
+          "intendedDuration": 0.5,
+          "purpose": "whole-step memory",
+          "actualDurations": [
+            0.25
+          ]
+        },
+        {
+          "beat": 233,
+          "pitch": 72,
+          "intendedDuration": 1.5,
+          "purpose": "semitone-bearing summit",
+          "actualDurations": []
+        },
+        {
+          "beat": 235,
+          "pitch": 81,
+          "intendedDuration": 3.5,
+          "purpose": "former provisional goal held through encounter",
+          "actualDurations": []
+        },
+        {
+          "beat": 240,
+          "pitch": 79,
+          "intendedDuration": 1,
+          "purpose": "post-encounter descent",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 242,
+          "pitch": 74,
+          "intendedDuration": 2.5,
+          "purpose": "redirected D-minor landing",
+          "actualDurations": []
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "startBeat": 260,
+      "endBeat": 308,
+      "speaker": "vc_motif_answerer",
+      "respondent": "vln1_protagonist",
+      "delivery": {
+        "structural_tones": [
+          {
+            "duration": 1,
+            "purpose": "pedal-derived claim",
+            "pitch": 50,
+            "beat": 0
+          },
+          {
+            "duration": 0.75,
+            "purpose": "falling-fourth inheritance",
+            "pitch": 45,
+            "beat": 1
+          },
+          {
+            "duration": 0.5,
+            "purpose": "rebound",
+            "pitch": 47,
+            "beat": 1.75
+          },
+          {
+            "duration": 1.5,
+            "purpose": "clearing ascent",
+            "pitch": 50,
+            "beat": 3
+          },
+          {
+            "duration": 2,
+            "purpose": "counterstatement summit",
+            "pitch": 55,
+            "beat": 5
+          },
+          {
+            "duration": 2.5,
+            "purpose": "shared D-minor destination",
+            "pitch": 62,
+            "beat": 8
+          }
+        ],
+        "continuation": "The cello does not merely puncture the violin's sustain: after the drop-and-rebound it makes a broader ascent, creating a line that can meet the violin's D rather than negate it.",
+        "arrival": "D4 joins the protagonist's redirected landing, a momentary agreement after the C-sharp diminished contradiction.",
+        "connection": "The low fourth-drop is detached enough to register as dissent; the later G-to-D ascent is slurred as one widening answer. The violin's response descends above it during the planned breath and aligns at D.",
+        "dialogue": "vln1_protagonist answers the cello's low D–A fall with its audible G–F–D descent from the preceding phrase. Both voices agree on D only after preserving their contrary directions.",
+        "proposition": "The counterargument takes the premise's defining fourth-drop and rebound, but makes them the beginning of an upward, supportive sentence."
+      },
+      "observed": {
+        "notes": 26,
+        "medianDurationSeconds": 0.625,
+        "soundingSeconds": 19.25,
+        "under200ms": 0,
+        "under300ms": 1,
+        "monophonicTransitions": 25,
+        "medianArticulationRatio": 1,
+        "separatedShortLinks": {
+          "count": 2,
+          "examples": [
+            {
+              "beat": 261.75,
+              "nextBeat": 263,
+              "pitches": [
+                47,
+                50
+              ],
+              "onsetIntervalSeconds": 0.625,
+              "soundingSeconds": 0.25,
+              "gapSeconds": 0.375,
+              "articulationRatio": 0.4
+            },
+            {
+              "beat": 297.5,
+              "nextBeat": 299.25,
+              "pitches": [
+                45,
+                48
+              ],
+              "onsetIntervalSeconds": 0.875,
+              "soundingSeconds": 0.375,
+              "gapSeconds": 0.5,
+              "articulationRatio": 0.4286
+            }
+          ]
+        },
+        "rapidRuns": {
+          "count": 0,
+          "examples": []
+        }
+      },
+      "bearingTones": [
+        {
+          "beat": 260,
+          "pitch": 50,
+          "intendedDuration": 1,
+          "purpose": "pedal-derived claim",
+          "actualDurations": [
+            1
+          ]
+        },
+        {
+          "beat": 261,
+          "pitch": 45,
+          "intendedDuration": 0.75,
+          "purpose": "falling-fourth inheritance",
+          "actualDurations": [
+            0.75
+          ]
+        },
+        {
+          "beat": 261.75,
+          "pitch": 47,
+          "intendedDuration": 0.5,
+          "purpose": "rebound",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 263,
+          "pitch": 50,
+          "intendedDuration": 1.5,
+          "purpose": "clearing ascent",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 265,
+          "pitch": 55,
+          "intendedDuration": 2,
+          "purpose": "counterstatement summit",
+          "actualDurations": [
+            2
+          ]
+        },
+        {
+          "beat": 268,
+          "pitch": 62,
+          "intendedDuration": 2.5,
+          "purpose": "shared D-minor destination",
+          "actualDurations": [
+            2.5
+          ]
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "startBeat": 308,
+      "endBeat": 380,
+      "speaker": "vc_motif_answerer",
+      "respondent": "vln1_protagonist",
+      "delivery": {
+        "structural_tones": [
+          {
+            "duration": 1.5,
+            "purpose": "inherited D claim",
+            "pitch": 50,
+            "beat": 0
+          },
+          {
+            "duration": 1,
+            "purpose": "fourth-drop remembered",
+            "pitch": 45,
+            "beat": 1.5
+          },
+          {
+            "duration": 1.5,
+            "purpose": "reoriented rebound",
+            "pitch": 48,
+            "beat": 2.5
+          },
+          {
+            "duration": 3,
+            "purpose": "B-flat local clearing",
+            "pitch": 58,
+            "beat": 5
+          },
+          {
+            "duration": 2.5,
+            "purpose": "F repose",
+            "pitch": 65,
+            "beat": 9
+          },
+          {
+            "duration": 1.5,
+            "purpose": "G-minor reopening",
+            "pitch": 55,
+            "beat": 13
+          },
+          {
+            "duration": 3,
+            "purpose": "altered D return",
+            "pitch": 50,
+            "beat": 16
+          }
+        ],
+        "continuation": "The former low rebuttal becomes a broad cantabile counterstatement: B-flat and F receive full duration, then G minor reopens the issue before D is revisited without triumph.",
+        "arrival": "F4 is the clearest local repose; the later D is a coloured return, not a cadence.",
+        "connection": "The opening fourth-drop remains plainly articulated, but B-flat-to-F is one long rising breath. The G return is separated by a real breath so its reopening is unmistakable.",
+        "dialogue": "vln1_protagonist enters in the planned space with a narrowed version of its Section I D–E–F rise, now descending from F instead of claiming it. It accepts the cello's F as local ground while retaining the old C-sharp unease in altered perspective.",
+        "proposition": "The cello inherits its own Section IV D–A–B rebound but reverses its bearing: the same interval family now seeks breadth and repose."
+      },
+      "observed": {
+        "notes": 44,
+        "medianDurationSeconds": 0.75,
+        "soundingSeconds": 32.75,
+        "under200ms": 4,
+        "under300ms": 7,
+        "monophonicTransitions": 43,
+        "medianArticulationRatio": 1,
+        "separatedShortLinks": {
+          "count": 0,
+          "examples": []
+        },
+        "rapidRuns": {
+          "count": 2,
+          "examples": [
+            {
+              "startBeat": 373.5,
+              "endBeat": 374.75,
+              "attacks": 4
+            },
+            {
+              "startBeat": 379,
+              "endBeat": 379.5,
+              "attacks": 3
+            }
+          ]
+        }
+      },
+      "bearingTones": [
+        {
+          "beat": 308,
+          "pitch": 50,
+          "intendedDuration": 1.5,
+          "purpose": "inherited D claim",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 309.5,
+          "pitch": 45,
+          "intendedDuration": 1,
+          "purpose": "fourth-drop remembered",
+          "actualDurations": [
+            1
+          ]
+        },
+        {
+          "beat": 310.5,
+          "pitch": 48,
+          "intendedDuration": 1.5,
+          "purpose": "reoriented rebound",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 313,
+          "pitch": 58,
+          "intendedDuration": 3,
+          "purpose": "B-flat local clearing",
+          "actualDurations": [
+            3
+          ]
+        },
+        {
+          "beat": 317,
+          "pitch": 65,
+          "intendedDuration": 2.5,
+          "purpose": "F repose",
+          "actualDurations": [
+            2.5
+          ]
+        },
+        {
+          "beat": 321,
+          "pitch": 55,
+          "intendedDuration": 1.5,
+          "purpose": "G-minor reopening",
+          "actualDurations": [
+            0.25
+          ]
+        },
+        {
+          "beat": 324,
+          "pitch": 50,
+          "intendedDuration": 3,
+          "purpose": "altered D return",
+          "actualDurations": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "startBeat": 380,
+      "endBeat": 456,
+      "speaker": "vln1_protagonist",
+      "respondent": "cl_conversational_line",
+      "delivery": {
+        "structural_tones": [
+          {
+            "duration": 0.5,
+            "purpose": "premise compressed at high register",
+            "pitch": 74,
+            "beat": 0
+          },
+          {
+            "duration": 0.5,
+            "purpose": "whole-step inheritance",
+            "pitch": 76,
+            "beat": 0.5
+          },
+          {
+            "duration": 1.5,
+            "purpose": "semitone-bearing upper tone",
+            "pitch": 77,
+            "beat": 1
+          },
+          {
+            "duration": 2,
+            "purpose": "decisive extension beyond old hold",
+            "pitch": 81,
+            "beat": 4
+          },
+          {
+            "duration": 2.5,
+            "purpose": "narrowing summit",
+            "pitch": 82,
+            "beat": 7
+          },
+          {
+            "duration": 1.25,
+            "purpose": "dominant-facing turn",
+            "pitch": 81,
+            "beat": 11
+          },
+          {
+            "duration": 1.5,
+            "purpose": "consequential descent",
+            "pitch": 77,
+            "beat": 13
+          },
+          {
+            "duration": 3,
+            "purpose": "deferred lower edge",
+            "pitch": 76,
+            "beat": 16
+          }
+        ],
+        "continuation": "Unlike the opening, the held F-derived tone is crossed and surpassed; the ascent reaches B-flat before the dominant field forces a serious descent whose E cannot yet resolve.",
+        "arrival": "E5 is held against A-based pressure as an exposed dominant-facing edge, not a D-minor arrival.",
+        "connection": "The climb is one prepared bow arc with a breath only after B-flat. A-to-F-to-E is a distinct descending consequence, not a return to the opening cell.",
+        "dialogue": "cl_conversational_line shadows the violin's rise with displaced short notes derived from Section III's E-flat–F–E reply, then yields audible space at the violin's A turn. Its chromatic tightening turns the former local-F colour into dominant pressure.",
+        "proposition": "The exact whole-step-plus-semitone opening ascent survives, but it is lengthened past its former held goal and made answerable to A7-flat-9."
+      },
+      "observed": {
+        "notes": 39,
+        "medianDurationSeconds": 0.625,
+        "soundingSeconds": 24.625,
+        "under200ms": 5,
+        "under300ms": 12,
+        "monophonicTransitions": 38,
+        "medianArticulationRatio": 1,
+        "separatedShortLinks": {
+          "count": 0,
+          "examples": []
+        },
+        "rapidRuns": {
+          "count": 4,
+          "examples": [
+            {
+              "startBeat": 380,
+              "endBeat": 381,
+              "attacks": 3
+            },
+            {
+              "startBeat": 406,
+              "endBeat": 406.75,
+              "attacks": 3
+            },
+            {
+              "startBeat": 444,
+              "endBeat": 444.75,
+              "attacks": 3
+            },
+            {
+              "startBeat": 446.5,
+              "endBeat": 447.75,
+              "attacks": 4
+            }
+          ]
+        }
+      },
+      "bearingTones": [
+        {
+          "beat": 380,
+          "pitch": 74,
+          "intendedDuration": 0.5,
+          "purpose": "premise compressed at high register",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 380.5,
+          "pitch": 76,
+          "intendedDuration": 0.5,
+          "purpose": "whole-step inheritance",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 381,
+          "pitch": 77,
+          "intendedDuration": 1.5,
+          "purpose": "semitone-bearing upper tone",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 384,
+          "pitch": 81,
+          "intendedDuration": 2,
+          "purpose": "decisive extension beyond old hold",
+          "actualDurations": [
+            2
+          ]
+        },
+        {
+          "beat": 387,
+          "pitch": 82,
+          "intendedDuration": 2.5,
+          "purpose": "narrowing summit",
+          "actualDurations": [
+            2.5
+          ]
+        },
+        {
+          "beat": 391,
+          "pitch": 81,
+          "intendedDuration": 1.25,
+          "purpose": "dominant-facing turn",
+          "actualDurations": [
+            1.25
+          ]
+        },
+        {
+          "beat": 393,
+          "pitch": 77,
+          "intendedDuration": 1.5,
+          "purpose": "consequential descent",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 396,
+          "pitch": 76,
+          "intendedDuration": 3,
+          "purpose": "deferred lower edge",
+          "actualDurations": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "startBeat": 456,
+      "endBeat": 536,
+      "speaker": "vln1_protagonist",
+      "respondent": "vc_motif_answerer",
+      "delivery": {
+        "structural_tones": [
+          {
+            "duration": 0.5,
+            "purpose": "premise at climactic register",
+            "pitch": 86,
+            "beat": 0
+          },
+          {
+            "duration": 0.5,
+            "purpose": "chromatically compressed answer to whole step",
+            "pitch": 87,
+            "beat": 0.5
+          },
+          {
+            "duration": 1,
+            "purpose": "F-bearing identity",
+            "pitch": 89,
+            "beat": 1
+          },
+          {
+            "duration": 1.5,
+            "purpose": "predominant force",
+            "pitch": 82,
+            "beat": 4
+          },
+          {
+            "duration": 2.5,
+            "purpose": "expanded summit",
+            "pitch": 91,
+            "beat": 7
+          },
+          {
+            "duration": 3,
+            "purpose": "old suspended goal carried onward",
+            "pitch": 88,
+            "beat": 10
+          },
+          {
+            "duration": 1.5,
+            "purpose": "future-answer descent begins",
+            "pitch": 81,
+            "beat": 14
+          },
+          {
+            "duration": 2.5,
+            "purpose": "withheld final degree",
+            "pitch": 77,
+            "beat": 17
+          }
+        ],
+        "continuation": "The cell's rise is compressed by E-flat colour, then expanded to its widest register; crucially, the upper sustain is not withheld but carried through A7 pressure into a descending route that stops before D.",
+        "arrival": "F5 is the climactic line's last clear pitch, suspended over unresolved A-based and D/A harmonic pressure.",
+        "connection": "Initial notes are tight and biting; B-flat/C and the held upper goal are long enough to bear the climax. The A-to-F descent is connected to the cello's simultaneous lower continuation, making its future role audible.",
+        "dialogue": "vc_motif_answerer takes the Section V constructive ascent and reverses it into an audible A–G–F–E descent beneath the violin's summit. It retains the cello's broad rhythm but now predicts the final settling route; neither voice reaches D here.",
+        "proposition": "The protagonist fuses its D–E–F ascent with the counterargument's broad span, carrying the once-provisional upper tone through confrontation rather than treating it as a rest."
+      },
+      "observed": {
+        "notes": 59,
+        "medianDurationSeconds": 0.75,
+        "soundingSeconds": 37.75,
+        "under200ms": 10,
+        "under300ms": 20,
+        "monophonicTransitions": 58,
+        "medianArticulationRatio": 1,
+        "separatedShortLinks": {
+          "count": 3,
+          "examples": [
+            {
+              "beat": 459,
+              "nextBeat": 460,
+              "pitches": [
+                86,
+                82
+              ],
+              "onsetIntervalSeconds": 0.5,
+              "soundingSeconds": 0.25,
+              "gapSeconds": 0.25,
+              "articulationRatio": 0.5
+            },
+            {
+              "beat": 469,
+              "nextBeat": 470,
+              "pitches": [
+                86,
+                81
+              ],
+              "onsetIntervalSeconds": 0.5,
+              "soundingSeconds": 0.25,
+              "gapSeconds": 0.25,
+              "articulationRatio": 0.5
+            },
+            {
+              "beat": 514,
+              "nextBeat": 516,
+              "pitches": [
+                93,
+                93
+              ],
+              "onsetIntervalSeconds": 1,
+              "soundingSeconds": 0.5,
+              "gapSeconds": 0.5,
+              "articulationRatio": 0.5
+            }
+          ]
+        },
+        "rapidRuns": {
+          "count": 4,
+          "examples": [
+            {
+              "startBeat": 456,
+              "endBeat": 456.75,
+              "attacks": 3
+            },
+            {
+              "startBeat": 496,
+              "endBeat": 496.75,
+              "attacks": 3
+            },
+            {
+              "startBeat": 520,
+              "endBeat": 520.5,
+              "attacks": 3
+            },
+            {
+              "startBeat": 521.75,
+              "endBeat": 524.75,
+              "attacks": 9
+            }
+          ]
+        }
+      },
+      "bearingTones": [
+        {
+          "beat": 456,
+          "pitch": 86,
+          "intendedDuration": 0.5,
+          "purpose": "premise at climactic register",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 456.5,
+          "pitch": 87,
+          "intendedDuration": 0.5,
+          "purpose": "chromatically compressed answer to whole step",
+          "actualDurations": [
+            0.25
+          ]
+        },
+        {
+          "beat": 457,
+          "pitch": 89,
+          "intendedDuration": 1,
+          "purpose": "F-bearing identity",
+          "actualDurations": []
+        },
+        {
+          "beat": 460,
+          "pitch": 82,
+          "intendedDuration": 1.5,
+          "purpose": "predominant force",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 463,
+          "pitch": 91,
+          "intendedDuration": 2.5,
+          "purpose": "expanded summit",
+          "actualDurations": []
+        },
+        {
+          "beat": 466,
+          "pitch": 88,
+          "intendedDuration": 3,
+          "purpose": "old suspended goal carried onward",
+          "actualDurations": []
+        },
+        {
+          "beat": 470,
+          "pitch": 81,
+          "intendedDuration": 1.5,
+          "purpose": "future-answer descent begins",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 473,
+          "pitch": 77,
+          "intendedDuration": 2.5,
+          "purpose": "withheld final degree",
+          "actualDurations": []
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "startBeat": 536,
+      "endBeat": 608,
+      "speaker": "vln1_protagonist",
+      "respondent": "vc_motif_answerer",
+      "delivery": {
+        "structural_tones": [
+          {
+            "duration": 0.75,
+            "purpose": "resolved home-pitch return",
+            "pitch": 74,
+            "beat": 0
+          },
+          {
+            "duration": 0.5,
+            "purpose": "whole-step identity restored",
+            "pitch": 76,
+            "beat": 0.75
+          },
+          {
+            "duration": 1.5,
+            "purpose": "held F now consonant",
+            "pitch": 77,
+            "beat": 1.25
+          },
+          {
+            "duration": 1,
+            "purpose": "continuation beyond former suspension",
+            "pitch": 81,
+            "beat": 3.5
+          },
+          {
+            "duration": 1.5,
+            "purpose": "settled descent starts",
+            "pitch": 79,
+            "beat": 6
+          },
+          {
+            "duration": 1.5,
+            "purpose": "shared-ground F",
+            "pitch": 77,
+            "beat": 7.5
+          },
+          {
+            "duration": 1,
+            "purpose": "calm leading descent",
+            "pitch": 76,
+            "beat": 9
+          },
+          {
+            "duration": 4,
+            "purpose": "final audible consequence",
+            "pitch": 74,
+            "beat": 10.5
+          }
+        ],
+        "continuation": "The initial rise is recognisable in its original interval-and-rhythm profile, but F no longer arrests the phrase: it passes naturally to A and releases into the full descent that Section VII forecast.",
+        "arrival": "D5 is held through the final D-minor add-9 resonance; it is the definitive tonal and melodic answer.",
+        "connection": "The opening compact gesture is gently articulated, F-to-A is connected without climactic force, and G–F–E–D is one calm descending breath. The final release occurs only after the D has borne the resolution.",
+        "dialogue": "vc_motif_answerer answers under the violin's descent with its Section VII A–G–F–E route, but completes the formerly missing final step to low D and sustains it supportively. The two voices now agree on direction and destination.",
+        "proposition": "The exact D–E–F opening clue receives its altered consequence: it continues past the old held goal and descends all the way to D after the A7-flat-9 obligation resolves."
+      },
+      "observed": {
+        "notes": 22,
+        "medianDurationSeconds": 0.5625,
+        "soundingSeconds": 14.625,
+        "under200ms": 1,
+        "under300ms": 4,
+        "monophonicTransitions": 21,
+        "medianArticulationRatio": 1,
+        "separatedShortLinks": {
+          "count": 0,
+          "examples": []
+        },
+        "rapidRuns": {
+          "count": 1,
+          "examples": [
+            {
+              "startBeat": 600,
+              "endBeat": 600.75,
+              "attacks": 3
+            }
+          ]
+        }
+      },
+      "bearingTones": [
+        {
+          "beat": 536,
+          "pitch": 74,
+          "intendedDuration": 0.75,
+          "purpose": "resolved home-pitch return",
+          "actualDurations": [
+            0.75
+          ]
+        },
+        {
+          "beat": 536.75,
+          "pitch": 76,
+          "intendedDuration": 0.5,
+          "purpose": "whole-step identity restored",
+          "actualDurations": [
+            0.5
+          ]
+        },
+        {
+          "beat": 537.25,
+          "pitch": 77,
+          "intendedDuration": 1.5,
+          "purpose": "held F now consonant",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 539.5,
+          "pitch": 81,
+          "intendedDuration": 1,
+          "purpose": "continuation beyond former suspension",
+          "actualDurations": [
+            1
+          ]
+        },
+        {
+          "beat": 542,
+          "pitch": 79,
+          "intendedDuration": 1.5,
+          "purpose": "settled descent starts",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 543.5,
+          "pitch": 77,
+          "intendedDuration": 1.5,
+          "purpose": "shared-ground F",
+          "actualDurations": [
+            1.5
+          ]
+        },
+        {
+          "beat": 545,
+          "pitch": 76,
+          "intendedDuration": 1,
+          "purpose": "calm leading descent",
+          "actualDurations": [
+            1
+          ]
+        },
+        {
+          "beat": 546.5,
+          "pitch": 74,
+          "intendedDuration": 4,
+          "purpose": "final audible consequence",
+          "actualDurations": [
+            4
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -79,12 +79,19 @@ public:
         const juce::String& direction, const SongPlan&, const Pattern& accepted,
         const std::vector<std::size_t>& assignedInstruments,
         std::size_t sectionIndex, int firstBar, int bars,
-        const juce::String& feedback = {}, bool focusedRevision = false);
+        const juce::String& feedback = {}, bool focusedRevision = false,
+        bool longFormContinuity = false, bool thematicRevision = false,
+        bool thematicMemory = false);
+    [[nodiscard]] static juce::String thematicReviewPromptFor(
+        const SongPlan&, const Pattern& accepted, const Pattern& candidate,
+        std::size_t sectionIndex, int firstBar, int bars);
     [[nodiscard]] static bool parseDirectWindowJson(
         const juce::String&, const SongPlan&,
         const std::vector<std::size_t>& assignedInstruments,
         std::size_t sectionIndex, int firstBar, int bars,
-        PerformanceScore&, juce::String& error);
+        PerformanceScore&, juce::String& error,
+        bool longFormContinuity = false,
+        bool allowSilentGroup = false);
     [[nodiscard]] static std::size_t maximumSongInstruments() noexcept;
     [[nodiscard]] static std::size_t castDetailShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t selectiveRepairShardCount(std::size_t instruments) noexcept;

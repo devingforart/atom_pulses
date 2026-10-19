@@ -1,0 +1,603 @@
+{
+  "schema_version": 1,
+  "technical_ready": true,
+  "narrative_ready": true,
+  "motif_closure": 0.5175,
+  "tonal_closure": 1.0,
+  "register_release": 1.0,
+  "density_release": 0.625,
+  "resolution_score": 0.799,
+  "terminal_phrase_ready": true,
+  "causal_narrative": 1.0,
+  "soundscape_ready": true,
+  "declared_layers": 0,
+  "meaningful_layers": 0,
+  "harmonic_floor_coverage": 0.0,
+  "harmonic_conflicts": 505,
+  "low_register_conflicts": 52,
+  "unsupported_chromatic": 31,
+  "invalid_sustains": 0,
+  "narrative_issues": [
+    "scalar_melody_without_speech",
+    "undeveloped_rhythm_narrative"
+  ],
+  "soundscape_issues": [],
+  "tonal_issue_examples": [
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 3.75,
+      "overlap_beats": 0.0,
+      "pitch": 61,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 67.25,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 76.0,
+      "overlap_beats": 0.0,
+      "pitch": 61,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 84.0,
+      "overlap_beats": 0.0,
+      "pitch": 67,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 84.0,
+      "overlap_beats": 0.0,
+      "pitch": 46,
+      "other_pitch": 0,
+      "part_id": 5,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 94.0,
+      "overlap_beats": 0.0,
+      "pitch": 67,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 114.0,
+      "overlap_beats": 0.0,
+      "pitch": 72,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 143.75,
+      "overlap_beats": 0.0,
+      "pitch": 61,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 163.0,
+      "overlap_beats": 0.0,
+      "pitch": 75,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 164.5,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 171.0,
+      "overlap_beats": 0.0,
+      "pitch": 75,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 180.0,
+      "overlap_beats": 0.0,
+      "pitch": 74,
+      "other_pitch": 0,
+      "part_id": 3,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 184.0,
+      "overlap_beats": 0.0,
+      "pitch": 38,
+      "other_pitch": 0,
+      "part_id": 8,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 185.0,
+      "overlap_beats": 0.0,
+      "pitch": 74,
+      "other_pitch": 0,
+      "part_id": 3,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 192.0,
+      "overlap_beats": 0.0,
+      "pitch": 38,
+      "other_pitch": 0,
+      "part_id": 8,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 216.0,
+      "overlap_beats": 0.0,
+      "pitch": 72,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 221.5,
+      "overlap_beats": 0.0,
+      "pitch": 75,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 226.0,
+      "overlap_beats": 0.0,
+      "pitch": 75,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 228.0,
+      "overlap_beats": 0.0,
+      "pitch": 79,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 232.5,
+      "overlap_beats": 0.0,
+      "pitch": 71,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 240.0,
+      "overlap_beats": 0.0,
+      "pitch": 79,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 261.75,
+      "overlap_beats": 0.0,
+      "pitch": 47,
+      "other_pitch": 0,
+      "part_id": 5,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 274.0,
+      "overlap_beats": 0.0,
+      "pitch": 65,
+      "other_pitch": 0,
+      "part_id": 3,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 279.25,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 298.5,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 312.0,
+      "overlap_beats": 0.0,
+      "pitch": 36,
+      "other_pitch": 0,
+      "part_id": 7,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 320.0,
+      "overlap_beats": 0.0,
+      "pitch": 36,
+      "other_pitch": 0,
+      "part_id": 7,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 322.25,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 332.0,
+      "overlap_beats": 0.0,
+      "pitch": 31,
+      "other_pitch": 0,
+      "part_id": 7,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 340.0,
+      "overlap_beats": 0.0,
+      "pitch": 31,
+      "other_pitch": 0,
+      "part_id": 7,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 371.5,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 378.75,
+      "overlap_beats": 0.0,
+      "pitch": 61,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 379.25,
+      "overlap_beats": 0.0,
+      "pitch": 67,
+      "other_pitch": 0,
+      "part_id": 3,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 382.5,
+      "overlap_beats": 0.0,
+      "pitch": 75,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 401.5,
+      "overlap_beats": 0.0,
+      "pitch": 75,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 405.5,
+      "overlap_beats": 0.0,
+      "pitch": 75,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 406.5,
+      "overlap_beats": 0.0,
+      "pitch": 75,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 428.0,
+      "overlap_beats": 0.0,
+      "pitch": 47,
+      "other_pitch": 0,
+      "part_id": 8,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 445.5,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 446.25,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 447.0,
+      "overlap_beats": 0.0,
+      "pitch": 49,
+      "other_pitch": 0,
+      "part_id": 8,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 447.5,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 448.25,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 449.0,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 451.25,
+      "overlap_beats": 0.0,
+      "pitch": 44,
+      "other_pitch": 0,
+      "part_id": 8,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 452.25,
+      "overlap_beats": 0.0,
+      "pitch": 73,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 454.0,
+      "overlap_beats": 0.0,
+      "pitch": 49,
+      "other_pitch": 0,
+      "part_id": 8,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 456.5,
+      "overlap_beats": 0.0,
+      "pitch": 87,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 502.0,
+      "overlap_beats": 0.0,
+      "pitch": 41,
+      "other_pitch": 0,
+      "part_id": 5,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 512.5,
+      "overlap_beats": 0.0,
+      "pitch": 54,
+      "other_pitch": 0,
+      "part_id": 8,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 513.0,
+      "overlap_beats": 0.0,
+      "pitch": 54,
+      "other_pitch": 0,
+      "part_id": 2,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 514.0,
+      "overlap_beats": 0.0,
+      "pitch": 41,
+      "other_pitch": 0,
+      "part_id": 5,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 520.25,
+      "overlap_beats": 0.0,
+      "pitch": 87,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 522.0,
+      "overlap_beats": 0.0,
+      "pitch": 55,
+      "other_pitch": 0,
+      "part_id": 5,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 522.5,
+      "overlap_beats": 0.0,
+      "pitch": 55,
+      "other_pitch": 0,
+      "part_id": 2,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 522.75,
+      "overlap_beats": 0.0,
+      "pitch": 85,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 523.5,
+      "overlap_beats": 0.0,
+      "pitch": 79,
+      "other_pitch": 0,
+      "part_id": 3,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 524.0,
+      "overlap_beats": 0.0,
+      "pitch": 92,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 524.0,
+      "overlap_beats": 0.0,
+      "pitch": 52,
+      "other_pitch": 0,
+      "part_id": 5,
+      "other_part_id": 0
+    },
+    {
+      "kind": "unsupported_chromatic",
+      "beat": 524.5,
+      "overlap_beats": 0.0,
+      "pitch": 92,
+      "other_pitch": 0,
+      "part_id": 4,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 526.0,
+      "overlap_beats": 0.0,
+      "pitch": 79,
+      "other_pitch": 0,
+      "part_id": 6,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 527.5,
+      "overlap_beats": 0.0,
+      "pitch": 76,
+      "other_pitch": 0,
+      "part_id": 3,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 527.75,
+      "overlap_beats": 0.0,
+      "pitch": 55,
+      "other_pitch": 0,
+      "part_id": 2,
+      "other_part_id": 0
+    },
+    {
+      "kind": "strong_non_chord",
+      "beat": 528.0,
+      "overlap_beats": 0.0,
+      "pitch": 55,
+      "other_pitch": 0,
+      "part_id": 5,
+      "other_part_id": 0
+    }
+  ]
+}

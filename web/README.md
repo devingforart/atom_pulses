@@ -54,6 +54,13 @@ Vite reenvía `/api` a `localhost:8080`.
 
 ## Despliegue en servidor
 
+El perfil aprobado es `ai-only-v2-connected-discourse`; local y Cloud lo
+leen de `web/shared/composer-profile.json`. El anclaje musical congelado
+está en `experiments/anchors/04-connected-discourse-5min`.
+`scripts/deploy-cloud-release.sh` construye una imagen identificada por el
+commit, verifica que no haya composiciones activas, conserva la imagen
+anterior y activa API y estáticos sin tocar secretos ni obras guardadas.
+
 En `pulso.cargo-core.com`, Nginx sirve el build React desde
 `/www/Pulso-web-current` y envía únicamente `/api` a la API Rust en
 `127.0.0.1:8188`. `Pulso-web-current` apunta a un directorio estático de

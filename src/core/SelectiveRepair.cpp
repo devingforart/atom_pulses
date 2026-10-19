@@ -404,6 +404,27 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
     const auto floorOwners = std::count_if(plan.instruments.begin(), plan.instruments.end(),
         [](const auto& instrument) { return HarmonicFloorContext::sustainedFloorOwner(instrument); });
     if (floorOwners > 0) {
+        // Sustained-body coverage describes the sounding form, not the silence
+        // after an AI-authored final cadence. Count every other bar normally;
+        // exempt only the last bar when pitched music actually arrives there
+        // and then releases into a substantial terminal rest.
+        const auto lastBeat = plan.totalBars * plan.beatsPerBar;
+        const auto terminalBreath = std::clamp(plan.beatsPerBar * .5, 1.0, 2.0);
+        auto lastPitchedRelease = 0.0;
+        auto pitchedArrivalInLastBar = false;
+        if (plan.aiSovereign && plan.narrativeSpine.authored)
+            for (const auto& note : pattern.notes) {
+                if (note.partId == 0 || note.partId > plan.instruments.size() ||
+                    eventInstrument(plan, plan.instruments[note.partId - 1]) ||
+                    voiceDefinition(note.voice).family == VoiceFamily::Rhythm)
+                    continue;
+                lastPitchedRelease = std::max(lastPitchedRelease, note.endBeat());
+                pitchedArrivalInLastBar |= note.startBeat < lastBeat &&
+                    note.endBeat() > lastBeat - plan.beatsPerBar;
+            }
+        const auto authoredTerminalRest = pitchedArrivalInLastBar &&
+            lastPitchedRelease > lastBeat - plan.beatsPerBar &&
+            lastPitchedRelease <= lastBeat - terminalBreath + .001;
         auto requiredBars = 0;
         auto coveredBars = 0;
         std::vector<std::pair<double, std::size_t>> sectionalFloorCoverage;
@@ -412,6 +433,7 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
             auto sectionCovered = 0;
             const auto endBar = std::min(bars, section.startBar + section.bars);
             for (auto bar = std::max(0, section.startBar); bar < endBar; ++bar) {
+                if (authoredTerminalRest && bar == bars - 1) continue;
                 const auto required = std::min<std::size_t>(
                     static_cast<std::size_t>(floorOwners),
                     HarmonicFloorContext::requiredLayers(plan,
@@ -555,16 +577,117 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
                 "return and transform the opening idea, answer the harmonic question "
                 "with a connected terminal phrase, then release the ensemble; "
                 "preserve all accepted earlier scenes");
+            if (!narrative.terminalHandoffHonored)
+                review.issues.push_back("The named final melodic speaker is followed "
+                    "by a fresh attack from another melodic voice; reauthor the "
+                    "handoff so the intended final speaker truly has the last word");
             for (std::size_t index = 0; index < plan.instruments.size(); ++index)
                 if (plan.instruments[index].id ==
                     plan.narrativeSpine.protagonistInstrumentId)
                     review.instrumentIndices.push_back(index);
+        }
+
+        // A stable final pitch is not an audible release. MIDI has no implicit
+        // post-roll: moving a collective cutoff a fraction of a beat before
+        // the file end still makes the ensemble disappear together.
+        // Judge independent owners, not the number of chord tones. A deliberately
+        // authored hard stop is a valid exception, but ordinary resolution is not.
+        const auto endingDescription = lower(plan.narrativeSpine.resolution + " " +
+            endingAct->resolutionTarget + " " + plan.sections.back().function);
+        const auto hardStop = endingDescription.find("hard stop") != std::string::npos ||
+            endingDescription.find("hard cut") != std::string::npos ||
+            endingDescription.find("cut to silence") != std::string::npos ||
+            endingDescription.find("corte seco") != std::string::npos ||
+            endingDescription.find("final seco") != std::string::npos;
+        if (!hardStop && plan.totalBars >= 8) {
+            const auto lastBeat = plan.totalBars * plan.beatsPerBar;
+            // MIDI stops at lastBeat: a final note reaching that boundary has
+            // no audible post-roll, even if every other owner leaves earlier.
+            // Reserve half a bar for the AI-authored final breath. This is an
+            // acceptance criterion, never a MIDI edit.
+            const auto terminalBreath = std::clamp(
+                plan.beatsPerBar * .5, 1.0, 2.0);
+            auto lastRelease = 0.0;
+            for (const auto& note : pattern.notes) {
+                if (note.partId == 0 || note.partId > plan.instruments.size() ||
+                    note.endBeat() <= lastBeat - plan.beatsPerBar * 2.0 ||
+                    eventInstrument(plan, plan.instruments[note.partId - 1]) ||
+                    voiceDefinition(note.voice).family == VoiceFamily::Rhythm)
+                    continue;
+                lastRelease = std::max(lastRelease, note.endBeat());
+            }
+            // A complete terminal rest can follow an intentional ensemble
+            // cadence. Do not demand staggered note-offs once the song has
+            // already made room for the final silence.
+            if (lastRelease <= lastBeat - terminalBreath + .001)
+                lastRelease = 0.0;
+            const auto releaseClusterStart = lastRelease - .75;
+            const auto earlierMoment = lastRelease - std::max(1.5, plan.beatsPerBar * .375);
+            std::set<std::size_t> lateOwners;
+            std::set<std::size_t> clusteredOwners;
+            std::set<std::size_t> terminalOwners;
+            for (const auto& note : pattern.notes) {
+                if (note.partId == 0 || note.partId > plan.instruments.size() ||
+                    note.durationBeats <= 0.0) continue;
+                const auto owner = static_cast<std::size_t>(note.partId - 1);
+                if (eventInstrument(plan, plan.instruments[owner]) ||
+                    voiceDefinition(note.voice).family == VoiceFamily::Rhythm)
+                    continue;
+                if (lastRelease <= 0.0) break;
+                if (note.startBeat <= earlierMoment &&
+                    note.endBeat() > earlierMoment)
+                    lateOwners.insert(owner);
+                if (note.endBeat() >= releaseClusterStart - .001 &&
+                    note.endBeat() <= lastRelease + .01 &&
+                    note.durationBeats >= .5)
+                    clusteredOwners.insert(owner);
+                if (note.endBeat() > lastBeat - terminalBreath - .001 &&
+                    note.startBeat < lastBeat)
+                    terminalOwners.insert(owner);
+            }
+            review.simultaneousTerminalOwners = clusteredOwners.size();
+            if (lastRelease > lastBeat - terminalBreath + .001) {
+                review.ready = false;
+                review.ensembleReleaseReady = false;
+                review.deficit += .35;
+                review.sectionIndices.push_back(plan.sections.size() - 1);
+                review.terminalReleaseOwnerIndices.assign(
+                    terminalOwners.begin(), terminalOwners.end());
+                review.instrumentIndices.insert(review.instrumentIndices.end(),
+                    terminalOwners.begin(), terminalOwners.end());
+                review.issues.push_back("The final pitched sound reaches the MIDI boundary "
+                    "without an audible terminal breath; ask the AI to author "
+                    "the final note-offs and leave a resolving rest");
+            }
+            if (clusteredOwners.size() >= 3 &&
+                clusteredOwners.size() * 5 >= lateOwners.size() * 3) {
+                review.ready = false;
+                review.ensembleReleaseReady = false;
+                review.deficit += .35;
+                review.sectionIndices.push_back(plan.sections.size() - 1);
+                review.terminalReleaseOwnerIndices.insert(
+                    review.terminalReleaseOwnerIndices.end(),
+                    clusteredOwners.begin(), clusteredOwners.end());
+                review.issues.push_back("The final MIDI cuts off " +
+                    std::to_string(clusteredOwners.size()) +
+                    " sustained instrument owners within the same short final release; "
+                    "author a coordinated final-scene release or an explicitly intended hard stop, "
+                    "without changing the earlier score");
+                review.instrumentIndices.insert(review.instrumentIndices.end(),
+                    clusteredOwners.begin(), clusteredOwners.end());
+            }
         }
     }
     std::set<std::size_t> seen;
     std::erase_if(review.instrumentIndices, [&](const auto index) {
         return !seen.insert(index).second;
     });
+    std::sort(review.terminalReleaseOwnerIndices.begin(),
+              review.terminalReleaseOwnerIndices.end());
+    review.terminalReleaseOwnerIndices.erase(std::unique(
+        review.terminalReleaseOwnerIndices.begin(),
+        review.terminalReleaseOwnerIndices.end()),
+        review.terminalReleaseOwnerIndices.end());
     // Concrete missing voices take precedence over broad climax or floor
     // suggestions when the AI repair budget can address only a few owners.
     // Otherwise a crowd of potential supporting parts can hide the one line
@@ -2694,7 +2817,12 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
         // The model—not the renderer—must complete the protagonist's transformed
         // answer at the audible boundary. A phrase merely somewhere in the final act
         // still leaves several bars of narrative vacuum.
-        if (protagonist && !plan.sections.empty()) {
+        // An AI-declared terminal handoff lets the protagonist make its
+        // transformed return earlier in the final act. The independent final
+        // score review then audits the named answering voice at the boundary.
+        if (protagonist && !plan.sections.empty() &&
+            (plan.narrativeSpine.terminalSpeakerInstrumentId.empty() ||
+             plan.narrativeSpine.terminalSpeakerInstrumentId == instrument.id)) {
             const auto songEnd = plan.totalBars * plan.beatsPerBar;
             const auto codaStart = std::max(0.0, songEnd - plan.beatsPerBar * 8.0);
             const auto finalTwoBars = std::max(0.0, songEnd - plan.beatsPerBar * 2.0);

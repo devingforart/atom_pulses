@@ -1,1 +1,2 @@
 web/backend/migrations/*.sql -text
+scripts/*.sh text eol=lf

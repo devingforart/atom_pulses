@@ -99,6 +99,11 @@ struct NarrativeSpine {
     std::string question;
     std::string harmonicDebt;
     std::string protagonistInstrumentId;
+    // When the AI explicitly hands the last phrase to another melodic voice,
+    // that voice completes the ending after the protagonist's thematic return.
+    // Empty retains the legacy protagonist-led ending contract.
+    std::string terminalSpeakerInstrumentId;
+    int terminalPhraseStartBar{-1};
     std::string motifIdentity;
     std::string climaxConsequence;
     std::string resolution;

@@ -32,6 +32,9 @@ struct FinalScoreReview {
     double climaxContrast{1.0};
     double resolutionScore{1.0};
     bool terminalPhraseReady{true};
+    bool ensembleReleaseReady{true};
+    std::size_t simultaneousTerminalOwners{};
+    std::vector<std::size_t> terminalReleaseOwnerIndices;
     double deficit{};
     std::vector<std::size_t> instrumentIndices;
     std::vector<std::size_t> sectionIndices;

@@ -209,6 +209,22 @@ bool intentionalVerticalColour(const NoteEvent& left, const NoteEvent& right,
         containsPitchClass(window->pitchClasses, root + 3) &&
         containsPitchClass(window->pitchClasses, root + 6) &&
         chordHasPair(root, positiveModulo(root + 6, 12))) return true;
+    // A fully diminished seventh contains TWO structural tritones, not only
+    // root/b5: its minor third and diminished seventh also form a tritone.
+    // In the declared C#dim7 of a D-minor leading-tone cadence, C#3-G3 and
+    // E3-Bb3 are chord tones, while C#2-G3 is a registered bass/upper-voice
+    // pair. Do not make the AI rewrite those functional notes as "clashes".
+    // A compact tritone wholly below C3 remains a low-register voicing risk.
+    if (interval == 6 &&
+        containsPitchClass(window->pitchClasses, root) &&
+        containsPitchClass(window->pitchClasses, root + 3) &&
+        containsPitchClass(window->pitchClasses, root + 6) &&
+        containsPitchClass(window->pitchClasses, root + 9) &&
+        (chordHasPair(root, positiveModulo(root + 6, 12)) ||
+         chordHasPair(positiveModulo(root + 3, 12),
+                      positiveModulo(root + 9, 12))) &&
+        (std::min(left.pitch, right.pitch) >= 48 ||
+         (distance >= 18 && std::max(left.pitch, right.pitch) >= 55))) return true;
     // The minor third and added sixth are the characteristic upper tritone
     // of a declared minor-sixth chord. This is intentional colour only when
     // voiced in the middle/upper register, not a license for bass clusters.

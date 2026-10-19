@@ -570,6 +570,9 @@ int main(int argc, char** argv) {
         evidence->setProperty("climax_contrast", review.climaxContrast);
         evidence->setProperty("resolution_score", review.resolutionScore);
         evidence->setProperty("terminal_phrase_ready", review.terminalPhraseReady);
+        evidence->setProperty("ensemble_release_ready", review.ensembleReleaseReady);
+        evidence->setProperty("simultaneous_terminal_owners",
+            static_cast<int>(review.simultaneousTerminalOwners));
         juce::Array<juce::var> findings;
         for (const auto& issue : review.issues)
             findings.add(juce::String::fromUTF8(issue.c_str()));

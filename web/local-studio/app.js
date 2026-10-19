@@ -94,20 +94,70 @@ function reuse(job) {
   showNotice('Ajustes cargados. Revisa antes de componer: todavía no se envió ninguna solicitud.');
   ui.prompt.focus();
 }
+async function resumeAcceptedMidi(job, button) {
+  if (!confirm('¿Retomar desde el último MIDI aceptado? Se hará una nueva solicitud a la IA, pero no se volverán a escribir las ventanas ya aprobadas.')) return;
+  button.disabled = true;
+  showNotice('Preparando la reanudación desde el MIDI aceptado...');
+  const request = job.request;
+  const payload = {
+    prompt: request.prompt,
+    duration_seconds: request.duration_seconds,
+    bpm: request.bpm,
+    behavior: request.behavior,
+    render_mode: 'ai_sovereign',
+    seed: request.seed,
+    proof_mode: false,
+    first_pass_audition: request.first_pass_audition === true,
+    phrase_architecture_experiment: request.phrase_architecture_experiment === true,
+    resume_from_job: job.id,
+  };
+  try {
+    const route = job.origin === 'auto' ? '/api/auto/jobs' : '/api/jobs';
+    const result = await api(route, { method: 'POST', headers: {
+      'Content-Type': 'application/json', 'X-Pulso-Local': '1',
+    }, body: JSON.stringify(payload) });
+    selectedId = result.job.id;
+    loadedKey = null;
+    previewDiagnostic = false;
+    showNotice('Reanudación iniciada. El material aceptado se conserva.');
+    await refresh();
+  } catch (error) {
+    showNotice(error.message);
+  } finally {
+    button.disabled = false;
+  }
+}
 function renderSession(job) {
   if (!job) return;
+  const articulation = job.manifest?.articulationReview;
+  const articulationRevision = !articulation && jobs.find(candidate =>
+    candidate.manifest?.articulationReview?.sourceJobId === job.id);
   ui.session.replaceChildren();
   ui.session.append(node('h3', 'session-title', job.manifest?.title || 'Composición en curso'));
   ui.session.append(node('div', `session-status ${job.state}`,
+    job.state === 'completed' && articulation ? 'REVISIÓN DE ARTICULACIÓN' :
     job.state === 'completed' && job.manifest?.first_pass_audition
       ? 'PRIMERA PASADA' : job.state === 'completed' && job.manifest?.review_audition
         ? 'REVISIÓN A/B' : states[job.state] || job.state.toUpperCase()));
   ui.session.append(node('p', 'session-prompt', job.request.prompt));
   const date = new Date(job.request.created_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
   ui.session.append(node('p', 'session-meta', `${date} · ${fmt(job.request.duration_seconds)} · ${job.request.bpm} BPM · semilla ${job.request.seed}`));
+  if (articulation || articulationRevision) {
+    const pair = node('p', 'session-note');
+    const sourceId = articulation?.sourceJobId || job.id;
+    const revisionId = articulation ? job.id : articulationRevision.id;
+    const original = node('a', '', 'ORIGINAL');
+    original.href = `?job=${encodeURIComponent(sourceId)}`;
+    const revised = node('a', '', 'REVISIÓN');
+    revised.href = `?job=${encodeURIComponent(revisionId)}`;
+    pair.append(original, document.createTextNode('  >  '), revised);
+    ui.session.append(pair);
+    if (articulation) ui.session.append(node('p', 'session-note',
+      `Articulación revisada por IA: ${articulation.changedNotes} duraciones de ${job.manifest.all_midi_notes} notas. Alturas, entradas, velocidades y otras pistas intactas.`));
+  }
   if (job.request.editorial_profile === 'ai-only-v2') ui.session.append(node('p', 'session-note', 'Perfil editorial local IA v2 · cada nota es autoría IA.'));
-  if (job.request.first_pass_audition) ui.session.append(node('p', 'session-note', 'Primera pasada IA: sin reescritura musical. La integridad técnica MIDI permanece activa.'));
-  if (job.request.review_from_job) ui.session.append(node('p', 'session-note',
+  if (job.request.first_pass_audition && !articulation) ui.session.append(node('p', 'session-note', 'Primera pasada IA: sin reescritura musical. La integridad técnica MIDI permanece activa.'));
+  if (job.request.review_from_job && !articulation) ui.session.append(node('p', 'session-note',
     `Revisión A/B de la primera pasada ${job.request.review_from_job.slice(0, 8)}: se conserva el mismo plan y solo la revisión IA puede cambiar notas.`));
   if (job.request.phrase_architecture_experiment) ui.session.append(node('p', 'session-note',
     'Plan de frases y relaciones entre voces escrito por la IA antes del MIDI. Las notas siguen siendo íntegramente autoría de la IA.'));
@@ -150,6 +200,11 @@ function renderSession(job) {
   }
   const actions = node('div', 'session-actions');
   actions.append(actionButton('Repetir ajustes', () => reuse(job)));
+  if (job.checkpoint?.file && !job.manifest &&
+      (job.state === 'failed' || job.state === 'interrupted')) {
+    const resumeButton = actionButton('Retomar MIDI aceptado', () => resumeAcceptedMidi(job, resumeButton));
+    actions.append(resumeButton);
+  }
   if (job.recovery?.jobId) actions.append(actionButton('Ver recuperación', () => {
     selectedId = job.recovery.jobId; loadedKey = null; previewDiagnostic = false; showSelected();
   }));
@@ -206,7 +261,8 @@ function renderHistory() {
     const button = node('button', `history-job ${selectedId === job.id ? 'selected' : ''}`);
     button.type = 'button';
     button.append(node('strong', '', job.manifest?.title || job.request.prompt.slice(0, 68)));
-    button.append(node('span', 'status ' + job.state, job.manifest?.review_audition
+    button.append(node('span', 'status ' + job.state, job.manifest?.articulationReview
+      ? 'REVISIÓN DE ARTICULACIÓN' : job.manifest?.review_audition
       ? 'REVISIÓN A/B' : job.manifest?.first_pass_audition
         ? 'PRIMERA PASADA' : states[job.state] || job.state));
     button.append(node('span', '', `${new Date(job.request.created_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt(job.request.duration_seconds)} · ${job.manifest?.tracks?.length || job.checkpoint?.parts || 0} pistas${job.origin === 'auto' ? ` · prueba ${job.id.slice(0, 8)}` : ''}`));
@@ -345,7 +401,10 @@ async function refresh() {
     jobs = listing.jobs;
     const ready = status.workerReady && status.apiKeyConfigured;
     ui.health.className = `health ${ready ? '' : 'warn'}`;
-    ui.health.textContent = ready ? `Perfil editorial local ${status.editorialProfile === 'ai-only-v2' ? 'IA v2' : 'anterior'} listo · Escuchar obras guardadas no consume API.` : `Composición no disponible: ${status.workerReady ? '' : 'falta el generador. '}${status.apiKeyConfigured ? '' : 'falta OPENAI_API_KEY en este proceso.'} Las obras guardadas siguen disponibles.`;
+    const profileLabel = status.musicalProfile === 'connected-discourse'
+      ? 'Laboratorio local de fraseo y diálogo conectado'
+      : `Perfil editorial local ${status.editorialProfile === 'ai-only-v2' ? 'IA v2' : 'anterior'}`;
+    ui.health.textContent = ready ? `${profileLabel} listo · Escuchar obras guardadas no consume API.` : `Composición no disponible: ${status.workerReady ? '' : 'falta el generador. '}${status.apiKeyConfigured ? '' : 'falta OPENAI_API_KEY en este proceso.'} Las obras guardadas siguen disponibles.`;
     ui.submit.disabled = Boolean(status.activeJobId) || !ready;
     $('#job-count').textContent = `${jobs.length} OBRAS`;
     if (!jobs.length) {
@@ -367,7 +426,8 @@ async function refresh() {
     if (!selectedId || !jobs.some(job => job.id === selectedId))
       selectedId = (jobs.find(job => job.state === 'running') || jobs.find(job => job.manifest?.tracks?.length) || jobs.find(job => job.checkpoint?.file) || jobs[0])?.id || null;
     const selected = jobs.find(job => job.id === selectedId);
-    if (selected?.recovery?.jobId && lastAutoRecoverySelection !== selected.id &&
+    if (selected?.recovery?.jobId && selected.id !== linkedJobId &&
+        lastAutoRecoverySelection !== selected.id &&
         jobs.some(job => job.id === selected.recovery.jobId)) {
       lastAutoRecoverySelection = selected.id;
       selectedId = selected.recovery.jobId;

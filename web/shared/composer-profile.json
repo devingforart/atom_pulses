@@ -1,5 +1,5 @@
 {
-  "name": "ai-only-v2-joint-narrative",
+  "name": "ai-only-v2-connected-discourse",
   "defaultFirstPass": true,
   "defaultPhraseArchitecture": true,
   "workerEnvironment": {
@@ -8,6 +8,9 @@
     "PULSO_AI_JOINT_SHORT_CAST": "1",
     "PULSO_AI_JOINT_NARRATIVE_ANCHORS": "1",
     "PULSO_AI_GLOBAL_NARRATIVE_EDITOR": "1",
+    "PULSO_AI_JOINT_ONE_GROUP": "1",
+    "PULSO_AI_EXPRESSIVE_ENSEMBLE_EXPERIMENT": "1",
+    "PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT": "1",
     "PULSO_DISABLE_SECURE_CREDENTIALS": "1"
   }
 }

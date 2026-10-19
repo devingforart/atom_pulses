@@ -1977,6 +1977,65 @@ void runGeneratorTests() {
     require(auditTonalContract(lowHalfDiminished, 2, ScaleKind::Minor, 4.0,
                               halfDiminishedWindow).unintendedHarshOverlaps == 1,
             "The same half-diminished tritone remains risky in the bass register");
+    const std::vector<HarmonicWindow> leadingToneDiminishedWindow{
+        {0.0, 4.0, 1, 1, {1, 4, 7, 10}, HarmonicFunction::Transitional,
+         VoicingStrategy::Close, 0.73, "c_sharp_dim7", "vii°7/i"}
+    };
+    Pattern declaredDiminishedSeventh;
+    declaredDiminishedSeventh.lengthBeats = 4.0;
+    declaredDiminishedSeventh.notes = {
+        {0.0, 2.0, 49, 62, 3, VoiceId::HarmonicFoundation}, // C#3
+        {0.0, 2.0, 52, 60, 3, VoiceId::HarmonicFoundation}, // E3
+        {0.0, 2.0, 55, 58, 3, VoiceId::HarmonicFoundation}, // G3
+        {0.0, 2.0, 58, 56, 3, VoiceId::HarmonicFoundation}  // Bb3
+    };
+    const auto diminishedAudit = auditTonalContract(
+        declaredDiminishedSeventh, 2, ScaleKind::Minor, 4.0,
+        leadingToneDiminishedWindow);
+    require(diminishedAudit.unintendedHarshOverlaps == 0 &&
+                diminishedAudit.unsupportedChromaticNotes == 0,
+            "Both declared tritones in C#dim7 must survive the D-minor cadence audit");
+    const std::vector<HarmonicWindow> resolvedDiminishedCadence{
+        leadingToneDiminishedWindow.front(),
+        {4.0, 8.0, 2, 2, {2, 5, 9}, HarmonicFunction::Tonic,
+         VoicingStrategy::Open, 0.20, "dm", "i"}
+    };
+    auto preservedDiminished = declaredDiminishedSeventh;
+    const auto diminishedRepair = repairTonalContract(
+        preservedDiminished, 2, ScaleKind::Minor, 4.0,
+        resolvedDiminishedCadence);
+    require(diminishedRepair.verticalCollisionsRepaired == 0 &&
+                preservedDiminished.notes.size() == declaredDiminishedSeventh.notes.size() &&
+                preservedDiminished.notes[0].pitch == 49 &&
+                preservedDiminished.notes[1].pitch == 52 &&
+                preservedDiminished.notes[2].pitch == 55 &&
+                preservedDiminished.notes[3].pitch == 58,
+            "Tonal repair must not retune or remove the AI's declared diminished chord");
+    Pattern openDiminishedBass;
+    openDiminishedBass.lengthBeats = 4.0;
+    openDiminishedBass.notes = {
+        {0.0, 2.0, 37, 66, 4, VoiceId::SubBass}, // C#2
+        {0.0, 2.0, 55, 60, 3, VoiceId::HarmonicFoundation} // G3
+    };
+    require(auditTonalContract(openDiminishedBass, 2, ScaleKind::Minor, 4.0,
+                              leadingToneDiminishedWindow).unintendedHarshOverlaps == 0,
+            "A declared diminished root in the bass and fifth in the midrange are not a low cluster");
+    auto compactDiminishedBass = openDiminishedBass;
+    compactDiminishedBass.notes[1].pitch = 43; // G2, only a tritone above C#2.
+    require(auditTonalContract(compactDiminishedBass, 2, ScaleKind::Minor, 4.0,
+                              leadingToneDiminishedWindow).unintendedHarshOverlaps == 1,
+            "A compact diminished tritone entirely in the low register still needs voicing review");
+    auto undeclaredDiminished = leadingToneDiminishedWindow;
+    undeclaredDiminished.front().pitchClasses = {1, 4, 7};
+    require(auditTonalContract(declaredDiminishedSeventh, 2, ScaleKind::Minor, 4.0,
+                              undeclaredDiminished).unintendedHarshOverlaps >= 1,
+            "The missing diminished seventh must not excuse the upper tritone");
+    auto foreignChromaticDiminished = declaredDiminishedSeventh;
+    foreignChromaticDiminished.notes.push_back(
+        {0.5, 0.5, 75, 70, 2, VoiceId::Lead}); // Eb5, not C#dim7 or D minor.
+    require(auditTonalContract(foreignChromaticDiminished, 2, ScaleKind::Minor,
+                              4.0, leadingToneDiminishedWindow).unsupportedChromaticNotes >= 1,
+            "Foreign chromatic notes must still be challenged inside a diminished passage");
     const std::vector<HarmonicWindow> gMinorSixthWindow{
         {0.0, 4.0, 7, 7, {7, 10, 2, 4}, HarmonicFunction::Colour,
          VoicingStrategy::Open, 0.48, "gm6", "Gm6"}

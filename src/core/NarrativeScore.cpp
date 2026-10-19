@@ -507,25 +507,80 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
         }
     }
     const auto totalBeats = plan.totalBars * plan.beatsPerBar;
+    const auto handoff = !plan.narrativeSpine.terminalSpeakerInstrumentId.empty() &&
+        plan.narrativeSpine.terminalSpeakerInstrumentId !=
+            plan.narrativeSpine.protagonistInstrumentId &&
+        plan.narrativeSpine.terminalPhraseStartBar >= 0;
+    std::set<std::uint16_t> terminalParts;
+    if (handoff) {
+        const auto terminal = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+            [&](const auto& instrument) {
+                return instrument.id ==
+                    plan.narrativeSpine.terminalSpeakerInstrumentId;
+            });
+        if (terminal != plan.instruments.end()) {
+            const auto lane = terminal->contentLaneId.empty() ? terminal->id :
+                terminal->contentLaneId;
+            for (std::size_t index = 0; index < plan.instruments.size(); ++index) {
+                const auto& candidate = plan.instruments[index];
+                const auto candidateLane = candidate.contentLaneId.empty() ?
+                    candidate.id : candidate.contentLaneId;
+                if (candidateLane == lane)
+                    terminalParts.insert(static_cast<std::uint16_t>(index + 1));
+            }
+        }
+    }
     const auto codaStart = std::max(0.0, totalBeats - plan.beatsPerBar * 8.0);
+    std::vector<const NoteEvent*> finalReturn;
+    if (handoff && !plan.sections.empty()) {
+        const auto returnStart = plan.sections.back().startBar * plan.beatsPerBar;
+        const auto returnEnd = plan.narrativeSpine.terminalPhraseStartBar *
+            plan.beatsPerBar;
+        for (const auto& note : pattern.notes)
+            if (protagonistNote(note) && note.startBeat >= returnStart &&
+                note.startBeat < returnEnd)
+                finalReturn.push_back(&note);
+        std::sort(finalReturn.begin(), finalReturn.end(),
+            [](const auto* left, const auto* right) {
+                if (left->startBeat != right->startBeat)
+                    return left->startBeat < right->startBeat;
+                return left->pitch < right->pitch;
+            });
+    }
     std::vector<const NoteEvent*> codaTheme;
     for (const auto& note : pattern.notes)
-        if (protagonistNote(note) &&
+        if ((handoff ? terminalParts.contains(note.partId) : protagonistNote(note)) &&
             note.startBeat >= codaStart && note.startBeat < totalBeats)
             codaTheme.push_back(&note);
     std::sort(codaTheme.begin(), codaTheme.end(), [](const auto* left, const auto* right) {
         if (left->startBeat != right->startBeat) return left->startBeat < right->startBeat;
         return left->pitch < right->pitch;
     });
+    // A planned speaker relay is not fulfilled when another melodic voice
+    // appends a new attack after the designated speaker has finished. Such a
+    // detached tag changes who has the last word, even if both pitch classes
+    // are consonant. The AI must reauthor the handoff or explicitly replan it.
+    auto terminalHandoffHonored = true;
+    if (handoff && !codaTheme.empty()) {
+        const auto lastSpeakerRelease = (*std::max_element(codaTheme.begin(),
+            codaTheme.end(), [](const auto* left, const auto* right) {
+                return left->endBeat() < right->endBeat();
+            }))->endBeat();
+        terminalHandoffHonored = std::none_of(pattern.notes.begin(),
+            pattern.notes.end(), [&](const NoteEvent& note) {
+                return note.startBeat > lastSpeakerRelease + .25 &&
+                    note.startBeat < totalBeats &&
+                    !terminalParts.contains(note.partId) &&
+                    voiceDefinition(note.voice).family == VoiceFamily::Melodic;
+            });
+    }
     auto connectedAttacks = codaTheme.empty() ? std::size_t{} : std::size_t{1};
-    auto longestConnected = connectedAttacks;
     auto previousAttack = codaTheme.empty() ? 0.0 : codaTheme.front()->startBeat;
     for (std::size_t index = 1; index < codaTheme.size(); ++index) {
         const auto attack = codaTheme[index]->startBeat;
         if (std::abs(attack - previousAttack) < .01) continue;
         connectedAttacks = attack - previousAttack <= plan.beatsPerBar * .75 + .001
             ? connectedAttacks + 1 : 1;
-        longestConnected = std::max(longestConnected, connectedAttacks);
         previousAttack = attack;
     }
     std::set<int> stableTerminalPitchClasses{
@@ -547,18 +602,28 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
                 stableTerminalPitchClasses.insert(positiveModulo(pitchClass, 12));
         }
     }
-    const auto protagonistCloses = longestConnected >= 4 &&
+    // A connected passage earlier in the coda cannot validate a lone final
+    // tonic tag after a long gap. The cadence has to belong to the phrase
+    // that actually reaches the last melodic attack; the AI, not this audit,
+    // decides its pitches, durations and accompaniment.
+    report.terminalHandoffHonored = terminalHandoffHonored;
+    const auto protagonistCloses = !codaTheme.empty() &&
+        connectedAttacks >= (handoff ? 3U : 4U) &&
+        terminalHandoffHonored &&
+        (!handoff || finalReturn.size() >= 4) &&
         codaTheme.back()->startBeat >= totalBeats - plan.beatsPerBar * 2.0 &&
         stableTerminalPitchClasses.contains(
             positiveModulo(codaTheme.back()->pitch, 12));
     report.terminalPhraseReady = protagonistCloses;
-    if (!premiseTheme.empty() && !codaTheme.empty())
-        report.motifClosure = contourClosure(premiseTheme, codaTheme);
+    const auto& returnedTheme = handoff ? finalReturn : codaTheme;
+    if (!premiseTheme.empty() && !returnedTheme.empty())
+        report.motifClosure = contourClosure(premiseTheme, returnedTheme);
     if (!codaTheme.empty()) {
         const auto* last = codaTheme.back();
         const auto pitchClass = positiveModulo(last->pitch, 12);
         report.tonalClosure = pitchClass == plan.rootPitchClass ? 1.0 :
-            pitchClass == positiveModulo(plan.rootPitchClass + 7, 12) ? .55 : 0.0;
+            pitchClass == positiveModulo(plan.rootPitchClass + 7, 12) ? .55 :
+            handoff && stableTerminalPitchClasses.contains(pitchClass) ? .70 : 0.0;
         std::vector<double> durations;
         for (const auto* note : codaTheme) durations.push_back(note->durationBeats);
         std::sort(durations.begin(), durations.end());

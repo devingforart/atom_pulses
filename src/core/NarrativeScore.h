@@ -61,6 +61,7 @@ struct NarrativeScoreReport {
     double densityRelease{};
     double resolutionScore{};
     bool terminalPhraseReady{};
+    bool terminalHandoffHonored{true};
     double score{};
     bool foregroundExpected{};
     bool movementBassExpected{};

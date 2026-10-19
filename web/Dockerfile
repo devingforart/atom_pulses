@@ -43,12 +43,15 @@ RUN --mount=type=cache,target=/source/build \
     cp /source/build/pulso_cloud_worker /tmp/pulso_cloud_worker
 
 FROM debian:bookworm-slim AS runtime
+ARG PULSO_SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.revision=$PULSO_SOURCE_REVISION
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libcurl4 && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 10001 pulso
 WORKDIR /app
 COPY --from=backend /tmp/pulso-web-api /app/pulso-web-api
 COPY --from=composer /tmp/pulso_cloud_worker /app/pulso_cloud_worker
 COPY --from=frontend /source/frontend/dist /app/frontend
+COPY web/shared/composer-profile.json /app/composer-profile.json
 RUN mkdir /app/cloud-jobs && chown pulso:pulso /app/cloud-jobs
 USER pulso
 ENV PULSO_WEB_BIND=0.0.0.0:8080 FRONTEND_DIR=/app/frontend SECURE_COOKIES=true \

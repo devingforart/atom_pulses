@@ -129,6 +129,8 @@ if(PULSO_BUILD_PLUGIN OR PULSO_BUILD_CLOUD_WORKER)
     FetchContent_MakeAvailable(JUCE)
 
     add_library(pulso_ai STATIC
+        src/plugin/AiMelodicDiscourse.cpp
+        src/plugin/AiMelodicDiscourse.h
         src/plugin/AiPhraseArchitecture.cpp
         src/plugin/AiPhraseArchitecture.h
         src/plugin/ApiCredentialStore.cpp

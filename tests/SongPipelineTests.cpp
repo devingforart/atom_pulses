@@ -1,6 +1,7 @@
 #include "plugin/SongGenerationPipeline.h"
 #include "plugin/AiComposer.h"
 #include "plugin/AiPhraseArchitecture.h"
+#include "plugin/AiMelodicDiscourse.h"
 #include "plugin/JointWindowRecovery.h"
 #include "core/SovereignScoreRenderer.h"
 
@@ -88,11 +89,135 @@ int main() {
         juce::String phraseError;
         check(AiPhraseArchitecture::validate(phraseJson, orderPlan, phraseError),
               "AI phrase architecture should validate for known owners and sections");
+        auto deliveryPlan = juce::JSON::parse(phraseJson);
+        auto& firstDeliveryPhrase = deliveryPlan.getDynamicObject()
+            ->getProperty("phrases").getArray()->getReference(0);
+        firstDeliveryPhrase.getDynamicObject()->setProperty("delivery", juce::JSON::parse(R"json({
+          "proposition":"rising third leaves its final note pending",
+          "continuation":"carry the line toward a changed descending answer",
+          "arrival":"a held third before the partner takes the question",
+          "connection":"joined motion with a breath after the complete statement",
+          "dialogue":"the answer inherits the missing descent rather than restarting",
+          "structural_tones":[{"beat":2,"duration":3,"pitch":72,"purpose":"bearing tone"}]
+        })json"));
+        check(AiPhraseArchitecture::validate(juce::JSON::toString(deliveryPlan),
+                  orderPlan, phraseError),
+              "a valid AI delivery sketch must coexist with legacy phrase fields");
+        check(AiPhraseArchitecture::windowBrief(juce::JSON::toString(deliveryPlan),
+                  orderPlan, 0, 0, 8).contains("6.00/3.00/72"),
+              "phrase-local bearing tones must be translated into writer-local coordinates");
+        auto malformedDelivery = juce::JSON::parse(juce::JSON::toString(deliveryPlan));
+        malformedDelivery.getDynamicObject()->getProperty("phrases").getArray()
+            ->getReference(0).getDynamicObject()->getProperty("delivery").getDynamicObject()
+            ->getProperty("structural_tones").getArray()->getReference(0)
+            .getDynamicObject()->setProperty("duration", 40);
+        check(!AiPhraseArchitecture::validate(juce::JSON::toString(malformedDelivery),
+                  orderPlan, phraseError),
+              "an out-of-span AI sketch must be rejected, never clipped or auto-filled");
+        const auto originalDiscourse = juce::SystemStats::getEnvironmentVariable(
+            "PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT", {});
+#ifdef _WIN32
+        _putenv_s("PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT", "1");
+#else
+        setenv("PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT", "1", 1);
+#endif
+        const auto deliverySchema = juce::JSON::parse(AiPhraseArchitecture::schema());
+        check(deliverySchema.getProperty("properties", {}).getProperty("phrases", {})
+                  .getProperty("items", {}).getProperty("properties", {})
+                  .getProperty("delivery", {}).isObject(),
+              "the experimental structured output must request an actual delivery sketch");
+        check(AiMelodicDiscourse::planningBrief(120).contains("0.125 seconds"),
+              "the AI must receive durations in perceptual time at the actual tempo");
+        check(AiMelodicDiscourse::planningOutputTokenBudget(4) == 11300 &&
+                  AiMelodicDiscourse::planningOutputTokenBudget(6) > 11300 &&
+                  AiMelodicDiscourse::planningOutputTokenBudget(64) == 20000,
+              "the richer AI plan needs bounded output headroom proportional to its sections");
+        auto dialoguePlan = orderPlan;
+        dialoguePlan.phraseArchitectureJson = phraseJson.toStdString();
+        const auto dialogueGroups = AiMelodicDiscourse::writingGroups(
+            dialoguePlan, {0, 1, 2, 3, 4});
+        check(dialogueGroups == std::vector<std::vector<std::size_t>>{{0, 1, 2, 3}, {4}},
+              "AI-declared speakers must be authored together with their harmonic context");
+        check(AiMelodicDiscourse::macroBrief().contains("provisional destinations"),
+              "the macro plan must permit complete local sentences before final resolution");
+#ifdef _WIN32
+        _putenv_s("PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT", originalDiscourse.toRawUTF8());
+#else
+        if (originalDiscourse.isEmpty()) unsetenv("PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT");
+        else setenv("PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT", originalDiscourse.toRawUTF8(), 1);
+#endif
         check(AiPhraseArchitecture::windowBrief(phraseJson, orderPlan, 0, 0, 8)
                   .contains("state the interrupted ascent") &&
+              AiPhraseArchitecture::windowBrief(phraseJson, orderPlan, 0, 0, 8)
+                  .contains("window-local beats 4..20") &&
               !AiPhraseArchitecture::windowBrief(phraseJson, orderPlan, 0, 0, 8)
                   .contains("transform the ascent"),
               "window writer should receive only the relevant phrase intentions");
+        Pattern phraseMidi;
+        NoteEvent spoken;
+        spoken.partId = 4;
+        spoken.startBeat = 5.0;
+        spoken.durationBeats = 1.0;
+        spoken.pitch = 72;
+        phraseMidi.notes.push_back(spoken);
+        const auto realized = AiPhraseArchitecture::realizationBrief(
+            phraseJson, orderPlan, phraseMidi);
+        check(realized.contains("speaker=speaker 1 attacks") &&
+              realized.contains("promised answer=bed 0 attacks") &&
+              realized.contains("speaker=speaker 0 attacks"),
+              "narrative critic must see sparse and silent promised phrases");
+        const auto missing = AiPhraseArchitecture::measureRealization(
+            phraseJson, orderPlan, phraseMidi);
+        check(missing.silentSpeakers == 1 && missing.missingResponses == 2,
+              "AI promise audit must identify absent speakers and answers");
+        check(AiPhraseArchitecture::missingCompletedPhraseOwners(
+                  phraseJson, orderPlan, phraseMidi, 0, 16).empty(),
+              "unfinished phrases must not force attacks into a technical window");
+        juce::String absentPhraseEvidence;
+        check(AiPhraseArchitecture::missingCompletedPhraseOwners(
+                  phraseJson, orderPlan, phraseMidi, 0, 32).empty(),
+              "a respondent relationship must not force an answer before its own phrase");
+        check(AiPhraseArchitecture::missingCompletedPhraseOwners(
+                  phraseJson, orderPlan, phraseMidi, 32, 64, &absentPhraseEvidence) ==
+                  std::vector<std::string>{"speaker"},
+              "earlier music must not hide an absent speaker in a later phrase");
+        check(absentPhraseEvidence.contains("window-local beats 0.00..24.00"),
+              "AI repair feedback must locate the missing phrase, not merely name its owner");
+        Pattern heldPhraseMidi;
+        auto heldAnswer = spoken;
+        heldAnswer.startBeat = 3;
+        heldAnswer.durationBeats = 2;
+        heldPhraseMidi.notes.push_back(heldAnswer);
+        check(AiPhraseArchitecture::missingCompletedPhraseOwners(
+                  phraseJson, orderPlan, heldPhraseMidi, 0, 32).empty(),
+              "a held speaker overlapping a phrase needs no artificial reattack");
+        const auto spanningPhrase = phraseJson.replace(
+            "\"local_start_bar\":1,\"bars\":4", "\"local_start_bar\":5,\"bars\":4")
+            .replace("\"response_id\":\"bed\"", "\"response_id\":\"\"");
+        auto crossingMidi = phraseMidi;
+        crossingMidi.notes.front().startBeat = 24;
+        check(AiPhraseArchitecture::missingCompletedPhraseOwners(
+                  spanningPhrase, orderPlan, crossingMidi, 0, 32).empty(),
+              "a phrase crossing the window is not yet due");
+        check(AiPhraseArchitecture::missingCompletedPhraseOwners(
+                  spanningPhrase, orderPlan, crossingMidi, 32, 40).empty(),
+              "earlier notes within the same phrase permit a later intentional rest");
+        auto handoffPlan = orderPlan;
+        handoffPlan.instruments.push_back(
+            part("answer_voice", VoiceId::Countermelody));
+        const auto handoffPhraseJson = phraseJson.replace(
+            "\"speaker_id\":\"speaker\",\"response_id\":\"moving_bass\"",
+            "\"speaker_id\":\"answer_voice\",\"response_id\":\"moving_bass\"");
+        AiPhraseArchitecture::applyTerminalHandoff(handoffPhraseJson, handoffPlan);
+        check(handoffPlan.narrativeSpine.terminalSpeakerInstrumentId ==
+                  "answer_voice" &&
+              handoffPlan.narrativeSpine.terminalPhraseStartBar == 8,
+              "the final MIDI audit must follow the AI's declared speaker handoff");
+        AiPhraseArchitecture::applyTerminalHandoff(
+            handoffPhraseJson.replace("\"speaker_id\":\"answer_voice\"",
+                "\"speaker_id\":\"upper_body\""), handoffPlan);
+        check(handoffPlan.narrativeSpine.terminalSpeakerInstrumentId.empty(),
+              "a harmonic pad must not masquerade as the terminal melodic speaker");
         const auto crossingPhraseJson = phraseJson.replace(
             "\"local_start_bar\":1,\"bars\":4",
             "\"local_start_bar\":5,\"bars\":4");
@@ -105,6 +230,70 @@ int main() {
                                "\"response_id\":\"unknown\""),
             orderPlan, phraseError),
             "AI phrase architecture must reject invented instrument relationships");
+        auto inactivePhrasePlan = orderPlan;
+        inactivePhrasePlan.instruments[3].activeSections = {"answer"};
+        check(!AiPhraseArchitecture::validate(phraseJson,
+            inactivePhrasePlan, phraseError),
+            "an AI phrase must not promise a voice in a scene where the cast makes it inactive");
+        check(AiPhraseArchitecture::validate(phraseJson,
+            inactivePhrasePlan, phraseError, false),
+            "an accepted historical checkpoint remains resumable after tightening fresh-plan validation");
+        check(!juce::JSON::parse(AiPhraseArchitecture::longFormArcSchema()).isVoid(),
+              "long-form arc schema must be valid JSON");
+        auto augmentedPhrase = phraseJson;
+        const juce::String arcJson = R"json({"act_links":[
+          {"section_index":0,"carrier_id":"speaker","inherited_question":"silence before the third",
+           "audible_transformation":"interrupt the ascent","consequence":"question remains",
+           "left_open":"the withheld third"},
+          {"section_index":1,"carrier_id":"moving_bass","inherited_question":"the withheld third",
+           "audible_transformation":"answer below the lead","consequence":"descent resolves",
+           "left_open":"final sustain"}]})json";
+        check(AiPhraseArchitecture::attachLongFormArc(augmentedPhrase, arcJson,
+              orderPlan, phraseError) &&
+              AiPhraseArchitecture::windowBrief(augmentedPhrase, orderPlan, 1, 0, 8)
+                  .contains("answer below the lead") &&
+              AiPhraseArchitecture::windowBrief(augmentedPhrase, orderPlan, 1, 0, 8)
+                  .contains("the withheld third"),
+              "writer must receive the AI-authored current and previous causal links");
+        auto invalidArcPhrase = phraseJson;
+        check(!AiPhraseArchitecture::attachLongFormArc(invalidArcPhrase,
+              arcJson.replace("\"carrier_id\":\"moving_bass\"",
+                              "\"carrier_id\":\"invented\""),
+              orderPlan, phraseError) && invalidArcPhrase == phraseJson,
+              "unknown arc carrier must not corrupt the accepted phrase checkpoint");
+        check(!juce::JSON::parse(AiPhraseArchitecture::groundedStorySchema()).isVoid(),
+              "MIDI-grounded story schema must be valid JSON");
+        const juce::String storyJson = R"json({"grounded_story":{
+          "opening_evidence":"speaker MIDI rises 60 to 64 then rests",
+          "related_counteridea":"bass answers that rest with a descent",
+          "central_conflict":"the two voices propose different destinations",
+          "necessary_turn":"the ascent borrows the bass descent",
+          "final_consequence":"both contours resolve together"},"act_links":[
+          {"section_index":0,"carrier_id":"speaker","inherited_question":"first rise",
+           "audible_transformation":"leave the rest unresolved","consequence":"bass enters",
+           "left_open":"a possible descent","score_evidence":"opening notes 60 then 64"},
+          {"section_index":1,"carrier_id":"moving_bass","inherited_question":"the rest",
+           "audible_transformation":"descend below the ascent","consequence":"lead changes shape",
+           "left_open":"shared final pitch","score_evidence":"bass answers after beat 32"}]})json";
+        auto groundedPhrase = phraseJson;
+        check(AiPhraseArchitecture::attachGroundedStory(groundedPhrase,
+              storyJson, orderPlan, phraseError) &&
+              AiPhraseArchitecture::windowBrief(groundedPhrase, orderPlan, 1, 0, 8)
+                  .contains("bass answers that rest") &&
+              AiPhraseArchitecture::windowBrief(groundedPhrase, orderPlan, 1, 0, 8)
+                  .contains("bass answers after beat 32"),
+              "later windows should inherit the story grounded in opening MIDI");
+        auto invalidStoryPhrase = phraseJson;
+        check(!AiPhraseArchitecture::attachGroundedStory(invalidStoryPhrase,
+              storyJson.replace("\"carrier_id\":\"moving_bass\"",
+                                "\"carrier_id\":\"invented\""),
+              orderPlan, phraseError) && invalidStoryPhrase == phraseJson,
+              "an invented score carrier must not mutate the accepted plan");
+        Pattern openingMidi;
+        openingMidi.notes.push_back({0, 1, 60, 90, 1, VoiceId::Lead, 4});
+        check(AiPhraseArchitecture::groundedStoryPrompt(orderPlan, "test",
+              phraseJson, openingMidi).contains("0.00,60,1.00"),
+              "story editor must receive actual opening pitches, not only prose");
         const auto focusedSchema = juce::JSON::parse(
             AiComposer::performanceSchemaFor(orderPlan, {3}));
         const auto focusedPitch = focusedSchema.getProperty("properties", {})
@@ -327,6 +516,42 @@ int main() {
             direct, owners, 0, 0, 2, authored, error),
             "direct MIDI parser accepted a note across the window boundary");
         check(!AiComposer::parseDirectWindowJson(
+            R"({"bed":[],"bass":[]})", direct, owners, 0, 0, 2,
+            authored, error) &&
+            AiComposer::parseDirectWindowJson(
+                R"({"bed":[],"bass":[]})", direct, owners, 0, 0, 2,
+                authored, error, false, true) && authored.empty(),
+            "an optional companion group must be allowed an intentional rest");
+        SongPlan continuity = direct;
+        continuity.totalBars = 4;
+        continuity.sections.push_back({});
+        continuity.sections[0].name = "Long scene";
+        continuity.sections[0].bars = 4;
+        continuity.sections[0].harmonicEvents.push_back({3, 0.0, "tonic"});
+        check(AiComposer::parseDirectWindowJson(
+            R"({"bed":[{"beat":7.75,"duration":1,"pitch":60,"velocity":88}],"bass":[]})",
+            continuity, owners, 0, 0, 2, authored, error, true) &&
+            authored.cells.size() == 1 && authored.cells[0].lengthBeats == 8.75,
+            "long-form continuity clipped an AI-authored note at a technical boundary");
+        const auto continued = PerformanceScoreEngine::normalize(
+            authored, 1, {16.0}, true);
+        Pattern continuedMidi;
+        PerformanceScoreEngine::replaceChunk(continuedMidi, authored, 0, 0.0, 16.0,
+            continuity.instruments, true);
+        check(continued.notesRejected == 0 && continuedMidi.notes.size() == 1 &&
+            std::abs(continuedMidi.notes[0].endBeat() - 8.75) < .001,
+            "technical window release was not preserved in the rendered MIDI");
+        continuity.sections[0].harmonicEvents[0].barOffset = 2;
+        check(!AiComposer::parseDirectWindowJson(
+            R"({"bed":[{"beat":7.75,"duration":1,"pitch":60,"velocity":88}],"bass":[]})",
+            continuity, owners, 0, 0, 2, authored, error, true),
+            "long-form continuity crossed a real harmonic boundary");
+        continuity.sections[0].harmonicEvents[0].barOffset = 3;
+        check(!AiComposer::parseDirectWindowJson(
+            R"({"bed":[{"beat":7.75,"duration":9,"pitch":60,"velocity":88}],"bass":[]})",
+            continuity, owners, 0, 0, 2, authored, error, true),
+            "long-form continuity crossed the end of its section");
+        check(!AiComposer::parseDirectWindowJson(
             R"({"bed":[{"beat":0,"duration":1,"pitch":30,"velocity":88}],"bass":[]})",
             direct, owners, 0, 0, 2, authored, error),
             "direct MIDI parser accepted a pitch more than one octave outside its preferred register");
@@ -402,6 +627,52 @@ int main() {
                 narrativePromptPlan.rhythmLanguage.description.c_str())) &&
             !narrativePrompt.contains("ELECTRONIC INTERPLAY"),
             "orchestral AI window omitted its authored dramatic or rhythmic brief");
+        Pattern priorMelody;
+        NoteEvent heldNote;
+        heldNote.startBeat = 15.75;
+        heldNote.durationBeats = 1.0;
+        heldNote.pitch = 60;
+        heldNote.partId = 1;
+        priorMelody.notes.push_back(heldNote);
+        const auto continuityPrompt = AiComposer::directWindowPromptFor(
+            "A tonal chamber miniature", narrativePromptPlan, priorMelody,
+            {0, 1}, 0, 4, 4, {}, false, true);
+        check(continuityPrompt.contains("ACTUAL MELODIC DEVELOPMENT LEDGER") &&
+            continuityPrompt.contains("ACCEPTED NOTES STILL SOUNDING AT THIS WINDOW START") &&
+            continuityPrompt.contains("15.75:60/1.00") &&
+            continuityPrompt.contains("MAY release after the technical window end"),
+            "long-form writer lost actual motif history or an AI-authored sustain");
+        const auto memoryOnlyPrompt = AiComposer::directWindowPromptFor(
+            "A tonal chamber miniature", narrativePromptPlan, priorMelody,
+            {0, 1}, 0, 4, 4, {}, false, false, false, true);
+        check(memoryOnlyPrompt.contains("ACTUAL MELODIC DEVELOPMENT LEDGER") &&
+            memoryOnlyPrompt.contains("A faithful return may be essential") &&
+            !memoryOnlyPrompt.contains("MAY release after the technical window end") &&
+            memoryOnlyPrompt.contains("ACCEPTED NOTES STILL SOUNDING AT THIS WINDOW START"),
+            "thematic memory lost sounding-note context or changed release policy");
+        Pattern thematicCandidate = priorMelody;
+        for (int index = 0; index < 4; ++index) {
+            NoteEvent note;
+            note.startBeat = 16.0 + index;
+            note.durationBeats = .5;
+            note.pitch = 60 + index;
+            note.partId = 1;
+            thematicCandidate.notes.push_back(note);
+        }
+        const auto thematicReview = AiComposer::thematicReviewPromptFor(
+            narrativePromptPlan, priorMelody, thematicCandidate, 0, 4, 4);
+        check(thematicReview.contains("Repetition can establish identity") &&
+            thematicReview.contains("16.00,1,60,0.50") &&
+            thematicReview.contains("19.00,1,63,0.50") &&
+            thematicReview.contains("The leading tone now resolves"),
+            "thematic editor omitted actual MIDI or the scene's musical cause");
+        const auto thematicRewrite = AiComposer::directWindowPromptFor(
+            "A tonal chamber miniature", narrativePromptPlan, priorMelody,
+            {0}, 0, 4, 4, "Develop the held answer", true, false, true);
+        check(thematicRewrite.contains("FOCUSED MUSICAL EDIT") &&
+            thematicRewrite.contains("preserving its recognisable motif") &&
+            !thematicRewrite.contains("pitch collision"),
+            "thematic revision was treated like harmonic collision repair");
         narrativePromptPlan.productionLanguage.domain = ProductionDomain::Hybrid;
         narrativePromptPlan.productionLanguage.electronicIntent = .31;
         check(!AiComposer::directWindowPromptFor("A tonal chamber miniature",

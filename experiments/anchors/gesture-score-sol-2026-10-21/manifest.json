@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "render_mode": "ai_sovereign",
+  "ai_authored_or_declared_transform_notes": 561,
+  "all_midi_notes": 561,
+  "note_provenance": {
+    "direct_ai": 561,
+    "reused_ai": 0,
+    "transformed_ai": 0,
+    "reused_transformed_ai": 0,
+    "other": 0
+  },
+  "engineVersion": "1.0.0",
+  "first_pass_audition": true,
+  "whole_argument": true,
+  "expectation_led": true,
+  "gesture_score": true,
+  "thematic_rehearsal": true,
+  "phrase_architecture_experiment": true,
+  "phraseArchitectureFile": "phrase-architecture.json",
+  "review_audition": false,
+  "title": "The D Question, Answered in G",
+  "key": "G major",
+  "bpm": 120.0,
+  "bars": 30,
+  "fullFile": "full-song.mid",
+  "planFile": "composition-plan.json",
+  "musicalAuditFile": "musical-audit.json",
+  "tracks": [
+    {
+      "filename": "track-01.mid",
+      "name": "First Violin",
+      "notes": 115
+    },
+    {
+      "filename": "track-02.mid",
+      "name": "Second Violin",
+      "notes": 80
+    },
+    {
+      "filename": "track-03.mid",
+      "name": "Viola",
+      "notes": 36
+    },
+    {
+      "filename": "track-04.mid",
+      "name": "Cello",
+      "notes": 64
+    },
+    {
+      "filename": "track-05.mid",
+      "name": "Fortepiano",
+      "notes": 158
+    },
+    {
+      "filename": "track-06.mid",
+      "name": "Harp",
+      "notes": 35
+    },
+    {
+      "filename": "track-07.mid",
+      "name": "Bassoon",
+      "notes": 53
+    },
+    {
+      "filename": "track-08.mid",
+      "name": "Oboe",
+      "notes": 20
+    }
+  ],
+  "editorial": {
+    "technical_ready": true,
+    "legacy_production_ready": false,
+    "creative_ready": false,
+    "narrative_ready": false,
+    "soundscape_ready": false,
+    "track_viability_ready": true,
+    "resolution_score": 0.577823529411765,
+    "dialogue_lines": 3,
+    "underfilled_bars": 0,
+    "ai_authored_note_ratio": 1.0,
+    "musical_review_required": true,
+    "musical_gate_bypassed": true,
+    "harmonic_conflicts": 61,
+    "low_register_conflicts": 0
+  }
+}

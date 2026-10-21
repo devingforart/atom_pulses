@@ -13,6 +13,7 @@ import { parseMidi } from '../shared/midi.mjs';
 import { composerProfile, defaultEditorialSettings, experimentalProfile, workerEnvironmentFor } from './composer-environment.mjs';
 import { originForJob, originForRoute } from './job-origin.mjs';
 import { blueprintRequestMatchesSource, exactResumeMatchesCheckpoint } from './checkpoint-integrity.mjs';
+import { foregroundCheckpoint } from './foreground-checkpoint.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -177,6 +178,7 @@ function validate(input) {
   const replanPhrases = input.replan_phrases === true;
   const compareEditorialModes = input.compare_editorial_modes === true;
   const reviewFromJob = input.review_from_job === undefined ? null : String(input.review_from_job);
+  const foregroundFromJob = input.foreground_from_job === undefined ? null : String(input.foreground_from_job);
   if (!prompt || prompt.length > 600) throw new InputError('La idea debe contener entre 1 y 600 caracteres.');
   if (!Number.isInteger(duration) || duration < 30 || duration > 900) throw new InputError('La duración debe estar entre 30 y 900 segundos.');
   if (!Number.isFinite(bpm) || bpm < 60 || bpm > 180) throw new InputError('El tempo debe estar entre 60 y 180 BPM.');
@@ -202,7 +204,28 @@ function validate(input) {
   if (reviewFromJob !== null && (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(reviewFromJob) ||
       resumeFromJob !== null || blueprintFromJob !== null || firstPassAudition || proofMode || renderMode !== 'ai_sovereign'))
     throw new InputError('Invalid first-pass review source.');
-  return { prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, first_pass_audition: firstPassAudition, phrase_architecture_experiment: phraseArchitectureExperiment, replan_phrases: replanPhrases, compare_editorial_modes: compareEditorialModes, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, review_from_job: reviewFromJob, created_at: new Date().toISOString() };
+  if (foregroundFromJob !== null && (!experimentalProfile ||
+      process.env.PULSO_AI_THEMATIC_REHEARSAL_EXPERIMENT !== '1' ||
+      !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(foregroundFromJob) ||
+      resumeFromJob !== null || blueprintFromJob !== null || reviewFromJob !== null ||
+      renderMode !== 'ai_sovereign' || proofMode || !firstPassAudition || !phraseArchitectureExperiment))
+    throw new InputError('Exact foreground rehearsal is available only in its experimental local worker.');
+  return { prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, first_pass_audition: firstPassAudition, phrase_architecture_experiment: phraseArchitectureExperiment, replan_phrases: replanPhrases, compare_editorial_modes: compareEditorialModes, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, review_from_job: reviewFromJob, ...(foregroundFromJob ? {foreground_from_job: foregroundFromJob} : {}), created_at: new Date().toISOString() };
+}
+
+function foregroundScoreFromJob(request) {
+  const sourceDir = jobDirectory(request.foreground_from_job);
+  const source = sourceDir && readJson(path.join(sourceDir, 'job.json'));
+  if (!blueprintRequestMatchesSource(source, request))
+    throw new InputError('Exact foreground rehearsal must retain prompt, duration, tempo, seed and modes.');
+  const resume = readJson(path.join(sourceDir, 'resume-score.json'));
+  const plan = readJson(path.join(sourceDir, 'partial-01-plan.json'));
+  if (!resume || !plan || !existsSync(path.join(sourceDir, 'partial-01.mid')))
+    throw new InputError('This source has no complete first foreground checkpoint.');
+  try {
+    return foregroundCheckpoint(resume, plan,
+      parseMidi(readFileSync(path.join(sourceDir, 'partial-01.mid'))));
+  } catch (error) { throw new InputError(error.message); }
 }
 
 function blueprintOnlyScoreFromJob(request) {
@@ -411,7 +434,21 @@ const server = http.createServer(async (req, res) => {
   const pathname = url.pathname;
   try {
     if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, editorialProfile: 'ai-only-v2', composerProfile: composerProfile.name, experimentalProfile,
-      musicalProfile: experimentalProfile && process.env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT === '1' ? 'connected-discourse' : 'shared-default' });
+      musicalProfile: experimentalProfile && process.env.PULSO_AI_GESTURE_SCORE_EXPERIMENT === '1'
+        ? 'gesture-score' : experimentalProfile && process.env.PULSO_AI_EXPECTATION_LED_EXPERIMENT === '1'
+        ? 'expectation-led' : experimentalProfile && process.env.PULSO_AI_MATERIAL_DIALOGUE_EXPERIMENT === '1'
+        ? 'material-dialogue' : experimentalProfile && process.env.PULSO_AI_WHOLE_ARGUMENT_EXPERIMENT === '1'
+        ? 'whole-argument' : experimentalProfile && process.env.PULSO_AI_CONSEQUENTIAL_DEVELOPMENT_EXPERIMENT === '1'
+        ? 'consequential-development' : experimentalProfile && process.env.PULSO_AI_THEMATIC_GROUNDWORK_EXPERIMENT === '1'
+        ? 'thematic-groundwork' : experimentalProfile && process.env.PULSO_AI_PHRASE_DEVELOPMENT_EXPERIMENT === '1'
+        ? 'phrase-development' : experimentalProfile && process.env.PULSO_AI_PHRASE_PROSODY_EXPERIMENT === '1' &&
+          process.env.PULSO_AI_THEMATIC_REHEARSAL_EXPERIMENT === '1'
+        ? 'phrase-prosody-rehearsal' : experimentalProfile && process.env.PULSO_AI_PHRASE_PROSODY_EXPERIMENT === '1'
+        ? 'phrase-prosody' : experimentalProfile && process.env.PULSO_AI_THEMATIC_SUBJECT_EXPERIMENT === '1'
+        ? 'thematic-subject' : experimentalProfile && process.env.PULSO_AI_COMPLETE_DIALOGUE_EXPERIMENT === '1'
+        ? 'complete-dialogue' : experimentalProfile && process.env.PULSO_AI_ENSEMBLE_DISCOURSE_EXPERIMENT === '1'
+        ? 'ensemble-discourse' : experimentalProfile && process.env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT === '1'
+        ? 'connected-discourse' : 'shared-default' });
     if (req.method === 'GET' && pathname === '/api/jobs') return json(res, 200, { jobs: listJobs() });
     if (req.method === 'POST' && !mutatingRequestAllowed(req)) return json(res, 403, { error: 'Solicitud local no autorizada.' });
     if (req.method === 'POST' && (pathname === '/api/jobs' || pathname === '/api/auto/jobs')) {
@@ -419,7 +456,8 @@ const server = http.createServer(async (req, res) => {
       if (!existsSync(worker)) return json(res, 503, { error: 'No se encontró el generador local. Revisá PULSO_LOCAL_WORKER_PATH.' });
       if (!process.env.OPENAI_API_KEY) return json(res, 503, { error: 'OPENAI_API_KEY no está configurada en este proceso.' });
       const request = validate(await bodyJson(req));
-      const resumeScore = request.review_from_job ? resumeScoreFromJob(request, true) :
+      const resumeScore = request.foreground_from_job ? foregroundScoreFromJob(request) :
+        request.review_from_job ? resumeScoreFromJob(request, true) :
         request.resume_from_job ? resumeScoreFromJob(request) :
         request.blueprint_from_job ? blueprintOnlyScoreFromJob(request) : null;
       const id = randomUUID();
@@ -460,6 +498,8 @@ const server = http.createServer(async (req, res) => {
       if (!job) return json(res, 404, { error: 'Composición no encontrada.' });
       const filename = decodeURIComponent(fileMatch[2]);
       const allowed = new Set(['job.json', 'manifest.json', 'checkpoint.json', 'diagnostic.json', job.compositionAudit && 'composition-audit.json', job.phraseAudit && 'phrase-audit.json', job.checkpoint?.file, job.diagnostic?.file, job.diagnostic?.planFile, job.diagnostic?.auditFile, job.manifest?.planFile, job.manifest?.phraseArchitectureFile, job.manifest?.auditFile, job.manifest?.fullFile, job.manifest?.comparisonFile, ...(job.manifest?.tracks || []).map(track => track.filename)]);
+      if (experimentalProfile && job.manifest?.thematic_rehearsal)
+        for (const name of ['partial-01.mid', 'partial-02.mid', 'thematic-rehearsal.json']) allowed.add(name);
       if (!allowed.has(filename) || !/^[a-zA-Z0-9._-]+$/.test(filename)) return json(res, 404, { error: 'Archivo no disponible.' });
       const file = path.join(jobDirectory(job.id), filename);
       if (!existsSync(file)) return json(res, 404, { error: 'Archivo no disponible.' });

@@ -1,5 +1,10 @@
 #include "AiPhraseArchitecture.h"
 #include "AiMelodicDiscourse.h"
+#include "AiEnsembleDiscourse.h"
+#include "AiThematicSubject.h"
+#include "AiPhraseDevelopment.h"
+#include "AiCompleteDialogue.h"
+#include "AiMaterialDialogue.h"
 
 #include <algorithm>
 #include <cmath>
@@ -30,7 +35,7 @@ bool shortText(const juce::var& value, int maximum = 2000) {
 } // namespace
 
 juce::String AiPhraseArchitecture::schema() {
-    return AiMelodicDiscourse::extendSchema(R"json({"type":"object","additionalProperties":false,
+    return AiThematicSubject::extendSchema(AiEnsembleDiscourse::extendSchema(AiMelodicDiscourse::extendSchema(R"json({"type":"object","additionalProperties":false,
       "required":["motif_clue","dramatic_question","answer_principle","phrases"],
       "properties":{
         "motif_clue":{"type":"string"},
@@ -56,7 +61,12 @@ juce::String AiPhraseArchitecture::schema() {
             "relationship":{"type":"string"},
             "consequence":{"type":"string"}
           }}}
-      }})json");
+      }})json")));
+}
+
+juce::String AiPhraseArchitecture::schema(const SongPlan& plan) {
+    return AiMaterialDialogue::planningSchema(
+        AiPhraseDevelopment::bindCastSchema(AiCompleteDialogue::argumentPlanningSchema(schema()), plan), plan);
 }
 
 juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
@@ -67,9 +77,15 @@ juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
         "The form, harmony and instrument cast below are fixed. Plan audible phrases "
         "and relationships BEFORE any notes are written. This is a creative score "
         "intention, not a quota, algorithm or instruction to fill every bar. "
-        "Return one or two significant phrase intentions per section. For "
-        "long works with more than twelve sections, favor one intention per "
-        "section and add a second only for essential dialogue. They may "
+        "Return ";
+    if (AiPhraseDevelopment::enabled())
+        out << "the meaningful phrase intentions that realize each section's internal "
+            "argument, within the bounded schema. A section is not itself a phrase. They may ";
+    else
+        out << "one or two significant phrase intentions per section. For "
+            "long works with more than twelve sections, favor one intention per "
+            "section and add a second only for essential dialogue. They may ";
+    out <<
         "overlap or leave intentional silence. Choose their lengths and placements "
         "for this work; never restart the song at a technical writing boundary. "
         "Name a speaker and, where musically useful, a distinct answering voice. "
@@ -180,6 +196,10 @@ juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
             "answer and a deliberate release for the ending appropriate to this "
             "work's tonal or modal language. No MIDI is requested here.\n";
     out << AiMelodicDiscourse::planningBrief(plan.bpm);
+    out << AiEnsembleDiscourse::planningBrief();
+    out << AiThematicSubject::planningBrief(plan);
+    out << AiCompleteDialogue::argumentPlanningBrief();
+    out << AiMaterialDialogue::planningBrief();
     out << "Use ZERO-BASED section_index exactly as listed and ZERO-BASED "
         "local_start_bar: the first bar of each section is 0. bars must be at "
         "least 1. A phrase MAY CROSS a section boundary when its continuation "
@@ -308,6 +328,10 @@ bool AiPhraseArchitecture::validate(const juce::String& json,
             error = "AI phrase " + juce::String(phraseNumber + 1) + ": " + error;
             return false;
         }
+        if (!AiEnsembleDiscourse::validate(value, bars * plan.beatsPerBar, plan, error)) {
+            error = "AI phrase " + juce::String(phraseNumber + 1) + ": " + error;
+            return false;
+        }
         const auto absoluteEnd = absoluteStart + bars;
         for (std::size_t index = 0; index < plan.sections.size(); ++index) {
             const auto& section = plan.sections[index];
@@ -320,6 +344,9 @@ bool AiPhraseArchitecture::validate(const juce::String& json,
         error = "AI phrase architecture omits a section";
         return false;
     }
+    if (!AiThematicSubject::validate(value, plan, error)) return false;
+    if (!AiCompleteDialogue::validateArgumentOwners(value, plan, error)) return false;
+    if (!AiMaterialDialogue::validate(value, plan, error)) return false;
     error.clear();
     return true;
 }
@@ -334,6 +361,8 @@ juce::String AiPhraseArchitecture::windowBrief(const juce::String& json,
     const auto* phrases = root == nullptr ? nullptr : root->getProperty("phrases").getArray();
     if (phrases == nullptr) return {};
     juce::String out;
+    out << AiMaterialDialogue::accompanimentContext(value);
+    if (AiMaterialDialogue::expectationLedEnabled()) return out;
     out << "\nAI-AUTHORED PHRASE ARCHITECTURE (intent, not invented notes): "
         << "motif clue=" << root->getProperty("motif_clue").toString()
         << "; question=" << root->getProperty("dramatic_question").toString()
@@ -374,6 +403,11 @@ juce::String AiPhraseArchitecture::windowBrief(const juce::String& json,
             << "\n";
         out << AiMelodicDiscourse::phraseBrief(value, start * plan.beatsPerBar,
             windowStart * plan.beatsPerBar, windowEnd * plan.beatsPerBar, plan.bpm);
+        out << AiEnsembleDiscourse::phraseBrief(value, start * plan.beatsPerBar,
+            windowStart * plan.beatsPerBar, windowEnd * plan.beatsPerBar);
+        if (AiMaterialDialogue::enabled())
+            out << "MATERIAL DEVELOPMENT FOR THIS PHRASE: "
+                << juce::JSON::toString(value.getProperty("material_development", {}), true) << "\n";
     }
     if (const auto* story = root->getProperty("grounded_story").getDynamicObject())
         out << "SCORE-GROUNDED STORY: This reading of the accepted MIDI takes "

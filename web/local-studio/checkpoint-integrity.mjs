@@ -9,6 +9,8 @@ export function blueprintRequestMatchesSource(source, request, allowEditorialCha
 export function exactResumeMatchesCheckpoint(checkpoint, resume) {
   return checkpoint?.resumeFile === 'resume-score.json' &&
     resume?.schema_version === 2 &&
+    Number.isInteger(resume.completed_units) && resume.completed_units >= 0 &&
+    (resume.completed_units > 0 || resume.prewritten_dialogue === true) &&
     resume.completed_units === checkpoint.completed_units &&
     Array.isArray(resume.notes) && resume.notes.length === checkpoint.notes &&
     Array.isArray(resume.cast_ids) &&

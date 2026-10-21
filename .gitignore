@@ -2,6 +2,9 @@
 /build-cloud/
 /build-cloud-verify/
 /build-continuity/
+/build-ensemble/
+/build-prosody/
+/build-development/
 /.vs/
 /.vscode/
 /out/

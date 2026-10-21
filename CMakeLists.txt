@@ -129,6 +129,18 @@ if(PULSO_BUILD_PLUGIN OR PULSO_BUILD_CLOUD_WORKER)
     FetchContent_MakeAvailable(JUCE)
 
     add_library(pulso_ai STATIC
+        src/plugin/AiMaterialDialogue.cpp
+        src/plugin/AiMaterialDialogue.h
+        src/plugin/AiPhraseDevelopment.cpp
+        src/plugin/AiPhraseDevelopment.h
+        src/plugin/AiThematicSubject.cpp
+        src/plugin/AiThematicSubject.h
+        src/plugin/AiCompleteDialogue.cpp
+        src/plugin/AiCompleteDialogue.h
+        src/plugin/AiGestureScore.cpp
+        src/plugin/AiGestureScore.h
+        src/plugin/AiEnsembleDiscourse.cpp
+        src/plugin/AiEnsembleDiscourse.h
         src/plugin/AiMelodicDiscourse.cpp
         src/plugin/AiMelodicDiscourse.h
         src/plugin/AiPhraseArchitecture.cpp
@@ -155,6 +167,12 @@ if(PULSO_BUILD_PLUGIN OR PULSO_BUILD_CLOUD_WORKER)
         target_link_libraries(pulso_ai PUBLIC CURL::libcurl)
     endif()
     if(PULSO_BUILD_TESTS)
+        add_executable(pulso_phrase_development_tests tests/PhraseDevelopmentTests.cpp)
+        target_link_libraries(pulso_phrase_development_tests PRIVATE pulso_ai)
+        add_test(NAME pulso_phrase_development_tests COMMAND pulso_phrase_development_tests)
+        add_executable(pulso_ensemble_discourse_tests tests/EnsembleDiscourseTests.cpp)
+        target_link_libraries(pulso_ensemble_discourse_tests PRIVATE pulso_ai)
+        add_test(NAME pulso_ensemble_discourse_tests COMMAND pulso_ensemble_discourse_tests)
         add_executable(pulso_pipeline_tests tests/SongPipelineTests.cpp)
         target_link_libraries(pulso_pipeline_tests PRIVATE pulso_ai)
         if(MSVC)

@@ -1,0 +1,4 @@
+// Local revision driven by the user's listening report, not a new genre preset.
+process.env.PULSO_LOCAL_PORT ||= '4198';
+process.env.PULSO_AI_NARRATIVE_FOCUS ||= 'The listener finds the current music tonal but fragmentary, hurried and hard to follow as a complete narrative. Make the melodic voices sound like connected, felt sentences with a recognizable continuation and return, not isolated short gestures. Let a partner answer a real thought rather than start another unrelated stream. Preserve worthwhile rhythmic energy, virtuosity and repetition; do not make everything slow or legato. Let the final utterance arrive and release as the consequence of the actual theme, rather than several isolated notes. The feedback requests clearer music, not a more flattering explanation of the plan.';
+await import('./start-thematic-rehearsal.mjs');

@@ -54,6 +54,7 @@ struct AiSongResume {
     juce::String blueprintJson;
     juce::String phraseArchitectureJson;
     bool blueprintOnly{};
+    bool prewrittenDialogue{};
     std::size_t completedUnits{};
     std::vector<std::string> castIds;
     std::vector<std::pair<int, int>> sections;
@@ -91,7 +92,8 @@ public:
         std::size_t sectionIndex, int firstBar, int bars,
         PerformanceScore&, juce::String& error,
         bool longFormContinuity = false,
-        bool allowSilentGroup = false);
+        bool allowSilentGroup = false,
+        bool allowCrossSectionRelease = false);
     [[nodiscard]] static std::size_t maximumSongInstruments() noexcept;
     [[nodiscard]] static std::size_t castDetailShardCount(std::size_t instruments) noexcept;
     [[nodiscard]] static std::size_t selectiveRepairShardCount(std::size_t instruments) noexcept;

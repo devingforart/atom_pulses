@@ -1,0 +1,525 @@
+{
+  "parts": {
+    "cello_bass": [
+      {
+        "character": "Light, grounded opening with a walking reply.",
+        "start_beat": 0,
+        "relationship": "Leaves the first violin's rising question exposed, then carries its falling motion.",
+        "notes": [
+          {"duration": 2.75, "velocity": 64, "pitch": 43, "beat": 0},
+          {"duration": 0.75, "velocity": 55, "pitch": 50, "beat": 3},
+          {"duration": 2.50, "velocity": 62, "pitch": 42, "beat": 4},
+          {"duration": 0.50, "velocity": 55, "pitch": 45, "beat": 6.50},
+          {"duration": 0.75, "velocity": 58, "pitch": 47, "beat": 7},
+          {"duration": 2.75, "velocity": 64, "pitch": 40, "beat": 8},
+          {"duration": 0.75, "velocity": 56, "pitch": 47, "beat": 11},
+          {"duration": 1.75, "velocity": 62, "pitch": 45, "beat": 12},
+          {"duration": 0.75, "velocity": 56, "pitch": 48, "beat": 14},
+          {"duration": 0.75, "velocity": 58, "pitch": 45, "beat": 15}
+        ]
+      },
+      {
+        "character": "A lifted inversion opens into the first firm cadence.",
+        "start_beat": 16,
+        "relationship": "Supports the renewed violin leap without doubling its rhythm.",
+        "notes": [
+          {"duration": 2.75, "velocity": 65, "pitch": 47, "beat": 0},
+          {"duration": 0.75, "velocity": 57, "pitch": 50, "beat": 3},
+          {"duration": 2.75, "velocity": 64, "pitch": 48, "beat": 4},
+          {"duration": 0.75, "velocity": 57, "pitch": 43, "beat": 7},
+          {"duration": 1.75, "velocity": 67, "pitch": 50, "beat": 8},
+          {"duration": 1.75, "velocity": 70, "pitch": 38, "beat": 10},
+          {"duration": 2.50, "velocity": 72, "pitch": 43, "beat": 12},
+          {"duration": 0.50, "velocity": 53, "pitch": 50, "beat": 15}
+        ]
+      },
+      {
+        "character": "An easy pulse beneath the lower voice's longer sentence.",
+        "start_beat": 32,
+        "relationship": "Maintains tonic space while the second violin takes the opening descent.",
+        "notes": [
+          {"duration": 2.75, "velocity": 58, "pitch": 43, "beat": 0},
+          {"duration": 0.75, "velocity": 51, "pitch": 50, "beat": 3},
+          {"duration": 1.75, "velocity": 56, "pitch": 47, "beat": 4},
+          {"duration": 1.75, "velocity": 58, "pitch": 43, "beat": 6},
+          {"duration": 2.75, "velocity": 61, "pitch": 47, "beat": 8},
+          {"duration": 0.75, "velocity": 55, "pitch": 54, "beat": 11},
+          {"duration": 1.75, "velocity": 65, "pitch": 45, "beat": 12},
+          {"duration": 0.75, "velocity": 57, "pitch": 52, "beat": 14},
+          {"duration": 0.75, "velocity": 60, "pitch": 49, "beat": 15},
+          {"duration": 3.75, "velocity": 67, "pitch": 40, "beat": 16},
+          {"duration": 1.75, "velocity": 57, "pitch": 47, "beat": 20},
+          {"duration": 1.75, "velocity": 60, "pitch": 40, "beat": 22}
+        ]
+      },
+      {
+        "character": "A gathering bass answer and an unforced tonic landing.",
+        "start_beat": 56,
+        "relationship": "Tightens the pulse beneath the exchanged upper-voice fragments.",
+        "notes": [
+          {"duration": 1.75, "velocity": 63, "pitch": 45, "beat": 0},
+          {"duration": 0.75, "velocity": 56, "pitch": 48, "beat": 2},
+          {"duration": 0.75, "velocity": 59, "pitch": 52, "beat": 3},
+          {"duration": 1.75, "velocity": 66, "pitch": 38, "beat": 4},
+          {"duration": 0.75, "velocity": 59, "pitch": 45, "beat": 6},
+          {"duration": 0.75, "velocity": 62, "pitch": 42, "beat": 7},
+          {"duration": 2.75, "velocity": 69, "pitch": 43, "beat": 8},
+          {"duration": 0.75, "velocity": 58, "pitch": 50, "beat": 11}
+        ]
+      },
+      {
+        "character": "Firm steps carry the ascent toward its expanded cadence.",
+        "start_beat": 68,
+        "relationship": "Adds weight as the first violin rises against the second violin's descent.",
+        "notes": [
+          {"duration": 1.75, "velocity": 69, "pitch": 43, "beat": 0},
+          {"duration": 1.75, "velocity": 64, "pitch": 47, "beat": 2},
+          {"duration": 2.75, "velocity": 72, "pitch": 48, "beat": 4},
+          {"duration": 0.75, "velocity": 62, "pitch": 43, "beat": 7},
+          {"duration": 1.75, "velocity": 70, "pitch": 45, "beat": 8},
+          {"duration": 0.75, "velocity": 63, "pitch": 48, "beat": 10},
+          {"duration": 0.75, "velocity": 66, "pitch": 45, "beat": 11},
+          {"duration": 1.75, "velocity": 75, "pitch": 50, "beat": 12},
+          {"duration": 1.75, "velocity": 77, "pitch": 38, "beat": 14},
+          {"duration": 1.75, "velocity": 76, "pitch": 43, "beat": 16},
+          {"duration": 1.75, "velocity": 65, "pitch": 47, "beat": 18}
+        ]
+      },
+      {
+        "character": "The cadence opens once more, then relaxes.",
+        "start_beat": 88,
+        "relationship": "Receives the oboe's high extension with a spacious subdominant.",
+        "notes": [
+          {"duration": 2.75, "velocity": 64, "pitch": 48, "beat": 0},
+          {"duration": 0.75, "velocity": 55, "pitch": 43, "beat": 3},
+          {"duration": 1.75, "velocity": 65, "pitch": 38, "beat": 4},
+          {"duration": 0.75, "velocity": 57, "pitch": 45, "beat": 6},
+          {"duration": 0.75, "velocity": 59, "pitch": 42, "beat": 7},
+          {"duration": 3.50, "velocity": 64, "pitch": 43, "beat": 8}
+        ]
+      },
+      {
+        "character": "Quiet recollection, with one last cadential gathering.",
+        "start_beat": 100,
+        "relationship": "Grounds the returned D-question and its final resolution.",
+        "notes": [
+          {"duration": 2.75, "velocity": 55, "pitch": 43, "beat": 0},
+          {"duration": 0.75, "velocity": 49, "pitch": 50, "beat": 3},
+          {"duration": 2.75, "velocity": 57, "pitch": 47, "beat": 4},
+          {"duration": 0.75, "velocity": 50, "pitch": 50, "beat": 7},
+          {"duration": 2.75, "velocity": 58, "pitch": 48, "beat": 8},
+          {"duration": 0.75, "velocity": 51, "pitch": 43, "beat": 11},
+          {"duration": 1.75, "velocity": 62, "pitch": 50, "beat": 12},
+          {"duration": 1.75, "velocity": 64, "pitch": 38, "beat": 14},
+          {"duration": 4, "velocity": 61, "pitch": 43, "beat": 16}
+        ]
+      }
+    ],
+    "viola_inner_harmony": [
+      {
+        "character": "A soft inner arch, held clear of the opening's quick syllables.",
+        "start_beat": 0,
+        "relationship": "Binds the violin question to the bass's changing inversions.",
+        "notes": [
+          {"duration": 3.75, "velocity": 53, "pitch": 59, "beat": 0},
+          {"duration": 3.75, "velocity": 51, "pitch": 57, "beat": 4},
+          {"duration": 5.50, "velocity": 54, "pitch": 55, "beat": 8},
+          {"duration": 2, "velocity": 55, "pitch": 60, "beat": 14},
+          {"duration": 4, "velocity": 56, "pitch": 59, "beat": 16},
+          {"duration": 4, "velocity": 53, "pitch": 60, "beat": 20},
+          {"duration": 2, "velocity": 58, "pitch": 59, "beat": 24},
+          {"duration": 2, "velocity": 59, "pitch": 57, "beat": 26},
+          {"duration": 3, "velocity": 56, "pitch": 55, "beat": 28}
+        ]
+      },
+      {
+        "character": "Common tones make a still center for the lower reply.",
+        "start_beat": 32,
+        "relationship": "Keeps the second violin's active line above a restrained inner voice.",
+        "notes": [
+          {"duration": 5.50, "velocity": 49, "pitch": 55, "beat": 0},
+          {"duration": 2, "velocity": 50, "pitch": 59, "beat": 6},
+          {"duration": 4, "velocity": 53, "pitch": 54, "beat": 8},
+          {"duration": 4, "velocity": 55, "pitch": 55, "beat": 12},
+          {"duration": 5.75, "velocity": 53, "pitch": 55, "beat": 16},
+          {"duration": 1.75, "velocity": 50, "pitch": 59, "beat": 22},
+          {"duration": 4, "velocity": 54, "pitch": 60, "beat": 24},
+          {"duration": 2, "velocity": 56, "pitch": 60, "beat": 28},
+          {"duration": 2, "velocity": 55, "pitch": 57, "beat": 30},
+          {"duration": 3.75, "velocity": 56, "pitch": 59, "beat": 32}
+        ]
+      },
+      {
+        "character": "The inner seventh bends downward while the melody climbs.",
+        "start_beat": 68,
+        "relationship": "Makes the turn to C audible beneath the first violin's ascent.",
+        "notes": [
+          {"duration": 3.75, "velocity": 62, "pitch": 65, "beat": 0},
+          {"duration": 4, "velocity": 61, "pitch": 64, "beat": 4},
+          {"duration": 2.75, "velocity": 60, "pitch": 60, "beat": 8},
+          {"duration": 0.75, "velocity": 57, "pitch": 64, "beat": 11},
+          {"duration": 2, "velocity": 65, "pitch": 62, "beat": 12},
+          {"duration": 2, "velocity": 64, "pitch": 60, "beat": 14},
+          {"duration": 4, "velocity": 61, "pitch": 59, "beat": 16},
+          {"duration": 4, "velocity": 57, "pitch": 60, "beat": 20},
+          {"duration": 2, "velocity": 58, "pitch": 60, "beat": 24},
+          {"duration": 2, "velocity": 56, "pitch": 57, "beat": 26},
+          {"duration": 3.50, "velocity": 53, "pitch": 55, "beat": 28}
+        ]
+      },
+      {
+        "character": "A small inner descent completes the final sentence.",
+        "start_beat": 100,
+        "relationship": "Supports the opening's recollection, resolving its last suspension inward.",
+        "notes": [
+          {"duration": 4, "velocity": 48, "pitch": 59, "beat": 0},
+          {"duration": 4, "velocity": 50, "pitch": 62, "beat": 4},
+          {"duration": 4, "velocity": 51, "pitch": 60, "beat": 8},
+          {"duration": 2, "velocity": 55, "pitch": 59, "beat": 12},
+          {"duration": 2, "velocity": 56, "pitch": 57, "beat": 14},
+          {"duration": 4, "velocity": 51, "pitch": 55, "beat": 16}
+        ]
+      }
+    ],
+    "oboe_climactic_answer": [
+      {
+        "character": "A clear high answer, entering after the violin's summit.",
+        "start_beat": 74,
+        "relationship": "Takes the first violin's high G and extends it while that violin descends.",
+        "notes": [
+          {"duration": 1.50, "velocity": 85, "pitch": 84, "beat": 0},
+          {"duration": 0.25, "velocity": 75, "pitch": 83, "beat": 1.50},
+          {"duration": 0.25, "velocity": 78, "pitch": 84, "beat": 1.75},
+          {"duration": 2.25, "velocity": 89, "pitch": 86, "beat": 2},
+          {"duration": 0.75, "velocity": 79, "pitch": 84, "beat": 4.25},
+          {"duration": 1, "velocity": 76, "pitch": 81, "beat": 5},
+          {"duration": 1.50, "velocity": 83, "pitch": 83, "beat": 6},
+          {"duration": 0.50, "velocity": 76, "pitch": 79, "beat": 7.50},
+          {"duration": 1, "velocity": 79, "pitch": 78, "beat": 8},
+          {"duration": 0.50, "velocity": 72, "pitch": 76, "beat": 9},
+          {"duration": 0.50, "velocity": 76, "pitch": 78, "beat": 9.50},
+          {"duration": 2, "velocity": 83, "pitch": 79, "beat": 10}
+        ]
+      },
+      {
+        "character": "A restrained echo of the original upward question.",
+        "start_beat": 102,
+        "relationship": "Answers the returned violin phrase from above, then yields the final cadence.",
+        "notes": [
+          {"duration": 1.50, "velocity": 63, "pitch": 74, "beat": 0},
+          {"duration": 0.50, "velocity": 59, "pitch": 79, "beat": 1.50},
+          {"duration": 2, "velocity": 65, "pitch": 83, "beat": 2},
+          {"duration": 1.50, "velocity": 58, "pitch": 79, "beat": 4},
+          {"duration": 0.50, "velocity": 55, "pitch": 77, "beat": 5.50},
+          {"duration": 2.50, "velocity": 60, "pitch": 76, "beat": 6},
+          {"duration": 1, "velocity": 54, "pitch": 72, "beat": 8.50},
+          {"duration": 0.50, "velocity": 52, "pitch": 74, "beat": 9.50}
+        ]
+      }
+    ],
+    "vln2_reply": [
+      {
+        "character": "A delayed falling answer, lighter than the opening speaker.",
+        "start_beat": 6.50,
+        "relationship": "Receives the first violin's F-sharp turn and carries its descent into E minor.",
+        "notes": [
+          {"duration": 1, "velocity": 64, "pitch": 74, "beat": 0},
+          {"duration": 0.50, "velocity": 59, "pitch": 72, "beat": 1},
+          {"duration": 2.25, "velocity": 67, "pitch": 71, "beat": 1.50},
+          {"duration": 0.75, "velocity": 61, "pitch": 69, "beat": 3.75},
+          {"duration": 1, "velocity": 60, "pitch": 67, "beat": 4.50},
+          {"duration": 1.50, "velocity": 65, "pitch": 64, "beat": 5.50},
+          {"duration": 0.50, "velocity": 59, "pitch": 66, "beat": 7},
+          {"duration": 1.75, "velocity": 66, "pitch": 67, "beat": 7.50}
+        ]
+      },
+      {
+        "character": "An independent upward answer under the falling principal line.",
+        "start_beat": 17,
+        "relationship": "Rises through the space left by the first violin's retreat from B.",
+        "notes": [
+          {"duration": 1.50, "velocity": 63, "pitch": 62, "beat": 0},
+          {"duration": 0.50, "velocity": 60, "pitch": 64, "beat": 1.50},
+          {"duration": 1, "velocity": 64, "pitch": 67, "beat": 2},
+          {"duration": 2.25, "velocity": 68, "pitch": 72, "beat": 3},
+          {"duration": 0.75, "velocity": 61, "pitch": 71, "beat": 5.25},
+          {"duration": 1, "velocity": 62, "pitch": 69, "beat": 6},
+          {"duration": 2, "velocity": 67, "pitch": 67, "beat": 7},
+          {"duration": 1, "velocity": 65, "pitch": 66, "beat": 9},
+          {"duration": 1, "velocity": 60, "pitch": 64, "beat": 10},
+          {"duration": 2.50, "velocity": 65, "pitch": 62, "beat": 11}
+        ]
+      },
+      {
+        "character": "The lower reply becomes a full singing sentence.",
+        "start_beat": 32,
+        "relationship": "Inherits the opening's D and falling continuation while the first violin holds above.",
+        "notes": [
+          {"duration": 1.50, "velocity": 77, "pitch": 74, "beat": 0},
+          {"duration": 0.50, "velocity": 68, "pitch": 72, "beat": 1.50},
+          {"duration": 2.50, "velocity": 79, "pitch": 71, "beat": 2},
+          {"duration": 0.50, "velocity": 67, "pitch": 69, "beat": 4.50},
+          {"duration": 1, "velocity": 71, "pitch": 67, "beat": 5},
+          {"duration": 0.75, "velocity": 66, "pitch": 66, "beat": 6},
+          {"duration": 0.50, "velocity": 67, "pitch": 67, "beat": 6.75},
+          {"duration": 0.75, "velocity": 70, "pitch": 69, "beat": 7.25},
+          {"duration": 2.50, "velocity": 78, "pitch": 71, "beat": 8},
+          {"duration": 0.50, "velocity": 68, "pitch": 69, "beat": 10.50},
+          {"duration": 1, "velocity": 71, "pitch": 66, "beat": 11},
+          {"duration": 1.50, "velocity": 76, "pitch": 64, "beat": 12},
+          {"duration": 0.50, "velocity": 65, "pitch": 67, "beat": 13.50},
+          {"duration": 1.50, "velocity": 73, "pitch": 69, "beat": 14},
+          {"duration": 0.50, "velocity": 68, "pitch": 73, "beat": 15.50},
+          {"duration": 2.75, "velocity": 80, "pitch": 71, "beat": 16}
+        ]
+      },
+      {
+        "character": "A softened continuation gathers into an upward counterphrase.",
+        "start_beat": 51,
+        "relationship": "Continues the lower sentence after its E-minor landing, then rises against the principal descent.",
+        "notes": [
+          {"duration": 1.50, "velocity": 67, "pitch": 67, "beat": 0},
+          {"duration": 0.50, "velocity": 62, "pitch": 66, "beat": 1.50},
+          {"duration": 2, "velocity": 69, "pitch": 64, "beat": 2},
+          {"duration": 0.75, "velocity": 63, "pitch": 67, "beat": 4},
+          {"duration": 1.50, "velocity": 69, "pitch": 69, "beat": 5},
+          {"duration": 0.50, "velocity": 64, "pitch": 71, "beat": 6.50},
+          {"duration": 2, "velocity": 73, "pitch": 72, "beat": 7},
+          {"duration": 1.50, "velocity": 72, "pitch": 74, "beat": 9},
+          {"duration": 0.50, "velocity": 66, "pitch": 72, "beat": 10.50},
+          {"duration": 1, "velocity": 67, "pitch": 69, "beat": 11},
+          {"duration": 1, "velocity": 70, "pitch": 66, "beat": 12},
+          {"duration": 2.50, "velocity": 72, "pitch": 67, "beat": 13}
+        ]
+      },
+      {
+        "character": "A broad descending counterweight to the first violin's ascent.",
+        "start_beat": 68,
+        "relationship": "Moves downward from D as the principal line climbs toward high G.",
+        "notes": [
+          {"duration": 2.50, "velocity": 74, "pitch": 74, "beat": 0},
+          {"duration": 0.50, "velocity": 66, "pitch": 72, "beat": 2.50},
+          {"duration": 1, "velocity": 68, "pitch": 71, "beat": 3},
+          {"duration": 2, "velocity": 73, "pitch": 72, "beat": 4},
+          {"duration": 1.50, "velocity": 67, "pitch": 67, "beat": 6},
+          {"duration": 0.50, "velocity": 64, "pitch": 65, "beat": 7.50},
+          {"duration": 2.50, "velocity": 71, "pitch": 64, "beat": 8},
+          {"duration": 0.50, "velocity": 63, "pitch": 62, "beat": 10.50},
+          {"duration": 1, "velocity": 66, "pitch": 60, "beat": 11},
+          {"duration": 2, "velocity": 72, "pitch": 59, "beat": 12},
+          {"duration": 1.50, "velocity": 71, "pitch": 57, "beat": 14},
+          {"duration": 0.50, "velocity": 65, "pitch": 66, "beat": 15.50},
+          {"duration": 2, "velocity": 74, "pitch": 67, "beat": 16},
+          {"duration": 1.75, "velocity": 66, "pitch": 62, "beat": 18}
+        ]
+      },
+      {
+        "character": "A small rising afterthought keeps the cadence open.",
+        "start_beat": 88,
+        "relationship": "Answers the principal violin's release while the oboe has fallen silent.",
+        "notes": [
+          {"duration": 1.50, "velocity": 65, "pitch": 64, "beat": 0},
+          {"duration": 0.50, "velocity": 59, "pitch": 67, "beat": 1.50},
+          {"duration": 2, "velocity": 68, "pitch": 72, "beat": 2},
+          {"duration": 1.50, "velocity": 67, "pitch": 69, "beat": 4},
+          {"duration": 0.50, "velocity": 60, "pitch": 67, "beat": 5.50},
+          {"duration": 1, "velocity": 63, "pitch": 66, "beat": 6},
+          {"duration": 1, "velocity": 61, "pitch": 64, "beat": 7},
+          {"duration": 3, "velocity": 64, "pitch": 62, "beat": 8}
+        ]
+      },
+      {
+        "character": "The old descent returns quietly and settles inside the final chord.",
+        "start_beat": 100,
+        "relationship": "Recalls its first answer beneath the principal's familiar D-question.",
+        "notes": [
+          {"duration": 1.50, "velocity": 60, "pitch": 74, "beat": 0},
+          {"duration": 0.50, "velocity": 54, "pitch": 72, "beat": 1.50},
+          {"duration": 2, "velocity": 61, "pitch": 71, "beat": 2},
+          {"duration": 2.50, "velocity": 58, "pitch": 67, "beat": 4},
+          {"duration": 0.50, "velocity": 52, "pitch": 66, "beat": 6.50},
+          {"duration": 1, "velocity": 55, "pitch": 67, "beat": 7},
+          {"duration": 2.50, "velocity": 59, "pitch": 64, "beat": 8},
+          {"duration": 0.50, "velocity": 53, "pitch": 66, "beat": 10.50},
+          {"duration": 1, "velocity": 57, "pitch": 67, "beat": 11},
+          {"duration": 2, "velocity": 61, "pitch": 67, "beat": 12},
+          {"duration": 2, "velocity": 62, "pitch": 66, "beat": 14},
+          {"duration": 4, "velocity": 57, "pitch": 62, "beat": 16}
+        ]
+      }
+    ],
+    "vln1_protagonist": [
+      {
+        "character": "A bright D-question, its rising turn weighted on B.",
+        "start_beat": 0,
+        "relationship": "Initiates the dialogue above the quiet tonic foundation.",
+        "notes": [
+          {"duration": 1, "velocity": 84, "pitch": 74, "beat": 0},
+          {"duration": 0.50, "velocity": 87, "pitch": 79, "beat": 1},
+          {"duration": 0.50, "velocity": 82, "pitch": 81, "beat": 1.50},
+          {"duration": 1.75, "velocity": 92, "pitch": 83, "beat": 2},
+          {"duration": 0.25, "velocity": 73, "pitch": 81, "beat": 3.75},
+          {"duration": 1.50, "velocity": 84, "pitch": 78, "beat": 4},
+          {"duration": 0.25, "velocity": 70, "pitch": 76, "beat": 5.50},
+          {"duration": 0.25, "velocity": 75, "pitch": 78, "beat": 5.75},
+          {"duration": 0.50, "velocity": 77, "pitch": 79, "beat": 6},
+          {"duration": 1, "velocity": 80, "pitch": 74, "beat": 6.50}
+        ]
+      },
+      {
+        "character": "A lower continuation swells briefly, then yields.",
+        "start_beat": 8,
+        "relationship": "Receives the second violin's descent and turns it back toward G.",
+        "notes": [
+          {"duration": 0.50, "velocity": 72, "pitch": 71, "beat": 0},
+          {"duration": 0.50, "velocity": 77, "pitch": 74, "beat": 0.50},
+          {"duration": 1.75, "velocity": 86, "pitch": 79, "beat": 1},
+          {"duration": 0.25, "velocity": 70, "pitch": 78, "beat": 2.75},
+          {"duration": 1, "velocity": 77, "pitch": 76, "beat": 3},
+          {"duration": 0.75, "velocity": 75, "pitch": 72, "beat": 4},
+          {"duration": 0.25, "velocity": 67, "pitch": 71, "beat": 4.75},
+          {"duration": 1.50, "velocity": 78, "pitch": 69, "beat": 5},
+          {"duration": 0.50, "velocity": 73, "pitch": 72, "beat": 6.50},
+          {"duration": 0.50, "velocity": 77, "pitch": 74, "beat": 7},
+          {"duration": 0.50, "velocity": 82, "pitch": 78, "beat": 7.50}
+        ]
+      },
+      {
+        "character": "The question opens into a long falling answer and a firm landing.",
+        "start_beat": 16,
+        "relationship": "Reclaims G from the lower reply, then lets that voice rise beneath its descent.",
+        "notes": [
+          {"duration": 1.50, "velocity": 90, "pitch": 79, "beat": 0},
+          {"duration": 0.50, "velocity": 86, "pitch": 83, "beat": 1.50},
+          {"duration": 0.50, "velocity": 77, "pitch": 81, "beat": 2},
+          {"duration": 1, "velocity": 81, "pitch": 79, "beat": 2.50},
+          {"duration": 0.50, "velocity": 72, "pitch": 74, "beat": 3.50},
+          {"duration": 1.50, "velocity": 78, "pitch": 72, "beat": 4},
+          {"duration": 0.25, "velocity": 70, "pitch": 76, "beat": 5.50},
+          {"duration": 0.25, "velocity": 65, "pitch": 74, "beat": 5.75},
+          {"duration": 1, "velocity": 72, "pitch": 72, "beat": 6},
+          {"duration": 1, "velocity": 70, "pitch": 69, "beat": 7},
+          {"duration": 1.25, "velocity": 82, "pitch": 74, "beat": 8},
+          {"duration": 0.25, "velocity": 70, "pitch": 72, "beat": 9.25},
+          {"duration": 0.50, "velocity": 75, "pitch": 71, "beat": 9.50},
+          {"duration": 1.50, "velocity": 81, "pitch": 69, "beat": 10},
+          {"duration": 0.50, "velocity": 85, "pitch": 78, "beat": 11.50},
+          {"duration": 2.75, "velocity": 94, "pitch": 79, "beat": 12},
+          {"duration": 0.50, "velocity": 69, "pitch": 74, "beat": 15}
+        ]
+      },
+      {
+        "character": "A broad upper canopy, no longer the principal mover.",
+        "start_beat": 32,
+        "relationship": "Lets the second violin's D-descent become foreground.",
+        "notes": [
+          {"duration": 3.50, "velocity": 65, "pitch": 79, "beat": 0},
+          {"duration": 2.50, "velocity": 62, "pitch": 74, "beat": 4},
+          {"duration": 1, "velocity": 60, "pitch": 79, "beat": 7},
+          {"duration": 3, "velocity": 65, "pitch": 78, "beat": 8},
+          {"duration": 0.50, "velocity": 59, "pitch": 76, "beat": 11},
+          {"duration": 0.50, "velocity": 63, "pitch": 78, "beat": 11.50},
+          {"duration": 2.75, "velocity": 69, "pitch": 79, "beat": 12},
+          {"duration": 0.75, "velocity": 63, "pitch": 76, "beat": 15},
+          {"duration": 3, "velocity": 68, "pitch": 79, "beat": 16}
+        ]
+      },
+      {
+        "character": "A connected arpeggiated thought brightens the E-minor landing.",
+        "start_beat": 52,
+        "relationship": "Grows out of the held G while the lower reply relaxes.",
+        "notes": [
+          {"duration": 1.50, "velocity": 73, "pitch": 76, "beat": 0},
+          {"duration": 0.50, "velocity": 69, "pitch": 71, "beat": 1.50},
+          {"duration": 0.50, "velocity": 74, "pitch": 76, "beat": 2},
+          {"duration": 0.50, "velocity": 78, "pitch": 79, "beat": 2.50},
+          {"duration": 0.50, "velocity": 82, "pitch": 83, "beat": 3},
+          {"duration": 0.50, "velocity": 73, "pitch": 81, "beat": 3.50},
+          {"duration": 2, "velocity": 84, "pitch": 84, "beat": 4},
+          {"duration": 0.75, "velocity": 74, "pitch": 83, "beat": 6},
+          {"duration": 0.25, "velocity": 68, "pitch": 81, "beat": 6.75},
+          {"duration": 1, "velocity": 75, "pitch": 79, "beat": 7},
+          {"duration": 1.50, "velocity": 81, "pitch": 78, "beat": 8},
+          {"duration": 0.50, "velocity": 70, "pitch": 76, "beat": 9.50},
+          {"duration": 1, "velocity": 76, "pitch": 74, "beat": 10},
+          {"duration": 0.50, "velocity": 70, "pitch": 72, "beat": 11},
+          {"duration": 0.50, "velocity": 75, "pitch": 69, "beat": 11.50},
+          {"duration": 2.50, "velocity": 86, "pitch": 71, "beat": 12},
+          {"duration": 0.50, "velocity": 72, "pitch": 74, "beat": 15}
+        ]
+      },
+      {
+        "character": "The opening leap expands into a climbing, increasingly urgent sentence.",
+        "start_beat": 68,
+        "relationship": "Ascends against the second violin's broad descent and passes the summit to the oboe.",
+        "notes": [
+          {"duration": 1, "velocity": 84, "pitch": 74, "beat": 0},
+          {"duration": 0.50, "velocity": 87, "pitch": 79, "beat": 1},
+          {"duration": 0.50, "velocity": 80, "pitch": 81, "beat": 1.50},
+          {"duration": 1.25, "velocity": 92, "pitch": 83, "beat": 2},
+          {"duration": 0.25, "velocity": 77, "pitch": 81, "beat": 3.25},
+          {"duration": 0.50, "velocity": 84, "pitch": 83, "beat": 3.50},
+          {"duration": 1.50, "velocity": 95, "pitch": 84, "beat": 4},
+          {"duration": 0.50, "velocity": 84, "pitch": 88, "beat": 5.50},
+          {"duration": 1.75, "velocity": 100, "pitch": 91, "beat": 6},
+          {"duration": 0.25, "velocity": 78, "pitch": 88, "beat": 7.75},
+          {"duration": 1.50, "velocity": 89, "pitch": 84, "beat": 8},
+          {"duration": 0.50, "velocity": 77, "pitch": 83, "beat": 9.50},
+          {"duration": 1, "velocity": 82, "pitch": 81, "beat": 10},
+          {"duration": 0.50, "velocity": 75, "pitch": 79, "beat": 11},
+          {"duration": 0.50, "velocity": 80, "pitch": 76, "beat": 11.50},
+          {"duration": 1.50, "velocity": 89, "pitch": 79, "beat": 12},
+          {"duration": 0.50, "velocity": 78, "pitch": 83, "beat": 13.50},
+          {"duration": 1, "velocity": 87, "pitch": 81, "beat": 14},
+          {"duration": 0.50, "velocity": 77, "pitch": 79, "beat": 15},
+          {"duration": 0.50, "velocity": 83, "pitch": 78, "beat": 15.50},
+          {"duration": 2, "velocity": 94, "pitch": 79, "beat": 16},
+          {"duration": 1.50, "velocity": 76, "pitch": 74, "beat": 18}
+        ]
+      },
+      {
+        "character": "An afterglow turns the climax into a gentler answer.",
+        "start_beat": 88,
+        "relationship": "Receives the oboe's completed extension and falls toward the returning tonic.",
+        "notes": [
+          {"duration": 2.25, "velocity": 78, "pitch": 76, "beat": 0},
+          {"duration": 0.25, "velocity": 65, "pitch": 74, "beat": 2.25},
+          {"duration": 0.50, "velocity": 69, "pitch": 72, "beat": 2.50},
+          {"duration": 1, "velocity": 72, "pitch": 79, "beat": 3},
+          {"duration": 1.50, "velocity": 77, "pitch": 78, "beat": 4},
+          {"duration": 0.50, "velocity": 66, "pitch": 76, "beat": 5.50},
+          {"duration": 1, "velocity": 71, "pitch": 74, "beat": 6},
+          {"duration": 0.50, "velocity": 66, "pitch": 72, "beat": 7},
+          {"duration": 0.50, "velocity": 70, "pitch": 69, "beat": 7.50},
+          {"duration": 2.75, "velocity": 79, "pitch": 71, "beat": 8}
+        ]
+      },
+      {
+        "character": "The D-question returns with less insistence and more space.",
+        "start_beat": 100,
+        "relationship": "Recalls the actual opening above the second violin's familiar descending answer.",
+        "notes": [
+          {"duration": 1, "velocity": 75, "pitch": 74, "beat": 0},
+          {"duration": 0.50, "velocity": 78, "pitch": 79, "beat": 1},
+          {"duration": 0.50, "velocity": 71, "pitch": 81, "beat": 1.50},
+          {"duration": 2, "velocity": 84, "pitch": 83, "beat": 2},
+          {"duration": 1.50, "velocity": 75, "pitch": 79, "beat": 4},
+          {"duration": 0.50, "velocity": 65, "pitch": 78, "beat": 5.50},
+          {"duration": 1, "velocity": 71, "pitch": 79, "beat": 6},
+          {"duration": 0.75, "velocity": 65, "pitch": 74, "beat": 7},
+          {"duration": 1.50, "velocity": 71, "pitch": 72, "beat": 8},
+          {"duration": 0.50, "velocity": 66, "pitch": 76, "beat": 9.50},
+          {"duration": 0.50, "velocity": 61, "pitch": 74, "beat": 10},
+          {"duration": 1, "velocity": 65, "pitch": 72, "beat": 10.50},
+          {"duration": 0.50, "velocity": 62, "pitch": 69, "beat": 11.50},
+          {"duration": 1.25, "velocity": 75, "pitch": 74, "beat": 12},
+          {"duration": 0.25, "velocity": 63, "pitch": 72, "beat": 13.25},
+          {"duration": 0.50, "velocity": 68, "pitch": 71, "beat": 13.50},
+          {"duration": 1.50, "velocity": 74, "pitch": 69, "beat": 14},
+          {"duration": 0.50, "velocity": 76, "pitch": 78, "beat": 15.50},
+          {"duration": 4, "velocity": 80, "pitch": 79, "beat": 16}
+        ]
+      }
+    ]
+  }
+}

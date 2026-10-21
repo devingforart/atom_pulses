@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <set>
 #include <tuple>
 
@@ -79,6 +80,10 @@ PerformanceScoreReport PerformanceScoreEngine::normalize(
     const auto longestSection = sectionLengths.empty() ? 0.0 :
         *std::max_element(sectionLengths.begin(), sectionLengths.end());
     const auto maximumCellBeats = std::clamp(longestSection, 64.0, 512.0);
+    const auto wholeWorkBeats = std::accumulate(sectionLengths.begin(), sectionLengths.end(), 0.0);
+    std::set<std::string> sustainedCells;
+    for (const auto& placement : score.placements)
+        if (placement.allowCrossSectionRelease) sustainedCells.insert(placement.cellId);
     if (score.cells.size() > PerformanceScoreEngine::maximumGlobalCells) {
         report.cellsDroppedByCapacity =
             score.cells.size() - PerformanceScoreEngine::maximumGlobalCells;
@@ -96,7 +101,8 @@ PerformanceScoreReport PerformanceScoreEngine::normalize(
         // A long-form section may be many more than sixteen bars. The old
         // fixed 64-beat ceiling silently deleted valid AI-authored notes later
         // in that section, making a ten-minute work sound inexplicably empty.
-        cell.lengthBeats = std::clamp(cell.lengthBeats, 0.25, maximumCellBeats);
+        cell.lengthBeats = std::clamp(cell.lengthBeats, 0.25,
+            sustainedCells.contains(cell.id) ? std::max(.25, wholeWorkBeats) : maximumCellBeats);
         if (cell.themeId.empty()) cell.themeId = cell.id;
         if (cell.themeId.size() > 80) cell.themeId.resize(80);
         if (cell.narrativeFunction.empty()) cell.narrativeFunction = "support";
@@ -254,7 +260,8 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
                                           double chunkLength,
                                           std::span<const InstrumentAssignment> instruments,
                                           bool preserveAuthoredPitch,
-                                          double sectionLengthBeats) {
+                                          double sectionLengthBeats,
+                                          double workEndInSectionBeats) {
     struct OwnershipSpan {
         double start{};
         double end{};
@@ -341,15 +348,17 @@ void PerformanceScoreEngine::replaceChunk(Pattern& chunk, const PerformanceScore
                 if (sectionBeat < chunkStartInSection || sectionBeat >= chunkEnd) continue;
                 // A placement is a MIDI clip, not an unlimited note-on generator.
                 // Its fragment owns the note-off boundary on every repeat. The
-                // section owns the final boundary, including a partial last
-                // repeat. This is independent of the style or pitch authored by
-                // AI and applies to every score, short or long.
+                // section owns the final boundary for legacy clips. An explicit
+                // direct-score sustain keeps its authored release across section
+                // boundaries, bounded by the whole work, without added attacks.
                 const auto fragmentEndInCell = placement.retrograde
                     ? cell->lengthBeats - placement.fragmentStart
                     : placement.fragmentEnd;
                 auto releaseBoundary = origin + fragmentEndInCell * placement.timeScale;
-                if (sectionLengthBeats > 0.0)
-                    releaseBoundary = std::min(releaseBoundary, sectionLengthBeats);
+                const auto releaseLimit = placement.allowCrossSectionRelease
+                    ? workEndInSectionBeats : sectionLengthBeats;
+                if (releaseLimit > 0.0)
+                    releaseBoundary = std::min(releaseBoundary, releaseLimit);
                 const auto availableDuration = releaseBoundary - sectionBeat;
                 if (availableDuration < 0.01 - 0.000001) continue;
                 const auto realizedDuration = std::min(

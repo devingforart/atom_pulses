@@ -1,4 +1,7 @@
 #include "AiMelodicDiscourse.h"
+#include "AiEnsembleDiscourse.h"
+#include "AiCompleteDialogue.h"
+#include "AiThematicSubject.h"
 #include "core/Orchestration.h"
 
 #include <algorithm>
@@ -41,6 +44,15 @@ juce::String AiMelodicDiscourse::extendSchema(const juce::String& schema) {
           "properties":{"beat":{"type":"number"},"duration":{"type":"number"},
             "pitch":{"type":"integer"},"purpose":{"type":"string"}}}}
       }})json");
+    if (AiCompleteDialogue::enabled()) {
+        auto* properties = delivery.getDynamicObject()->getProperty("properties").getDynamicObject();
+        properties->removeProperty("structural_tones");
+        properties->setProperty("bearing_intentions", juce::JSON::parse(
+            R"json({"type":"array","maxItems":12,"items":{"type":"string"}})json"));
+        auto* required = delivery.getDynamicObject()->getProperty("required").getArray();
+        required->removeFirstMatchingValue(juce::var("structural_tones"));
+        required->add("bearing_intentions");
+    }
     phrase.getDynamicObject()->getProperty("properties").getDynamicObject()
         ->setProperty("delivery", delivery);
     phrase.getDynamicObject()->getProperty("required").getArray()->add("delivery");
@@ -49,6 +61,18 @@ juce::String AiMelodicDiscourse::extendSchema(const juce::String& schema) {
 
 juce::String AiMelodicDiscourse::planningBrief(double bpm) {
     if (!enabled()) return {};
+    if (AiThematicSubject::enabled())
+        return "\nMELODIC DELIVERY: In delivery.proposition, continuation and arrival, "
+            "describe the complete musical sentence and its destination, not a "
+            "series of isolated gestures. connection explains how a performer "
+            "carries the phrase and places its breaths; dialogue relates actual "
+            "recognizable statements and responses. In bearing_intentions give "
+            "concrete musical intentions without a second schedule of MIDI notes. "
+            "The complete musical_subject supplies the audible reference. A "
+            "return may preserve the phrase's rhythm, contour and continuation "
+            "when recognition is the point. Development can change its context "
+            "or answer without replacing every note. Stable pulse and repeated "
+            "statements are available alongside meaningful contrast.\n";
     juce::String out;
     out << "\nMELODIC DISCOURSE AND DELIVERY: Plan a sentence a performer can "
         "mean, not a motif label followed by decorative activity. In delivery, "
@@ -61,8 +85,16 @@ juce::String AiMelodicDiscourse::planningBrief(double bpm) {
         "identifies what an actual earlier voice said, what the next speaker "
         "retains or contradicts and where their arguments agree. Do not merely "
         "transpose the same cell, exchange isolated signals or alternate solos "
-        "whose continuations have no consequence for one another.\n"
-        "Sketch only the essential bearing tones in structural_tones for this "
+        "whose continuations have no consequence for one another.\n";
+    if (AiCompleteDialogue::enabled())
+        out << "In bearing_intentions, describe only the consequential bearing "
+            "relationships: the intervallic claim, its rhythmic identity, its "
+            "unresolved implication and the earned arrival. Be musically specific, "
+            "but do not schedule MIDI note attacks, pitches or durations here. "
+            "The next author will compose the complete dialogue as its single "
+            "numerical score before accompaniment is written.\n";
+    else
+        out << "Sketch only the essential bearing tones in structural_tones for this "
         "phrase's speaker. These are YOUR chosen MIDI pitches, onsets, durations "
         "and purposes, not a stock pattern. beat is relative to the PHRASE "
         "start, not the section; durations are beats, on the existing quarter-beat "
@@ -70,8 +102,8 @@ juce::String AiMelodicDiscourse::planningBrief(double bpm) {
         "not the full ornamented line: do not fill the available twelve slots. "
         "Let the few tones needed for the thought actually carry its weight "
         "and give its destination enough time to be heard. Choose the count "
-        "and durations yourself; no minimum note length or density is imposed. "
-        "At " << juce::String(bpm, 1) << " BPM, one beat lasts "
+        "and durations yourself; no minimum note length or density is imposed. ";
+    out << "At " << juce::String(bpm, 1) << " BPM, one beat lasts "
         << juce::String(60.0 / std::max(1.0, bpm), 3)
         << " seconds. A quarter-beat ornament lasts only "
         << juce::String(15.0 / std::max(1.0, bpm), 3)
@@ -91,8 +123,13 @@ juce::String AiMelodicDiscourse::planningBrief(double bpm) {
         "initial clue. Let the next voice inherit a phrase's live implication, "
         "not merely its instrumentation or a repeated three-note signature. "
         "Keep each delivery field a concise musical instruction; do not repeat "
-        "the global story in every field. Put concrete bearing pitches and "
-        "durations in the sketch rather than substituting more prose.\n";
+        "the global story in every field. ";
+    if (AiCompleteDialogue::enabled())
+        out << "Keep intentions actionable for the complete-dialogue author "
+            "rather than producing a second numerical note score.\n";
+    else
+        out << "Put concrete bearing pitches and durations in the sketch "
+            "rather than substituting more prose.\n";
     return out;
 }
 
@@ -104,6 +141,18 @@ int AiMelodicDiscourse::planningOutputTokenBudget(int sections) {
 
 juce::String AiMelodicDiscourse::macroBrief() {
     if (!enabled()) return {};
+    if (AiThematicSubject::enabled())
+        return " THEMATIC CONTINUITY: Let a complete, memorable musical sentence "
+            "anchor this work, rather than a succession of clues and harmonic "
+            "surprises. Choose form and harmonic rhythm that let listeners hear "
+            "that thought, recognize its return and understand its changed "
+            "consequence. Recurrence, a stable pulse and passages that inhabit "
+            "one harmonic area are valuable when the requested style calls for "
+            "them. Do not multiply chromatic obstacles merely to label a story. "
+            "Let preparation, continuation, contrast and a proportionate final "
+            "release do audible work. You choose every musical relationship; "
+            "there is no prescribed genre template or cadence schedule. "
+            "Do not output MIDI in this macro phase.";
     return " MELODIC DISCOURSE PRIORITY: Design a story that can be heard through "
         "complete interacting melodic sentences. A short motivic clue seeds a "
         "line; it is not the entire line. Let local statements reach meaningful "
@@ -123,7 +172,7 @@ juce::String AiMelodicDiscourse::macroBrief() {
 std::vector<std::vector<std::size_t>> AiMelodicDiscourse::writingGroups(
     const SongPlan& plan, const std::vector<std::size_t>& owners) {
     if (!enabled()) return {owners};
-    std::set<std::string> speakers;
+    auto speakers = AiEnsembleDiscourse::foregroundIds(plan);
     const auto architecture = juce::JSON::parse(
         juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()));
     if (const auto* phrases = architecture.getProperty("phrases", {}).getArray())
@@ -171,6 +220,20 @@ bool AiMelodicDiscourse::validate(const juce::var& phrase, double beats,
             return false;
         }
     }
+    if (AiCompleteDialogue::enabled() && delivery->hasProperty("bearing_intentions")) {
+        const auto* intentions = delivery->getProperty("bearing_intentions").getArray();
+        if (intentions == nullptr || intentions->size() > 12) {
+            error = "AI delivery intentions are not a bounded list"; return false;
+        }
+        for (const auto& intention : *intentions)
+            if (!intention.isString() || intention.toString().trim().isEmpty() ||
+                intention.toString().length() > 1000) {
+                error = "AI delivery has an invalid bearing intention"; return false;
+            }
+        // Old plans carrying numerical sketches still receive their original
+        // representation checks. New semantic plans request no such sketches.
+        if (!delivery->hasProperty("structural_tones")) return true;
+    }
     const auto* tones = delivery->getProperty("structural_tones").getArray();
     if (tones == nullptr || tones->size() > 12) {
         error = "AI delivery sketch has an invalid bearing-tone list"; return false;
@@ -203,6 +266,11 @@ juce::String AiMelodicDiscourse::phraseBrief(const juce::var& phrase,
     out << "  AI DELIVERY: ";
     for (const auto* key : textKeys)
         out << key << "=" << delivery->getProperty(key).toString() << "; ";
+    if (AiCompleteDialogue::enabled()) {
+        out << "\n  The complete accepted foreground MIDI is authoritative. "
+            "Earlier sketch-note coordinates are not additional attacks.\n";
+        return out;
+    }
     out << "\n  AI-SKETCHED BEARING TONES (WINDOW-LOCAL onset/duration/pitch; "
         "not renderer-generated notes): ";
     if (const auto* tones = delivery->getProperty("structural_tones").getArray())

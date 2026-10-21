@@ -1,0 +1,19 @@
+{
+  "title": "The Fourth That Returns — D · clímax y desenlace",
+  "startBeat": 320,
+  "endBeat": 352,
+  "harmonicSectionIndex": 5,
+  "polyphonicVoices": ["PULSO Piano chord bed", "PULSO Horns sustained upper body"],
+  "voices": [
+    "PULSO First violin protagonist",
+    "PULSO Second violin motif answerer",
+    "PULSO Clarinet contrary line",
+    "PULSO Piano chord bed",
+    "PULSO Contrabass pedal",
+    "PULSO Cello inner ground",
+    "PULSO Horns sustained upper body",
+    "PULSO Viola asymmetrical pulse",
+    "PULSO Bassoon moving bass"
+  ],
+  "instructions": "Compose a coherent, recognizable eight-bar conclusion to the ACTUAL earlier theme, replacing this section only. The user wants to hear the argument completed, not a softer fragment or a drone. Original G4 at 322, F4 at 327, E4 at 333 and D4 at 340 are too isolated. You own all pitched parts and may choose a related harmonic route in the existing D-minor palette. Let the melody carry a connected final thought, the bass and inner voices prepare its arrival, and the last stable notes arrive with the actual concluding harmony. The preceding answer at 272-314 and opening G-F-E / exposed fourth to A are the real source material: retain recognizable rhythm/contour, transform and complete it instead of inventing another tune or repeating a G-F-E-D loop several times. A private rejected draft put its final D4 at 332.75 and held it 15.25 beats although A7 lasted 332-336: that premature tonic sounded over the dominant third and left a long static tail. Do not anticipate the structural final resolution by several beats or substitute a seven-second held tonic for the last part of the story. Continue purposeful phrase development through the final approach, then prepare a clearly felt stable arrival late enough in the eight-bar span that the last few seconds are a natural release, not an empty tail. Secondary voices may give a real related answer or support, but do not copy the same nine-note line into both clarinet and second violin. It is acceptable for some secondary parts to remain silent. Preserve a quiet chamber character and the original register identities; do not create a new climax, busy counterpoint, repeated-key stutters, constant scales, an automatic fade, or a forced change every bar. Make ACTUAL notes and harmony agree: dominant tension and suspensions must have coherent resolutions, the final bass/root and melodic landing must support each other, and sustained preceding chords must release before an incompatible chord takes over. Use the existing MIDI end 352, let the final ensemble release naturally around 349-350, and add no notes afterward. You may use breathing but not scattered one-note breadcrumbs. Return complete real notes for each owner and the exact harmonic timeline; describe the actual final approach and arrival, not imagined music."
+}

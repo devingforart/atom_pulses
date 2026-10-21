@@ -159,6 +159,9 @@ juce::var planAuditFor(const pulso::SongPlan& plan) {
     root->setProperty("performance_cells", static_cast<int>(plan.performanceScore.cells.size()));
     root->setProperty("performance_placements",
         static_cast<int>(plan.performanceScore.placements.size()));
+    if (juce::SystemStats::getEnvironmentVariable(
+            "PULSO_AI_THEMATIC_REHEARSAL_EXPERIMENT", {}) == "1")
+        root->setProperty("thematic_rehearsal", true);
     return juce::var(root);
 }
 
@@ -284,7 +287,8 @@ void writeProvisionalMidi(const juce::File& output, const pulso::SongPlan& plan,
         const auto sectionBeats = section.bars * plan.beatsPerBar;
         pulso::PerformanceScoreEngine::replaceChunk(chunk, plan.performanceScore,
             static_cast<int>(sectionIndex), 0.0, sectionBeats, plan.instruments,
-            plan.aiSovereign);
+            plan.aiSovereign, sectionBeats,
+            (plan.totalBars - section.startBar) * plan.beatsPerBar);
         const auto offset = section.startBar * plan.beatsPerBar;
         for (auto note : chunk.notes) {
             note.startBeat += offset;
@@ -362,6 +366,9 @@ void writeProvisionalMidi(const juce::File& output, const pulso::SongPlan& plan,
                 resume->setProperty("phrase_architecture_json",
                     juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()));
             resume->setProperty("completed_units", static_cast<int>(completedUnits));
+            if (juce::SystemStats::getEnvironmentVariable(
+                    "PULSO_AI_COMPLETE_DIALOGUE_EXPERIMENT", {}) == "1")
+                resume->setProperty("prewritten_dialogue", true);
             juce::Array<juce::var> cast;
             for (const auto& instrument : plan.instruments)
                 cast.add(juce::String::fromUTF8(instrument.id.c_str()));
@@ -477,6 +484,8 @@ int main(int argc, char** argv) {
         request.resume.phraseArchitectureJson = resumeObject == nullptr ? juce::String{} :
             resumeObject->getProperty("phrase_architecture_json").toString();
         request.resume.blueprintOnly = blueprintOnly;
+        request.resume.prewrittenDialogue = resumeObject != nullptr &&
+            resumeObject->getProperty("prewritten_dialogue") == juce::var(true);
         request.resume.completedUnits = static_cast<std::size_t>(std::max(0,
             static_cast<int>(resumeObject->getProperty("completed_units"))));
         if (cast == nullptr || sections == nullptr || notes == nullptr ||
@@ -710,6 +719,17 @@ int main(int argc, char** argv) {
     }
     manifest->setProperty("engineVersion", PULSO_VERSION_STRING);
     manifest->setProperty("first_pass_audition", firstPassAudition);
+    if (juce::SystemStats::getEnvironmentVariable("PULSO_AI_WHOLE_ARGUMENT_EXPERIMENT", {}) == "1")
+        manifest->setProperty("whole_argument", true);
+    if (juce::SystemStats::getEnvironmentVariable("PULSO_AI_MATERIAL_DIALOGUE_EXPERIMENT", {}) == "1")
+        manifest->setProperty("material_dialogue", true);
+    if (juce::SystemStats::getEnvironmentVariable("PULSO_AI_EXPECTATION_LED_EXPERIMENT", {}) == "1")
+        manifest->setProperty("expectation_led", true);
+    if (juce::SystemStats::getEnvironmentVariable("PULSO_AI_GESTURE_SCORE_EXPERIMENT", {}) == "1")
+        manifest->setProperty("gesture_score", true);
+    if (juce::SystemStats::getEnvironmentVariable(
+            "PULSO_AI_THEMATIC_REHEARSAL_EXPERIMENT", {}) == "1")
+        manifest->setProperty("thematic_rehearsal", true);
     manifest->setProperty("phrase_architecture_experiment",
         !plan.phraseArchitectureJson.empty());
     if (!plan.phraseArchitectureJson.empty())

@@ -25,6 +25,14 @@ test('exact MIDI resume rejects mismatched or ambiguous checkpoints', () => {
       instrument_id: 'missing' }] }), false);
 });
 
+test('a foreground-only checkpoint is explicit and does not claim a completed arrangement', () => {
+  const partial = { ...checkpoint, completed_units: 0 };
+  const score = { ...resume, completed_units: 0 };
+  assert.equal(exactResumeMatchesCheckpoint(partial, score), false);
+  assert.equal(exactResumeMatchesCheckpoint(partial,
+    { ...score, prewritten_dialogue: true }), true);
+});
+
 test('blueprint editorial comparisons preserve the musical request and need an explicit override', () => {
   const source = { prompt: 'Chamber work', duration_seconds: 60, bpm: 120,
     behavior: 'adaptive', seed: '1234', ai_sovereign: true,

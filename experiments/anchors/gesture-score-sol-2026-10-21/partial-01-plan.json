@@ -1,0 +1,602 @@
+{
+  "schema_version": 2,
+  "title": "The D Question, Answered in G",
+  "key": "G major",
+  "root_pitch_class": 7,
+  "tonal_policy": "consolidated",
+  "total_bars": 30,
+  "requested_cast_count": 0,
+  "beats_per_bar": 4.0,
+  "protagonist_id": "vln1_protagonist",
+  "motif_identity": "A memorable 4/4 sentence begins on D5 for one beat, leaps up a fourth to G5 then steps A5 in paired eighths, rises to B5 for one beat, and falls to A5 for one beat. Its continuation turns down through F-sharp–E–F-sharp in a one-beat plus paired-eighth rhythm before G5–D5 complete the dominant-bound question. The answer begins lower with B4–D5 as paired eighths, rises to G5 for a beat, and later reshapes the descent into C5–B4 paired eighths and A4 before climbing D5–F-sharp5 to the final G5. The identity is therefore the leap, paired quick steps, one-beat crest, and answering descent/recovery—not an isolated scale fragment.",
+  "harmonic_debt": "Section 2 ends on V7 of G after its E-minor diversion. Section 3 resolves that debt at once, then creates one last cadential V7 only to be discharged by the final G-major section.",
+  "resolution_intent": "A final G-major authentic cadence supports a melodic G that is held as the actual endpoint; no new dominant or diversion follows.",
+  "narrative_acts": [
+    {
+      "section": "Premise: the answered question",
+      "stage": "premise",
+      "cause": "The opening leap needs a destination commensurate with its confidence.",
+      "consequence": "Its first phrase settles on dominant D, making the second phrase necessary.",
+      "unresolved": "Whether the ascent can be stable rather than merely rhetorical.",
+      "resolution_target": "A first authentic G arrival after the D question."
+    },
+    {
+      "section": "Continuation: the lower reply",
+      "stage": "question",
+      "cause": "The first answer has exposed a descending tail that can speak independently.",
+      "consequence": "A lower reply leads through A7 to E minor and leaves V7 of G unpaid.",
+      "unresolved": "The tonic has been deferred after the E-minor diversion.",
+      "resolution_target": "Resolve the held dominant from the continuation into a transformed G-major return."
+    },
+    {
+      "section": "Transformation and climax: ascent against descent",
+      "stage": "climax",
+      "cause": "The delayed dominant and opposing melodic directions demand simultaneous resolution.",
+      "consequence": "The original contour answers on G at its greatest register and coordinated harmonic force.",
+      "unresolved": "The answer has occurred, but still needs proportionate repose.",
+      "resolution_target": "A final reduced restatement after the climactic G arrival."
+    },
+    {
+      "section": "Resolution: the sentence at rest",
+      "stage": "resolution",
+      "cause": "The climax has paid the dominant debt and clarified the protagonist's destination.",
+      "consequence": "The sentence returns without argument and ends on G.",
+      "unresolved": "None.",
+      "resolution_target": "Sustained sounding G as final melodic and harmonic degree."
+    }
+  ],
+  "chord_palette": [
+    {
+      "id": "I",
+      "label": "G major",
+      "root_pitch_class": 7,
+      "bass_pitch_class": 7,
+      "function": "tonic",
+      "voicing": "close",
+      "tension": 0.12,
+      "pitch_classes": [
+        7,
+        11,
+        2
+      ]
+    },
+    {
+      "id": "I6",
+      "label": "G major/B",
+      "root_pitch_class": 7,
+      "bass_pitch_class": 11,
+      "function": "tonic",
+      "voicing": "close",
+      "tension": 0.2,
+      "pitch_classes": [
+        7,
+        11,
+        2
+      ]
+    },
+    {
+      "id": "ii7",
+      "label": "A minor seventh",
+      "root_pitch_class": 9,
+      "bass_pitch_class": 9,
+      "function": "predominant",
+      "voicing": "close",
+      "tension": 0.42,
+      "pitch_classes": [
+        9,
+        0,
+        4,
+        7
+      ]
+    },
+    {
+      "id": "IV",
+      "label": "C major",
+      "root_pitch_class": 0,
+      "bass_pitch_class": 0,
+      "function": "predominant",
+      "voicing": "open",
+      "tension": 0.34,
+      "pitch_classes": [
+        0,
+        4,
+        7
+      ]
+    },
+    {
+      "id": "V6",
+      "label": "D major/F-sharp",
+      "root_pitch_class": 2,
+      "bass_pitch_class": 6,
+      "function": "dominant",
+      "voicing": "close",
+      "tension": 0.62,
+      "pitch_classes": [
+        2,
+        6,
+        9
+      ]
+    },
+    {
+      "id": "V7",
+      "label": "D dominant seventh",
+      "root_pitch_class": 2,
+      "bass_pitch_class": 2,
+      "function": "dominant",
+      "voicing": "close",
+      "tension": 0.72,
+      "pitch_classes": [
+        2,
+        6,
+        9,
+        0
+      ]
+    },
+    {
+      "id": "Cad64",
+      "label": "G cadential six-four over D",
+      "root_pitch_class": 7,
+      "bass_pitch_class": 2,
+      "function": "pedal",
+      "voicing": "close",
+      "tension": 0.68,
+      "pitch_classes": [
+        7,
+        11,
+        2
+      ]
+    },
+    {
+      "id": "vi",
+      "label": "E minor",
+      "root_pitch_class": 4,
+      "bass_pitch_class": 4,
+      "function": "tonic",
+      "voicing": "close",
+      "tension": 0.3,
+      "pitch_classes": [
+        4,
+        7,
+        11
+      ]
+    },
+    {
+      "id": "V_vi",
+      "label": "A dominant seventh, applied dominant of E minor",
+      "root_pitch_class": 9,
+      "bass_pitch_class": 9,
+      "function": "chromatic",
+      "voicing": "close",
+      "tension": 0.67,
+      "pitch_classes": [
+        9,
+        1,
+        4,
+        7
+      ]
+    },
+    {
+      "id": "I7_to_IV",
+      "label": "G dominant seventh toward C",
+      "root_pitch_class": 7,
+      "bass_pitch_class": 7,
+      "function": "transitional",
+      "voicing": "close",
+      "tension": 0.48,
+      "pitch_classes": [
+        7,
+        11,
+        2,
+        5
+      ]
+    },
+    {
+      "id": "iii",
+      "label": "B minor",
+      "root_pitch_class": 11,
+      "bass_pitch_class": 11,
+      "function": "tonic",
+      "voicing": "close",
+      "tension": 0.28,
+      "pitch_classes": [
+        11,
+        2,
+        6
+      ]
+    }
+  ],
+  "sections": [
+    {
+      "name": "Premise: the answered question",
+      "function": "Establish the complete melodic sentence and prove that its dominant question has an answer.",
+      "harmonic_direction": "G tonic is tested by a real half cadence at bar 4, then recovered through B-bass tonic, IV, and cadential six-four.",
+      "motif_treatment": "Present the complete eight-bar sentence exactly as established: the rising leap and short-long continuation ask on D, then the lower continuation regains height and closes on G.",
+      "start_bar": 0,
+      "bars": 8,
+      "energy": 0.42,
+      "tension": 0.34,
+      "density": 0.42,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 0.0,
+          "chord_id": "I",
+          "purpose": "tonic premise"
+        },
+        {
+          "bar_offset": 1,
+          "beat_offset": 0.0,
+          "absolute_beat": 4.0,
+          "chord_id": "V6",
+          "purpose": "question destination"
+        },
+        {
+          "bar_offset": 2,
+          "beat_offset": 0.0,
+          "absolute_beat": 8.0,
+          "chord_id": "vi",
+          "purpose": "continuation changes the emotional shade"
+        },
+        {
+          "bar_offset": 3,
+          "beat_offset": 0.0,
+          "absolute_beat": 12.0,
+          "chord_id": "ii7",
+          "purpose": "prepare answer"
+        },
+        {
+          "bar_offset": 4,
+          "beat_offset": 0.0,
+          "absolute_beat": 16.0,
+          "chord_id": "I6",
+          "purpose": "answer begins in inversion"
+        },
+        {
+          "bar_offset": 5,
+          "beat_offset": 0.0,
+          "absolute_beat": 20.0,
+          "chord_id": "IV",
+          "purpose": "subdominant breadth"
+        },
+        {
+          "bar_offset": 6,
+          "beat_offset": 0.0,
+          "absolute_beat": 24.0,
+          "chord_id": "Cad64",
+          "purpose": "recalled question under cadential pressure"
+        },
+        {
+          "bar_offset": 6,
+          "beat_offset": 2.0,
+          "absolute_beat": 26.0,
+          "chord_id": "V7",
+          "purpose": "dominant compression"
+        },
+        {
+          "bar_offset": 7,
+          "beat_offset": 0.0,
+          "absolute_beat": 28.0,
+          "chord_id": "I",
+          "purpose": "authentic answer"
+        }
+      ]
+    },
+    {
+      "name": "Continuation: the lower reply",
+      "function": "Develop the sentence into dialogue and leave the original tonic answer temporarily unpaid.",
+      "harmonic_direction": "A brief applied dominant A7 introduces C-sharp only for its exact window; C-sharp resolves down by whole step to B in E minor. E minor becomes a meaningful but non-final resting place.",
+      "motif_treatment": "The opening ascent is sequenced one degree lower, then an autonomous answering line enters with the descent in longer values. The original cadence is delayed: the two thoughts meet on a quiet E-minor rather than G.",
+      "start_bar": 8,
+      "bars": 8,
+      "energy": 0.56,
+      "tension": 0.55,
+      "density": 0.55,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 32.0,
+          "chord_id": "I",
+          "purpose": "retain shared G anchor while the sequel begins"
+        },
+        {
+          "bar_offset": 2,
+          "beat_offset": 0.0,
+          "absolute_beat": 40.0,
+          "chord_id": "iii",
+          "purpose": "sequence turns inward"
+        },
+        {
+          "bar_offset": 3,
+          "beat_offset": 0.0,
+          "absolute_beat": 44.0,
+          "chord_id": "V_vi",
+          "purpose": "functional chromatic push; C-sharp must resolve to B next"
+        },
+        {
+          "bar_offset": 4,
+          "beat_offset": 0.0,
+          "absolute_beat": 48.0,
+          "chord_id": "vi",
+          "purpose": "autonomous reply lands on B-bearing E minor"
+        },
+        {
+          "bar_offset": 6,
+          "beat_offset": 0.0,
+          "absolute_beat": 56.0,
+          "chord_id": "ii7",
+          "purpose": "the reply redirects through predominant"
+        },
+        {
+          "bar_offset": 7,
+          "beat_offset": 0.0,
+          "absolute_beat": 60.0,
+          "chord_id": "V7",
+          "purpose": "withhold G by stopping on its dominant"
+        }
+      ]
+    },
+    {
+      "name": "Transformation and climax: ascent against descent",
+      "function": "Make the original question and its answer simultaneously audible at a scale that exceeds the final release.",
+      "harmonic_direction": "The delayed V from the continuation is paid at the opening G, but that tonic is destabilized toward C through G7. IV–ii7–Cad64–V7 rebuild the original cadential logic at greater span and intensity, arriving on G before the final section.",
+      "motif_treatment": "Transform the protagonist: its initial leap is compressed into urgent paired entries, while the former descending reply rises against it. At the peak, the full original contour returns at expanded register and is answered immediately, not postponed.",
+      "start_bar": 16,
+      "bars": 8,
+      "energy": 0.96,
+      "tension": 0.94,
+      "density": 0.82,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 64.0,
+          "chord_id": "I",
+          "purpose": "pay the prior dominant debt"
+        },
+        {
+          "bar_offset": 1,
+          "beat_offset": 0.0,
+          "absolute_beat": 68.0,
+          "chord_id": "I7_to_IV",
+          "purpose": "tonic is made transitional rather than final"
+        },
+        {
+          "bar_offset": 2,
+          "beat_offset": 0.0,
+          "absolute_beat": 72.0,
+          "chord_id": "IV",
+          "purpose": "broad color contrast, still tied to G by common tones"
+        },
+        {
+          "bar_offset": 3,
+          "beat_offset": 0.0,
+          "absolute_beat": 76.0,
+          "chord_id": "ii7",
+          "purpose": "tighten the compressed calls"
+        },
+        {
+          "bar_offset": 4,
+          "beat_offset": 0.0,
+          "absolute_beat": 80.0,
+          "chord_id": "Cad64",
+          "purpose": "climactic return of the original question over cadential six-four"
+        },
+        {
+          "bar_offset": 4,
+          "beat_offset": 2.0,
+          "absolute_beat": 82.0,
+          "chord_id": "V7",
+          "purpose": "highest coordinated pressure"
+        },
+        {
+          "bar_offset": 5,
+          "beat_offset": 0.0,
+          "absolute_beat": 84.0,
+          "chord_id": "I",
+          "purpose": "audible climax answer: original contour now reaches stable G"
+        },
+        {
+          "bar_offset": 5,
+          "beat_offset": 2.0,
+          "absolute_beat": 86.0,
+          "chord_id": "I6",
+          "purpose": "release begins by letting tonic change bass relation"
+        },
+        {
+          "bar_offset": 6,
+          "beat_offset": 0.0,
+          "absolute_beat": 88.0,
+          "chord_id": "IV",
+          "purpose": "prepare a smaller final cadence"
+        },
+        {
+          "bar_offset": 7,
+          "beat_offset": 0.0,
+          "absolute_beat": 92.0,
+          "chord_id": "V7",
+          "purpose": "final approach is announced, not abruptly pasted on"
+        }
+      ]
+    },
+    {
+      "name": "Resolution: the sentence at rest",
+      "function": "Confirm that the opening dominant question, the minor diversion, and the climactic expansion all resolve to the same G-major home.",
+      "harmonic_direction": "The final dominant resolves immediately to G. A B-bass inversion and IV recall the earlier answer without reopening the question; cadential six-four and V7 receive one final, proportionate tonic resolution.",
+      "motif_treatment": "Reduce to the protagonist alone: its opening leap is now calm and metrically clear, its descent is shortened, and its final G is sustained as a completed consequence rather than a cue for more development.",
+      "start_bar": 24,
+      "bars": 6,
+      "energy": 0.48,
+      "tension": 0.18,
+      "density": 0.34,
+      "harmonic_events": [
+        {
+          "bar_offset": 0,
+          "beat_offset": 0.0,
+          "absolute_beat": 96.0,
+          "chord_id": "I",
+          "purpose": "resolve the climax's prepared dominant"
+        },
+        {
+          "bar_offset": 2,
+          "beat_offset": 0.0,
+          "absolute_beat": 104.0,
+          "chord_id": "I6",
+          "purpose": "recollection through changed bass relation"
+        },
+        {
+          "bar_offset": 3,
+          "beat_offset": 0.0,
+          "absolute_beat": 108.0,
+          "chord_id": "IV",
+          "purpose": "gentle breadth before final closure"
+        },
+        {
+          "bar_offset": 4,
+          "beat_offset": 0.0,
+          "absolute_beat": 112.0,
+          "chord_id": "Cad64",
+          "purpose": "last recollection of the question, now clearly finite"
+        },
+        {
+          "bar_offset": 4,
+          "beat_offset": 2.0,
+          "absolute_beat": 114.0,
+          "chord_id": "V7",
+          "purpose": "last dominant"
+        },
+        {
+          "bar_offset": 5,
+          "beat_offset": 0.0,
+          "absolute_beat": 116.0,
+          "chord_id": "I",
+          "purpose": "sounding final G; melody must finish on G"
+        }
+      ]
+    }
+  ],
+  "cast": [
+    {
+      "id": "vln1_protagonist",
+      "name": "First Violin",
+      "role": "Principal melodic speaker; states, transforms, and finally resolves the D-question sentence.",
+      "minimum_pitch": 62,
+      "maximum_pitch": 91,
+      "content_lane_id": "principal_sentence",
+      "line_relationship": "independent",
+      "active_sections": [
+        "Continuation: the lower reply",
+        "Premise: the answered question",
+        "Resolution: the sentence at rest",
+        "Transformation and climax: ascent against descent"
+      ]
+    },
+    {
+      "id": "vln2_reply",
+      "name": "Second Violin",
+      "role": "Autonomous lower reply and rising contrapuntal answer; inherits the descent as an independent consequence. supporting_motion",
+      "minimum_pitch": 55,
+      "maximum_pitch": 84,
+      "content_lane_id": "lower_reply",
+      "line_relationship": "call_response",
+      "active_sections": [
+        "Continuation: the lower reply",
+        "Premise: the answered question",
+        "Resolution: the sentence at rest",
+        "Transformation and climax: ascent against descent"
+      ]
+    },
+    {
+      "id": "viola_inner_harmony",
+      "name": "Viola",
+      "role": "Sustained inner harmonic voice; supplies contrary motion, common-tone continuity, and cadential inner resolution.",
+      "minimum_pitch": 50,
+      "maximum_pitch": 79,
+      "content_lane_id": "inner_voice",
+      "line_relationship": "independent",
+      "active_sections": [
+        "Continuation: the lower reply",
+        "Premise: the answered question",
+        "Resolution: the sentence at rest",
+        "Transformation and climax: ascent against descent"
+      ]
+    },
+    {
+      "id": "cello_bass",
+      "name": "Cello",
+      "role": "Harmonic bass respondent; articulates functional roots, inversions, applied-dominant resolution, and cadential ground.",
+      "minimum_pitch": 36,
+      "maximum_pitch": 60,
+      "content_lane_id": "bass_foundation",
+      "line_relationship": "independent",
+      "active_sections": [
+        "Continuation: the lower reply",
+        "Premise: the answered question",
+        "Resolution: the sentence at rest",
+        "Transformation and climax: ascent against descent"
+      ]
+    },
+    {
+      "id": "piano_cadential_support",
+      "name": "Fortepiano",
+      "role": "Selective harmonic articulation and cadential color; reinforces phrase arrivals without replacing the quartet's independent voices. primary_motion_owner",
+      "minimum_pitch": 48,
+      "maximum_pitch": 84,
+      "content_lane_id": "piano_cadential_support",
+      "line_relationship": "independent",
+      "active_sections": [
+        "Continuation: the lower reply",
+        "Premise: the answered question",
+        "Resolution: the sentence at rest",
+        "Transformation and climax: ascent against descent"
+      ]
+    },
+    {
+      "id": "harp_release_color",
+      "name": "Harp",
+      "role": "Sparse transition and final-release color, reserved for structural arrivals and the climactic-to-resolution handoff.",
+      "minimum_pitch": 55,
+      "maximum_pitch": 91,
+      "content_lane_id": "arrival_color",
+      "line_relationship": "timbral_handoff",
+      "active_sections": [
+        "Continuation: the lower reply",
+        "Premise: the answered question",
+        "Resolution: the sentence at rest",
+        "Transformation and climax: ascent against descent"
+      ]
+    },
+    {
+      "id": "bassoon_pedal_color",
+      "name": "Bassoon",
+      "role": "Independent low-mid pedal and lightly articulated harmonic shadow, deepening the E-minor diversion and final cadence without doubling the cello line.",
+      "minimum_pitch": 38,
+      "maximum_pitch": 62,
+      "content_lane_id": "pedal_shadow",
+      "line_relationship": "independent",
+      "active_sections": [
+        "Continuation: the lower reply",
+        "Premise: the answered question",
+        "Resolution: the sentence at rest",
+        "Transformation and climax: ascent against descent"
+      ]
+    },
+    {
+      "id": "oboe_climactic_answer",
+      "name": "Oboe",
+      "role": "Brief high-register answering extension at the climax, then a restrained recollection during the final resolution.",
+      "minimum_pitch": 67,
+      "maximum_pitch": 86,
+      "content_lane_id": "oboe_climactic_answer",
+      "line_relationship": "independent",
+      "active_sections": [
+        "Resolution: the sentence at rest",
+        "Transformation and climax: ascent against descent"
+      ]
+    }
+  ],
+  "performance_cells": 18,
+  "performance_placements": 18,
+  "thematic_rehearsal": true
+}

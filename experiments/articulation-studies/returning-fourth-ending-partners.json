@@ -1,0 +1,21 @@
+{
+  "title": "The Fourth That Returns — D · clímax y desenlace",
+  "startBeat": 320,
+  "endBeat": 352,
+  "harmonicSectionIndex": 5,
+  "reviseDraftId": "150bd544-1a5d-4428-a2f4-b8c32e253e0f",
+  "editableVoiceFields": ["voice_1", "voice_2"],
+  "polyphonicVoices": ["PULSO Piano chord bed", "PULSO Horns sustained upper body"],
+  "voices": [
+    "PULSO First violin protagonist",
+    "PULSO Second violin motif answerer",
+    "PULSO Clarinet contrary line",
+    "PULSO Piano chord bed",
+    "PULSO Contrabass pedal",
+    "PULSO Cello inner ground",
+    "PULSO Horns sustained upper body",
+    "PULSO Viola asymmetrical pulse",
+    "PULSO Bassoon moving bass"
+  ],
+  "instructions": "Keep proposedRevision's entire first violin line, ALL accompaniment, harmonic events and final arrival at beat 344 unchanged. Only rewrite voice_1 (second violin) and voice_2 (clarinet). Their actual parallel descent creates the repeated-key problem the listener dislikes: C#4 at 335.5/336, G4 at 338/338.5, identical F4/E4 at 333.5/334.5, and many shared melodic gestures. Do not disguise that shadowing with another fractional delay. Choose one of these two as the actual answering partner; the other may remain silent or contribute one genuinely supporting sustained tone, but must not perform a second copy of that answer. This is a specific orchestration experiment, not a ban on counterpoint or repetition in all music. Make the selected partner complement the protagonist's actual sentence in proposedRevision, with clear purpose and continuous articulation rather than scattered taps or a descending-scale echo. The protagonist remains the owner of the expected final A4-to-D5 arrival at 344; do not overshadow it with a louder or needlessly higher concluding solo. Preserve chamber body through the already-written harmonic parts. Work within the actual Gm at 320, Bbmaj7 at 328, A7 at 332, D minor at 344; resolve tension coherently and end support with the ensemble at 349.5. Return both complete replacement arrays for this interval, including an empty array if you choose not to use the other voice. Do not change any other proposed notes. Explain only your actual answer ownership and musical choices, without claiming to have heard them."
+}

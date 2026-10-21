@@ -16,6 +16,7 @@ struct PhraseRealizationCounts {
 class AiPhraseArchitecture final {
 public:
     [[nodiscard]] static juce::String schema();
+    [[nodiscard]] static juce::String schema(const SongPlan&);
     [[nodiscard]] static juce::String prompt(const SongPlan& plan,
                                              const juce::String& direction,
                                              bool longFormArc = false);

@@ -68,6 +68,9 @@ struct PerformancePlacement {
     double fragmentStart{};
     double fragmentEnd{-1.0};
     MetricIntent metricIntent{MetricIntent::StrictGrid};
+    // Explicit direct-score sustain: onsets belong to this section, but the
+    // AI-authored release may continue into the next. False for legacy clips.
+    bool allowCrossSectionRelease{};
 };
 
 [[nodiscard]] std::string_view metricIntentKey(MetricIntent) noexcept;
@@ -122,7 +125,8 @@ public:
                              double chunkStartInSection, double chunkLength,
                              std::span<const InstrumentAssignment> instruments = {},
                              bool preserveAuthoredPitch = false,
-                             double sectionLengthBeats = 0.0);
+                             double sectionLengthBeats = 0.0,
+                             double workEndInSectionBeats = 0.0);
     [[nodiscard]] static PerformanceRealizationReport auditRealization(
         const PerformanceScore&, std::string_view instrumentId,
         std::span<const InstrumentAssignment> instruments,

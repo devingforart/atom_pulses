@@ -409,6 +409,8 @@ juce::String songPlanToJson(const SongPlan& plan) {
         item->setProperty("inversion_axis", placement.inversionAxis);
         item->setProperty("fragment_start", placement.fragmentStart);
         item->setProperty("fragment_end", placement.fragmentEnd);
+        if (placement.allowCrossSectionRelease)
+            item->setProperty("allow_cross_section_release", true);
         item->setProperty("metric_intent", juce::String(metricIntentKey(placement.metricIntent).data()));
         placements.add(juce::var(item));
     }

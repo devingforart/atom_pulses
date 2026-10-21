@@ -16,6 +16,7 @@ test('local production worker uses exactly the shared Cloud composer profile', (
     PULSO_AI_TERMINAL_CRITIC_EXPERIMENT: '1',
     PULSO_AI_EXPRESSIVE_ENSEMBLE_EXPERIMENT: '1',
     PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT: '1',
+    PULSO_AI_COMPLETE_DIALOGUE_EXPERIMENT: '1',
     PULSO_AI_LONG_FORM_CONTINUITY: '1',
     PULSO_AI_LONG_FORM_ARC: '1',
     PULSO_AI_THEMATIC_REVIEW: '1',
@@ -37,6 +38,8 @@ test('local production worker uses exactly the shared Cloud composer profile', (
   assert.equal(env.PULSO_AI_TERMINAL_CRITIC_EXPERIMENT, undefined);
   assert.equal(env.PULSO_AI_EXPRESSIVE_ENSEMBLE_EXPERIMENT, '1');
   assert.equal(env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT, '1');
+  assert.equal(env.PULSO_AI_ENSEMBLE_DISCOURSE_EXPERIMENT, undefined);
+  assert.equal(env.PULSO_AI_COMPLETE_DIALOGUE_EXPERIMENT, undefined);
   assert.equal(env.PULSO_AI_JOINT_ONE_GROUP, '1');
   assert.equal(env.PULSO_AI_LONG_FORM_CONTINUITY, undefined);
   assert.equal(env.PULSO_AI_THEMATIC_REVIEW, undefined);
@@ -57,6 +60,35 @@ test('the accepted discourse profile matches the five-minute listening anchor', 
     PULSO_AI_DISABLE_RESPONSE_CACHE: '1',
   }, '/jobs/cloud-parity', '/data', false, true, true, false, true);
   assert.deepEqual(normal, experimental);
+});
+
+test('ensemble-discourse research stays local and cannot enter Cloud defaults', () => {
+  const source = { PULSO_AI_ENSEMBLE_DISCOURSE_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/base', '/data', false, false)
+    .PULSO_AI_ENSEMBLE_DISCOURSE_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/experiment', '/data', false, true)
+    .PULSO_AI_ENSEMBLE_DISCOURSE_EXPERIMENT, '1');
+});
+
+test('complete-dialogue authorship is an explicit local experiment, not a shared default', () => {
+  const source = { PULSO_AI_COMPLETE_DIALOGUE_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/base', '/data', false, false)
+    .PULSO_AI_COMPLETE_DIALOGUE_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/research', '/data', false, true)
+    .PULSO_AI_COMPLETE_DIALOGUE_EXPERIMENT, '1');
+});
+
+test('thematic reference research cannot enter ordinary Cloud or local defaults', () => {
+  const source = { PULSO_AI_THEMATIC_SUBJECT_EXPERIMENT: '1',
+    PULSO_AI_THEMATIC_REHEARSAL_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/base', '/data', false, false)
+    .PULSO_AI_THEMATIC_SUBJECT_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/research', '/data', false, true)
+    .PULSO_AI_THEMATIC_SUBJECT_EXPERIMENT, '1');
+  assert.equal(workerEnvironmentFor(source, '/jobs/base', '/data', false, false)
+    .PULSO_AI_THEMATIC_REHEARSAL_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/research', '/data', false, true)
+    .PULSO_AI_THEMATIC_REHEARSAL_EXPERIMENT, '1');
 });
 
 test('first-pass audition is an explicit per-job local override, never inherited from process environment', () => {
@@ -141,4 +173,72 @@ test('an explicitly experimental local worker is visibly outside production pari
   assert.equal(env.PULSO_AI_NARRATIVE_FOCUS, 'example');
   assert.equal(env.PULSO_AUTO_RECOVERY_MAX_SECONDS, '600');
   assert.equal(env.PULSO_AUTO_RECOVERY_MAX_USD, '20');
+});
+
+test('general phrase prosody is forwarded only to its isolated experimental worker', () => {
+  const source = { PULSO_AI_PHRASE_PROSODY_EXPERIMENT: '1', PULSO_AI_JOINT_PITCHED_SCORE_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/normal', '/data', false, false)
+    .PULSO_AI_PHRASE_PROSODY_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/lab', '/data', false, true)
+    .PULSO_AI_PHRASE_PROSODY_EXPERIMENT, '1');
+  assert.equal(workerEnvironmentFor(source, '/jobs/normal', '/data', false, false)
+    .PULSO_AI_JOINT_PITCHED_SCORE_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/lab', '/data', false, true)
+    .PULSO_AI_JOINT_PITCHED_SCORE_EXPERIMENT, '1');
+});
+
+test('phrase development stays an explicit local-only experiment', () => {
+  const source = { PULSO_AI_PHRASE_DEVELOPMENT_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/normal', '/data', false, false)
+    .PULSO_AI_PHRASE_DEVELOPMENT_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/lab', '/data', false, true)
+    .PULSO_AI_PHRASE_DEVELOPMENT_EXPERIMENT, '1');
+});
+
+test('joint theme and harmony planning cannot leak into Cloud or the standard worker', () => {
+  const source = { PULSO_AI_THEMATIC_GROUNDWORK_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/cloud', '/data', false, false)
+    .PULSO_AI_THEMATIC_GROUNDWORK_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/lab', '/data', false, true)
+    .PULSO_AI_THEMATIC_GROUNDWORK_EXPERIMENT, '1');
+});
+
+test('consequential ensemble development is explicit research, not a production default', () => {
+  const source = { PULSO_AI_CONSEQUENTIAL_DEVELOPMENT_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/cloud', '/data', false, false)
+    .PULSO_AI_CONSEQUENTIAL_DEVELOPMENT_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/lab', '/data', false, true)
+    .PULSO_AI_CONSEQUENTIAL_DEVELOPMENT_EXPERIMENT, '1');
+});
+
+test('whole-argument composition stays isolated from production defaults', () => {
+  const source = { PULSO_AI_WHOLE_ARGUMENT_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/cloud', '/data', false, false)
+    .PULSO_AI_WHOLE_ARGUMENT_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/lab', '/data', false, true)
+    .PULSO_AI_WHOLE_ARGUMENT_EXPERIMENT, '1');
+});
+
+test('material interaction research does not enter Cloud or standard local defaults', () => {
+  const source = { PULSO_AI_MATERIAL_DIALOGUE_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/cloud', '/data', false, false)
+    .PULSO_AI_MATERIAL_DIALOGUE_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/lab', '/data', false, true)
+    .PULSO_AI_MATERIAL_DIALOGUE_EXPERIMENT, '1');
+});
+
+test('expectation-led writing remains explicit local research', () => {
+  const source = { PULSO_AI_EXPECTATION_LED_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/cloud', '/data', false, false)
+    .PULSO_AI_EXPECTATION_LED_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/lab', '/data', false, true)
+    .PULSO_AI_EXPECTATION_LED_EXPERIMENT, '1');
+});
+
+test('gesture score representation stays isolated from standard and Cloud workers', () => {
+  const source = { PULSO_AI_GESTURE_SCORE_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/cloud', '/data', false, false)
+    .PULSO_AI_GESTURE_SCORE_EXPERIMENT, undefined);
+  assert.equal(workerEnvironmentFor(source, '/jobs/lab', '/data', false, true)
+    .PULSO_AI_GESTURE_SCORE_EXPERIMENT, '1');
 });

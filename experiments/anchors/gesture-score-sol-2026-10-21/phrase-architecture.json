@@ -1,0 +1,1429 @@
+{
+  "argument_owner_ids": [
+    "vln1_protagonist",
+    "vln2_reply",
+    "viola_inner_harmony",
+    "cello_bass",
+    "oboe_climactic_answer"
+  ],
+  "musical_subject": {
+    "identity": "A complete eight-bar G-major classical sentence whose identity is the D5-to-G5 fourth, paired quick A5–B5 ascent, one-beat crest and falling continuation, followed by the lower B4–D5 answer, vulnerable descent, and recovering ascent to G5. Its question is a real D-dominant arrival, not merely an opening cell.",
+    "length_beats": 32,
+    "continuation": "After the bright leap and crest, the line loses height through F-sharp–E–F-sharp and G–D, reaching D over the dominant. The lower answer then turns the descent C–B–A into a recovery through D–F-sharp, so the same short-long profile becomes a tonic cadence.",
+    "arrival": "G5 over G major at the end of the cadential six-four and V7 motion; the answer has regained the opening altitude without reopening the question.",
+    "recognizable_return": "The full contour returns at the Section 2 climax in a higher, broadened register; Section 3 recalls its opening leap and answer-recovery in calmer reduction, making the final held G sound earned.",
+    "instrument_id": "vln1_protagonist",
+    "notes": [
+      {
+        "duration": 1,
+        "velocity": 90,
+        "pitch": 74,
+        "beat": 0
+      },
+      {
+        "duration": 0.5,
+        "velocity": 96,
+        "pitch": 79,
+        "beat": 1
+      },
+      {
+        "duration": 0.5,
+        "velocity": 94,
+        "pitch": 81,
+        "beat": 1.5
+      },
+      {
+        "duration": 1,
+        "velocity": 98,
+        "pitch": 83,
+        "beat": 2
+      },
+      {
+        "duration": 1,
+        "velocity": 88,
+        "pitch": 81,
+        "beat": 3
+      },
+      {
+        "duration": 1,
+        "velocity": 84,
+        "pitch": 78,
+        "beat": 4
+      },
+      {
+        "duration": 0.5,
+        "velocity": 80,
+        "pitch": 76,
+        "beat": 5
+      },
+      {
+        "duration": 0.5,
+        "velocity": 82,
+        "pitch": 78,
+        "beat": 5.5
+      },
+      {
+        "duration": 1,
+        "velocity": 86,
+        "pitch": 79,
+        "beat": 6
+      },
+      {
+        "duration": 1,
+        "velocity": 88,
+        "pitch": 74,
+        "beat": 7
+      },
+      {
+        "duration": 0.5,
+        "velocity": 78,
+        "pitch": 71,
+        "beat": 8
+      },
+      {
+        "duration": 0.5,
+        "velocity": 82,
+        "pitch": 74,
+        "beat": 8.5
+      },
+      {
+        "duration": 1,
+        "velocity": 92,
+        "pitch": 79,
+        "beat": 9
+      },
+      {
+        "duration": 1,
+        "velocity": 86,
+        "pitch": 78,
+        "beat": 10
+      },
+      {
+        "duration": 1,
+        "velocity": 82,
+        "pitch": 76,
+        "beat": 11
+      },
+      {
+        "duration": 0.5,
+        "velocity": 84,
+        "pitch": 72,
+        "beat": 12
+      },
+      {
+        "duration": 0.5,
+        "velocity": 80,
+        "pitch": 71,
+        "beat": 12.5
+      },
+      {
+        "duration": 1,
+        "velocity": 82,
+        "pitch": 69,
+        "beat": 13
+      },
+      {
+        "duration": 1,
+        "velocity": 88,
+        "pitch": 74,
+        "beat": 14
+      },
+      {
+        "duration": 1,
+        "velocity": 94,
+        "pitch": 78,
+        "beat": 15
+      },
+      {
+        "duration": 1,
+        "velocity": 98,
+        "pitch": 79,
+        "beat": 16
+      },
+      {
+        "duration": 0.5,
+        "velocity": 96,
+        "pitch": 83,
+        "beat": 17
+      },
+      {
+        "duration": 0.5,
+        "velocity": 90,
+        "pitch": 81,
+        "beat": 17.5
+      },
+      {
+        "duration": 1,
+        "velocity": 86,
+        "pitch": 79,
+        "beat": 18
+      },
+      {
+        "duration": 1,
+        "velocity": 82,
+        "pitch": 74,
+        "beat": 19
+      },
+      {
+        "duration": 1,
+        "velocity": 80,
+        "pitch": 72,
+        "beat": 20
+      },
+      {
+        "duration": 0.5,
+        "velocity": 78,
+        "pitch": 76,
+        "beat": 21
+      },
+      {
+        "duration": 0.5,
+        "velocity": 76,
+        "pitch": 74,
+        "beat": 21.5
+      },
+      {
+        "duration": 1,
+        "velocity": 74,
+        "pitch": 72,
+        "beat": 22
+      },
+      {
+        "duration": 1,
+        "velocity": 78,
+        "pitch": 69,
+        "beat": 23
+      },
+      {
+        "duration": 1,
+        "velocity": 86,
+        "pitch": 74,
+        "beat": 24
+      },
+      {
+        "duration": 0.5,
+        "velocity": 82,
+        "pitch": 72,
+        "beat": 25
+      },
+      {
+        "duration": 0.5,
+        "velocity": 84,
+        "pitch": 71,
+        "beat": 25.5
+      },
+      {
+        "duration": 1,
+        "velocity": 88,
+        "pitch": 69,
+        "beat": 26
+      },
+      {
+        "duration": 1,
+        "velocity": 92,
+        "pitch": 78,
+        "beat": 27
+      },
+      {
+        "duration": 2,
+        "velocity": 104,
+        "pitch": 79,
+        "beat": 28
+      },
+      {
+        "duration": 1,
+        "velocity": 82,
+        "pitch": 74,
+        "beat": 30
+      },
+      {
+        "duration": 1,
+        "velocity": 106,
+        "pitch": 79,
+        "beat": 31
+      }
+    ]
+  },
+  "dramatic_question": "Can the buoyant G-major leap, after falling into a true dominant question, regain its height as a genuine answer rather than as another display of brightness?",
+  "motif_clue": "D5 quarter, then a fourth-leap to G5 and paired eighths A5–B5; the one-beat B5 crest falls before F-sharp–E–F-sharp bends it toward D. Later the lower paired-eighth descent C–B–A is made to recover through D–F-sharp to G: the same rhythm first asks, then answers, then becomes urgent ascent against a rising former descent.",
+  "phrases": [
+    {
+      "response_id": "",
+      "local_start_bar": 0,
+      "speaker_id": "vln1_protagonist",
+      "register_high": 83,
+      "register_low": 74,
+      "section_index": 0,
+      "silence_strategy": "The violin takes a clear breath after the one-beat A5 fall; the bass and viola retain the harmonic thread rather than filling the breath with imitation.",
+      "contour": "D5 rises by fourth to G5, presses through paired A5–B5 to the B5 crest, then descends in a connected arc toward D5.",
+      "material_development": {
+        "musical_task": "State the first half of the primary sentence exactly enough to establish its rhythmic promise and its dominant destination.",
+        "heard_consequence": "The falling continuation lands on D5 over V6/ii7 as an audible, balanced half-cadential question.",
+        "partner_task": "Cello makes an independent G–F-sharp–E–A functional descent; viola supplies contrary inner rise into the dominant without becoming another melody.",
+        "inherited_from": "Opening claim of the primary sentence: fourth-leap, paired eighths, crest, and descent.",
+        "material_id": "primary"
+      },
+      "delivery": {
+        "bearing_intentions": [
+          "Buoyant but not rushed opening fourth",
+          "Place B5 as the sentence's first assertion",
+          "Let the F-sharp–E–F-sharp continuation lose altitude naturally",
+          "Reserve the D arrival as a genuine question"
+        ],
+        "arrival": "D5 is sustained with poised incompleteness over the dominant.",
+        "continuation": "The descent is legato through its paired-eighth inflection, then allows a real breath before the answer.",
+        "connection": "Carry the leap into the crest as one thought; separate the final D only by its harmonic function, not by an accent break.",
+        "dialogue": "No instrumental reply yet: the cello's contrary functional motion makes the question audible without contesting the violin.",
+        "proposition": "A confident upward claim discovers that its own falling continuation has brought it to D, where it must wait for an answer."
+      },
+      "relationship": "The protagonist alone owns the melody; cello and viola make its descent consequential through contrary functional motion.",
+      "ensemble_spans": [
+        {
+          "foreground_ids": [
+            "vln1_protagonist"
+          ],
+          "metric_supports": [
+            {
+              "function": "opening tonic grounding",
+              "beat": 0
+            },
+            {
+              "function": "crest claim",
+              "beat": 2
+            }
+          ],
+          "beat": 0,
+          "duration": 4,
+          "parts": [
+            {
+              "attack_relation": "shares the opening claim, then moves independently beneath it",
+              "instrument_id": "cello_bass",
+              "action": "G-bass ground moving toward F-sharp"
+            },
+            {
+              "attack_relation": "sustained afterbeat support",
+              "instrument_id": "viola_inner_harmony",
+              "action": "inner common-tone connection"
+            }
+          ],
+          "arrival_goal": "B5 is heard as the crest generated by the opening fourth, not a detached high note.",
+          "articulation_intent": "Lightly articulated leap and paired eighths, bound into the one-beat crest.",
+          "listening_thread": "D–G fourth and the paired ascent to B.",
+          "arrival_offset": 2,
+          "rhythmic_identity": "Quarter claim, paired eighth lift, then two one-beat pillars; the crest receives the principal accent.",
+          "pulse_carrier_id": "cello_bass",
+          "joint_voice_ids": [
+            "vln1_protagonist",
+            "cello_bass"
+          ]
+        },
+        {
+          "foreground_ids": [
+            "vln1_protagonist"
+          ],
+          "metric_supports": [
+            {
+              "function": "dominant arrival",
+              "beat": 3
+            }
+          ],
+          "beat": 4,
+          "duration": 12,
+          "parts": [
+            {
+              "attack_relation": "contrary-moving underpinning",
+              "instrument_id": "cello_bass",
+              "action": "completes E-to-A functional redirection"
+            },
+            {
+              "attack_relation": "holds then resolves inward",
+              "instrument_id": "viola_inner_harmony",
+              "action": "common-tone continuity into the dominant"
+            }
+          ],
+          "arrival_goal": "D5 over dominant is a full half-cadential question.",
+          "articulation_intent": "Slur the falling continuation; release only at the terminal D.",
+          "listening_thread": "The crest's descent is shortened into F-sharp–E–F-sharp before the D question.",
+          "arrival_offset": 11,
+          "rhythmic_identity": "One-beat fall, paired-eighth turn, then measured descent; no accompaniment answers the small gaps.",
+          "pulse_carrier_id": "cello_bass",
+          "joint_voice_ids": [
+            "vln1_protagonist",
+            "viola_inner_harmony",
+            "cello_bass"
+          ]
+        }
+      ],
+      "bars": 4,
+      "consequence": "The listener expects the lower answer because the D arrival is harmonically and melodically unfinished.",
+      "gesture": "Buoyant classical antecedent with a clearly earned dominant question.",
+      "rhythm_shape": "Quarter, paired eighths, quarter crest and measured descending continuation."
+    },
+    {
+      "response_id": "vln2_reply",
+      "local_start_bar": 4,
+      "speaker_id": "vln1_protagonist",
+      "register_high": 83,
+      "register_low": 69,
+      "section_index": 0,
+      "silence_strategy": "Vln1 leaves space after its recovered G for the vln2's quiet downward echo; the echo is a consequence, not an extra cadence.",
+      "contour": "The answer begins below the preceding D, rises to G, then descends through C–B–A before a final D–F-sharp recovery to G.",
+      "material_development": {
+        "musical_task": "Complete the lower answer of the primary sentence and prove that the question closes at G.",
+        "heard_consequence": "The original dominant destination is converted into a sounding G-major authentic cadence.",
+        "partner_task": "Vln2 echoes the answer's descending contour in longer values after the violin's main recovery; cello gives B–C–D–G cadential ground.",
+        "inherited_from": "The preceding D question and its short-long descent; the answer starts lower but preserves the paired-eighth claim and final upward recovery.",
+        "material_id": "primary"
+      },
+      "delivery": {
+        "bearing_intentions": [
+          "Begin lower with a warmer, answering tone",
+          "Allow the C–B descent to sound vulnerable",
+          "Make D–F-sharp feel like recovery rather than new bravura",
+          "Release after the final G so the lower echo is audible"
+        ],
+        "arrival": "G5 is a stable tonic answer, not a launching note.",
+        "continuation": "The line keeps the antecedent's rhythmic profile while reversing its dramatic result.",
+        "connection": "Bind C–B–A into one soft descent, then gather through D–F-sharp to the final G.",
+        "dialogue": "Vln2 genuinely answers after the main arrival by enlarging the descent in longer values; it does not duplicate the violin's every note.",
+        "proposition": "The question is answered from below: descent accepts vulnerability, then the original upward energy returns as closure."
+      },
+      "relationship": "Vln1 resolves first; vln2's delayed lower echo confirms that this is an answer while cello's B–C–D–G route makes the cadence structural.",
+      "ensemble_spans": [
+        {
+          "foreground_ids": [
+            "vln1_protagonist",
+            "cello_bass"
+          ],
+          "metric_supports": [
+            {
+              "function": "inverted-tonic answer onset",
+              "beat": 0
+            },
+            {
+              "function": "cadential-six-four preparation",
+              "beat": 8
+            }
+          ],
+          "beat": 0,
+          "duration": 12,
+          "parts": [
+            {
+              "attack_relation": "independent bass answer to prior A",
+              "instrument_id": "cello_bass",
+              "action": "B then C and D approach to G"
+            },
+            {
+              "attack_relation": "contrary inner resolution",
+              "instrument_id": "viola_inner_harmony",
+              "action": "suspends then resolves toward cadential tones"
+            }
+          ],
+          "arrival_goal": "The recovery D–F-sharp makes G5 feel like the continuation's necessary answer.",
+          "articulation_intent": "Answering legato, with a slight rhetorical lift into D–F-sharp.",
+          "listening_thread": "Lower B–D start, descent through C–B–A, and recovered ascent.",
+          "arrival_offset": 11,
+          "rhythmic_identity": "Paired-eighth answer beginning, broader one-beat descent, then a compact cadential recovery.",
+          "pulse_carrier_id": "cello_bass",
+          "joint_voice_ids": [
+            "vln1_protagonist",
+            "viola_inner_harmony",
+            "cello_bass"
+          ]
+        },
+        {
+          "foreground_ids": [
+            "vln2_reply"
+          ],
+          "metric_supports": [],
+          "beat": 12,
+          "duration": 4,
+          "parts": [
+            {
+              "attack_relation": "enters after the protagonist's release",
+              "instrument_id": "vln2_reply",
+              "action": "long-value descending echo of C–B–A"
+            },
+            {
+              "attack_relation": "quiet tonic support",
+              "instrument_id": "cello_bass",
+              "action": "settles on G without restating the melody"
+            }
+          ],
+          "arrival_goal": "The lower echo settles the cadence rather than reopening it.",
+          "articulation_intent": "Gentle, speech-like answer after a genuine melodic breath.",
+          "listening_thread": "The answer's descent survives as an independent lower voice.",
+          "arrival_offset": 4,
+          "rhythmic_identity": "Longer values relax the former paired-eighth descent.",
+          "pulse_carrier_id": "",
+          "joint_voice_ids": [
+            "vln2_reply",
+            "cello_bass"
+          ]
+        }
+      ],
+      "bars": 4,
+      "consequence": "G has been heard as an answer, so its later postponement in E minor will register as a meaningful unpaid memory.",
+      "gesture": "Lower consequent, recovering to a decisive G cadence.",
+      "rhythm_shape": "Paired-eighth opening softened into longer descent and compact ascent."
+    },
+    {
+      "response_id": "vln2_reply",
+      "local_start_bar": 0,
+      "speaker_id": "vln1_protagonist",
+      "register_high": 81,
+      "register_low": 69,
+      "section_index": 1,
+      "silence_strategy": "After the sequence, vln1 yields the foreground; vln2 carries the descent while vln1 is reduced to brief listening interjections and then rests before E minor.",
+      "contour": "The initial fourth-leap profile is sequenced one degree lower and does not attain its original crest; its line turns inward toward B rather than outward to G.",
+      "material_development": {
+        "musical_task": "Make the opening ascent sound provisional by sequencing it lower across tonic and iii.",
+        "heard_consequence": "The expected G answer is diverted toward A7, where C-sharp has a specific downward obligation to B.",
+        "partner_task": "Vln2 enters with the inherited descending answer in longer values and resolves C-sharp down to B as the audible doorway into E minor.",
+        "inherited_from": "The D–G leap and paired ascent of the primary opening, lowered by degree; vln2 inherits the C–B–A descent from the original consequent.",
+        "material_id": "primary"
+      },
+      "delivery": {
+        "bearing_intentions": [
+          "Keep the sequence lighter than the original statement",
+          "Do not crown the lowered crest as a new climax",
+          "Make the C-sharp moment pointed but brief",
+          "Hand the line to vln2 before the E-minor repose"
+        ],
+        "arrival": "Vln2's C-sharp-to-B resolution is the actual arrival, settling quietly on E minor rather than G.",
+        "continuation": "The sequence loses its claim to finality and opens space for the autonomous lower answer.",
+        "connection": "Vln1's paired motions should overlap into vln2's longer descent, not alternate mechanically.",
+        "dialogue": "The reply recognizes the exact descending answer-rhythm but lengthens it; its C-sharp–B resolution answers the applied dominant more literally than vln1 can.",
+        "proposition": "The original ascent tries again lower, but its deferred answer passes to another voice and accepts E minor as an expressive temporary home."
+      },
+      "relationship": "Overlapping imitation becomes dialogue: vln1 lowers the ascent while vln2 independently elongates the former descent; cello redirects rather than merely holding roots.",
+      "ensemble_spans": [
+        {
+          "foreground_ids": [
+            "vln1_protagonist",
+            "vln2_reply"
+          ],
+          "metric_supports": [
+            {
+              "function": "sequenced claim",
+              "beat": 0
+            },
+            {
+              "function": "reply entry beneath continuation",
+              "beat": 6
+            }
+          ],
+          "beat": 0,
+          "duration": 12,
+          "parts": [
+            {
+              "attack_relation": "one-degree-lower sequence",
+              "instrument_id": "vln1_protagonist",
+              "action": "compressed version of opening leap and paired ascent"
+            },
+            {
+              "attack_relation": "overlapping answer",
+              "instrument_id": "vln2_reply",
+              "action": "longer-value descent entering below the sequence"
+            },
+            {
+              "attack_relation": "independent functional redirection",
+              "instrument_id": "cello_bass",
+              "action": "moves from G toward B and A7"
+            }
+          ],
+          "arrival_goal": "The two lines meet without G-major closure, preparing the applied dominant.",
+          "articulation_intent": "Vln1 lightly articulated; vln2's answer more connected and weight-bearing.",
+          "listening_thread": "Lowered leap against the original answer's descent.",
+          "arrival_offset": 10,
+          "rhythmic_identity": "Paired-eighth sequence above against longer answering values below.",
+          "pulse_carrier_id": "cello_bass",
+          "joint_voice_ids": [
+            "vln1_protagonist",
+            "vln2_reply",
+            "cello_bass"
+          ]
+        },
+        {
+          "foreground_ids": [
+            "vln2_reply"
+          ],
+          "metric_supports": [
+            {
+              "function": "C-sharp obligation",
+              "beat": 1
+            },
+            {
+              "function": "resolution to B",
+              "beat": 2
+            }
+          ],
+          "beat": 12,
+          "duration": 12,
+          "parts": [
+            {
+              "attack_relation": "foreground resolution",
+              "instrument_id": "vln2_reply",
+              "action": "C-sharp resolves down by whole step to B, continuing into E-minor repose"
+            },
+            {
+              "attack_relation": "withdraws after handing over",
+              "instrument_id": "vln1_protagonist",
+              "action": "brief supportive interjection then silence"
+            },
+            {
+              "attack_relation": "pedal-like minor grounding",
+              "instrument_id": "cello_bass",
+              "action": "arrives on E with independent approach"
+            }
+          ],
+          "arrival_goal": "E minor is heard as a quiet resting place with G-major answer intentionally unpaid.",
+          "articulation_intent": "Sustain the B resolution warmly; leave space after it.",
+          "listening_thread": "The once-cadential descent has become an autonomous minor-mode consequence.",
+          "arrival_offset": 8,
+          "rhythmic_identity": "Long-value descent relaxes after the applied-dominant accent.",
+          "pulse_carrier_id": "cello_bass",
+          "joint_voice_ids": [
+            "vln2_reply",
+            "cello_bass"
+          ]
+        }
+      ],
+      "bars": 6,
+      "consequence": "The tonic answer is now a debt: E minor rests convincingly, but the listener remembers that G was the original destination.",
+      "gesture": "A lowered sequence gives way to a genuine lower-voice reply and a quiet minor diversion.",
+      "rhythm_shape": "Paired-eighth ascent above, longer-value descent below, then spacious minor repose."
+    },
+    {
+      "response_id": "",
+      "local_start_bar": 6,
+      "speaker_id": "vln2_reply",
+      "register_high": 76,
+      "register_low": 59,
+      "section_index": 1,
+      "silence_strategy": "The reply tapers into a held B/E-minor sonority; vln1 remains silent so the diversion can be heard as a consequence rather than a failed cadence.",
+      "contour": "A final small falling turn settles inward, avoiding the D–F-sharp recovery that would have restored G.",
+      "material_development": {
+        "musical_task": "Secure E minor as a meaningful temporary arrival while preserving the remembered need for dominant resolution.",
+        "heard_consequence": "The line ends softly on B against E-minor ground; the later V7 of G feels necessary rather than decorative.",
+        "partner_task": "Cello articulates ii7 to V7 of G beneath the held consequence, making the coming debt audible without supplying a melodic answer.",
+        "inherited_from": "Vln2's longer-value version of the primary answer descent, now deliberately denied its final upward recovery.",
+        "material_id": "primary"
+      },
+      "delivery": {
+        "bearing_intentions": [
+          "Let the minor arrival be complete locally",
+          "Avoid any heroic upward recovery",
+          "Listen through the bass's preparation of G dominant"
+        ],
+        "arrival": "B over E minor is an inward resting point, not final closure.",
+        "continuation": "The held consequence permits the bass to reveal the future V7 without a new thematic claim.",
+        "connection": "One tapering line, then an unhurried release into the dominant preparation.",
+        "dialogue": "No answer is assigned: the bass prepares harmonic debt while vln2's final B remains the audible consequence.",
+        "proposition": "The lower reply stops before its former recovery and thereby leaves G-major closure unpaid."
+      },
+      "relationship": "The melodic reply rests while cello alone converts the local E-minor repose into a structural dominant debt.",
+      "ensemble_spans": [
+        {
+          "foreground_ids": [
+            "vln2_reply"
+          ],
+          "metric_supports": [
+            {
+              "function": "minor repose",
+              "beat": 2
+            }
+          ],
+          "beat": 0,
+          "duration": 8,
+          "parts": [
+            {
+              "attack_relation": "settling foreground turn",
+              "instrument_id": "vln2_reply",
+              "action": "short descending turn to held B"
+            },
+            {
+              "attack_relation": "independent harmonic motion",
+              "instrument_id": "cello_bass",
+              "action": "E-minor ground moves toward ii7"
+            }
+          ],
+          "arrival_goal": "B is accepted as the temporary end of the reply.",
+          "articulation_intent": "Tapered legato and a genuine release after the held arrival.",
+          "listening_thread": "The answer descent without its expected D–F-sharp rescue.",
+          "arrival_offset": 2,
+          "rhythmic_identity": "Reduced long-value consequent, with no paired-eighth restart.",
+          "pulse_carrier_id": "cello_bass",
+          "joint_voice_ids": [
+            "vln2_reply",
+            "cello_bass"
+          ]
+        }
+      ],
+      "bars": 2,
+      "consequence": "The next section must pay the V7 of G immediately before it can enlarge the material.",
+      "gesture": "Quietly withheld recovery.",
+      "rhythm_shape": "A shortened falling turn and held minor arrival."
+    },
+    {
+      "response_id": "vln2_reply",
+      "local_start_bar": 0,
+      "speaker_id": "vln1_protagonist",
+      "register_high": 88,
+      "register_low": 74,
+      "section_index": 2,
+      "silence_strategy": "The immediate G resolution is allowed one clear beat of recognition before urgent paired entries begin; at the expanded return, oboe's answer occupies the space after the violin crest.",
+      "contour": "The leap is compressed into urgent paired upward entries; against it, the former descending reply rises, and the full original contour later spans a higher register.",
+      "material_development": {
+        "musical_task": "Pay the prior V7 at once, then transform ascent and descent into simultaneous contrapuntal pressure toward the climactic full return.",
+        "heard_consequence": "The original antecedent becomes larger than its first appearance because its crest is reached against a rising answer rather than over passive support.",
+        "partner_task": "Vln2 inverts the dramatic direction of its former descent into an ascending counterline, then immediately answers the expanded original contour; cello sustains the larger IV–ii7–Cad64–V7 route.",
+        "inherited_from": "Vln1 inherits the D–G fourth and paired quick ascent in compressed form; vln2 inherits C–B–A descent but changes its direction into rising consequence.",
+        "material_id": "primary"
+      },
+      "delivery": {
+        "bearing_intentions": [
+          "Let the opening G settlement be unmistakable",
+          "Compress the paired figures without turning them into generic passagework",
+          "Prepare the high return through connected ascent",
+          "Make the full contour at the peak recognizably the opening sentence"
+        ],
+        "arrival": "The expanded crest and immediate answer arrive on G at the larger cadential close.",
+        "continuation": "Urgency is created by compressed entries and contrary ascent, not by continuous scale filling.",
+        "connection": "The paired figures are linked in two-bar arcs; the full return broadens enough to be recognized as a sentence.",
+        "dialogue": "Vln2 rises against vln1's urgent ascent, then answers the high complete contour immediately; the two lines share cadential claims without doubling.",
+        "proposition": "The old question is first paid, then its ascent and former descent contend in contrary motion until the complete sentence returns at a scale that exceeds its origin."
+      },
+      "relationship": "Counterpoint changes the meaning of the primary material: vln1's compressed ascent seeks height while vln2 turns its own old descent upward; cello gives the conflict a classical cadential horizon.",
+      "ensemble_spans": [
+        {
+          "foreground_ids": [
+            "vln1_protagonist",
+            "vln2_reply"
+          ],
+          "metric_supports": [
+            {
+              "function": "payment of prior dominant",
+              "beat": 0
+            },
+            {
+              "function": "compressed-entry onset",
+              "beat": 2
+            }
+          ],
+          "beat": 0,
+          "duration": 12,
+          "parts": [
+            {
+              "attack_relation": "immediate resolution then paired entries",
+              "instrument_id": "vln1_protagonist",
+              "action": "settles on G then compresses leap-profile upward"
+            },
+            {
+              "attack_relation": "contrary continuation",
+              "instrument_id": "vln2_reply",
+              "action": "rises from the former descent's lower register"
+            },
+            {
+              "attack_relation": "structural progression",
+              "instrument_id": "cello_bass",
+              "action": "G resolution redirects through G7 toward IV"
+            }
+          ],
+          "arrival_goal": "The paid G is destabilized toward IV without canceling its resolving force.",
+          "articulation_intent": "Clear initial arrival; thereafter springing paired figures joined in longer arcs.",
+          "listening_thread": "The remembered paired ascent is now urgent, while the answer's descent has been turned upward.",
+          "arrival_offset": 0,
+          "rhythmic_identity": "Immediate tonic downbeat followed by paired quick claims in contrary-moving dialogue.",
+          "pulse_carrier_id": "cello_bass",
+          "joint_voice_ids": [
+            "vln1_protagonist",
+            "vln2_reply",
+            "cello_bass"
+          ]
+        },
+        {
+          "foreground_ids": [
+            "vln1_protagonist",
+            "vln2_reply",
+            "oboe_climactic_answer"
+          ],
+          "metric_supports": [
+            {
+              "function": "expanded crest",
+              "beat": 4
+            },
+            {
+              "function": "cadential answer onset",
+              "beat": 7
+            }
+          ],
+          "beat": 12,
+          "duration": 12,
+          "parts": [
+            {
+              "attack_relation": "foreground expanded return",
+              "instrument_id": "vln1_protagonist",
+              "action": "states recognizable full leap-crest-fall contour in upper register"
+            },
+            {
+              "attack_relation": "immediate answering continuation",
+              "instrument_id": "vln2_reply",
+              "action": "answers the descent/recovery at once from below"
+            },
+            {
+              "attack_relation": "brief high extension after violin crest",
+              "instrument_id": "oboe_climactic_answer",
+              "action": "extends the answering recovery, then releases"
+            },
+            {
+              "attack_relation": "cadential ground",
+              "instrument_id": "cello_bass",
+              "action": "supports ii7 through Cad64 and V7 toward G"
+            }
+          ],
+          "arrival_goal": "A strong G-major arrival proves that the full original sentence can survive expansion and counterpoint.",
+          "articulation_intent": "Broaden the original crest; maintain a real breath for oboe's answering extension before the cadence settles.",
+          "listening_thread": "Complete original contour, high-expanded, answered immediately by its own transformed descent.",
+          "arrival_offset": 11,
+          "rhythmic_identity": "Broadened original short-long sentence above a rising counterline; the answer enters after, not atop every attack.",
+          "pulse_carrier_id": "cello_bass",
+          "joint_voice_ids": [
+            "vln1_protagonist",
+            "vln2_reply",
+            "oboe_climactic_answer",
+            "cello_bass"
+          ]
+        }
+      ],
+      "bars": 6,
+      "consequence": "The climax resolves the enlarged sentence on G, leaving only the need to show that the same thought can now rest without further escalation.",
+      "gesture": "Urgent compressed ascent against a rising former descent, culminating in a high recognizable return.",
+      "rhythm_shape": "Paired quick entries expand into the original quarter-and-eighth sentence at the peak."
+    },
+    {
+      "response_id": "oboe_climactic_answer",
+      "local_start_bar": 6,
+      "speaker_id": "vln2_reply",
+      "register_high": 81,
+      "register_low": 62,
+      "section_index": 2,
+      "silence_strategy": "After the climactic G, vln2 gives a brief descending confirmation and then releases; oboe answers only its terminal recovery, leaving the final dominant exposed for the resolution section.",
+      "contour": "The rising counterline relaxes into a modest descending confirmation, while the oboe retains one high recovering fragment before yielding to V7.",
+      "material_development": {
+        "musical_task": "Turn climax into a proportionate release and expose the final dominant without beginning another large phrase.",
+        "heard_consequence": "The high answer contracts to a single remembered recovery; the final V7 becomes a clear boundary into calm resolution.",
+        "partner_task": "Oboe gives a restrained high recollection of the D–F-sharp–G recovery; cello makes the final IV-to-V7 direction audible.",
+        "inherited_from": "Vln2's ascent against descent and the primary answer's final recovering interval.",
+        "material_id": "primary"
+      },
+      "delivery": {
+        "bearing_intentions": [
+          "Do not renew the climax",
+          "Let the lower confirmation descend with gratitude",
+          "Allow the oboe's brief high recovery to be the final bright afterimage",
+          "Release before the final dominant"
+        ],
+        "arrival": "The phrase arrives not on a new tonic claim but on an exposed, proportionate V7.",
+        "continuation": "Its taper makes room for the calm protagonist alone in the final section.",
+        "connection": "Vln2 closes its line downward; oboe enters only after that release and does not sustain over the section boundary.",
+        "dialogue": "Oboe actually answers vln2's descending confirmation with a high contracted recovery, then both leave the dominant unresolved.",
+        "proposition": "After the large answer, the counterline bows away and a single high recollection points toward the last necessary resolution."
+      },
+      "relationship": "A brief oboe answer condenses the recovery rather than competing with the climax; cello's IV–V7 motion takes over the structural question.",
+      "ensemble_spans": [
+        {
+          "foreground_ids": [
+            "vln2_reply",
+            "oboe_climactic_answer"
+          ],
+          "metric_supports": [
+            {
+              "function": "final-dominant exposure",
+              "beat": 6
+            }
+          ],
+          "beat": 0,
+          "duration": 8,
+          "parts": [
+            {
+              "attack_relation": "release before answer",
+              "instrument_id": "vln2_reply",
+              "action": "short descending confirmation"
+            },
+            {
+              "attack_relation": "delayed high response",
+              "instrument_id": "oboe_climactic_answer",
+              "action": "brief recollection of the recovering ascent"
+            },
+            {
+              "attack_relation": "functional preparation",
+              "instrument_id": "cello_bass",
+              "action": "IV moves to V7"
+            }
+          ],
+          "arrival_goal": "V7 is exposed after the high recollection has released.",
+          "articulation_intent": "Vln2 decrescendos; oboe is clear but restrained, with a clean release.",
+          "listening_thread": "The answer's recovery reduced to one final bright upward thought.",
+          "arrival_offset": 6,
+          "rhythmic_identity": "Broad release followed by a compact answering pickup-like recovery.",
+          "pulse_carrier_id": "cello_bass",
+          "joint_voice_ids": [
+            "vln2_reply",
+            "oboe_climactic_answer",
+            "cello_bass"
+          ]
+        }
+      ],
+      "bars": 2,
+      "consequence": "The final dominant is left audible and unornamented, so the last section can resolve it immediately.",
+      "gesture": "A restrained afterimage of the climax.",
+      "rhythm_shape": "Relaxed descent answered by one compact recovering gesture."
+    },
+    {
+      "response_id": "",
+      "local_start_bar": 0,
+      "speaker_id": "vln1_protagonist",
+      "register_high": 83,
+      "register_low": 69,
+      "section_index": 3,
+      "silence_strategy": "All answering lines withdraw after the opening tonic resolution; sparse supporting inner and bass motion may recall the prior cadence, but no second melody challenges the protagonist's final sentence.",
+      "contour": "The calm D-to-G opening leap is metrically clear, its descent is shortened, and the answer recovers through D–F-sharp to a sustained G.",
+      "material_development": {
+        "musical_task": "Resolve the final V7 immediately and restate the primary thought in reduced, calm form until its final G can be held as endpoint.",
+        "heard_consequence": "The earlier question, E-minor deferral, and climax all converge in a single sustained G-major conclusion.",
+        "partner_task": "Cello recalls B-bass inversion, IV, cadential six-four and V7 with measured independent motion; viola supplies one inner resolution. Neither replaces the protagonist's ending.",
+        "inherited_from": "The primary opening fourth, paired-eighth lift, shortened descent, and answer's D–F-sharp recovery; the climax has removed any need to enlarge them again.",
+        "material_id": "primary"
+      },
+      "delivery": {
+        "bearing_intentions": [
+          "Resolve the opening V7 immediately with unforced warmth",
+          "State the leap calmly and clearly, not as a reprise for display",
+          "Shorten the descent as a settled memory",
+          "Hold the final G long enough that no new question can be imagined"
+        ],
+        "arrival": "Final sustained G over authentic G-major cadence; this is the actual endpoint.",
+        "continuation": "The phrase does not continue after the final G: any accompaniment releases into its resonance.",
+        "connection": "A single measured sentence with breathing only between its calm opening claim and final answering recovery.",
+        "dialogue": "No melodic response is assigned. The protagonist alone utters the final consequence; cello and viola make the cadence audible underneath it.",
+        "proposition": "The same leap that once asked on D now rises without strain, remembers its descent briefly, and recovers to a held G that closes every earlier implication."
+      },
+      "relationship": "The protagonist's solitude is earned by prior dialogue; independent cello and viola articulate the recalled B-bass, IV, and cadence while deliberately refusing a new reply.",
+      "ensemble_spans": [
+        {
+          "foreground_ids": [
+            "vln1_protagonist"
+          ],
+          "metric_supports": [
+            {
+              "function": "immediate resolution of inherited V7",
+              "beat": 0
+            },
+            {
+              "function": "calm leap claim",
+              "beat": 5
+            }
+          ],
+          "beat": 0,
+          "duration": 12,
+          "parts": [
+            {
+              "attack_relation": "immediate tonic grounding then independent inversion",
+              "instrument_id": "cello_bass",
+              "action": "resolves V7 to G and later moves to B bass"
+            },
+            {
+              "attack_relation": "inner cadential settling",
+              "instrument_id": "viola_inner_harmony",
+              "action": "common-tone resolution and restrained contrary motion"
+            }
+          ],
+          "arrival_goal": "The opening G-major resolution and calm leap establish that the prior dominant debt is fully paid.",
+          "articulation_intent": "Round legato with lightly articulated paired eighths; no climactic accent on the crest.",
+          "listening_thread": "Original fourth-leap and paired ascent, now metrically spacious and secure.",
+          "arrival_offset": 5,
+          "rhythmic_identity": "Clear quarter claim and paired-eighth lift, with relaxed one-beat crest.",
+          "pulse_carrier_id": "cello_bass",
+          "joint_voice_ids": [
+            "vln1_protagonist",
+            "cello_bass"
+          ]
+        },
+        {
+          "foreground_ids": [
+            "vln1_protagonist"
+          ],
+          "metric_supports": [
+            {
+              "function": "cadential-six-four memory",
+              "beat": 4
+            },
+            {
+              "function": "authentic tonic endpoint",
+              "beat": 8
+            }
+          ],
+          "beat": 12,
+          "duration": 12,
+          "parts": [
+            {
+              "attack_relation": "foreground shortened descent and recovery",
+              "instrument_id": "vln1_protagonist",
+              "action": "brief descent then D–F-sharp ascent to held G"
+            },
+            {
+              "attack_relation": "measured cadential direction",
+              "instrument_id": "cello_bass",
+              "action": "IV through Cad64 and V7 to G"
+            },
+            {
+              "attack_relation": "resolves inward at cadence",
+              "instrument_id": "viola_inner_harmony",
+              "action": "single inner suspension resolving with tonic"
+            }
+          ],
+          "arrival_goal": "G is sustained as the final sounding consequence, with no succeeding dominant or diversion.",
+          "articulation_intent": "Bind the shortened descent into the final recovery; final G is held and released only with the ensemble.",
+          "listening_thread": "The answer's descent/recovery returns in its most settled form.",
+          "arrival_offset": 8,
+          "rhythmic_identity": "Reduced answering descent, then measured recovery and long held endpoint.",
+          "pulse_carrier_id": "cello_bass",
+          "joint_voice_ids": [
+            "vln1_protagonist",
+            "viola_inner_harmony",
+            "cello_bass"
+          ]
+        }
+      ],
+      "bars": 6,
+      "consequence": "A held melodic G over authentic G-major closure ends the work; no voice proposes a further question.",
+      "gesture": "Calm restatement and final held resolution.",
+      "rhythm_shape": "Clear opening pulse, shortened descent, deliberate final recovery and sustained tonic."
+    }
+  ],
+  "answer_principle": "Each answer preserves the opening sentence's paired-eighth lift and descent/recovery logic, but changes its consequence: first a true G cadence, then an E-minor deferral voiced by vln2, then immediate climactic reply, and finally vln1's unaccompanied melodic endpoint.",
+  "thematic_materials": [],
+  "composition_groundwork": {
+    "identity": "An eight-bar G-major classical sentence: a buoyant upward leap is questioned by a dominant arrival, then its rhythmic profile is continued through a lower, more vulnerable descent and decisively answered at G.",
+    "key": "G major",
+    "length_beats": 32,
+    "formal_consequence": "The first four bars make a genuine dominant question, not an unfinished fragment: the melody has reached D while its opening leap has lost altitude. Bars 5–8 retain the short-long impulse but redirect it through predominant and cadential six-four pressure to a sounding G resolution. The whole work can contract the leap, make its descent answer from below, and enlarge the cadential approach; its decisive arrival belongs at the end of the climax, while the final six bars must restate the ascent with its last note settling on G rather than withholding it.",
+    "phrases": [
+      {
+        "duration": 16,
+        "destination": "D5 over the dominant: a balanced half-cadential question.",
+        "relationship": "Principal voice states the ascending-leap identity; bass rises from G through F-sharp and E to A, then supports the D-major question.",
+        "speaker_voice_index": 0,
+        "beat": 0
+      },
+      {
+        "duration": 16,
+        "destination": "G5 over G major: a full authentic answer with the final ascent made stable.",
+        "relationship": "The principal voice begins lower and descends before recovering the original upward direction; bass moves B–C–D and then returns to G, converting the earlier dominant destination into closure.",
+        "speaker_voice_index": 0,
+        "beat": 16
+      }
+    ],
+    "voices": [
+      {
+        "notes": [
+          {
+            "duration": 1,
+            "velocity": 90,
+            "pitch": 74,
+            "beat": 0
+          },
+          {
+            "duration": 0.5,
+            "velocity": 96,
+            "pitch": 79,
+            "beat": 1
+          },
+          {
+            "duration": 0.5,
+            "velocity": 94,
+            "pitch": 81,
+            "beat": 1.5
+          },
+          {
+            "duration": 1,
+            "velocity": 98,
+            "pitch": 83,
+            "beat": 2
+          },
+          {
+            "duration": 1,
+            "velocity": 88,
+            "pitch": 81,
+            "beat": 3
+          },
+          {
+            "duration": 1,
+            "velocity": 84,
+            "pitch": 78,
+            "beat": 4
+          },
+          {
+            "duration": 0.5,
+            "velocity": 80,
+            "pitch": 76,
+            "beat": 5
+          },
+          {
+            "duration": 0.5,
+            "velocity": 82,
+            "pitch": 78,
+            "beat": 5.5
+          },
+          {
+            "duration": 1,
+            "velocity": 86,
+            "pitch": 79,
+            "beat": 6
+          },
+          {
+            "duration": 1,
+            "velocity": 88,
+            "pitch": 74,
+            "beat": 7
+          },
+          {
+            "duration": 0.5,
+            "velocity": 78,
+            "pitch": 71,
+            "beat": 8
+          },
+          {
+            "duration": 0.5,
+            "velocity": 82,
+            "pitch": 74,
+            "beat": 8.5
+          },
+          {
+            "duration": 1,
+            "velocity": 92,
+            "pitch": 79,
+            "beat": 9
+          },
+          {
+            "duration": 1,
+            "velocity": 86,
+            "pitch": 78,
+            "beat": 10
+          },
+          {
+            "duration": 1,
+            "velocity": 82,
+            "pitch": 76,
+            "beat": 11
+          },
+          {
+            "duration": 0.5,
+            "velocity": 84,
+            "pitch": 72,
+            "beat": 12
+          },
+          {
+            "duration": 0.5,
+            "velocity": 80,
+            "pitch": 71,
+            "beat": 12.5
+          },
+          {
+            "duration": 1,
+            "velocity": 82,
+            "pitch": 69,
+            "beat": 13
+          },
+          {
+            "duration": 1,
+            "velocity": 88,
+            "pitch": 74,
+            "beat": 14
+          },
+          {
+            "duration": 1,
+            "velocity": 94,
+            "pitch": 78,
+            "beat": 15
+          },
+          {
+            "duration": 1,
+            "velocity": 98,
+            "pitch": 79,
+            "beat": 16
+          },
+          {
+            "duration": 0.5,
+            "velocity": 96,
+            "pitch": 83,
+            "beat": 17
+          },
+          {
+            "duration": 0.5,
+            "velocity": 90,
+            "pitch": 81,
+            "beat": 17.5
+          },
+          {
+            "duration": 1,
+            "velocity": 86,
+            "pitch": 79,
+            "beat": 18
+          },
+          {
+            "duration": 1,
+            "velocity": 82,
+            "pitch": 74,
+            "beat": 19
+          },
+          {
+            "duration": 1,
+            "velocity": 80,
+            "pitch": 72,
+            "beat": 20
+          },
+          {
+            "duration": 0.5,
+            "velocity": 78,
+            "pitch": 76,
+            "beat": 21
+          },
+          {
+            "duration": 0.5,
+            "velocity": 76,
+            "pitch": 74,
+            "beat": 21.5
+          },
+          {
+            "duration": 1,
+            "velocity": 74,
+            "pitch": 72,
+            "beat": 22
+          },
+          {
+            "duration": 1,
+            "velocity": 78,
+            "pitch": 69,
+            "beat": 23
+          },
+          {
+            "duration": 1,
+            "velocity": 86,
+            "pitch": 74,
+            "beat": 24
+          },
+          {
+            "duration": 0.5,
+            "velocity": 82,
+            "pitch": 72,
+            "beat": 25
+          },
+          {
+            "duration": 0.5,
+            "velocity": 84,
+            "pitch": 71,
+            "beat": 25.5
+          },
+          {
+            "duration": 1,
+            "velocity": 88,
+            "pitch": 69,
+            "beat": 26
+          },
+          {
+            "duration": 1,
+            "velocity": 92,
+            "pitch": 78,
+            "beat": 27
+          },
+          {
+            "duration": 2,
+            "velocity": 104,
+            "pitch": 79,
+            "beat": 28
+          },
+          {
+            "duration": 1,
+            "velocity": 82,
+            "pitch": 74,
+            "beat": 30
+          },
+          {
+            "duration": 1,
+            "velocity": 106,
+            "pitch": 79,
+            "beat": 31
+          }
+        ],
+        "role": "principal melodic speaker"
+      },
+      {
+        "notes": [
+          {
+            "duration": 4,
+            "velocity": 76,
+            "pitch": 43,
+            "beat": 0
+          },
+          {
+            "duration": 4,
+            "velocity": 78,
+            "pitch": 42,
+            "beat": 4
+          },
+          {
+            "duration": 4,
+            "velocity": 74,
+            "pitch": 40,
+            "beat": 8
+          },
+          {
+            "duration": 4,
+            "velocity": 78,
+            "pitch": 45,
+            "beat": 12
+          },
+          {
+            "duration": 4,
+            "velocity": 76,
+            "pitch": 47,
+            "beat": 16
+          },
+          {
+            "duration": 4,
+            "velocity": 78,
+            "pitch": 48,
+            "beat": 20
+          },
+          {
+            "duration": 4,
+            "velocity": 86,
+            "pitch": 50,
+            "beat": 24
+          },
+          {
+            "duration": 4,
+            "velocity": 94,
+            "pitch": 43,
+            "beat": 28
+          }
+        ],
+        "role": "harmonic bass respondent"
+      }
+    ],
+    "harmony": [
+      {
+        "pitch_classes": [
+          7,
+          11,
+          2
+        ],
+        "arrival": "opening tonic ground",
+        "beat": 0,
+        "duration": 4,
+        "function": "tonic",
+        "bass_pitch": 43
+      },
+      {
+        "pitch_classes": [
+          2,
+          6,
+          9
+        ],
+        "arrival": "first phrase turns toward its dominant question",
+        "beat": 4,
+        "duration": 4,
+        "function": "dominant",
+        "bass_pitch": 42
+      },
+      {
+        "pitch_classes": [
+          4,
+          7,
+          11
+        ],
+        "arrival": "continuation softens into relative minor",
+        "beat": 8,
+        "duration": 4,
+        "function": "tonic",
+        "bass_pitch": 40
+      },
+      {
+        "pitch_classes": [
+          9,
+          0,
+          4,
+          7
+        ],
+        "arrival": "predominant gathers the return",
+        "beat": 12,
+        "duration": 4,
+        "function": "predominant",
+        "bass_pitch": 45
+      },
+      {
+        "pitch_classes": [
+          7,
+          11,
+          2
+        ],
+        "arrival": "answer begins over tonic inversion",
+        "beat": 16,
+        "duration": 4,
+        "function": "tonic",
+        "bass_pitch": 47
+      },
+      {
+        "pitch_classes": [
+          0,
+          4,
+          7
+        ],
+        "arrival": "subdominant broadens the lower continuation",
+        "beat": 20,
+        "duration": 4,
+        "function": "predominant",
+        "bass_pitch": 48
+      },
+      {
+        "pitch_classes": [
+          7,
+          11,
+          2
+        ],
+        "arrival": "cadential six-four makes the earlier question audible again",
+        "beat": 24,
+        "duration": 2,
+        "function": "pedal",
+        "bass_pitch": 50
+      },
+      {
+        "pitch_classes": [
+          2,
+          6,
+          9,
+          0
+        ],
+        "arrival": "dominant compression before resolution",
+        "beat": 26,
+        "duration": 2,
+        "function": "dominant",
+        "bass_pitch": 50
+      },
+      {
+        "pitch_classes": [
+          7,
+          11,
+          2
+        ],
+        "arrival": "sounding G-major answer",
+        "beat": 28,
+        "duration": 4,
+        "function": "tonic",
+        "bass_pitch": 43
+      }
+    ]
+  }
+}

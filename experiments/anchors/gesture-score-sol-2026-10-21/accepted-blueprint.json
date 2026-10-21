@@ -1,0 +1,1572 @@
+{
+  "chord_palette": [
+    {
+      "id": "I",
+      "pitch_classes": [
+        7,
+        11,
+        2
+      ],
+      "bass_pitch_class": 7,
+      "root_pitch_class": 7,
+      "function": "tonic",
+      "tension": 0.12,
+      "label": "G major",
+      "voicing": "close"
+    },
+    {
+      "id": "I6",
+      "pitch_classes": [
+        7,
+        11,
+        2
+      ],
+      "bass_pitch_class": 11,
+      "root_pitch_class": 7,
+      "function": "tonic",
+      "tension": 0.2,
+      "label": "G major/B",
+      "voicing": "close"
+    },
+    {
+      "id": "ii7",
+      "pitch_classes": [
+        9,
+        0,
+        4,
+        7
+      ],
+      "bass_pitch_class": 9,
+      "root_pitch_class": 9,
+      "function": "predominant",
+      "tension": 0.42,
+      "label": "A minor seventh",
+      "voicing": "close"
+    },
+    {
+      "id": "IV",
+      "pitch_classes": [
+        0,
+        4,
+        7
+      ],
+      "bass_pitch_class": 0,
+      "root_pitch_class": 0,
+      "function": "predominant",
+      "tension": 0.34,
+      "label": "C major",
+      "voicing": "open"
+    },
+    {
+      "id": "V6",
+      "pitch_classes": [
+        2,
+        6,
+        9
+      ],
+      "bass_pitch_class": 6,
+      "root_pitch_class": 2,
+      "function": "dominant",
+      "tension": 0.62,
+      "label": "D major/F-sharp",
+      "voicing": "close"
+    },
+    {
+      "id": "V7",
+      "pitch_classes": [
+        2,
+        6,
+        9,
+        0
+      ],
+      "bass_pitch_class": 2,
+      "root_pitch_class": 2,
+      "function": "dominant",
+      "tension": 0.76,
+      "label": "D dominant seventh",
+      "voicing": "close"
+    },
+    {
+      "id": "Cad64",
+      "pitch_classes": [
+        7,
+        11,
+        2
+      ],
+      "bass_pitch_class": 2,
+      "root_pitch_class": 7,
+      "function": "pedal",
+      "tension": 0.68,
+      "label": "G cadential six-four over D",
+      "voicing": "close"
+    },
+    {
+      "id": "vi",
+      "pitch_classes": [
+        4,
+        7,
+        11
+      ],
+      "bass_pitch_class": 4,
+      "root_pitch_class": 4,
+      "function": "tonic",
+      "tension": 0.3,
+      "label": "E minor",
+      "voicing": "close"
+    },
+    {
+      "id": "V_vi",
+      "pitch_classes": [
+        9,
+        1,
+        4,
+        7
+      ],
+      "bass_pitch_class": 9,
+      "root_pitch_class": 9,
+      "function": "chromatic",
+      "tension": 0.67,
+      "label": "A dominant seventh, applied dominant of E minor",
+      "voicing": "close"
+    },
+    {
+      "id": "I7_to_IV",
+      "pitch_classes": [
+        7,
+        11,
+        2,
+        5
+      ],
+      "bass_pitch_class": 7,
+      "root_pitch_class": 7,
+      "function": "transitional",
+      "tension": 0.48,
+      "label": "G dominant seventh toward C",
+      "voicing": "close"
+    },
+    {
+      "id": "iii",
+      "pitch_classes": [
+        11,
+        2,
+        6
+      ],
+      "bass_pitch_class": 11,
+      "root_pitch_class": 11,
+      "function": "tonic",
+      "tension": 0.28,
+      "label": "B minor",
+      "voicing": "close"
+    }
+  ],
+  "composition_groundwork": {
+    "identity": "An eight-bar G-major classical sentence: a buoyant upward leap is questioned by a dominant arrival, then its rhythmic profile is continued through a lower, more vulnerable descent and decisively answered at G.",
+    "key": "G major",
+    "length_beats": 32,
+    "formal_consequence": "The first four bars make a genuine dominant question, not an unfinished fragment: the melody has reached D while its opening leap has lost altitude. Bars 5–8 retain the short-long impulse but redirect it through predominant and cadential six-four pressure to a sounding G resolution. The whole work can contract the leap, make its descent answer from below, and enlarge the cadential approach; its decisive arrival belongs at the end of the climax, while the final six bars must restate the ascent with its last note settling on G rather than withholding it.",
+    "phrases": [
+      {
+        "duration": 16,
+        "destination": "D5 over the dominant: a balanced half-cadential question.",
+        "relationship": "Principal voice states the ascending-leap identity; bass rises from G through F-sharp and E to A, then supports the D-major question.",
+        "speaker_voice_index": 0,
+        "beat": 0
+      },
+      {
+        "duration": 16,
+        "destination": "G5 over G major: a full authentic answer with the final ascent made stable.",
+        "relationship": "The principal voice begins lower and descends before recovering the original upward direction; bass moves B–C–D and then returns to G, converting the earlier dominant destination into closure.",
+        "speaker_voice_index": 0,
+        "beat": 16
+      }
+    ],
+    "voices": [
+      {
+        "notes": [
+          {
+            "duration": 1,
+            "velocity": 90,
+            "pitch": 74,
+            "beat": 0
+          },
+          {
+            "duration": 0.5,
+            "velocity": 96,
+            "pitch": 79,
+            "beat": 1
+          },
+          {
+            "duration": 0.5,
+            "velocity": 94,
+            "pitch": 81,
+            "beat": 1.5
+          },
+          {
+            "duration": 1,
+            "velocity": 98,
+            "pitch": 83,
+            "beat": 2
+          },
+          {
+            "duration": 1,
+            "velocity": 88,
+            "pitch": 81,
+            "beat": 3
+          },
+          {
+            "duration": 1,
+            "velocity": 84,
+            "pitch": 78,
+            "beat": 4
+          },
+          {
+            "duration": 0.5,
+            "velocity": 80,
+            "pitch": 76,
+            "beat": 5
+          },
+          {
+            "duration": 0.5,
+            "velocity": 82,
+            "pitch": 78,
+            "beat": 5.5
+          },
+          {
+            "duration": 1,
+            "velocity": 86,
+            "pitch": 79,
+            "beat": 6
+          },
+          {
+            "duration": 1,
+            "velocity": 88,
+            "pitch": 74,
+            "beat": 7
+          },
+          {
+            "duration": 0.5,
+            "velocity": 78,
+            "pitch": 71,
+            "beat": 8
+          },
+          {
+            "duration": 0.5,
+            "velocity": 82,
+            "pitch": 74,
+            "beat": 8.5
+          },
+          {
+            "duration": 1,
+            "velocity": 92,
+            "pitch": 79,
+            "beat": 9
+          },
+          {
+            "duration": 1,
+            "velocity": 86,
+            "pitch": 78,
+            "beat": 10
+          },
+          {
+            "duration": 1,
+            "velocity": 82,
+            "pitch": 76,
+            "beat": 11
+          },
+          {
+            "duration": 0.5,
+            "velocity": 84,
+            "pitch": 72,
+            "beat": 12
+          },
+          {
+            "duration": 0.5,
+            "velocity": 80,
+            "pitch": 71,
+            "beat": 12.5
+          },
+          {
+            "duration": 1,
+            "velocity": 82,
+            "pitch": 69,
+            "beat": 13
+          },
+          {
+            "duration": 1,
+            "velocity": 88,
+            "pitch": 74,
+            "beat": 14
+          },
+          {
+            "duration": 1,
+            "velocity": 94,
+            "pitch": 78,
+            "beat": 15
+          },
+          {
+            "duration": 1,
+            "velocity": 98,
+            "pitch": 79,
+            "beat": 16
+          },
+          {
+            "duration": 0.5,
+            "velocity": 96,
+            "pitch": 83,
+            "beat": 17
+          },
+          {
+            "duration": 0.5,
+            "velocity": 90,
+            "pitch": 81,
+            "beat": 17.5
+          },
+          {
+            "duration": 1,
+            "velocity": 86,
+            "pitch": 79,
+            "beat": 18
+          },
+          {
+            "duration": 1,
+            "velocity": 82,
+            "pitch": 74,
+            "beat": 19
+          },
+          {
+            "duration": 1,
+            "velocity": 80,
+            "pitch": 72,
+            "beat": 20
+          },
+          {
+            "duration": 0.5,
+            "velocity": 78,
+            "pitch": 76,
+            "beat": 21
+          },
+          {
+            "duration": 0.5,
+            "velocity": 76,
+            "pitch": 74,
+            "beat": 21.5
+          },
+          {
+            "duration": 1,
+            "velocity": 74,
+            "pitch": 72,
+            "beat": 22
+          },
+          {
+            "duration": 1,
+            "velocity": 78,
+            "pitch": 69,
+            "beat": 23
+          },
+          {
+            "duration": 1,
+            "velocity": 86,
+            "pitch": 74,
+            "beat": 24
+          },
+          {
+            "duration": 0.5,
+            "velocity": 82,
+            "pitch": 72,
+            "beat": 25
+          },
+          {
+            "duration": 0.5,
+            "velocity": 84,
+            "pitch": 71,
+            "beat": 25.5
+          },
+          {
+            "duration": 1,
+            "velocity": 88,
+            "pitch": 69,
+            "beat": 26
+          },
+          {
+            "duration": 1,
+            "velocity": 92,
+            "pitch": 78,
+            "beat": 27
+          },
+          {
+            "duration": 2,
+            "velocity": 104,
+            "pitch": 79,
+            "beat": 28
+          },
+          {
+            "duration": 1,
+            "velocity": 82,
+            "pitch": 74,
+            "beat": 30
+          },
+          {
+            "duration": 1,
+            "velocity": 106,
+            "pitch": 79,
+            "beat": 31
+          }
+        ],
+        "role": "principal melodic speaker"
+      },
+      {
+        "notes": [
+          {
+            "duration": 4,
+            "velocity": 76,
+            "pitch": 43,
+            "beat": 0
+          },
+          {
+            "duration": 4,
+            "velocity": 78,
+            "pitch": 42,
+            "beat": 4
+          },
+          {
+            "duration": 4,
+            "velocity": 74,
+            "pitch": 40,
+            "beat": 8
+          },
+          {
+            "duration": 4,
+            "velocity": 78,
+            "pitch": 45,
+            "beat": 12
+          },
+          {
+            "duration": 4,
+            "velocity": 76,
+            "pitch": 47,
+            "beat": 16
+          },
+          {
+            "duration": 4,
+            "velocity": 78,
+            "pitch": 48,
+            "beat": 20
+          },
+          {
+            "duration": 4,
+            "velocity": 86,
+            "pitch": 50,
+            "beat": 24
+          },
+          {
+            "duration": 4,
+            "velocity": 94,
+            "pitch": 43,
+            "beat": 28
+          }
+        ],
+        "role": "harmonic bass respondent"
+      }
+    ],
+    "harmony": [
+      {
+        "pitch_classes": [
+          7,
+          11,
+          2
+        ],
+        "arrival": "opening tonic ground",
+        "beat": 0,
+        "duration": 4,
+        "function": "tonic",
+        "bass_pitch": 43
+      },
+      {
+        "pitch_classes": [
+          2,
+          6,
+          9
+        ],
+        "arrival": "first phrase turns toward its dominant question",
+        "beat": 4,
+        "duration": 4,
+        "function": "dominant",
+        "bass_pitch": 42
+      },
+      {
+        "pitch_classes": [
+          4,
+          7,
+          11
+        ],
+        "arrival": "continuation softens into relative minor",
+        "beat": 8,
+        "duration": 4,
+        "function": "tonic",
+        "bass_pitch": 40
+      },
+      {
+        "pitch_classes": [
+          9,
+          0,
+          4,
+          7
+        ],
+        "arrival": "predominant gathers the return",
+        "beat": 12,
+        "duration": 4,
+        "function": "predominant",
+        "bass_pitch": 45
+      },
+      {
+        "pitch_classes": [
+          7,
+          11,
+          2
+        ],
+        "arrival": "answer begins over tonic inversion",
+        "beat": 16,
+        "duration": 4,
+        "function": "tonic",
+        "bass_pitch": 47
+      },
+      {
+        "pitch_classes": [
+          0,
+          4,
+          7
+        ],
+        "arrival": "subdominant broadens the lower continuation",
+        "beat": 20,
+        "duration": 4,
+        "function": "predominant",
+        "bass_pitch": 48
+      },
+      {
+        "pitch_classes": [
+          7,
+          11,
+          2
+        ],
+        "arrival": "cadential six-four makes the earlier question audible again",
+        "beat": 24,
+        "duration": 2,
+        "function": "pedal",
+        "bass_pitch": 50
+      },
+      {
+        "pitch_classes": [
+          2,
+          6,
+          9,
+          0
+        ],
+        "arrival": "dominant compression before resolution",
+        "beat": 26,
+        "duration": 2,
+        "function": "dominant",
+        "bass_pitch": 50
+      },
+      {
+        "pitch_classes": [
+          7,
+          11,
+          2
+        ],
+        "arrival": "sounding G-major answer",
+        "beat": 28,
+        "duration": 4,
+        "function": "tonic",
+        "bass_pitch": 43
+      }
+    ]
+  },
+  "key": "G major",
+  "production_language": {
+    "orchestral_allowance": 0.78,
+    "description": "Classical-period clarity: stable quadruple pulse, articulated phrase rhythm, transparent harmonic function, and proportionate dynamic consequence rather than loop-based accumulation.",
+    "dj_utility": 0.05,
+    "low_end_interlock": 0.25,
+    "hook_economy": 0.8,
+    "domain": "orchestral",
+    "spectral_restraint": 0.84,
+    "club_focus": 0.02,
+    "groove_evolution": 0.2,
+    "automation_motion": 0.1,
+    "electronic_intent": 0.02
+  },
+  "root_pitch_class": 7,
+  "sections": [
+    {
+      "motif_treatment": "Present the complete eight-bar sentence exactly as established: the rising leap and short-long continuation ask on D, then the lower continuation regains height and closes on G.",
+      "kick_state": "muted",
+      "rhythm_motif_id": "sentence_3plus1_impulse",
+      "tension": 0.34,
+      "harmonic_direction": "G tonic is tested by a real half cadence at bar 4, then recovered through B-bass tonic, IV, and cadential six-four.",
+      "active_voices": [
+        "harmonic_foundation",
+        "harmonic_upper",
+        "lead",
+        "countermelody"
+      ],
+      "kick_continuity": "free",
+      "percussion_density": 0,
+      "harmonic_events": [
+        {
+          "purpose": "tonic premise",
+          "beat_offset": 0,
+          "bar_offset": 0,
+          "emphasis": 0.7,
+          "chord_id": "I"
+        },
+        {
+          "purpose": "question destination",
+          "beat_offset": 0,
+          "bar_offset": 1,
+          "emphasis": 0.82,
+          "chord_id": "V6"
+        },
+        {
+          "purpose": "continuation changes the emotional shade",
+          "beat_offset": 0,
+          "bar_offset": 2,
+          "emphasis": 0.55,
+          "chord_id": "vi"
+        },
+        {
+          "purpose": "prepare answer",
+          "beat_offset": 0,
+          "bar_offset": 3,
+          "emphasis": 0.64,
+          "chord_id": "ii7"
+        },
+        {
+          "purpose": "answer begins in inversion",
+          "beat_offset": 0,
+          "bar_offset": 4,
+          "emphasis": 0.66,
+          "chord_id": "I6"
+        },
+        {
+          "purpose": "subdominant breadth",
+          "beat_offset": 0,
+          "bar_offset": 5,
+          "emphasis": 0.6,
+          "chord_id": "IV"
+        },
+        {
+          "purpose": "recalled question under cadential pressure",
+          "beat_offset": 0,
+          "bar_offset": 6,
+          "emphasis": 0.83,
+          "chord_id": "Cad64"
+        },
+        {
+          "purpose": "dominant compression",
+          "beat_offset": 2,
+          "bar_offset": 6,
+          "emphasis": 0.92,
+          "chord_id": "V7"
+        },
+        {
+          "purpose": "authentic answer",
+          "beat_offset": 0,
+          "bar_offset": 7,
+          "emphasis": 1,
+          "chord_id": "I"
+        }
+      ],
+      "motif_variant": 0,
+      "rhythmic_syncopation": 0.16,
+      "mode_hint": "major",
+      "name": "Premise: the answered question",
+      "swing": 0,
+      "energy": 0.42,
+      "function": "Establish the complete melodic sentence and prove that its dominant question has an answer.",
+      "bars": 8,
+      "tonal_center_pitch_class": 7,
+      "density": 0.42,
+      "rhythm_mutations": [],
+      "rhythm_gestures": []
+    },
+    {
+      "motif_treatment": "The opening ascent is sequenced one degree lower, then an autonomous answering line enters with the descent in longer values. The original cadence is delayed: the two thoughts meet on a quiet E-minor rather than G.",
+      "kick_state": "muted",
+      "rhythm_motif_id": "sentence_3plus1_impulse",
+      "tension": 0.55,
+      "harmonic_direction": "A brief applied dominant A7 introduces C-sharp only for its exact window; C-sharp resolves down by whole step to B in E minor. E minor becomes a meaningful but non-final resting place.",
+      "active_voices": [
+        "harmonic_foundation",
+        "harmonic_pulse",
+        "harmonic_upper",
+        "lead",
+        "countermelody",
+        "atmosphere"
+      ],
+      "kick_continuity": "free",
+      "percussion_density": 0,
+      "harmonic_events": [
+        {
+          "purpose": "retain shared G anchor while the sequel begins",
+          "beat_offset": 0,
+          "bar_offset": 0,
+          "emphasis": 0.56,
+          "chord_id": "I"
+        },
+        {
+          "purpose": "sequence turns inward",
+          "beat_offset": 0,
+          "bar_offset": 2,
+          "emphasis": 0.62,
+          "chord_id": "iii"
+        },
+        {
+          "purpose": "functional chromatic push; C-sharp must resolve to B next",
+          "beat_offset": 0,
+          "bar_offset": 3,
+          "emphasis": 0.86,
+          "chord_id": "V_vi"
+        },
+        {
+          "purpose": "autonomous reply lands on B-bearing E minor",
+          "beat_offset": 0,
+          "bar_offset": 4,
+          "emphasis": 0.76,
+          "chord_id": "vi"
+        },
+        {
+          "purpose": "the reply redirects through predominant",
+          "beat_offset": 0,
+          "bar_offset": 6,
+          "emphasis": 0.62,
+          "chord_id": "ii7"
+        },
+        {
+          "purpose": "withhold G by stopping on its dominant",
+          "beat_offset": 0,
+          "bar_offset": 7,
+          "emphasis": 0.86,
+          "chord_id": "V7"
+        }
+      ],
+      "motif_variant": 1,
+      "rhythmic_syncopation": 0.22,
+      "mode_hint": "major with applied dominant color",
+      "name": "Continuation: the lower reply",
+      "swing": 0,
+      "energy": 0.56,
+      "function": "Develop the sentence into dialogue and leave the original tonic answer temporarily unpaid.",
+      "bars": 8,
+      "tonal_center_pitch_class": 7,
+      "density": 0.55,
+      "rhythm_mutations": [],
+      "rhythm_gestures": []
+    },
+    {
+      "motif_treatment": "Transform the protagonist: its initial leap is compressed into urgent paired entries, while the former descending reply rises against it. At the peak, the full original contour returns at expanded register and is answered immediately, not postponed.",
+      "kick_state": "muted",
+      "rhythm_motif_id": "compressed_impulse_then_broad_answer",
+      "tension": 0.94,
+      "harmonic_direction": "The delayed V from the continuation is paid at the opening G, but that tonic is destabilized toward C through G7. IV–ii7–Cad64–V7 rebuild the original cadential logic at greater span and intensity, arriving on G before the final section.",
+      "active_voices": [
+        "harmonic_foundation",
+        "harmonic_pulse",
+        "harmonic_upper",
+        "lead",
+        "countermelody",
+        "transitions"
+      ],
+      "kick_continuity": "free",
+      "percussion_density": 0,
+      "harmonic_events": [
+        {
+          "purpose": "pay the prior dominant debt",
+          "beat_offset": 0,
+          "bar_offset": 0,
+          "emphasis": 0.94,
+          "chord_id": "I"
+        },
+        {
+          "purpose": "tonic is made transitional rather than final",
+          "beat_offset": 0,
+          "bar_offset": 1,
+          "emphasis": 0.76,
+          "chord_id": "I7_to_IV"
+        },
+        {
+          "purpose": "broad color contrast, still tied to G by common tones",
+          "beat_offset": 0,
+          "bar_offset": 2,
+          "emphasis": 0.7,
+          "chord_id": "IV"
+        },
+        {
+          "purpose": "tighten the compressed calls",
+          "beat_offset": 0,
+          "bar_offset": 3,
+          "emphasis": 0.76,
+          "chord_id": "ii7"
+        },
+        {
+          "purpose": "climactic return of the original question over cadential six-four",
+          "beat_offset": 0,
+          "bar_offset": 4,
+          "emphasis": 1,
+          "chord_id": "Cad64"
+        },
+        {
+          "purpose": "highest coordinated pressure",
+          "beat_offset": 2,
+          "bar_offset": 4,
+          "emphasis": 1,
+          "chord_id": "V7"
+        },
+        {
+          "purpose": "audible climax answer: original contour now reaches stable G",
+          "beat_offset": 0,
+          "bar_offset": 5,
+          "emphasis": 1,
+          "chord_id": "I"
+        },
+        {
+          "purpose": "release begins by letting tonic change bass relation",
+          "beat_offset": 2,
+          "bar_offset": 5,
+          "emphasis": 0.63,
+          "chord_id": "I6"
+        },
+        {
+          "purpose": "prepare a smaller final cadence",
+          "beat_offset": 0,
+          "bar_offset": 6,
+          "emphasis": 0.52,
+          "chord_id": "IV"
+        },
+        {
+          "purpose": "final approach is announced, not abruptly pasted on",
+          "beat_offset": 0,
+          "bar_offset": 7,
+          "emphasis": 0.7,
+          "chord_id": "V7"
+        }
+      ],
+      "motif_variant": 2,
+      "rhythmic_syncopation": 0.28,
+      "mode_hint": "major",
+      "name": "Transformation and climax: ascent against descent",
+      "swing": 0,
+      "energy": 0.96,
+      "function": "Make the original question and its answer simultaneously audible at a scale that exceeds the final release.",
+      "bars": 8,
+      "tonal_center_pitch_class": 7,
+      "density": 0.82,
+      "rhythm_mutations": [],
+      "rhythm_gestures": []
+    },
+    {
+      "motif_treatment": "Reduce to the protagonist alone: its opening leap is now calm and metrically clear, its descent is shortened, and its final G is sustained as a completed consequence rather than a cue for more development.",
+      "kick_state": "muted",
+      "rhythm_motif_id": "broadened_sentence_release",
+      "tension": 0.18,
+      "harmonic_direction": "The final dominant resolves immediately to G. A B-bass inversion and IV recall the earlier answer without reopening the question; cadential six-four and V7 receive one final, proportionate tonic resolution.",
+      "active_voices": [
+        "harmonic_foundation",
+        "harmonic_upper",
+        "lead",
+        "countermelody"
+      ],
+      "kick_continuity": "free",
+      "percussion_density": 0,
+      "harmonic_events": [
+        {
+          "purpose": "resolve the climax's prepared dominant",
+          "beat_offset": 0,
+          "bar_offset": 0,
+          "emphasis": 0.84,
+          "chord_id": "I"
+        },
+        {
+          "purpose": "recollection through changed bass relation",
+          "beat_offset": 0,
+          "bar_offset": 2,
+          "emphasis": 0.4,
+          "chord_id": "I6"
+        },
+        {
+          "purpose": "gentle breadth before final closure",
+          "beat_offset": 0,
+          "bar_offset": 3,
+          "emphasis": 0.42,
+          "chord_id": "IV"
+        },
+        {
+          "purpose": "last recollection of the question, now clearly finite",
+          "beat_offset": 0,
+          "bar_offset": 4,
+          "emphasis": 0.66,
+          "chord_id": "Cad64"
+        },
+        {
+          "purpose": "last dominant",
+          "beat_offset": 2,
+          "bar_offset": 4,
+          "emphasis": 0.78,
+          "chord_id": "V7"
+        },
+        {
+          "purpose": "sounding final G; melody must finish on G",
+          "beat_offset": 0,
+          "bar_offset": 5,
+          "emphasis": 0.92,
+          "chord_id": "I"
+        }
+      ],
+      "motif_variant": 3,
+      "rhythmic_syncopation": 0.08,
+      "mode_hint": "major",
+      "name": "Resolution: the sentence at rest",
+      "swing": 0,
+      "energy": 0.48,
+      "function": "Confirm that the opening dominant question, the minor diversion, and the climactic expansion all resolve to the same G-major home.",
+      "bars": 6,
+      "tonal_center_pitch_class": 7,
+      "density": 0.34,
+      "rhythm_mutations": [],
+      "rhythm_gestures": []
+    }
+  ],
+  "summary": "A 30-bar G-major classical miniature built from one complete eight-bar melodic sentence: its D-bound question receives an opening answer, is complicated by a lower E-minor reply, is transformed into a climactic ascent-against-descent, and finally returns in reduced, sounding G-major closure.",
+  "timbre_palette": {
+    "brightness": 0.62,
+    "material": "Transparent classical sonority with articulate attack, singing upper line, and supportive harmonic bass; no fixed instrumentation is prescribed.",
+    "cohesion": 0.84,
+    "description": "Clarity of phrase, register separation, and cadential articulation carry the drama.",
+    "space": "Moderate natural room; the climax expands by register and harmonic coordination rather than diffuse ambience.",
+    "transient_definition": 0.7,
+    "contrast": 0.58,
+    "warmth": 0.68,
+    "acoustic_electronic_balance": 0.96
+  },
+  "motif_intervals": [
+    5,
+    2,
+    2,
+    -2,
+    -3,
+    -2,
+    2,
+    5
+  ],
+  "harmonic_language": {
+    "chromaticism": 0.18,
+    "tonal_gravity": 0.9,
+    "description": "Consolidated G-major functional language. The sole applied chromatic event is A7 to E minor: its C-sharp resolves to B at the following E-minor arrival. G7 is a functional transition to C, whose F resolves to E within IV. Cadential six-four and dominant returns articulate the principal question and answer.",
+    "pedal_tone_affinity": 0.25,
+    "voice_leading_smoothness": 0.86,
+    "inversion_motion": 0.62,
+    "harmonic_rhythm_activity": 0.48,
+    "cadence_strength": 0.9,
+    "extension_richness": 0.3,
+    "ambiguity": 0.16,
+    "modal_fluidity": 0.08
+  },
+  "narrative_spine": {
+    "climax_consequence": "The climax does not merely become louder or denser: the earlier half-cadential D is re-heard under cadential six-four pressure, and the original contour reaches a stable G immediately after V7 while its former descending reply rises against it. The final section can therefore release rather than manufacture a new victory.",
+    "premise": "A poised G-major speaker rises by a fourth, steps higher, and turns downward toward a D-major question.",
+    "acts": [
+      {
+        "stage": "premise",
+        "resolution_target": "A first authentic G arrival after the D question.",
+        "tension_target": 0.36,
+        "resolution_strength": 0.66,
+        "section_name": "Premise: the answered question",
+        "cause": "The opening leap needs a destination commensurate with its confidence.",
+        "consequence": "Its first phrase settles on dominant D, making the second phrase necessary.",
+        "unresolved_element": "Whether the ascent can be stable rather than merely rhetorical."
+      },
+      {
+        "stage": "question",
+        "resolution_target": "Resolve the held dominant from the continuation into a transformed G-major return.",
+        "tension_target": 0.58,
+        "resolution_strength": 0.28,
+        "section_name": "Continuation: the lower reply",
+        "cause": "The first answer has exposed a descending tail that can speak independently.",
+        "consequence": "A lower reply leads through A7 to E minor and leaves V7 of G unpaid.",
+        "unresolved_element": "The tonic has been deferred after the E-minor diversion."
+      },
+      {
+        "stage": "climax",
+        "resolution_target": "A final reduced restatement after the climactic G arrival.",
+        "tension_target": 0.96,
+        "resolution_strength": 0.82,
+        "section_name": "Transformation and climax: ascent against descent",
+        "cause": "The delayed dominant and opposing melodic directions demand simultaneous resolution.",
+        "consequence": "The original contour answers on G at its greatest register and coordinated harmonic force.",
+        "unresolved_element": "The answer has occurred, but still needs proportionate repose."
+      },
+      {
+        "stage": "resolution",
+        "resolution_target": "Sustained sounding G as final melodic and harmonic degree.",
+        "tension_target": 0.18,
+        "resolution_strength": 1,
+        "section_name": "Resolution: the sentence at rest",
+        "cause": "The climax has paid the dominant debt and clarified the protagonist's destination.",
+        "consequence": "The sentence returns without argument and ends on G.",
+        "unresolved_element": "None."
+      }
+    ],
+    "resolution": "A final G-major authentic cadence supports a melodic G that is held as the actual endpoint; no new dominant or diversion follows.",
+    "question": "Can the opening upward fourth and two-step rise find a stable G answer after its first phrase instead lands on D, and after its descent acquires an independent E-minor reply?",
+    "motif_identity": "A memorable 4/4 sentence begins on D5 for one beat, leaps up a fourth to G5 then steps A5 in paired eighths, rises to B5 for one beat, and falls to A5 for one beat. Its continuation turns down through F-sharp–E–F-sharp in a one-beat plus paired-eighth rhythm before G5–D5 complete the dominant-bound question. The answer begins lower with B4–D5 as paired eighths, rises to G5 for a beat, and later reshapes the descent into C5–B4 paired eighths and A4 before climbing D5–F-sharp5 to the final G5. The identity is therefore the leap, paired quick steps, one-beat crest, and answering descent/recovery—not an isolated scale fragment.",
+    "harmonic_debt": "Section 2 ends on V7 of G after its E-minor diversion. Section 3 resolves that debt at once, then creates one last cadential V7 only to be discharged by the final G-major section.",
+    "protagonist_instrument_id": "vln1_protagonist"
+  },
+  "mode": "major",
+  "orchestration_language": {
+    "harmonic_depth": 0.56,
+    "ensemble_scale": 0.48,
+    "tutti_rarity": 0.74,
+    "hybrid_production": 0.02,
+    "divisi_depth": 0.24,
+    "foreground_rotation": 0.5,
+    "doubling_restraint": 0.78,
+    "register_separation": 0.82,
+    "articulation_contrast": 0.68,
+    "description": "A transparent classical hierarchy: principal sentence, responsive lower line, and harmonic support trade foreground responsibility. The climax earns the broadest coordinated register; the ending intentionally withdraws.",
+    "family_dialogue": 0.65,
+    "timbral_motion": 0.32,
+    "chamber_contrast": 0.72,
+    "counterpoint_activity": 0.58
+  },
+  "title": "The D Question, Answered in G",
+  "rhythm_language": {
+    "orchestration_motion": 0.36,
+    "ghost_density": 0,
+    "description": "Stable 4/4 phrase rhythm with the motif's characteristic quarter, paired-eighth, quarter profile. Development compresses the impulse during the climax and broadens it for the final release; no percussion is required.",
+    "syncopation": 0.18,
+    "call_response": 0.64,
+    "velocity_contrast": 0.58,
+    "silence_bias": 0.26,
+    "backbeat_gravity": 0,
+    "timing_freedom": 0.16,
+    "pulse_stability": 0.9
+  },
+  "electronic_soundscape": {
+    "scene": "Transparent Classical-period G-major string quartet; no electronic soundscape.",
+    "active": false,
+    "percussion_free": true,
+    "target_median_active_layers": 4,
+    "spatial_narrative": "Intimate chamber balance expands by register and contrapuntal coordination at the climax, then returns to close, settled dialogue.",
+    "layers": [
+      {
+        "minimum_phrases": 1,
+        "relationship": "Carries the complete principal sentence above the ensemble, yielding only enough space for the independent lower reply to be heard.",
+        "kind": "voice",
+        "maximum_static_bars": 2,
+        "foreground_depth": 0.96,
+        "narrative_role": "Primary melodic argument, climactic ascent, and final settled G resolution.",
+        "evolution": "Poised full statement; slightly more yielding during the lower reply; expands to its highest clear register at the climax; returns with reduced, calm articulation for the close.",
+        "instrument_id": "vln1_protagonist",
+        "time_scale": "medium",
+        "minimum_active_bars": 2
+      },
+      {
+        "minimum_phrases": 1,
+        "relationship": "Answers the first violin after its descent and rises in counterpoint during the climax rather than shadowing the protagonist.",
+        "kind": "voice",
+        "maximum_static_bars": 2,
+        "foreground_depth": 0.67,
+        "narrative_role": "Autonomous lower response that turns the descending tail into a consequential second speaker.",
+        "evolution": "Initially discreet in the lower middle register; gains continuity through the E-minor diversion; rises most actively against the first violin at the climax; withdraws to a modest answering recollection.",
+        "instrument_id": "vln2_reply",
+        "time_scale": "medium",
+        "minimum_active_bars": 1
+      },
+      {
+        "minimum_phrases": 1,
+        "relationship": "Connects the upper dialogue and bass through sustained contrary motion, common tones, and audible cadential resolutions.",
+        "kind": "voice",
+        "maximum_static_bars": 2,
+        "foreground_depth": 0.45,
+        "narrative_role": "Inner harmonic body and smooth voice-leading continuity.",
+        "evolution": "Warmly sustained with restrained movement; darkens slightly through E minor; broadens its supporting span at the climax; settles into long consonant resolution tones.",
+        "instrument_id": "viola_inner_harmony",
+        "time_scale": "slow",
+        "minimum_active_bars": 2
+      },
+      {
+        "minimum_phrases": 1,
+        "relationship": "States functional roots and inversions independently beneath the dialogue, leaving low-mid pedal space for bassoon.",
+        "kind": "voice",
+        "maximum_static_bars": 1,
+        "foreground_depth": 0.58,
+        "narrative_role": "Cadence-bearing harmonic ground and bass respondent.",
+        "evolution": "Articulate root motion frames the premise; gives the applied-dominant and E-minor turn clear weight; becomes firm but not heavy at the climactic cadence; relaxes into resonant final G support.",
+        "instrument_id": "cello_bass",
+        "time_scale": "medium",
+        "minimum_active_bars": 2
+      },
+      {
+        "minimum_phrases": 1,
+        "relationship": "Hands short harmonic arrivals to the quartet without sustaining over their independent lines.",
+        "kind": "voice",
+        "maximum_static_bars": 4,
+        "foreground_depth": 0.34,
+        "narrative_role": "Selective Classical-period punctuation at phrase boundaries and cadences.",
+        "evolution": "Mostly silent between arrival points; lightly marks the opening half-cadence and E-minor turn; is most present for the climactic cadential compression; offers sparse, softened final punctuation.",
+        "instrument_id": "piano_cadential_support",
+        "time_scale": "event",
+        "minimum_active_bars": 1
+      },
+      {
+        "minimum_phrases": 1,
+        "relationship": "Transfers structural arrival color between sections, never becoming a parallel melodic or harmonic bed.",
+        "kind": "transition",
+        "maximum_static_bars": 6,
+        "foreground_depth": 0.24,
+        "narrative_role": "Brief resonance for turning points, climax release, and terminal repose.",
+        "evolution": "Nearly absent in the premise; gives isolated gentle releases around sectional thresholds; opens slightly at the climactic G arrival; leaves a short, transparent final shimmer without prolonging new motion.",
+        "instrument_id": "harp_release_color",
+        "time_scale": "event",
+        "minimum_active_bars": 1
+      },
+      {
+        "minimum_phrases": 1,
+        "relationship": "Provides an independent low-mid pedal shadow around harmonic pressure points, deliberately avoiding cello-root duplication.",
+        "kind": "environment",
+        "maximum_static_bars": 3,
+        "foreground_depth": 0.3,
+        "narrative_role": "Quiet low-mid color that deepens the E-minor diversion and anchors cadential pressure.",
+        "evolution": "Minimal in the opening; becomes most audible as a held or gently detached shadow in the E-minor diversion; reinforces cadential tension from a separate chord tone; thins to a soft final supporting resonance.",
+        "instrument_id": "bassoon_pedal_color",
+        "time_scale": "slow",
+        "minimum_active_bars": 1
+      },
+      {
+        "minimum_phrases": 1,
+        "relationship": "Receives the climactic answer as a brief relay from the upper strings, then yields quickly back to the quartet.",
+        "kind": "voice",
+        "maximum_static_bars": 3,
+        "foreground_depth": 0.61,
+        "narrative_role": "High-register color extension for the answered climax and restrained final recollection.",
+        "evolution": "Absent until the transformation; enters only at the high-resolution answer with a focused singing color; reduces immediately after the climax; returns briefly and quietly near the final cadence before yielding to the first violin's G.",
+        "instrument_id": "oboe_climactic_answer",
+        "time_scale": "event",
+        "minimum_active_bars": 1
+      }
+    ]
+  },
+  "instruments": [
+    {
+      "orchestral_function": "counterpoint",
+      "prominence": 0.96,
+      "id": "vln1_protagonist",
+      "instrument": "violin_1",
+      "timbre_signature": {
+        "spectrum": "bright",
+        "uniqueness": 0.5,
+        "space": "close",
+        "texture": "organic",
+        "envelope": "natural",
+        "motion": "subtle",
+        "source": "acoustic"
+      },
+      "activity": 0.76,
+      "doubling": 0.06,
+      "live_preset_intent": "Solo classical violin, poised cantabile attack with late subtle vibrato and no cinematic wash.",
+      "active_sections": [
+        "Premise: the answered question",
+        "Continuation: the lower reply",
+        "Transformation and climax: ascent against descent",
+        "Resolution: the sentence at rest"
+      ],
+      "minimum_pitch": 62,
+      "articulation_intent": "natural",
+      "content_lane_id": "principal_sentence",
+      "line_relationship": "independent",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 91,
+      "name": "First Violin",
+      "role": "Principal melodic speaker; states, transforms, and finally resolves the D-question sentence.",
+      "source_voice": "lead"
+    },
+    {
+      "orchestral_function": "counterpoint",
+      "prominence": 0.67,
+      "id": "vln2_reply",
+      "instrument": "violin_2",
+      "timbre_signature": {
+        "spectrum": "warm",
+        "uniqueness": 0.43,
+        "space": "close",
+        "texture": "organic",
+        "envelope": "natural",
+        "motion": "subtle",
+        "source": "acoustic"
+      },
+      "activity": 0.62,
+      "doubling": 0.08,
+      "live_preset_intent": "Section second violin with a rounder, less brilliant bow tone; articulate conversational response.",
+      "active_sections": [
+        "Premise: the answered question",
+        "Continuation: the lower reply",
+        "Transformation and climax: ascent against descent",
+        "Resolution: the sentence at rest"
+      ],
+      "minimum_pitch": 55,
+      "articulation_intent": "natural",
+      "content_lane_id": "lower_reply",
+      "line_relationship": "call_response",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 84,
+      "name": "Second Violin",
+      "role": "Autonomous lower reply and rising contrapuntal answer; inherits the descent as an independent consequence.",
+      "source_voice": "countermelody"
+    },
+    {
+      "orchestral_function": "body",
+      "prominence": 0.45,
+      "id": "viola_inner_harmony",
+      "instrument": "viola",
+      "timbre_signature": {
+        "spectrum": "warm",
+        "uniqueness": 0.36,
+        "space": "close",
+        "texture": "organic",
+        "envelope": "sustained",
+        "motion": "subtle",
+        "source": "acoustic"
+      },
+      "activity": 0.52,
+      "doubling": 0.12,
+      "live_preset_intent": "Warm chamber viola with clear inner-voice resolution, gentle bow changes, and restrained vibrato.",
+      "active_sections": [
+        "Premise: the answered question",
+        "Continuation: the lower reply",
+        "Transformation and climax: ascent against descent",
+        "Resolution: the sentence at rest"
+      ],
+      "minimum_pitch": 50,
+      "articulation_intent": "legato",
+      "content_lane_id": "inner_voice",
+      "line_relationship": "independent",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 79,
+      "name": "Viola",
+      "role": "Sustained inner harmonic voice; supplies contrary motion, common-tone continuity, and cadential inner resolution.",
+      "source_voice": "harmonic_upper"
+    },
+    {
+      "orchestral_function": "foundation",
+      "prominence": 0.58,
+      "id": "cello_bass",
+      "instrument": "cello",
+      "timbre_signature": {
+        "spectrum": "dark",
+        "uniqueness": 0.4,
+        "space": "close",
+        "texture": "organic",
+        "envelope": "natural",
+        "motion": "subtle",
+        "source": "acoustic"
+      },
+      "activity": 0.48,
+      "doubling": 0.05,
+      "live_preset_intent": "Resonant chamber cello, articulate onset and short natural decay at harmonic changes; no exaggerated low-end bloom.",
+      "active_sections": [
+        "Premise: the answered question",
+        "Continuation: the lower reply",
+        "Transformation and climax: ascent against descent",
+        "Resolution: the sentence at rest"
+      ],
+      "minimum_pitch": 36,
+      "articulation_intent": "natural",
+      "content_lane_id": "bass_foundation",
+      "line_relationship": "independent",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 60,
+      "name": "Cello",
+      "role": "Harmonic bass respondent; articulates functional roots, inversions, applied-dominant resolution, and cadential ground.",
+      "source_voice": "harmonic_foundation"
+    },
+    {
+      "orchestral_function": "color",
+      "prominence": 0.34,
+      "id": "piano_cadential_support",
+      "instrument": "piano",
+      "timbre_signature": {
+        "spectrum": "bright",
+        "uniqueness": 0.55,
+        "space": "close",
+        "texture": "clean",
+        "envelope": "percussive",
+        "motion": "static",
+        "source": "acoustic"
+      },
+      "activity": 0.34,
+      "doubling": 0.18,
+      "live_preset_intent": "Light fortepiano with quick decay, modest register, and detached Classical cadential punctuation; no sustaining-pedal haze.",
+      "active_sections": [
+        "Premise: the answered question",
+        "Continuation: the lower reply",
+        "Transformation and climax: ascent against descent",
+        "Resolution: the sentence at rest"
+      ],
+      "minimum_pitch": 48,
+      "articulation_intent": "detached",
+      "content_lane_id": "cadential_articulation",
+      "line_relationship": "timbral_handoff",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 84,
+      "name": "Fortepiano",
+      "role": "Selective harmonic articulation and cadential color; reinforces phrase arrivals without replacing the quartet's independent voices.",
+      "source_voice": "harmonic_pulse"
+    },
+    {
+      "orchestral_function": "transition",
+      "prominence": 0.24,
+      "id": "harp_release_color",
+      "instrument": "harp",
+      "timbre_signature": {
+        "spectrum": "glassy",
+        "uniqueness": 0.62,
+        "space": "wide",
+        "texture": "organic",
+        "envelope": "swelling",
+        "motion": "subtle",
+        "source": "acoustic"
+      },
+      "activity": 0.2,
+      "doubling": 0.1,
+      "live_preset_intent": "Small concert harp with sparse rolled arrivals and natural decay, reserved for formal releases rather than continuous arpeggiation.",
+      "active_sections": [
+        "Premise: the answered question",
+        "Continuation: the lower reply",
+        "Transformation and climax: ascent against descent",
+        "Resolution: the sentence at rest"
+      ],
+      "minimum_pitch": 55,
+      "articulation_intent": "swelling",
+      "content_lane_id": "arrival_color",
+      "line_relationship": "timbral_handoff",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 91,
+      "name": "Harp",
+      "role": "Sparse transition and final-release color, reserved for structural arrivals and the climactic-to-resolution handoff.",
+      "source_voice": "transitions"
+    },
+    {
+      "orchestral_function": "color",
+      "prominence": 0.3,
+      "id": "bassoon_pedal_color",
+      "instrument": "bassoon",
+      "timbre_signature": {
+        "spectrum": "dark",
+        "uniqueness": 0.58,
+        "space": "close",
+        "texture": "organic",
+        "envelope": "sustained",
+        "motion": "subtle",
+        "source": "acoustic"
+      },
+      "activity": 0.3,
+      "doubling": 0.04,
+      "live_preset_intent": "Dry chamber bassoon with soft reed articulation, held low-mid pedal color, and restrained breath noise.",
+      "active_sections": [
+        "Premise: the answered question",
+        "Continuation: the lower reply",
+        "Transformation and climax: ascent against descent",
+        "Resolution: the sentence at rest"
+      ],
+      "minimum_pitch": 38,
+      "articulation_intent": "sustained",
+      "content_lane_id": "pedal_shadow",
+      "line_relationship": "independent",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 62,
+      "name": "Bassoon",
+      "role": "Independent low-mid pedal and lightly articulated harmonic shadow, deepening the E-minor diversion and final cadence without doubling the cello line.",
+      "source_voice": "atmosphere"
+    },
+    {
+      "orchestral_function": "extension",
+      "prominence": 0.61,
+      "id": "oboe_climactic_answer",
+      "instrument": "oboe",
+      "timbre_signature": {
+        "spectrum": "bright",
+        "uniqueness": 0.66,
+        "space": "close",
+        "texture": "organic",
+        "envelope": "natural",
+        "motion": "subtle",
+        "source": "acoustic"
+      },
+      "activity": 0.3,
+      "doubling": 0.14,
+      "live_preset_intent": "Focused lyrical chamber oboe with clean attack, narrow vibrato, and brief high-register cadential presence.",
+      "active_sections": [
+        "Transformation and climax: ascent against descent",
+        "Resolution: the sentence at rest"
+      ],
+      "minimum_pitch": 67,
+      "articulation_intent": "natural",
+      "content_lane_id": "climactic_answer_extension",
+      "line_relationship": "relay",
+      "live_device": "Sampler",
+      "divisi_voices": 1,
+      "octave_shift": 0,
+      "maximum_pitch": 86,
+      "name": "Oboe",
+      "role": "Brief high-register answering extension at the climax, then a restrained recollection during the final resolution.",
+      "source_voice": "harmonic_upper"
+    }
+  ],
+  "rhythm_motifs": [],
+  "voices": [
+    {
+      "brightness": 0.78,
+      "interaction": "Leads the sentence; receives independent answers rather than constant doubling.",
+      "id": "lead",
+      "articulation": "natural",
+      "activity": 0.76,
+      "expression_depth": 0.7,
+      "pitch_gesture": "approach",
+      "minimum_pitch": 62,
+      "sustain_pedal": false,
+      "humanization": 0.18,
+      "vibrato": "late_subtle",
+      "syncopation": 0.16,
+      "dynamic_contour": "phrase_arc",
+      "maximum_pitch": 91,
+      "function": "Principal melodic argument and transformed final return.",
+      "performance_intent": "Poised, articulate classical cantabile with decisive cadential arrival."
+    },
+    {
+      "brightness": 0.62,
+      "interaction": "Answers the protagonist's descent and rises against it at the climax.",
+      "id": "countermelody",
+      "articulation": "natural",
+      "activity": 0.62,
+      "expression_depth": 0.6,
+      "pitch_gesture": "approach",
+      "minimum_pitch": 55,
+      "sustain_pedal": false,
+      "humanization": 0.16,
+      "vibrato": "late_subtle",
+      "syncopation": 0.18,
+      "dynamic_contour": "phrase_arc",
+      "maximum_pitch": 84,
+      "function": "Autonomous conversational reply and contrapuntal consequence.",
+      "performance_intent": "Clearly phrased lower response, never a token accompaniment."
+    },
+    {
+      "brightness": 0.48,
+      "interaction": "Connects upper dialogue through sustained inner resolutions and contrary lines.",
+      "id": "harmonic_upper",
+      "articulation": "legato",
+      "activity": 0.52,
+      "expression_depth": 0.48,
+      "pitch_gesture": "stable",
+      "minimum_pitch": 50,
+      "sustain_pedal": false,
+      "humanization": 0.13,
+      "vibrato": "late_subtle",
+      "syncopation": 0.1,
+      "dynamic_contour": "swell",
+      "maximum_pitch": 79,
+      "function": "Inner chord body, voice-leading continuity, and upper harmonic color.",
+      "performance_intent": "Warmly sustained with clearly audible semitone and common-tone resolutions."
+    },
+    {
+      "brightness": 0.32,
+      "interaction": "Establishes roots, inversions, and cadential bass motion beneath all dialogue.",
+      "id": "harmonic_foundation",
+      "articulation": "natural",
+      "activity": 0.48,
+      "expression_depth": 0.42,
+      "pitch_gesture": "approach",
+      "minimum_pitch": 36,
+      "sustain_pedal": false,
+      "humanization": 0.12,
+      "vibrato": "late_subtle",
+      "syncopation": 0.06,
+      "dynamic_contour": "phrase_arc",
+      "maximum_pitch": 60,
+      "function": "Functional bass foundation and harmonic respondent.",
+      "performance_intent": "Grounded, resonant bass motion with articulate cadence-bearing changes."
+    },
+    {
+      "brightness": 0.68,
+      "interaction": "Adds only phrase-defining harmonic pulse and cadential articulation.",
+      "id": "harmonic_pulse",
+      "articulation": "detached",
+      "activity": 0.34,
+      "expression_depth": 0.34,
+      "pitch_gesture": "stable",
+      "minimum_pitch": 48,
+      "sustain_pedal": false,
+      "humanization": 0.1,
+      "vibrato": "none",
+      "syncopation": 0.08,
+      "dynamic_contour": "pulsing",
+      "maximum_pitch": 84,
+      "function": "Selective harmonic punctuation and formal clarity.",
+      "performance_intent": "Light, proportionate Classical articulation; silent when strings speak sufficiently."
+    },
+    {
+      "brightness": 0.7,
+      "interaction": "Marks transitions and releases without creating a separate thematic speaker.",
+      "id": "transitions",
+      "articulation": "swelling",
+      "activity": 0.2,
+      "expression_depth": 0.5,
+      "pitch_gesture": "gentle_bends",
+      "minimum_pitch": 55,
+      "sustain_pedal": false,
+      "humanization": 0.14,
+      "vibrato": "none",
+      "syncopation": 0.04,
+      "dynamic_contour": "decrescendo",
+      "maximum_pitch": 91,
+      "function": "Structural arrival color and climactic release.",
+      "performance_intent": "Sparse resonance reserved for section boundaries and terminal repose."
+    },
+    {
+      "brightness": 0.3,
+      "interaction": "Provides independent pedal pressure beneath changing harmony, especially around the diversion and cadence.",
+      "id": "atmosphere",
+      "articulation": "sustained",
+      "activity": 0.3,
+      "expression_depth": 0.38,
+      "pitch_gesture": "stable",
+      "minimum_pitch": 38,
+      "sustain_pedal": false,
+      "humanization": 0.11,
+      "vibrato": "late_subtle",
+      "syncopation": 0.03,
+      "dynamic_contour": "swell",
+      "maximum_pitch": 62,
+      "function": "Low-mid harmonic shadow and pedal continuity.",
+      "performance_intent": "Quietly present, preserving transparency and avoiding cello duplication."
+    }
+  ],
+  "performance_score": {
+    "cells": [],
+    "placements": []
+  }
+}

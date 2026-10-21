@@ -1,6 +1,11 @@
 #include "AiComposer.h"
 #include "AiPhraseArchitecture.h"
 #include "AiMelodicDiscourse.h"
+#include "AiEnsembleDiscourse.h"
+#include "AiCompleteDialogue.h"
+#include "AiGestureScore.h"
+#include "AiThematicSubject.h"
+#include "AiPhraseDevelopment.h"
 
 #include "core/Scale.h"
 #include "core/CoherentProofGate.h"
@@ -768,7 +773,7 @@ juce::String macroBlueprintSchema() {
     root->setProperty("properties", juce::var(properties));
     root->setProperty("required", juce::var(required));
     root->setProperty("additionalProperties", false);
-    return juce::JSON::toString(juce::var(root));
+    return AiPhraseDevelopment::macroSchema(juce::JSON::toString(juce::var(root)));
 }
 
 juce::String castBlueprintSchema() {
@@ -3481,7 +3486,10 @@ juce::String jointWindowPrompt(const juce::String& direction, const SongPlan& pl
             "Realize the final consequence in the requested style rather than "
             "substituting a generic scale descent or a tonic tag.\n";
     prompt << AiMelodicDiscourse::realizationBrief(plan.bpm);
+    prompt << AiEnsembleDiscourse::realizationBrief();
     prompt << AiMelodicDiscourse::actualVoiceMemory(plan, accepted, start);
+    prompt << AiEnsembleDiscourse::actualPhraseMemory(plan, accepted, start);
+    prompt << AiCompleteDialogue::accompanimentBrief();
     prompt << "INSTRUMENT RESPONSIBILITIES:\n";
     for (const auto index : owners) {
         const auto& instrument = plan.instruments[index];
@@ -3910,7 +3918,8 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
                        std::size_t sectionIndex, int firstBar, int bars,
                        PerformanceScore& score, juce::String& error,
                        bool longFormContinuity = false,
-                       bool allowSilentGroup = false) {
+                       bool allowSilentGroup = false,
+                       bool allowCrossSectionRelease = false) {
     score = {};
     const auto parsed = juce::JSON::parse(text);
     const auto* root = parsed.getDynamicObject();
@@ -3919,7 +3928,7 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
         return false;
     }
     const auto length = bars * plan.beatsPerBar;
-    if (longFormContinuity && sectionIndex >= plan.sections.size()) {
+    if ((longFormContinuity || allowCrossSectionRelease) && sectionIndex >= plan.sections.size()) {
         error = "Direct ensemble continuity has no valid section";
         return false;
     }
@@ -3944,7 +3953,10 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
         const auto pitch = static_cast<int>(object->getProperty("pitch"));
         const auto velocity = static_cast<int>(object->getProperty("velocity"));
         auto latestRelease = length;
-        if (longFormContinuity) {
+        if (allowCrossSectionRelease) {
+            latestRelease = (plan.totalBars - plan.sections[sectionIndex].startBar - firstBar) *
+                plan.beatsPerBar;
+        } else if (longFormContinuity) {
             const auto& section = plan.sections[sectionIndex];
             const auto sectionBeat = firstBar * plan.beatsPerBar + beat;
             latestRelease = section.bars * plan.beatsPerBar -
@@ -4003,6 +4015,7 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
         placement.sectionIndex = static_cast<int>(sectionIndex);
         placement.startBeat = firstBar * plan.beatsPerBar;
         placement.purpose = "AI-authored direct ensemble performance";
+        placement.allowCrossSectionRelease = allowCrossSectionRelease;
         score.cells.push_back(std::move(cell));
         score.placements.push_back(std::move(placement));
     }
@@ -6524,9 +6537,10 @@ bool AiComposer::parseDirectWindowJson(
     const std::vector<std::size_t>& indices,
     std::size_t sectionIndex, int firstBar, int bars,
     PerformanceScore& score, juce::String& error,
-    bool longFormContinuity, bool allowSilentGroup) {
+    bool longFormContinuity, bool allowSilentGroup, bool allowCrossSectionRelease) {
     return parseDirectWindow(text, plan, indices, sectionIndex, firstBar, bars,
-                             score, error, longFormContinuity, allowSilentGroup);
+                             score, error, longFormContinuity, allowSilentGroup,
+                             allowCrossSectionRelease);
 }
 
 juce::String AiComposer::defaultReasoningEffort() { return reasoningEffort; }
@@ -7281,7 +7295,8 @@ bool importAcceptedMidiCheckpoint(const SongPlan& plan, const AiSongResume& resu
             source.durationBeats <= 0.0 || source.pitch < 0 || source.pitch > 127 ||
             source.velocity < 1 || source.velocity > 127 ||
             source.startBeat + source.durationBeats >
-                (section->startBar + section->bars) * plan.beatsPerBar + .001) {
+                (resume.prewrittenDialogue ? plan.totalBars :
+                    section->startBar + section->bars) * plan.beatsPerBar + .001) {
             error = "AI checkpoint contains invalid or unowned MIDI";
             return false;
         }
@@ -7317,6 +7332,7 @@ bool importAcceptedMidiCheckpoint(const SongPlan& plan, const AiSongResume& resu
         note.voice = owner->sourceVoice;
         note.metricIntent = MetricIntent::DeliberateDisplacement;
         note.instrumentId = owner->id;
+        cell.lengthBeats = std::max(cell.lengthBeats, note.beat + note.durationBeats);
         cell.notes.push_back(std::move(note));
         resumedInstrumentIds.insert(owner->id);
     }
@@ -7325,6 +7341,7 @@ bool importAcceptedMidiCheckpoint(const SongPlan& plan, const AiSongResume& resu
         placement.cellId = cell.id;
         placement.sectionIndex = static_cast<int>(std::get<1>(key));
         placement.purpose = "preserve accepted AI MIDI exactly";
+        placement.allowCrossSectionRelease = resume.prewrittenDialogue;
         score.placements.push_back(std::move(placement));
         score.cells.push_back(std::move(cell));
     }
@@ -7838,9 +7855,22 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "may combine transformation and climax, but its narrative act must be climax and its energy, register or "
         "coordinated ensemble consequence must exceed the resolution. Scale the number of sections to the "
         "actual duration: a roughly one-minute sketch normally needs three or four distinct dramatic sections, "
-        "not seven miniature scenes; a long work may earn more acts through developed musical consequences. "
-        "Do not choose instruments, soundscape layers, rhythm motifs, voices, cells, "
-        "placements or notes. Creative direction: " + direction + AiMelodicDiscourse::macroBrief();
+        "not seven miniature scenes; a long work may earn more acts through developed musical consequences. " +
+        (AiPhraseDevelopment::groundworkEnabled() ? juce::String(
+        "Do not choose final instruments, soundscape layers, cells or placements here. "
+        "The composition_groundwork reference passage is the sole exception to the no-performance instruction: "
+        "write its actual music first, before deciding the rest of this architecture. ") : juce::String(
+        "Do not choose instruments, soundscape layers, rhythm motifs, voices, cells, placements or notes. ")) +
+        (AiPhraseDevelopment::enabled() ? juce::String(
+        "DEVELOPMENT FORM EXPERIMENT: Let the requested style determine whether this form needs "
+        "a complementary second thought, an autonomous reply, a single developing subject or another "
+        "coherent relationship. Make room for actual continuation and harmonic direction, not "
+        "only repeated postponements of one small missing conclusion. The principal identity is "
+        "a point of recognition, not the sole permissible musical material. A transition must "
+        "prepare a changed relationship; a return should mean something different after what "
+        "intervened. Do not force an extra theme, stock form, constant change or a new chord per bar. ") :
+        juce::String{}) + "Creative direction: " + direction + AiMelodicDiscourse::macroBrief() +
+        AiPhraseDevelopment::groundworkBrief();
 
     const auto experimentalMacroPrompt = longFormArc ? macroPrompt + juce::String(
         " LONG-FORM FORM CHECK: Section durations are musical decisions, not equal "
@@ -7935,6 +7965,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             "OpenAI returned no structured macro blueprint");
         return result;
     }
+    if (!AiPhraseDevelopment::validateGroundwork(juce::JSON::parse(macroText),
+            totalBars * beatsPerBar, error)) return result;
 
     if (progress) progress({AiSongStage::Blueprint, 1, 2, 1,
                             "global instrument architecture"});
@@ -8028,8 +8060,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "line_relationship must not be call_response, relay or timbral_handoff) active together through at least 85 percent of the "
         "form except intentional low-density breaths. A sub-bass, arpeggio, color accent or call-and-response line does "
         "not count as the second body. Its later MIDI must contain long chord tones or a sustained independent "
-        "counter-voicing, not short decorative notes. ") + longFormMatrixBrief + juce::String(
-        "Declare exactly one protagonist and at most one motif-derived answerer. For a long-form "
+        "counter-voicing, not short decorative notes. ") + longFormMatrixBrief +
+        (AiPhraseDevelopment::enabled() ? AiPhraseDevelopment::castingBrief() : juce::String(
+        "Declare exactly one protagonist and at most one motif-derived answerer. ")) + juce::String(
+        "For a long-form "
         "cast of twelve or more owners, also declare at least two additional independent conversational partners using "
         "line_relationship=counterpoint or call_response. These partners must have separate sectional trajectories and "
         "must not share the protagonist content lane; together with the motif-derived answerer they create at least three "
@@ -8425,6 +8459,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     if (!parseSongPlanJson(outputText, targetSeconds, totalBars, bpm, beatsPerBar,
                            seed, result, error,
                            tonalPolicyForDirection(direction.toStdString()))) return {};
+    if (!AiPhraseDevelopment::validateGroundwork(juce::JSON::parse(outputText),
+            totalBars * beatsPerBar, error)) return {};
     if (blueprint) blueprint(outputText);
     result.compositionBehavior = behavior;
     result.aiSovereign = aiSovereign;
@@ -8851,6 +8887,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         } else {
             auto phrasePrompt = AiPhraseArchitecture::prompt(result, direction,
                 longFormArc);
+            phrasePrompt << AiPhraseDevelopment::groundworkContext(outputText);
             juce::String lastError;
             for (int attempt = 1; attempt <= 2; ++attempt) {
                 lastError.clear();
@@ -8859,8 +8896,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 if (remaining < std::chrono::seconds(35)) break;
                 if (progress) progress({AiSongStage::Blueprint, 1, 2, attempt,
                     "AI planning phrases and relationships between voices"});
-                const auto phraseOutputTokens = AiMelodicDiscourse::planningOutputTokenBudget(
-                    static_cast<int>(result.sections.size()));
+                const auto phraseOutputTokens = std::min(AiPhraseDevelopment::enabled() ? 24000 : 20000,
+                    AiMelodicDiscourse::planningOutputTokenBudget(
+                        static_cast<int>(result.sections.size())) +
+                    (AiEnsembleDiscourse::enabled()
+                        ? 600 * static_cast<int>(result.sections.size()) : 0) +
+                    (AiPhraseDevelopment::enabled() ? 4200 : 0));
                 const auto body = juce::String("{\"model\":\"") + model +
                     "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
                     realizationReasoningEffort +
@@ -8869,7 +8910,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     juce::JSON::toString(juce::var(phrasePrompt)) +
                     ",\"text\":{\"format\":{\"type\":\"json_schema\","
                     "\"name\":\"pulso_phrase_architecture\",\"strict\":true,\"schema\":" +
-                    AiPhraseArchitecture::schema() + "}}}";
+                    AiPhraseArchitecture::schema(result) + "}}}";
                 const auto response = performRequest(body, apiKey, token,
                     std::min(remaining, std::chrono::seconds(
                         AiMelodicDiscourse::enabled() ? 180 : 100)));
@@ -8877,7 +8918,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 if (response.connected && response.status >= 200 && response.status < 300 &&
                     draft.isNotEmpty() &&
                     AiPhraseArchitecture::validate(draft, result, lastError)) {
-                    result.phraseArchitectureJson = draft.toStdString();
+                    auto accepted = juce::JSON::parse(draft);
+                    if (AiPhraseDevelopment::groundworkEnabled())
+                        accepted.getDynamicObject()->setProperty("composition_groundwork",
+                            juce::JSON::parse(outputText).getProperty("composition_groundwork", {}));
+                    if (AiPhraseDevelopment::consequentialEnabled())
+                        accepted.getDynamicObject()->setProperty("development_strategies",
+                            juce::JSON::parse(AiPhraseDevelopment::developmentStrategies(outputText)));
+                    result.phraseArchitectureJson = juce::JSON::toString(accepted).toStdString();
                     OperationalJournal::write("OK", "PHRASE_PLAN",
                         "AI-authored phrase architecture accepted before MIDI writing");
                     break;
@@ -8968,6 +9016,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     // instrument drafts. The established route and all publication gates
     // remain the default until full-song and listening comparisons pass.
     const auto jointShortCastExperiment = jointWindowExperiment;
+    if (resume != nullptr && resume->prewrittenDialogue && !AiCompleteDialogue::enabled()) {
+        error = "This checkpoint requires the complete-dialogue local worker; no MIDI was changed";
+        return {};
+    }
     if (jointWindowExperiment && jointOwners.size() > 12) {
         error = "The AI proposed " +
             juce::String(static_cast<int>(jointOwners.size())) +
@@ -9150,7 +9202,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             return false;
         };
         if (resume != nullptr && !resume->blueprintOnly) {
-            if (resume->completedUnits == 0 ||
+            if ((resume->completedUnits == 0 &&
+                 !(AiCompleteDialogue::enabled() && resume->prewrittenDialogue)) ||
                 resume->completedUnits > windowCount + 1) {
                 error = "AI checkpoint has no valid completed ensemble-window count";
                 return {};
@@ -9172,6 +9225,197 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 " completed ensemble windows and " +
                 juce::String(static_cast<int>(resume->notes.size())) +
                 " accepted AI notes; previous windows will not be rewritten");
+        }
+        const auto dialogueOwners = AiCompleteDialogue::enabled()
+            ? AiCompleteDialogue::owners(result, jointOwners) : std::vector<std::size_t>{};
+        if (!dialogueOwners.empty()) {
+            if (resume != nullptr && !resume->blueprintOnly && !resume->prewrittenDialogue) {
+                error = "The source checkpoint has no complete foreground dialogue; use its original worker";
+                return {};
+            }
+            if (resume == nullptr || resume->blueprintOnly) {
+                const auto dialogueBlocks = AiCompleteDialogue::blocks(result);
+                for (std::size_t block = 0; block < dialogueBlocks.size(); ++block) {
+                    juce::String feedback;
+                    auto authored = false;
+                    for (int attempt = 1; attempt <= 2 && !authored; ++attempt) {
+                        const auto rejectedDialogue = [&] {
+                            OperationalJournal::write("WARN", "DIALOGUE_FIRST", feedback);
+                            if (progress) progress({AiSongStage::Recovery, 0, windowCount,
+                                attempt, "complete dialogue representation: " + feedback});
+                        };
+                        const auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
+                            aiStarted + totalAiBudget - std::chrono::steady_clock::now());
+                        if (remaining < std::chrono::seconds(35)) break;
+                        auto snapshot = result;
+                        snapshot.performanceScore = score;
+                        GenerationContext context;
+                        context.role = Role::Ensemble;
+                        context.rootPitchClass = result.rootPitchClass;
+                        context.scale = result.scale;
+                        context.beatsPerBar = result.beatsPerBar;
+                        context.seed = result.seed;
+                        const auto prior = score.empty() ? Pattern{} :
+                            SongComposer{}.render(snapshot, context);
+                        auto dialoguePrompt = AiGestureScore::enabled() ?
+                            AiGestureScore::prompt(direction, result, dialogueOwners, dialogueBlocks[block], prior) :
+                            AiCompleteDialogue::prompt(direction, result, dialogueOwners, dialogueBlocks[block], prior);
+                        if (feedback.isNotEmpty())
+                            dialoguePrompt << "\nCorrect the previous representation: " << feedback;
+                        if (progress) progress({AiSongStage::PerformanceBlock, 0, windowCount, attempt,
+                            "AI composing complete melodic dialogue " +
+                            juce::String(static_cast<int>(block + 1)) + "/" +
+                            juce::String(static_cast<int>(dialogueBlocks.size()))});
+                        const auto body = juce::String("{\"model\":\"") + model +
+                            "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
+                            realizationReasoningEffort +
+                            "\"},\"max_output_tokens\":" +
+                            juce::String(AiCompleteDialogue::wholeArgumentEnabled() ? 40000 : 20000) + ",\"input\":" +
+                            juce::JSON::toString(juce::var(dialoguePrompt)) +
+                            ",\"text\":{\"format\":{\"type\":\"json_schema\","
+                            "\"name\":\"pulso_complete_dialogue\",\"strict\":true,\"schema\":" +
+                            (AiGestureScore::enabled() ? AiGestureScore::schema(result, dialogueOwners) :
+                                AiCompleteDialogue::schema(result, dialogueOwners)) + "}}}";
+                        const auto response = performRequest(body, apiKey, token,
+                            std::min(remaining, std::chrono::seconds(AiCompleteDialogue::wholeArgumentEnabled() ? 360 : 180)));
+                        if (!response.connected || response.status < 200 || response.status >= 300 ||
+                            response.timedOut || response.cancelled) {
+                            feedback = apiErrorMessage(response); rejectedDialogue(); continue;
+                        }
+                        PerformanceScore passage;
+                        const auto authoredJson = extractOutputText(juce::JSON::parse(response.body));
+                        const auto parsedDialogue = AiGestureScore::enabled() ?
+                            AiGestureScore::parse(authoredJson, result, dialogueOwners, dialogueBlocks[block], passage, feedback) :
+                            AiCompleteDialogue::parse(authoredJson, result, dialogueOwners, dialogueBlocks[block], passage, feedback);
+                        if (!parsedDialogue) {
+                            rejectedDialogue(); continue;
+                        }
+                        if (AiGestureScore::enabled()) {
+                            const auto trace = juce::SystemStats::getEnvironmentVariable("PULSO_TRACE_PATH", {});
+                            if (trace.isNotEmpty()) juce::File(trace).getSiblingFile("gesture-score.json")
+                                .replaceWithText(authoredJson, false, false, "\n");
+                        }
+                        auto candidate = score;
+                        mergePerformanceBlock(candidate, std::move(passage), serial++);
+                        if (candidate.empty()) {
+                            feedback = "No melodic MIDI was authored"; rejectedDialogue(); continue;
+                        }
+                        const auto normalized = PerformanceScoreEngine::normalize(candidate,
+                            result.sections.size(), sectionLengths, true);
+                        if (normalized.cellsRejected || normalized.placementsRejected) {
+                            feedback = "Complete dialogue has invalid score representation";
+                            rejectedDialogue(); continue;
+                        }
+                        snapshot.performanceScore = candidate;
+                        CompositionRenderReport audition;
+                        const auto midi = SongComposer{}.render(snapshot, context, {}, &audition);
+                        if (!EditorialSafety::technicallySafeAiScore(midi, audition)) {
+                            feedback = "Complete dialogue failed technical MIDI integrity";
+                            rejectedDialogue(); continue;
+                        }
+                        score = std::move(candidate);
+                        authored = true;
+                    }
+                    if (!authored) {
+                        error = "Complete AI dialogue failed without altering accepted MIDI: " + feedback;
+                        return {};
+                    }
+                }
+            }
+            if (resume == nullptr || resume->blueprintOnly ||
+                (resume->prewrittenDialogue && resume->completedUnits == 0)) {
+                if (AiThematicSubject::rehearsalEnabled()) {
+                    auto snapshot = result;
+                    snapshot.performanceScore = score;
+                    GenerationContext context;
+                    context.role = Role::Ensemble;
+                    context.rootPitchClass = result.rootPitchClass;
+                    context.scale = result.scale;
+                    context.beatsPerBar = result.beatsPerBar;
+                    context.seed = result.seed;
+                    const auto original = SongComposer{}.render(snapshot, context);
+                    // Preserve the actual first draft before one bounded AI
+                    // rehearsal. No numerical quality gate rewrites the notes.
+                    if (checkpoint) checkpoint(snapshot, 0, true, false);
+                    const auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
+                        aiStarted + totalAiBudget - std::chrono::steady_clock::now());
+                    if (remaining >= std::chrono::seconds(35)) {
+                        if (progress) progress({AiSongStage::PerformanceBlock, 0, windowCount, 1,
+                            "AI rehearsing the complete melodic argument before orchestration"});
+                        // A whole-score revision must fit its actual symbolic payload.
+                        // Capacity only: no note quota and no extra call if the AI keeps it.
+                        const auto rehearsalOutputTokens = AiPhraseDevelopment::enabled()
+                            ? std::clamp(4000 + static_cast<int>(original.notes.size()) * 28, 20000, 48000)
+                            : 20000;
+                        const auto body = juce::String("{\"model\":\"") + model +
+                            "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
+                            realizationReasoningEffort +
+                            "\"},\"max_output_tokens\":" + juce::String(rehearsalOutputTokens) +
+                            ",\"input\":" + juce::JSON::toString(
+                                juce::var(AiThematicSubject::rehearsalPrompt(direction, result,
+                                    dialogueOwners, original))) +
+                            ",\"text\":{\"format\":{\"type\":\"json_schema\","
+                            "\"name\":\"pulso_thematic_rehearsal\",\"strict\":true,\"schema\":" +
+                            AiThematicSubject::rehearsalSchema(result, dialogueOwners) + "}}}";
+                        const auto response = performRequest(body, apiKey, token,
+                            std::min(remaining, std::chrono::seconds(AiPhraseDevelopment::enabled() ? 360 : 180)));
+                        auto output = juce::JSON::parse(
+                            extractOutputText(juce::JSON::parse(response.body)));
+                        if (AiGestureScore::enabled()) output = output.getProperty("review", {});
+                        auto status = juce::String("original retained; rehearsal unavailable or invalid");
+                        if (response.connected && response.status >= 200 && response.status < 300 &&
+                            !response.timedOut && !response.cancelled) {
+                            if (output.getProperty("decision", {}).toString() == "keep" &&
+                                output.getProperty("revised_owner_ids", {}).isArray() &&
+                                output.getProperty("revised_owner_ids", {}).size() == 0 &&
+                                output.getProperty("windows", {}).isArray() &&
+                                output.getProperty("windows", {}).size() == 0)
+                                status = "AI kept the original melodic draft";
+                            else if (output.getProperty("decision", {}).toString() == "revise") {
+                                PerformanceScore revised;
+                                juce::String representationError;
+                                if (AiThematicSubject::applyScopedRehearsal(output, result,
+                                    dialogueOwners, score, revised, representationError) && !revised.empty()) {
+                                    const auto checked = PerformanceScoreEngine::normalize(revised,
+                                        result.sections.size(), sectionLengths, true);
+                                    snapshot.performanceScore = revised;
+                                    CompositionRenderReport report;
+                                    const auto rendered = SongComposer{}.render(snapshot, context, {}, &report);
+                                    if (!checked.cellsRejected && !checked.placementsRejected &&
+                                        !checked.notesRejected && EditorialSafety::technicallySafeAiScore(rendered, report)) {
+                                        score = std::move(revised);
+                                        status = "AI rehearsal revision accepted; listening comparison remains necessary";
+                                    }
+                                } else status = "original retained; revision representation invalid: " + representationError;
+                            }
+                        }
+                        OperationalJournal::write("INFO", "THEMATIC_REHEARSAL", status + " | " +
+                            output.getProperty("diagnosis", {}).toString());
+                        const auto trace = juce::SystemStats::getEnvironmentVariable("PULSO_TRACE_PATH", {});
+                        if (trace.isNotEmpty()) {
+                            auto* artifact = new juce::DynamicObject();
+                            artifact->setProperty("advisory_only", true);
+                            artifact->setProperty("status", status);
+                            artifact->setProperty("response", output);
+                            juce::File(trace).getSiblingFile("thematic-rehearsal.json").replaceWithText(
+                                juce::JSON::toString(juce::var(artifact), true), false, false, "\n");
+                        }
+                    }
+                }
+                if (checkpoint) {
+                    auto snapshot = result;
+                    snapshot.performanceScore = score;
+                    checkpoint(snapshot, 0, true, false);
+                }
+            }
+            std::vector<std::size_t> accompaniment;
+            for (const auto owner : jointOwners)
+                if (std::find(dialogueOwners.begin(), dialogueOwners.end(), owner) == dialogueOwners.end())
+                    accompaniment.push_back(owner);
+            writingGroups.clear();
+            if (!accompaniment.empty()) writingGroups.push_back(std::move(accompaniment));
+            OperationalJournal::write("OK", "DIALOGUE_FIRST",
+                "complete AI foreground accepted; accompaniment is written against immutable melodic MIDI");
         }
         const auto restoredWindows = completedWindows;
         auto windowOrdinal = std::size_t{};
@@ -9275,13 +9519,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     if (output.isEmpty() || !parseDirectWindow(
                             output, result, requestedOwners, sectionIndex, firstBar, bars,
                             passage, feedback, longFormContinuity,
-                            groupIndex > 0)) {
+                            groupIndex > 0 || !dialogueOwners.empty())) {
                         if (feedback.isEmpty()) feedback = "The joint score response was empty";
                         reportWindowFailure(attempt);
                         continue;
                     }
                     auto contained = passage.cells.empty() && passage.placements.empty() ?
-                        groupIndex > 0 :
+                        (groupIndex > 0 || !dialogueOwners.empty()) :
                         !passage.cells.empty() && !passage.placements.empty();
                     juce::String containmentDetail;
                     for (const auto& placement : passage.placements) {
@@ -17429,6 +17673,8 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
                 parsedPlacement.fragmentEnd = static_cast<double>(placement->getProperty("fragment_end"));
                 parsedPlacement.metricIntent = metricIntentFromKey(
                     placement->getProperty("metric_intent").toString().toStdString());
+                parsedPlacement.allowCrossSectionRelease = static_cast<bool>(
+                    placement->getProperty("allow_cross_section_release"));
                 result.performanceScore.placements.push_back(std::move(parsedPlacement));
             }
     }

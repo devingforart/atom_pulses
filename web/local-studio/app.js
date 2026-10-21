@@ -45,6 +45,8 @@ const download = (job, filename, label, className = '') => { const a = node('a',
 const number = value => new Intl.NumberFormat('es-AR').format(Number(value) || 0);
 const linkedJobId = new URLSearchParams(location.search).get('job');
 let jobs = [], selectedId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(linkedJobId || '') ? linkedJobId : null, loadedKey = null, loadVersion = 0, current = null, barPx = 22, playhead = null, previewDiagnostic = false, lastAutoRecoverySelection = null, historyCategory = 'personal';
+let argumentPreviewJobId = new URLSearchParams(location.search).get('argument') === '1' ? selectedId : null;
+const isArgumentPreview = job => job.manifest?.whole_argument && argumentPreviewJobId === job.id;
 const audio = new ProductionAudio(updatePosition, () => { ui.play.textContent = '▶'; ui.play.setAttribute('aria-label', 'Reproducir'); });
 const patchStorageKey = (jobId, filename) => `pulso:audition:${SOUND_BANK_VERSION}:${jobId}:${filename}`;
 function updateListeningLabels() {
@@ -136,6 +138,7 @@ function renderSession(job) {
   ui.session.append(node('h3', 'session-title', job.manifest?.title || 'Composición en curso'));
   ui.session.append(node('div', `session-status ${job.state}`,
     job.state === 'completed' && articulation ? 'REVISIÓN DE ARTICULACIÓN' :
+    job.state === 'completed' && job.manifest?.thematic_rehearsal ? 'ENSAYO MELÓDICO IA' :
     job.state === 'completed' && job.manifest?.first_pass_audition
       ? 'PRIMERA PASADA' : job.state === 'completed' && job.manifest?.review_audition
         ? 'REVISIÓN A/B' : states[job.state] || job.state.toUpperCase()));
@@ -156,7 +159,8 @@ function renderSession(job) {
       `Articulación revisada por IA: ${articulation.changedNotes} duraciones de ${job.manifest.all_midi_notes} notas. Alturas, entradas, velocidades y otras pistas intactas.`));
   }
   if (job.request.editorial_profile === 'ai-only-v2') ui.session.append(node('p', 'session-note', 'Perfil editorial local IA v2 · cada nota es autoría IA.'));
-  if (job.request.first_pass_audition && !articulation) ui.session.append(node('p', 'session-note', 'Primera pasada IA: sin reescritura musical. La integridad técnica MIDI permanece activa.'));
+  if (job.manifest?.thematic_rehearsal) ui.session.append(node('p', 'session-note', 'Ensayo experimental: la IA revisa el diálogo antes de orquestarlo. El borrador original se conserva para comparar; esto no certifica calidad musical.'));
+  else if (job.request.first_pass_audition && !articulation) ui.session.append(node('p', 'session-note', 'Primera pasada IA: sin reescritura musical. La integridad técnica MIDI permanece activa.'));
   if (job.request.review_from_job && !articulation) ui.session.append(node('p', 'session-note',
     `Revisión A/B de la primera pasada ${job.request.review_from_job.slice(0, 8)}: se conserva el mismo plan y solo la revisión IA puede cambiar notas.`));
   if (job.request.phrase_architecture_experiment) ui.session.append(node('p', 'session-note',
@@ -199,6 +203,11 @@ function renderSession(job) {
     ui.session.append(box);
   }
   const actions = node('div', 'session-actions');
+  if (job.manifest?.whole_argument) actions.append(actionButton(
+    isArgumentPreview(job) ? 'Escuchar arreglo completo' : 'Escuchar argumento sin orquestar', () => {
+      argumentPreviewJobId = isArgumentPreview(job) ? null : job.id;
+      loadedKey = null; showSelected();
+    }));
   actions.append(actionButton('Repetir ajustes', () => reuse(job)));
   if (job.checkpoint?.file && !job.manifest &&
       (job.state === 'failed' || job.state === 'interrupted')) {
@@ -213,6 +222,10 @@ function renderSession(job) {
     catch (error) { showNotice(`No se pudo crear el MIDI de una pista: ${error.message}`); }
   }, 'primary-link'));
   if (job.manifest?.fullFile) actions.append(download(job, job.manifest.fullFile, '↓ Obra original · multipista'));
+  if (job.manifest?.thematic_rehearsal) {
+    actions.append(download(job, 'partial-01.mid', '↓ Diálogo original · MIDI'));
+    actions.append(download(job, 'partial-02.mid', '↓ Diálogo seleccionado · MIDI'));
+  }
   if (job.checkpoint?.file && !job.manifest) actions.append(download(job, job.checkpoint.file, '↓ MIDI provisional'));
   if (job.diagnostic?.file && !job.manifest) actions.append(download(job, job.diagnostic.file, '↓ MIDI rechazado (diagnóstico)'));
   if (job.diagnostic?.planFile && !job.manifest) actions.append(download(job, job.diagnostic.planFile, 'Plan del candidato'));
@@ -262,7 +275,8 @@ function renderHistory() {
     button.type = 'button';
     button.append(node('strong', '', job.manifest?.title || job.request.prompt.slice(0, 68)));
     button.append(node('span', 'status ' + job.state, job.manifest?.articulationReview
-      ? 'REVISIÓN DE ARTICULACIÓN' : job.manifest?.review_audition
+      ? 'REVISIÓN DE ARTICULACIÓN' : job.manifest?.thematic_rehearsal
+      ? 'ENSAYO MELÓDICO IA' : job.manifest?.review_audition
       ? 'REVISIÓN A/B' : job.manifest?.first_pass_audition
         ? 'PRIMERA PASADA' : states[job.state] || job.state));
     button.append(node('span', '', `${new Date(job.request.created_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })} · ${fmt(job.request.duration_seconds)} · ${job.manifest?.tracks?.length || job.checkpoint?.parts || 0} pistas${job.origin === 'auto' ? ` · prueba ${job.id.slice(0, 8)}` : ''}`));
@@ -280,13 +294,14 @@ function mergedMidi(parts, manifest) {
   return { ...timing, lengthBeats: Math.max(Number(manifest?.bars || 0) * timing.beatsPerBar, ...parts.map(part => part.midi.lengthBeats)) };
 }
 async function loadSong(job, diagnostic = false) {
+  const argumentAudition = !diagnostic && isArgumentPreview(job);
   const version = ++loadVersion;
   audio.stop(); current = null; playhead = null;
   ui.play.disabled = true; ui.exportOne.disabled = true; $('#preview-wav').disabled = true; $('#full-wav').disabled = true;
   ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Leyendo las notas MIDI de esta obra…'));
   $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
   $('#song-subtitle').textContent = 'Preparando partitura y monitor senoidal…';
-  const sourceTracks = diagnostic && job.diagnostic?.file ? [{ filename: job.diagnostic.file, name: 'MIDI rechazado' }] : job.manifest?.tracks?.length ? job.manifest.tracks : job.checkpoint?.file ? [{ filename: job.checkpoint.file, name: 'MIDI provisional' }] : [];
+  const sourceTracks = argumentAudition ? [{ filename: 'partial-02.mid', name: 'Argumento completo' }] : diagnostic && job.diagnostic?.file ? [{ filename: job.diagnostic.file, name: 'MIDI rechazado' }] : job.manifest?.tracks?.length ? job.manifest.tracks : job.checkpoint?.file ? [{ filename: job.checkpoint.file, name: 'MIDI provisional' }] : [];
   if (!sourceTracks.length) { ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Esta sesión todavía no tiene MIDI para escuchar.')); $('#song-subtitle').textContent = job.stage || job.error || 'Esperando una obra.'; setExport(job, null); return; }
   try {
     const parts = [];
@@ -299,7 +314,7 @@ async function loadSong(job, diagnostic = false) {
     const timing = mergedMidi(parts, job.manifest);
     const tracks = [];
     for (const part of parts) {
-      if (!job.manifest) {
+      if (!job.manifest || argumentAudition) {
         part.midi.tracks.forEach((track, index) => { if (track.notes.length) tracks.push({ name: track.name || `Pista ${index + 1}`, notes: track.notes, filename: part.track.filename, instrument: instrumentFor({}, track.name) }); });
       } else {
         const notes = part.midi.tracks.flatMap(track => track.notes).sort((a, b) => a.startBeat - b.startBeat);
@@ -317,7 +332,7 @@ async function loadSong(job, diagnostic = false) {
     renderTimeline();
     updateListeningLabels();
     $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
-    $('#song-subtitle').textContent = diagnostic ? `Candidato rechazado · ${tracks.length} pistas con notas · NO aprobado` : job.manifest?.first_pass_audition ? `Primera pasada IA · ${tracks.length} pistas con notas · sin revisión musical` : job.manifest ? `${job.manifest.key || 'Tonalidad no declarada'} · ${job.manifest.bars || Math.ceil(timing.lengthBeats / timing.beatsPerBar)} compases · ${tracks.length} pistas con notas` : `Escucha provisional · ${tracks.length} pistas con notas · sin aprobación musical final`;
+    $('#song-subtitle').textContent = diagnostic ? `Candidato rechazado · ${tracks.length} pistas con notas · NO aprobado` : job.manifest?.thematic_rehearsal ? `Ensayo melódico IA · ${tracks.length} pistas con notas · comparación experimental` : job.manifest?.first_pass_audition ? `Primera pasada IA · ${tracks.length} pistas con notas · sin revisión musical` : job.manifest ? `${job.manifest.key || 'Tonalidad no declarada'} · ${job.manifest.bars || Math.ceil(timing.lengthBeats / timing.beatsPerBar)} compases · ${tracks.length} pistas con notas` : `Escucha provisional · ${tracks.length} pistas con notas · sin aprobación musical final`;
     $('#song-bpm').textContent = `${Math.round(job.manifest?.bpm || 60e6 / timing.tempos[0].microseconds)} BPM`;
     $('#song-key').textContent = job.manifest?.key || 'MIDI provisional';
     $('#song-stat').textContent = `${number(tracks.reduce((sum, track) => sum + track.notes.length, 0))} NOTAS · ${tracks.length} PISTAS`;
@@ -325,7 +340,8 @@ async function loadSong(job, diagnostic = false) {
     ui.play.disabled = false;
     $('#preview-wav').disabled = false;
     $('#full-wav').disabled = !job.manifest || diagnostic;
-    setExport(job, diagnostic ? job.diagnostic?.file : job.manifest?.fullFile || job.checkpoint?.file);
+    if (argumentAudition) $('#song-subtitle').textContent = `Argumento completo sin orquestar · ${tracks.length} voces · comparación experimental`;
+    setExport(job, argumentAudition ? 'partial-02.mid' : diagnostic ? job.diagnostic?.file : job.manifest?.fullFile || job.checkpoint?.file);
     updatePosition(0);
   } catch (error) {
     if (version !== loadVersion) return;
@@ -392,7 +408,7 @@ function showSelected() {
   const job = jobs.find(item => item.id === selectedId);
   if (!job) return;
   renderSession(job);
-  const key = `${job.id}:${previewDiagnostic && job.diagnostic?.file ? job.diagnostic.file : job.manifest?.fullFile || job.checkpoint?.file || job.state}`;
+  const key = `${job.id}:${isArgumentPreview(job) ? 'partial-02.mid' : previewDiagnostic && job.diagnostic?.file ? job.diagnostic.file : job.manifest?.fullFile || job.checkpoint?.file || job.state}`;
   if (key !== loadedKey) { loadedKey = key; loadSong(job, previewDiagnostic && Boolean(job.diagnostic?.file)); }
 }
 async function refresh() {
@@ -401,7 +417,31 @@ async function refresh() {
     jobs = listing.jobs;
     const ready = status.workerReady && status.apiKeyConfigured;
     ui.health.className = `health ${ready ? '' : 'warn'}`;
-    const profileLabel = status.musicalProfile === 'connected-discourse'
+    const profileLabel = status.musicalProfile === 'gesture-score'
+      ? 'LAB - gestos musicales y planos expresivos'
+      : status.musicalProfile === 'expectation-led'
+      ? 'LAB - expectativa y consecuencia musical'
+      : status.musicalProfile === 'material-dialogue'
+      ? 'LAB - materiales relacionados y transformación musical'
+      : status.musicalProfile === 'whole-argument'
+      ? 'LAB - argumento completo antes del arreglo'
+      : status.musicalProfile === 'consequential-development'
+      ? 'LAB - identidad y desarrollo conjunto'
+      : status.musicalProfile === 'thematic-groundwork'
+      ? 'LAB - tema, respuesta y armonía conjuntos'
+      : status.musicalProfile === 'phrase-development'
+      ? 'LAB - desarrollo de frases y relaciones entre voces'
+      : status.musicalProfile === 'phrase-prosody-rehearsal'
+      ? 'LAB - prosodia de conjunto con ensayo de IA'
+      : status.musicalProfile === 'phrase-prosody'
+      ? 'LAB — prosodia de conjunto'
+      : status.musicalProfile === 'thematic-subject'
+      ? 'Laboratorio local de tema y desarrollo musical'
+      : status.musicalProfile === 'complete-dialogue'
+      ? 'Laboratorio local de diálogo melódico completo'
+      : status.musicalProfile === 'ensemble-discourse'
+      ? 'Laboratorio local de coherencia entre voces'
+      : status.musicalProfile === 'connected-discourse'
       ? 'Laboratorio local de fraseo y diálogo conectado'
       : `Perfil editorial local ${status.editorialProfile === 'ai-only-v2' ? 'IA v2' : 'anterior'}`;
     ui.health.textContent = ready ? `${profileLabel} listo · Escuchar obras guardadas no consume API.` : `Composición no disponible: ${status.workerReady ? '' : 'falta el generador. '}${status.apiKeyConfigured ? '' : 'falta OPENAI_API_KEY en este proceso.'} Las obras guardadas siguen disponibles.`;

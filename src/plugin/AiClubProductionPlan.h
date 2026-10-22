@@ -17,9 +17,19 @@ inline bool coreLayer(const juce::String& json, const std::string& id) {
     return false; // Historical plans remain readable without inventing a core.
 }
 
+inline bool cycleBoundLayer(const juce::String& json, const std::string& id) {
+    if (coreLayer(json, id)) return true;
+    const auto root = juce::JSON::parse(json);
+    if (const auto* layers = root.getProperty("layers", {}).getArray())
+        for (const auto& layer : *layers)
+            if (layer.getProperty("instrument_id", {}).toString().toStdString() == id)
+                return layer.getProperty("timing_mode", {}).toString() == "cycle_bound";
+    return false; // Legacy non-core layers remain free, not silently retimed.
+}
+
 // Membership in an AI-authored cycle, not quantisation or an onset generator.
 inline bool coreAttackAllowed(const juce::String& json, const std::string& id, double absoluteBeat) {
-    if (!coreLayer(json, id)) return true;
+    if (!cycleBoundLayer(json, id)) return true;
     const auto root = juce::JSON::parse(json);
     if (const auto* layers = root.getProperty("layers", {}).getArray()) for (const auto& layer : *layers) {
         if (layer.getProperty("instrument_id", {}).toString().toStdString() != id) continue;
@@ -83,11 +93,13 @@ inline juce::String schema(const juce::String& direction = {}) {
         "layers":{"type":"array","minItems":1,"maxItems":64,"items":{
           "type":"object","additionalProperties":false,
           "required":["instrument_id","production_role","cycle_beats","cycle_origin_beat",
-            "rhythm_cell","register_low","register_high","harmonic_job","articulation",
+            "rhythm_cell","timing_mode","timing_intent","register_low","register_high","harmonic_job","articulation",
             "interaction","polyphonic","states"],
           "properties":{
             "instrument_id":{"type":"string"},"production_role":{"type":"string"},
             "cycle_beats":{"type":"number"},"cycle_origin_beat":{"type":"number"},
+            "timing_mode":{"type":"string","enum":["cycle_bound","phrase_flexible"]},
+            "timing_intent":{"type":"string","description":"Why these attacks support the shared meter and foreground. Distinguish intentional syncopation from envelope softness; describe phrase landing and support alignment."},
             "rhythm_cell":{"type":"array","description":"Unique ZERO-BASED beat offsets: 0 <= offset < cycle_beats, never cycle_beats itself.","maxItems":128,"items":{"type":"number","minimum":0,"multipleOf":0.25}},
             "register_low":{"type":"integer"},"register_high":{"type":"integer"},
             "harmonic_job":{"type":"string"},"articulation":{"type":"string"},
@@ -157,6 +169,17 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
         "a foreground arpeggio/melody a sparse rigid clock merely to qualify as a core owner; "
         "let it develop as a supporting/foreground phrase unless its exact repeating attacks "
         "are genuinely essential. The core is written FIRST, together; the rest hears its actual MIDI. "
+        "Each layer chooses timing_mode: cycle_bound for any exact cyclic attack commitment "
+        "(including sustained support), phrase_flexible for a genuinely developing phrase. "
+        "Core owners are always cycle_bound. rhythm_cell and cycle_origin_beat are binding "
+        "possible onsets for cycle_bound owners; omitted attacks are allowed, extra offsets are not. "
+        "Choose the actual positions yourself. For phrase_flexible owners the cell describes "
+        "identity rather than a compulsory repeated onset list. timing_intent must explain how "
+        "this layer supports the meter and phrase arrivals. Soft sound envelopes do NOT require "
+        "a late MIDI onset. Avoid assigning every plane a different offbeat to keep them apart: "
+        "sustained support may share the harmonic arrival; separation can come from register, "
+        "voicing, dynamics and phrasing. Preserve intentional syncopation, but ensure a foreground "
+        "phrase can settle on perceptible metric arrivals rather than endlessly evade them. "
         "For these core owners, rhythm_cell is a binding set of possible attacks, not a vague suggestion: "
         "retain that exact absolute phase across ALL sections. You may omit attacks to breathe, "
         "change pitches/voicings/gates and withdraw a layer, but never shift its remaining attacks "
@@ -164,7 +187,11 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
         "core that works on its own; elaborate decoration is not the metric foundation. "
         "Do not use unrelated cycle lengths in the core simply to sound sophisticated. "
         "For every instrument include exactly one state for EVERY section, absent when "
-        "withdrawn. production_role is free text. Choose cycle_beats and zero-based "
+        "withdrawn. CAST allowed_section_indices are the exact zero-based permissions "
+        "already chosen by the AI cast: outside that list the state MUST be absent "
+        "with minimum_sounding_fraction=0. Within the list you may still withdraw a "
+        "layer. Do not infer extra permissions from a role label. production_role is "
+        "free text. Choose cycle_beats and zero-based "
         "cycle_origin_beat in absolute song beats, and rhythm_cell onset offsets within "
         "that cycle. This is YOUR rhythmic grammar, not a supplied pattern. A sustained "
         "body may have only one onset per long cycle. Different periods are allowed with "
@@ -178,10 +205,17 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
         "to fill.\nUSER: " << direction << "\nWORK: " << plan.totalBars << " bars; "
         << plan.beatsPerBar << " beats/bar; " << plan.bpm << " BPM; "
         << juce::String::fromUTF8(plan.key.c_str()) << "\nCAST:\n";
-    for (const auto& part : plan.instruments)
+    for (const auto& part : plan.instruments) {
+        juce::Array<juce::var> allowed;
+        for (std::size_t index = 0; index < plan.sections.size(); ++index)
+            if (part.activeSections.empty() || std::find(part.activeSections.begin(),
+                    part.activeSections.end(), plan.sections[index].name) != part.activeSections.end())
+                allowed.add(static_cast<int>(index));
         out << juce::String::fromUTF8(part.id.c_str()) << " | "
             << juce::String::fromUTF8(part.role.c_str()) << " | MIDI "
-            << part.minimumPitch << ".." << part.maximumPitch << "\n";
+            << part.minimumPitch << ".." << part.maximumPitch
+            << " | allowed_section_indices=" << juce::JSON::toString(juce::var(allowed), true) << "\n";
+    }
     out << "SECTIONS:\n";
     for (std::size_t s = 0; s < plan.sections.size(); ++s) {
         const auto& section = plan.sections[s];
@@ -229,6 +263,13 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
                 error = "Club layer omits " + juce::String(key) + ": " + juce::String(id); return false;
             }
         const auto* rhythm = layer.getProperty("rhythm_cell", {}).getArray();
+        const auto timing = layer.getProperty("timing_mode", {}).toString();
+        if (layer.hasProperty("timing_mode") &&
+            ((timing != "cycle_bound" && timing != "phrase_flexible") ||
+             layer.getProperty("timing_intent", {}).toString().trim().isEmpty() ||
+             (coreLayer(json, id) && timing != "cycle_bound"))) {
+            error = "Club layer has an invalid timing commitment: " + juce::String(id); return false;
+        }
         std::set<double> onsets;
         if (!rhythm || rhythm->size() > 128) { error = "Club rhythm_cell missing"; return false; }
         for (const auto& beat : *rhythm) {
@@ -236,6 +277,9 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
             if (!grid(beat, value) || value < 0 || value >= cycle || !onsets.insert(value).second) {
                 error = "Club rhythm offset must be unique, zero-based and inside its cycle: " + juce::String(id); return false;
             }
+        }
+        if (timing == "cycle_bound" && rhythm->isEmpty()) {
+            error = "Club cycle-bound layer needs its AI-authored possible attacks: " + juce::String(id); return false;
         }
         const auto* states = layer.getProperty("states", {}).getArray();
         std::set<int> covered;
@@ -259,7 +303,11 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
             const auto& section = plan.sections[static_cast<std::size_t>(sectionNumber)];
             if (mode != "absent" && !owner->activeSections.empty() &&
                 std::find(owner->activeSections.begin(), owner->activeSections.end(), section.name) == owner->activeSections.end()) {
-                error = "Club layer activated outside its cast permission: " + juce::String(id); return false;
+                error = "Club layer activated outside its cast permission: " + juce::String(id) +
+                    " | section_index=" + juce::String(static_cast<int>(sectionNumber)) +
+                    " | section=" + juce::String::fromUTF8(section.name.c_str()) +
+                    " | use absent with minimum_sounding_fraction=0";
+                return false;
             }
         }
     }
@@ -313,6 +361,12 @@ inline juce::String windowBrief(const juce::String& json, std::size_t sectionInd
         out << "GROOVE CORE OWNERS: " << juce::JSON::toString(root.getProperty("groove_core_ids", {}))
             << ". Their attack grammar/absolute phase is fixed by YOUR plan. Omit attacks when needed, "
             "but do not add unplanned offsets. Supporting layers must leave space for this real core.\n";
+    out << "TIMING REALIZATION: cycle_bound applies to every marked owner, including pads/textures. "
+        "Use only its declared absolute cycle attacks; softness is an envelope, not a MIDI delay. "
+        "For phrase_flexible voices write connected gestures and intelligible arrivals against "
+        "the accepted ensemble. Do not stagger every layer by a sixteenth or make each one "
+        "a competing syncopated solo. Sharing an arrival is allowed. Do not blanket-straighten "
+        "the music: retain syncopation when it contributes to the shared phrase.\n";
     if (root.getProperty("format", {}).toString() == "continuous_section")
         out << "This is a FULL PRODUCTION SECTION, not a miniature complete song. Keep the "
             "body and groove through its wrap. Do not impose a breakdown, final solo cadence "

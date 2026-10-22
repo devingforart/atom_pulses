@@ -753,7 +753,7 @@ int main(int argc, char** argv) {
     manifest->setProperty("first_pass_audition", firstPassAudition);
     manifest->setProperty("composition_behavior", juce::String(pulso::compositionBehaviorKey(request.behavior).data()));
     if (request.behavior == pulso::CompositionBehavior::Club) {
-        manifest->setProperty("club_policy_version", 5);
+        manifest->setProperty("club_policy_version", 6);
         if (pulso::plugin::club::production::isPlan(productionJson))
             manifest->setProperty("clubProductionPlanFile", "club-production-plan.json");
         manifest->setProperty("development_horizon_bars", pulso::compositionStateBars(request.behavior));

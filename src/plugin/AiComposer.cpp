@@ -4019,7 +4019,7 @@ juce::String directWindowSchema(const SongPlan& plan,
         if (boundedClub) part.getDynamicObject()->setProperty("items",
             juce::JSON::parse(R"({"$ref":"#/$defs/windowNote"})"));
         const auto productionJson = juce::String::fromUTF8(plan.phraseArchitectureJson.c_str());
-        if (boundedClub && sectionIndex && club::production::coreLayer(productionJson, owner.id)) {
+        if (boundedClub && sectionIndex && club::production::cycleBoundLayer(productionJson, owner.id)) {
             auto allowed = club::production::boundedNoteSchema(windowBars * plan.beatsPerBar);
             auto* choices = allowed.getProperty("anyOf", {}).getArray();
             const auto start = (plan.sections[*sectionIndex].startBar + firstBar) * plan.beatsPerBar;
@@ -4079,7 +4079,7 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
         if (plan.compositionBehavior == CompositionBehavior::Club && sectionIndex < plan.sections.size() &&
             !club::production::coreAttackAllowed(juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()),
                 owner.id, (plan.sections[sectionIndex].startBar + firstBar) * plan.beatsPerBar + beat)) {
-            error = "Core attack contradicts your declared absolute rhythm phase: " + id +
+            error = "Cycle-bound attack contradicts your declared absolute rhythm phase: " + id +
                 " local beat=" + juce::String(beat, 2) + ". Rewrite this voice; no notes were shifted.";
             return false;
         }
@@ -5171,12 +5171,14 @@ void reviewClubMissingLayers(PerformanceScore& score, const SongPlan& plan,
     CompositionRenderReport initialReport;
     const auto initialMidi = render(score, initialReport);
     const auto initial = SelectiveRepair::reviewFinalScore(plan, initialMidi);
-    if (initial.developedVoices >= initial.expectedVoices) return;
+    if (initial.ready) return;
     const auto json = juce::String::fromUTF8(plan.phraseArchitectureJson.c_str());
     for (const auto owner : initial.instrumentIndices) {
         if (owner >= plan.instruments.size() || club::production::coreLayer(json, plan.instruments[owner].id)) continue;
         for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
             const auto& section = plan.sections[sectionIndex];
+            if (initial.developedVoices >= initial.expectedVoices &&
+                std::find(initial.sectionIndices.begin(), initial.sectionIndices.end(), sectionIndex) == initial.sectionIndices.end()) continue;
             if (section.bars > 32 || club::production::absent(plan, plan.instruments[owner].id, sectionIndex)) continue;
             juce::String feedback;
             for (int attempt = 1; attempt <= 2 && !token.stop_requested(); ++attempt) {
@@ -5185,7 +5187,9 @@ void reviewClubMissingLayers(PerformanceScore& score, const SongPlan& plan,
                 CompositionRenderReport beforeReport;
                 const auto before = render(score, beforeReport);
                 const auto oldReview = SelectiveRepair::reviewFinalScore(plan, before);
-                if (oldReview.developedVoices >= oldReview.expectedVoices) return;
+                if (oldReview.ready) return;
+                if (oldReview.developedVoices >= oldReview.expectedVoices &&
+                    std::find(oldReview.sectionIndices.begin(), oldReview.sectionIndices.end(), sectionIndex) == oldReview.sectionIndices.end()) break;
                 auto immutable = score;
                 if (!removeDirectOwnerWindow(immutable, plan, owner, sectionIndex, 0, section.bars, true)) break;
                 CompositionRenderReport immutableReport;
@@ -5199,6 +5203,21 @@ void reviewClubMissingLayers(PerformanceScore& score, const SongPlan& plan,
                     "accepted groove, harmony and all other owners exactly. Choose all pitches, gates, "
                     "attacks and repetitions yourself; do not add notes merely to reach a count. "
                     "Previous notes of this owner (absolute beat/pitch/duration):\n";
+                for (const auto& issue : oldReview.issues)
+                    prompt << "\nACTUAL COMPLETE-SCORE FINDING: " << juce::String::fromUTF8(issue.c_str()) << "\n";
+                if (oldReview.harmonicContinuity < 1.0 &&
+                    HarmonicFloorContext::sustainedFloorOwner(plan.instruments[owner])) {
+                    const auto sounding = renderedSustainedBodyBars(plan, score, owner);
+                    prompt << "\nSUSTAINED SUPPORT EVIDENCE: this owner supplies no sustained body in these "
+                        "absolute zero-based bars: ";
+                    for (int bar = section.startBar; bar < section.startBar + section.bars; ++bar)
+                        if (!sounding[static_cast<std::size_t>(bar)]) prompt << bar << " ";
+                    prompt << ". Judge the complete ensemble and supply a musically convincing "
+                        "sustained inner/top chord voice where the declared floor is missing, "
+                        "rather than returning the same intermittent reply. Keep meaningful breaths. "
+                        "Follow every actual chord change; a long gate must not carry an incompatible "
+                        "extension into the next harmony. Do not fill with repeated short attacks.\n";
+                }
                 for (const auto& note : before.notes) if (note.partId == owner + 1)
                     prompt << note.startBeat << "/" << note.pitch << "/" << note.durationBeats << " ";
                 const auto body = juce::String("{\"model\":\"") + model +
@@ -5216,18 +5235,53 @@ void reviewClubMissingLayers(PerformanceScore& score, const SongPlan& plan,
                 auto proposal = immutable;
                 mergePerformanceBlock(proposal, std::move(passage), 8000 + owner * 32 + sectionIndex);
                 CompositionRenderReport afterReport;
-                const auto after = render(proposal, afterReport);
-                const auto review = SelectiveRepair::reviewFinalScore(plan, after);
+                auto after = render(proposal, afterReport);
+                auto review = SelectiveRepair::reviewFinalScore(plan, after);
+                // Keep a useful AI-authored support completion available for a
+                // pitch-only review instead of discarding its musical work for
+                // one new exposed overlap. All substitute pitches remain AI choices.
+                const auto pitchBudget = std::chrono::duration_cast<std::chrono::seconds>(
+                    deadline - std::chrono::steady_clock::now());
+                if (review.deficit < oldReview.deficit - .001 &&
+                    club::adjacentWeight(club::voicingEvidence(plan, after)) >
+                        club::adjacentWeight(club::voicingEvidence(plan, before)) + .001 &&
+                    pitchBudget > std::chrono::seconds(20)) {
+                    if (auto pitched = proposeAiPitchEdit(proposal, plan,
+                            club::voicingEvidence(plan, before), club::voicingEvidence(plan, after),
+                            {owner}, sectionIndex, 0, section.bars, model, effort, apiKey,
+                            token, pitchBudget, "Retain the completed harmonic support; only resolve the new exposed voicing overlap.\n")) {
+                        CompositionRenderReport pitchedReport;
+                        const auto pitchedMidi = render(*pitched, pitchedReport);
+                        if (club::adjacentWeight(club::voicingEvidence(plan, pitchedMidi)) <
+                                club::adjacentWeight(club::voicingEvidence(plan, after)) &&
+                            EditorialSafety::technicallySafeAiScore(pitchedMidi, pitchedReport)) {
+                            proposal = std::move(*pitched);
+                            after = pitchedMidi;
+                            afterReport = std::move(pitchedReport);
+                            review = SelectiveRepair::reviewFinalScore(plan, after);
+                        }
+                    }
+                }
                 const auto start = section.startBar * plan.beatsPerBar;
                 const auto end = start + section.bars * plan.beatsPerBar;
-                const auto acceptedRevision = review.developedVoices > oldReview.developedVoices &&
+                const auto musicalImprovement = review.developedVoices > oldReview.developedVoices ||
+                    (review.developedVoices >= oldReview.developedVoices &&
+                     review.harmonicContinuity > oldReview.harmonicContinuity + .001 &&
+                     review.deficit < oldReview.deficit - .001);
+                const auto acceptedRevision = musicalImprovement &&
                     preservesOutsideEditedWindow(before, after, {owner}, start, end) &&
                     EditorialSafety::technicallySafeAiScore(after, afterReport) &&
                     club::adjacentWeight(club::voicingEvidence(plan, after)) <= club::adjacentWeight(club::voicingEvidence(plan, before)) + .001 &&
                     afterReport.finalTonalPass.after.invalidSustains <= beforeReport.finalTonalPass.after.invalidSustains;
                 OperationalJournal::write(acceptedRevision ? "OK" : "WARN", "CLUB_SUPPORT",
                     "AI layer revision " + juce::String(acceptedRevision ? "accepted" : "kept original") +
-                    " | owner=" + juce::String(plan.instruments[owner].id) + " | notes=" +
+                    " | owner=" + juce::String(plan.instruments[owner].id) +
+                    " | continuity=" + juce::String(oldReview.harmonicContinuity, 3) + "->" + juce::String(review.harmonicContinuity, 3) +
+                    " | deficit=" + juce::String(oldReview.deficit, 3) + "->" + juce::String(review.deficit, 3) +
+                    " | overlap=" + juce::String(club::adjacentWeight(club::voicingEvidence(plan, before)), 2) + "->" +
+                    juce::String(club::adjacentWeight(club::voicingEvidence(plan, after)), 2) +
+                    " | invalid_sustains=" + juce::String(static_cast<int>(beforeReport.finalTonalPass.after.invalidSustains)) + "->" +
+                    juce::String(static_cast<int>(afterReport.finalTonalPass.after.invalidSustains)) + " | notes=" +
                     juce::String(static_cast<int>(before.notes.size())) + "->" + juce::String(static_cast<int>(after.notes.size())));
                 if (!acceptedRevision) {
                     feedback = "The prior proposal did not improve developed ownership safely. Retain all other MIDI and "

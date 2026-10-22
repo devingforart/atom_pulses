@@ -285,6 +285,31 @@ int main() {
                   {0}, 0, 0, 8, phaseScore, phraseError) &&
                   phaseScore.placements.size() == 1 && phaseScore.placements[0].fragmentEnd == 32,
               "a direct AI passage needs its exact clip span before checkpointing, not only after rendering normalization");
+        auto timedProduction = juce::JSON::parse(coreJson);
+        auto& timedSupport = timedProduction.getDynamicObject()->getProperty("layers")
+            .getArray()->getReference(4);
+        timedSupport.getDynamicObject()->setProperty("timing_mode", "cycle_bound");
+        timedSupport.getDynamicObject()->setProperty("timing_intent", "share the harmonic arrival without a synthetic MIDI delay");
+        const auto timedJson = juce::JSON::toString(timedProduction);
+        auto timedPlan = corePlan;
+        timedPlan.phraseArchitectureJson = timedJson.toStdString();
+        check(club::production::validate(timedJson, timedPlan, phraseError) &&
+                  club::production::coreAttackAllowed(timedJson, timedPlan.instruments[4].id, 32) &&
+                  !club::production::coreAttackAllowed(timedJson, timedPlan.instruments[4].id, 32.25) &&
+                  club::production::coreAttackAllowed(coreJson, corePlan.instruments[4].id, 32.25),
+              "a support's explicit timing contract must be honored without imposing it on legacy/free phrases");
+        juce::var lateSupport(new juce::DynamicObject());
+        lateSupport.getDynamicObject()->setProperty(juce::String(timedPlan.instruments[4].id),
+            juce::Array<juce::var>{juce::JSON::parse(R"({"beat":0.25,"duration":1,"pitch":60,"velocity":80})")});
+        PerformanceScore untouched;
+        check(!AiComposer::parseDirectWindowJson(juce::JSON::toString(lateSupport), timedPlan,
+                  {4}, 0, 0, 8, untouched, phraseError) && untouched.empty() &&
+                  phraseError.contains("declared absolute rhythm phase"),
+              "an unplanned support delay must request AI rewriting, never be silently snapped");
+        timedSupport.getDynamicObject()->setProperty("timing_mode", "phrase_flexible");
+        check(club::production::coreAttackAllowed(juce::JSON::toString(timedProduction),
+                  timedPlan.instruments[4].id, 32.25),
+              "intentional syncopation in a flexible phrase must stay possible");
         AiPhraseArchitecture::applyTerminalHandoff(productionJson, productionPlanForWriting);
         check(productionPlanForWriting.continuousProductionSection && !clubPlan.continuousProductionSection,
               "section scope must be explicit and must not silently change full-song closure semantics");
@@ -307,6 +332,22 @@ int main() {
         check(!AiPhraseArchitecture::validate(juce::JSON::toString(clubProduction), clubPlan, phraseError),
               "cyclic attack offsets at the next cycle boundary must be rejected, not wrapped procedurally");
         const auto clubPhrasePrompt = AiPhraseArchitecture::prompt(clubPlan, "Progressive house", true);
+        auto permissionPlan = clubPlan;
+        auto laterSection = permissionPlan.sections.front();
+        laterSection.name = "Later return";
+        laterSection.startBar += laterSection.bars;
+        permissionPlan.sections.push_back(laterSection);
+        permissionPlan.instruments.front().activeSections = {laterSection.name};
+        const auto permissionPrompt = club::production::prompt(permissionPlan, "Complete club song");
+        const auto permissionLine = permissionPrompt.fromFirstOccurrenceOf(
+            juce::String(permissionPlan.instruments.front().id) + " | ", false, false)
+            .upToFirstOccurrenceOf("\n", false, false);
+        const auto allowedSections = juce::JSON::parse(permissionLine.fromFirstOccurrenceOf(
+            "allowed_section_indices=", false, false));
+        check(allowedSections.isArray() && allowedSections.size() == 1 &&
+                  static_cast<int>(allowedSections[0]) == static_cast<int>(permissionPlan.sections.size() - 1) &&
+                  permissionPrompt.contains("outside that list the state MUST be absent"),
+              "Club planning must receive the same per-owner section permissions enforced by validation");
         const auto boundedNotes = club::production::boundedNoteSchema(32).getProperty("anyOf", {});
         check(boundedNotes.size() == 128 &&
                   static_cast<double>(boundedNotes[116].getProperty("properties", {})

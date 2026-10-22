@@ -8,7 +8,7 @@
 namespace pulso::plugin::club {
 
 inline juce::String grooveBrief() {
-    return "SHARED GROOVE DESIGN v5: A stable floor is not permission for skeletal musical content. "
+    return "SHARED GROOVE DESIGN v6: A stable floor is not permission for skeletal musical content. "
         "Give the piece an identifiable developed musical subject, a fluent recurring sequence "
         "and a consequential continuation/arrival within its requested scale. These are actual "
         "phrases, not a few signpost notes separated by whole passages of accompaniment. "
@@ -21,7 +21,11 @@ inline juce::String grooveBrief() {
         "The AI-chosen bass, chord pulse and sequence must make musical sense together alone. "
         "Keep their declared absolute attack phase across sections; novelty comes primarily "
         "from harmonic pressure, sound, articulation and selective layering, not shifting the floor. "
-        "Leave clear gaps around their attacks when introducing a supporting voice. "
+        "Leave perceptual space around the foreground; do not interpret this as a demand "
+        "to delay all chord beds and textures by a sixteenth. Shared harmonic attacks are "
+        "legitimate: separate layers through register, voicing and dynamics as well as rests. "
+        "A soft envelope is not an excuse for a late MIDI attack. Give connected melodic "
+        "phrases recognizable metric arrivals, not an uninterrupted evasive offbeat chain. "
         "Do not confuse interlocking rhythm with many unrelated syncopated solos. "
         "Compose a full electronic production fabric. "
         "Bass propulsion, recurring sequences, rhythmic chords, sustained chord bodies "

@@ -10,6 +10,13 @@ inline bool isPlan(const juce::String& json) {
     return juce::JSON::parse(json).getProperty("kind", {}).toString() == "club_production_v1";
 }
 
+inline bool requiresFinaleReview(const SongPlan& plan, bool terminalPhraseReady,
+                                  bool ensembleReleaseReady) {
+    return plan.compositionBehavior == CompositionBehavior::Club &&
+        !plan.continuousProductionSection && !plan.sections.empty() &&
+        (!terminalPhraseReady || !ensembleReleaseReady);
+}
+
 inline bool coreLayer(const juce::String& json, const std::string& id) {
     const auto root = juce::JSON::parse(json);
     if (const auto* ids = root.getProperty("groove_core_ids", {}).getArray())

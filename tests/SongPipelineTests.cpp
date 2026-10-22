@@ -188,6 +188,15 @@ int main() {
         auto dialoguePlan = orderPlan;
         auto clubPlan = orderPlan;
         clubPlan.compositionBehavior = CompositionBehavior::Club;
+        check(club::production::requiresFinaleReview(clubPlan, false, true) &&
+                  club::production::requiresFinaleReview(clubPlan, true, false) &&
+                  !club::production::requiresFinaleReview(clubPlan, true, true),
+              "complete Club songs must reach the ending editor when either ending contract fails");
+        auto loopingClub = clubPlan;
+        loopingClub.continuousProductionSection = true;
+        check(!club::production::requiresFinaleReview(loopingClub, false, false) &&
+                  !club::production::requiresFinaleReview(orderPlan, false, false),
+              "loop excerpts and other composition engines must not acquire a Club finale obligation");
         const juce::String inheritedMacro = R"({"properties":{"sections":{"minItems":3,"maxItems":24,"items":{"properties":{"bars":{"type":"integer"}}}},"narrative_spine":{"properties":{"acts":{"minItems":3,"maxItems":20}}}}})";
         const auto sectionMacro = juce::JSON::parse(club::production::macroSchema(
             inheritedMacro, CompositionBehavior::Club, "SECCION PLENA de 32 compases", 32));

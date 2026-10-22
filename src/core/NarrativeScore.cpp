@@ -659,8 +659,31 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
         std::sort(lateTheme.begin(), lateTheme.end(), [](const auto* a, const auto* b) {
             return a->startBeat < b->startBeat;
         });
-        if (lateTheme.size() > 4) lateTheme.erase(lateTheme.begin(), lateTheme.end() - 4);
-        report.motifClosure = contourClosure(premiseTheme, lateTheme);
+        // A reprise followed by a cadential descent is a complete statement.
+        // Comparing only its last four notes incorrectly demanded that the
+        // cadence copy the opening contour. Read the connected final phrase,
+        // not an arbitrary suffix; do not borrow a return from an earlier act.
+        const auto finalSceneStart = plan.sections.empty() ? codaStart :
+            plan.sections.back().startBar * plan.beatsPerBar;
+        const auto finalSceneHasTheme = std::any_of(lateTheme.begin(), lateTheme.end(),
+            [&](const auto* note) { return note->startBeat >= finalSceneStart; });
+        // A deliberately melody-free outro may hand an already stated return
+        // to sustained harmony. A new terminal melodic tag must stand on its
+        // own connected phrase instead of borrowing that earlier evidence.
+        if (finalSceneHasTheme)
+            std::erase_if(lateTheme, [&](const auto* note) { return note->startBeat < finalSceneStart; });
+        auto phraseStart = std::size_t{};
+        for (std::size_t index = 1; index < lateTheme.size(); ++index)
+            if (lateTheme[index]->startBeat - lateTheme[index - 1]->endBeat() >
+                    plan.beatsPerBar * .75 + .001) phraseStart = index;
+        report.motifClosure = 0.0;
+        const auto motifNotes = std::min<std::size_t>(5, premiseTheme.size());
+        if (motifNotes >= 3)
+            for (auto index = phraseStart; index + motifNotes <= lateTheme.size(); ++index) {
+                const std::vector<const NoteEvent*> recalled(lateTheme.begin() + index,
+                    lateTheme.begin() + index + motifNotes);
+                report.motifClosure = std::max(report.motifClosure, contourClosure(premiseTheme, recalled));
+            }
         const auto homeArrival = stableTerminal && terminalClasses.size() >= 3 &&
             terminalClasses.contains(positiveModulo(plan.rootPitchClass, 12));
         report.tonalClosure = homeArrival ? 1.0 : 0.0;

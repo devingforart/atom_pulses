@@ -10582,16 +10582,50 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             error.clear();
             return result;
         }
+        auto clubFinaleOnly = false;
         if (behavior == CompositionBehavior::Club) {
-            reviewClubVoicings(score, result, apiKey, executionReasoningEffort, token,
+            auto measured = result;
+            measured.performanceScore = score;
+            GenerationContext clubContext;
+            clubContext.role = Role::Ensemble;
+            clubContext.rootPitchClass = result.rootPitchClass;
+            clubContext.scale = result.scale;
+            clubContext.beatsPerBar = result.beatsPerBar;
+            clubContext.seed = result.seed;
+            const auto beforeReview = SelectiveRepair::reviewFinalScore(
+                measured, SongComposer{}.render(measured, clubContext));
+            if (beforeReview.ready && resume != nullptr && !resume->blueprintOnly &&
+                completedWindows == windowCount) {
+                OperationalJournal::write("OK", "AI_FINALE",
+                    "complete Club checkpoint passes final review; no unrelated musical edits requested");
+                result.performanceScore = std::move(score);
+                error.clear();
+                return result;
+            }
+            const auto isolatedEnding = club::production::requiresFinaleReview(result,
+                beforeReview.terminalPhraseReady, beforeReview.ensembleReleaseReady) &&
+                beforeReview.developedVoices >= beforeReview.expectedVoices &&
+                beforeReview.harmonicContinuity >= .99 && beforeReview.climaxContrast >= .85;
+            if (!isolatedEnding) {
+              reviewClubVoicings(score, result, apiKey, executionReasoningEffort, token,
                 std::min(aiStarted + totalAiBudget, std::chrono::steady_clock::now() + std::chrono::minutes(6)),
                 barsPerWindow, progress, checkpoint);
-            reviewClubMissingLayers(score, result, direction, apiKey, executionReasoningEffort, token, progress, checkpoint);
-            reviewClubWrap(score, result, apiKey, executionReasoningEffort, token, progress, checkpoint);
+              reviewClubMissingLayers(score, result, direction, apiKey, executionReasoningEffort, token, progress, checkpoint);
+              reviewClubWrap(score, result, apiKey, executionReasoningEffort, token, progress, checkpoint);
+            }
             if (token.stop_requested()) { error = "Generation cancelled"; return result; }
-            result.performanceScore = std::move(score);
-            error.clear();
-            return result;
+            measured.performanceScore = score;
+            const auto afterReview = SelectiveRepair::reviewFinalScore(
+                measured, SongComposer{}.render(measured, clubContext));
+            clubFinaleOnly = club::production::requiresFinaleReview(result,
+                afterReview.terminalPhraseReady, afterReview.ensembleReleaseReady);
+            if (!clubFinaleOnly) {
+                result.performanceScore = std::move(score);
+                error.clear();
+                return result;
+            }
+            OperationalJournal::write("INFO", "AI_FINALE",
+                "complete Club arrangement requires final-scene review; earlier scenes protected");
         }
         // Review the rendered, complete score before declaring the ensemble
         // finished. The reviewer identifies a scene; only the AI can author
@@ -10602,12 +10636,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         // make the before/after comparison impossible to audit.
         const auto completeScoreResume = resume != nullptr &&
             !resume->blueprintOnly && completedWindows == windowCount;
-        const auto terminalCriticExperiment = completeScoreResume &&
+        const auto terminalCriticExperiment = !clubFinaleOnly && completeScoreResume &&
             juce::SystemStats::getEnvironmentVariable(
                 "PULSO_AI_TERMINAL_CRITIC_EXPERIMENT", {}) == "1";
-        auto finaleOnlyExperiment = completeScoreResume &&
+        auto finaleOnlyExperiment = clubFinaleOnly || (completeScoreResume &&
             (terminalCriticExperiment || juce::SystemStats::getEnvironmentVariable(
-                "PULSO_AI_NARRATIVE_FINALE_EXPERIMENT", {}) == "1");
+                "PULSO_AI_NARRATIVE_FINALE_EXPERIMENT", {}) == "1"));
         if (completeScoreResume && !finaleOnlyExperiment) {
             auto checkpointPlan = result;
             checkpointPlan.performanceScore = score;
@@ -12435,14 +12469,18 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             phraseOwners.end()) phraseOwners.push_back(index);
                 };
                 addOwner(result.narrativeSpine.protagonistInstrumentId);
+                // A Club outro whose chord arrival is already sound does not
+                // need its bass/bed recomposed to recover thematic continuity.
+                const auto protectClubHarmony = clubFinaleOnly &&
+                    baselineReport.narrative.tonalClosure >= .99;
                 for (const auto& part : result.instruments)
                     if (part.sourceVoice == VoiceId::HarmonicFoundation &&
-                        part.role.find("primary_chord_bed") != std::string::npos) {
+                        part.role.find("primary_chord_bed") != std::string::npos && !protectClubHarmony) {
                         addOwner(part.id);
                         break;
                     }
                 for (const auto& part : result.instruments)
-                    if (part.sourceVoice == VoiceId::MovementBass) {
+                    if (part.sourceVoice == VoiceId::MovementBass && !protectClubHarmony) {
                         addOwner(part.id);
                         break;
                     }
@@ -12509,6 +12547,35 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     for (const auto& issue : baselineReview.issues)
                         prompt << "AUDIBLE FINDING: " <<
                             juce::String::fromUTF8(issue.c_str()) << "\n";
+                    if (clubFinaleOnly) {
+                        prompt << "\nCLUB ENDING CONTEXT: retain the established groove and planned "
+                            "cyclic phases. Resolve through thematic recall and supported harmonic "
+                            "arrival, not a theatrical chamber-music cadence or a new unrelated solo. "
+                            "The return must be recognizable within the connected terminal phrase, "
+                            "which may then descend or otherwise settle naturally. Do not force "
+                            "the last few cadential notes to copy the opening contour. You choose "
+                            "the register, intervals, rhythm and home-chord arrival. Keep meaningful "
+                            "articulation, not a sudden rush of extra sixteenths.\n"
+                            "MEASURED motif_closure=" << baselineReport.narrative.motifClosure <<
+                            " tonal_closure=" << baselineReport.narrative.tonalClosure <<
+                            " resolution=" << baselineReview.resolutionScore << "\n";
+                        auto openingListed = 0;
+                        for (const auto& note : baselineMidi.notes) {
+                            if (note.partId == 0 || note.partId > result.instruments.size() ||
+                                result.instruments[note.partId - 1].id !=
+                                    result.narrativeSpine.protagonistInstrumentId) continue;
+                            prompt << "ACTUAL FIRST SUBJECT beat=" << note.startBeat <<
+                                " pitch=" << note.pitch << " duration=" << note.durationBeats << "\n";
+                            if (++openingListed >= 12) break;
+                        }
+                        for (const auto& note : baselineMidi.notes)
+                            if (note.startBeat >= start && note.startBeat < end &&
+                                note.partId > 0 && note.partId <= result.instruments.size() &&
+                                result.instruments[note.partId - 1].id ==
+                                    result.narrativeSpine.protagonistInstrumentId)
+                                prompt << "ACTUAL OLD ENDING beat=" << note.startBeat <<
+                                    " pitch=" << note.pitch << " duration=" << note.durationBeats << "\n";
+                    }
                     if (feedback.isNotEmpty()) prompt << "PREVIOUS ATTEMPT: " <<
                         feedback << "\n";
                     const auto body = juce::String("{\"model\":\"") + model +
@@ -12518,7 +12585,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         juce::JSON::toString(juce::var(prompt)) +
                         ",\"text\":{\"format\":{\"type\":\"json_schema\","
                         "\"name\":\"pulso_terminal_phrase\",\"strict\":true,\"schema\":" +
-                        directWindowSchema(result, phraseOwners) + "}}}";
+                        (clubFinaleOnly ? directWindowSchema(result, phraseOwners, sectionIndex, bars, firstBar) :
+                            directWindowSchema(result, phraseOwners)) + "}}}";
                     if (progress) progress({AiSongStage::Recovery, windowCount,
                         windowCount, attempt, "AI completing the final melodic argument"});
                     const auto response = performRequest(body, apiKey, token,
@@ -12709,6 +12777,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         "answer, a coordinated release, or safe voice-leading. ";
                     for (const auto& issue : candidateReview.issues)
                         feedback << juce::String::fromUTF8(issue.c_str()) << "; ";
+                    if (clubFinaleOnly)
+                        feedback << " Actual candidate motif_closure=" << candidateReport.narrative.motifClosure <<
+                            " tonal_closure=" << candidateReport.narrative.tonalClosure <<
+                            " resolution=" << candidateReview.resolutionScore <<
+                            ". Make the terminal thematic recall and home-chord arrival explicit in the MIDI. ";
                     auto listed = 0;
                     for (const auto& issue :
                          candidateReport.finalTonalPass.after.issues) {
@@ -12723,8 +12796,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         juce::String(candidateReview.terminalPhraseReady ? 1 : 0) +
                         " release=" +
                         juce::String(candidateReview.ensembleReleaseReady ? 1 : 0) +
+                        " motif=" + juce::String(candidateReport.narrative.motifClosure, 3) +
+                        " tonal=" + juce::String(candidateReport.narrative.tonalClosure, 3) +
+                        " resolution=" + juce::String(candidateReview.resolutionScore, 3) +
                         " harsh=" + juce::String(
                             candidateReport.finalTonalPass.after.unintendedHarshOverlaps));
+                    if (clubFinaleOnly && checkpoint)
+                        checkpoint(candidatePlan, windowCount + 1, true, true);
                 }
             }
         }

@@ -2135,6 +2135,46 @@ void runSelectiveRepairTests() {
             "A score with developed voices and continuous harmony must still reject an abrupt, unconnected ending");
 
     // A real final-act relay is not a missing protagonist ending. The main
+    {
+        auto clubEnding = unfinishedStory;
+        clubEnding.compositionBehavior = CompositionBehavior::Club;
+        clubEnding.rootPitchClass = 0;
+        HarmonicChord clubTonic;
+        clubTonic.id = "C";
+        clubTonic.rootPitchClass = 0;
+        clubTonic.bassPitchClass = 0;
+        clubTonic.pitchClasses = {0, 4, 7};
+        clubEnding.chordPalette = {clubTonic};
+        HarmonicEvent clubArrival;
+        clubArrival.chordId = "C";
+        clubEnding.sections.back().harmonicEvents = {clubArrival};
+        Pattern recalledEnding;
+        recalledEnding.lengthBeats = 96;
+        for (const auto start : {0.0, 32.0, 64.0})
+            for (int i = 0; i < 5; ++i) {
+                const int pitches[]{72, 76, 79, 81, 79};
+                recalledEnding.notes.push_back({start + i, .75, pitches[i], 80, 3,
+                    VoiceId::Lead, 3, true, NoteOrigin::AiAuthored});
+            }
+        for (int i = 0; i < 4; ++i) {
+            const int pitches[]{77, 76, 74, 72};
+            recalledEnding.notes.push_back({69.0 + i, i == 3 ? 24.0 : .75,
+                pitches[i], 75, 3, VoiceId::Lead, 3, true, NoteOrigin::AiAuthored});
+        }
+        for (const auto pitch : {48, 52, 55})
+            recalledEnding.notes.push_back({64, 32, pitch, 65, 1,
+                VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
+        const auto recalledReview = NarrativeScoreGate::audit(recalledEnding, clubEnding);
+        require(recalledReview.terminalPhraseReady && recalledReview.motifClosure > .95,
+            "Club thematic recall followed by a connected cadential descent must not be judged only by its final four notes");
+        auto detachedTag = recalledEnding;
+        for (auto& note : detachedTag.notes)
+            if (note.partId == 3 && note.startBeat == 72) note.durationBeats = 1;
+        detachedTag.notes.push_back({94, 2, 72, 75, 3, VoiceId::Lead, 3, true, NoteOrigin::AiAuthored});
+        require(!NarrativeScoreGate::audit(detachedTag, clubEnding).terminalPhraseReady,
+            "a detached final tonic tag must not borrow thematic recall from an earlier disconnected phrase");
+    }
+    // A real final-act relay is not a missing protagonist ending. The main
     // voice can reprise its idea and then yield the final words to a named
     // answering line, provided that line actually reaches a stable cadence.
     auto relayedStory = unfinishedStory;

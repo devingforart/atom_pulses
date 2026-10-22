@@ -315,6 +315,7 @@ void auditClubContinuity(const Pattern& pattern, const SongPlan& plan,
 }
 
 struct ActEvidence {
+    double startBeat{};
     NarrativeStage stage{NarrativeStage::Transformation};
     double tensionTarget{};
     bool audible{};
@@ -335,6 +336,7 @@ ActEvidence evidenceFor(const Pattern& pattern, const SongPlan& plan,
     if (section == plan.sections.end()) return result;
     const auto start = section->startBar * plan.beatsPerBar;
     const auto end = (section->startBar + section->bars) * plan.beatsPerBar;
+    result.startBeat = start;
     std::set<std::uint16_t> parts;
     auto pitchTotal = 0.0;
     auto harmonicPitchTotal = 0.0;
@@ -357,7 +359,8 @@ ActEvidence evidenceFor(const Pattern& pattern, const SongPlan& plan,
     });
     // An introductory premise can be voiced by harmony before the protagonist
     // enters. Later narrative acts still require an audible melodic statement.
-    const auto harmonicPremise = act.stage == NarrativeStage::Premise &&
+    const auto harmonicPremise = (act.stage == NarrativeStage::Premise ||
+        plan.compositionBehavior == CompositionBehavior::Club) &&
         harmonicNotes >= 3 && !parts.empty();
     result.audible = result.melody.size() >= 3 || harmonicPremise;
     result.meanPitch = result.melody.empty()
@@ -637,11 +640,38 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
         report.densityRelease = std::clamp((climax->activeParts - resolution->activeParts + .5) / 4.0,
                                            0.0, 1.0);
     }
+    if (plan.compositionBehavior == CompositionBehavior::Club) {
+        // A DJ-style outro can hand the final word to sustained harmony. Judge
+        // actual late thematic recall and the sounding terminal chord instead
+        // of demanding four new lead attacks in the last two bars.
+        std::vector<const NoteEvent*> lateTheme;
+        std::set<int> terminalClasses;
+        auto stableTerminal = true;
+        for (const auto& note : pattern.notes) {
+            if (protagonistNote(note) && climax != nullptr && note.startBeat >= climax->startBeat)
+                lateTheme.push_back(&note);
+            if (voiceDefinition(note.voice).family == VoiceFamily::Rhythm ||
+                note.endBeat() <= totalBeats - plan.beatsPerBar || note.startBeat >= totalBeats) continue;
+            const auto pitchClass = positiveModulo(note.pitch, 12);
+            terminalClasses.insert(pitchClass);
+            stableTerminal = stableTerminal && stableTerminalPitchClasses.contains(pitchClass);
+        }
+        std::sort(lateTheme.begin(), lateTheme.end(), [](const auto* a, const auto* b) {
+            return a->startBeat < b->startBeat;
+        });
+        if (lateTheme.size() > 4) lateTheme.erase(lateTheme.begin(), lateTheme.end() - 4);
+        report.motifClosure = contourClosure(premiseTheme, lateTheme);
+        const auto homeArrival = stableTerminal && terminalClasses.size() >= 3 &&
+            terminalClasses.contains(positiveModulo(plan.rootPitchClass, 12));
+        report.tonalClosure = homeArrival ? 1.0 : 0.0;
+        report.terminalPhraseReady = homeArrival && report.motifClosure >= .55 &&
+            climax != nullptr && resolution != nullptr && resolution->audible;
+    }
     report.resolutionScore = report.motifClosure * .30 + report.tonalClosure * .35 +
         report.registerRelease * .20 + report.densityRelease * .15;
     report.narrativeSpineReady = report.causalNarrative >= .62 && report.resolutionScore >= .58 &&
         premise != nullptr && climax != nullptr && resolution != nullptr &&
-        premise->audible && climax->audible && resolution->audible && protagonistCloses;
+        premise->audible && climax->audible && resolution->audible && report.terminalPhraseReady;
 }
 
 } // namespace
@@ -757,11 +787,12 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         // eight-bar window count as one narrative appearance; rests and breath inside
         // that phrase are preserved instead of being penalised as missing duration.
         if (expectsForeground) {
-            for (auto localBar = 0; localBar < section.bars; localBar += 8) {
+            const auto horizon = compositionStateBars(plan.compositionBehavior);
+            for (auto localBar = 0; localBar < section.bars; localBar += horizon) {
                 ++primaryAvailable;
                 const auto start = (section.startBar + localBar) * plan.beatsPerBar;
                 const auto end = std::min((section.startBar + section.bars) * plan.beatsPerBar,
-                                          start + plan.beatsPerBar * 8.0);
+                                          start + plan.beatsPerBar * horizon);
                 const auto notes = std::count_if(pattern.notes.begin(), pattern.notes.end(),
                     [&](const auto& note) {
                         return primaryVoice(note.voice) && aiOrigin(note.origin) &&
@@ -834,7 +865,8 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
 
     const auto audibleLineage = std::clamp(
         (report.audibleThematicSimilarity - 0.55) / 0.25, 0.0, 1.0);
-    const auto melodicSpeech = std::clamp(1.0 - std::max(0.0,
+    const auto clubIntent = plan.compositionBehavior == CompositionBehavior::Club;
+    const auto melodicSpeech = clubIntent ? 1.0 : std::clamp(1.0 - std::max(0.0,
         0.25 - report.melodicStepwiseRatio) / 0.25 -
         std::max(0.0,
         report.melodicStepwiseRatio - 0.65) / 0.35 -
@@ -851,7 +883,7 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         report.movementBassAiAuthorshipRatio * 0.11 +
         report.grooveAuthorshipCoverage * 0.08 +
         report.thematicRecallRatio * 0.07 + audibleLineage * 0.05 +
-        report.thematicDevelopment * 0.05 +
+        (clubIntent ? report.causalNarrative : report.thematicDevelopment) * 0.05 +
         report.bassPhraseContinuity * 0.07 + report.densityControl * 0.05 +
         report.harmonicDirection * 0.04 + report.rhythmicDevelopment * 0.03 +
         melodicSpeech * 0.04 + clubContinuity * 0.02 +
@@ -872,15 +904,15 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
         report.issues.push_back("weak_long_range_theme_memory");
     if (report.active && report.audibleThematicWindows >= 3 && report.audibleThematicSimilarity < 0.66)
         report.issues.push_back("theme_labels_without_audible_lineage");
-    if (report.active && report.comparableThematicReturns >= 4 &&
+    if (!clubIntent && report.active && report.comparableThematicReturns >= 4 &&
         report.literalThematicReturnRatio > 0.70)
         report.issues.push_back("literal_theme_copy_without_development");
     if (report.bassWindows >= 3 && report.bassPhraseContinuity < 0.60)
         report.issues.push_back("fragmented_movement_bass");
-    if (report.melodicIntervals >= 8 && (report.melodicStepwiseRatio > 0.68 ||
+    if (!clubIntent && report.melodicIntervals >= 8 && (report.melodicStepwiseRatio > 0.68 ||
         report.maximumMelodicStepRun > 5))
         report.issues.push_back("scalar_melody_without_speech");
-    if (report.melodicIntervals >= 8 && report.melodicStepwiseRatio < 0.25)
+    if (!clubIntent && report.melodicIntervals >= 8 && report.melodicStepwiseRatio < 0.25)
         report.issues.push_back("disconnected_melody_without_voice_leading");
     if (pulseAuditRequired &&
         report.maximumClubDrumGapBars >= 16)
@@ -898,10 +930,10 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
     }
     const auto memoryReady = report.audibleThematicWindows < 3 ||
         (report.thematicRecallRatio >= 0.40 && report.audibleThematicSimilarity >= 0.66);
-    const auto developmentReady = report.comparableThematicReturns < 4 ||
+    const auto developmentReady = clubIntent || report.comparableThematicReturns < 4 ||
         (report.literalThematicReturnRatio <= 0.70 && report.thematicDevelopment >= 0.55);
     const auto bassReady = report.bassPhrases < 4 || report.bassPhraseContinuity >= 0.60;
-    const auto melodicSpeechReady = report.melodicIntervals < 8 ||
+    const auto melodicSpeechReady = clubIntent || report.melodicIntervals < 8 ||
         (report.melodicStepwiseRatio >= 0.25 && report.melodicStepwiseRatio <= 0.68 &&
          report.maximumMelodicStepRun <= 5);
     const auto foregroundReady = !report.foregroundExpected ||
@@ -913,7 +945,8 @@ NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const Son
          report.maximumClubLowEndGapBars <= 16);
     report.creativeReady = !report.active || (report.primaryVoiceCoverage >= 0.40 &&
         foregroundReady && movementBassReady && memoryReady && developmentReady && bassReady && melodicSpeechReady &&
-        clubReady && report.narrativeSpineReady && report.densityControl >= 0.82 && report.maximumMelodicStepRun <= 5 &&
+        clubReady && report.narrativeSpineReady && report.densityControl >= 0.82 &&
+        (clubIntent || report.maximumMelodicStepRun <= 5) &&
         report.score >= 0.76);
     return report;
 }

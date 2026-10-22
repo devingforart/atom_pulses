@@ -104,6 +104,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   const [downloadingSingleMidi, setDownloadingSingleMidi] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [allowChromatic, setAllowChromatic] = useState(false)
+  const [club, setClub] = useState(false)
   const [sharing, setSharing] = useState(false)
   const [share, setShare] = useState<{ url: string; jobId: string } | null>(null)
   const [durationSeconds, setDurationSeconds] = useState(390)
@@ -180,7 +181,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
     event.preventDefault(); setError(''); setBusy(true)
     try {
       const job = await api.createCloudJob({ prompt: prompt.trim(), durationSeconds,
-        bpm, allowChromatic, idempotencyKey: crypto.randomUUID() })
+        bpm, allowChromatic, club, idempotencyKey: crypto.randomUUID() })
       setJobs(previous => [job, ...previous.filter(item => item.id !== job.id)])
       setSelectedId(job.id); setPrompt('')
     } catch (problem) { setError(problem instanceof Error ? problem.message : 'No pudimos comenzar la composición.') }
@@ -258,6 +259,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
       <form onSubmit={event => void compose(event)}><label htmlFor="cloud-prompt">Idea musical <small>{prompt.length} / 600</small></label>
         <textarea id="cloud-prompt" value={prompt} maxLength={600} required rows={5} onChange={event => setPrompt(event.target.value)} placeholder="Una historia electrónica profunda, con armonías que evolucionan y un motivo que regresa transformado…" />
         <label className="cloud-chromatic-option"><input type="checkbox" checked={allowChromatic} onChange={event => setAllowChromatic(event.target.checked)} /> Permitir cromatismos</label>
+        <label className="cloud-chromatic-option" title="Células reconocibles y evolución de capas a largo plazo, sin cortes obligatorios cada 64 compases."><input type="checkbox" checked={club} onChange={event => setClub(event.target.checked)} /> Club · repetición y evolución</label>
         <p className="cloud-suite-cost">Sin baterías ni percusiones. Arpegios, stabs y ritmos tonales siguen disponibles. Con cromatismos desactivados, las notas deben pertenecer a la escala declarada.</p>
         <div className="cloud-suite-field-pair"><div><label htmlFor="cloud-duration">Duración</label><select id="cloud-duration" value={durationSeconds} onChange={event => setDurationSeconds(Number(event.target.value))}>{[[60, '1 minuto'], [120, '2 minutos'], [180, '3 minutos'], [300, '5 minutos'], [390, '6 min 30 s'], [600, '10 minutos'], [900, '15 minutos']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
           <div><label htmlFor="cloud-bpm">Tempo</label><div className="cloud-suite-unit"><input id="cloud-bpm" type="number" min="60" max="180" value={bpm} onChange={event => setBpm(Number(event.target.value))} /><span>BPM</span></div></div></div>

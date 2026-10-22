@@ -183,6 +183,9 @@ bool requiresSectionalEvolution(const InstrumentAssignment& instrument) {
 
 std::size_t minimumSectionalStates(const SongPlan& plan,
                                    const InstrumentAssignment& instrument) {
+    // Club development is evaluated through the arrangement and harmonic arc.
+    // A retained ostinato is not obliged to invent five different note states.
+    if (plan.compositionBehavior == CompositionBehavior::Club) return 1;
     const auto protagonist = instrument.id == plan.narrativeSpine.protagonistInstrumentId;
     const auto principalMotion = ElectronicRoleContract::motionOwner(instrument) &&
         containsAny(instrument, {"primary_motion_owner", "principal"});
@@ -368,7 +371,7 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
             if (!phrase.empty()) distinctPhrases.insert(phrase);
         }
         const auto family = voiceDefinition(instrument.sourceVoice).family;
-        const auto intentionalStaticRole = sustained ||
+        const auto intentionalStaticRole = plan.compositionBehavior == CompositionBehavior::Club || sustained ||
             family == VoiceFamily::Rhythm || family == VoiceFamily::Bass ||
             containsAny(instrument, {"drone", "pedal", "ostinato", "arpeggio", "arp"});
         const auto developed = owner.notes >= minimumNotes &&
@@ -406,10 +409,8 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
     if (floorOwners > 0) {
         // Sustained-body coverage describes the sounding form, not the silence
         // after an AI-authored final cadence. Count every other bar normally;
-        // exempt only the last bar when pitched music actually arrives there
-        // and then releases into a substantial terminal rest.
+        // exempt the final arrival bar without prescribing a rest length.
         const auto lastBeat = plan.totalBars * plan.beatsPerBar;
-        const auto terminalBreath = std::clamp(plan.beatsPerBar * .5, 1.0, 2.0);
         auto lastPitchedRelease = 0.0;
         auto pitchedArrivalInLastBar = false;
         if (plan.aiSovereign && plan.narrativeSpine.authored)
@@ -422,9 +423,9 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
                 pitchedArrivalInLastBar |= note.startBeat < lastBeat &&
                     note.endBeat() > lastBeat - plan.beatsPerBar;
             }
-        const auto authoredTerminalRest = pitchedArrivalInLastBar &&
+        const auto authoredTerminalArrival = pitchedArrivalInLastBar &&
             lastPitchedRelease > lastBeat - plan.beatsPerBar &&
-            lastPitchedRelease <= lastBeat - terminalBreath + .001;
+            lastPitchedRelease <= lastBeat + .001;
         auto requiredBars = 0;
         auto coveredBars = 0;
         std::vector<std::pair<double, std::size_t>> sectionalFloorCoverage;
@@ -433,7 +434,7 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
             auto sectionCovered = 0;
             const auto endBar = std::min(bars, section.startBar + section.bars);
             for (auto bar = std::max(0, section.startBar); bar < endBar; ++bar) {
-                if (authoredTerminalRest && bar == bars - 1) continue;
+                if (authoredTerminalArrival && bar == bars - 1) continue;
                 const auto required = std::min<std::size_t>(
                     static_cast<std::size_t>(floorOwners),
                     HarmonicFloorContext::requiredLayers(plan,
@@ -487,6 +488,7 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
     }
 
     for (std::size_t climaxIndex = 1; climaxIndex < plan.sections.size(); ++climaxIndex) {
+        if (plan.continuousProductionSection) break;
         const auto& climax = plan.sections[climaxIndex];
         const auto identity = lower(climax.name);
         const auto declaredAct = std::find_if(plan.narrativeSpine.acts.begin(),
@@ -551,7 +553,7 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
             return act.stage == NarrativeStage::Resolution &&
                 act.sectionName == plan.sections.back().name;
         });
-    if (plan.aiSovereign && plan.narrativeSpine.authored &&
+    if (plan.aiSovereign && !plan.continuousProductionSection && plan.narrativeSpine.authored &&
         endingAct != plan.narrativeSpine.acts.end()) {
         const auto narrative = NarrativeScoreGate::audit(pattern, plan);
         review.resolutionScore = narrative.resolutionScore;
@@ -587,96 +589,8 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
                     review.instrumentIndices.push_back(index);
         }
 
-        // A stable final pitch is not an audible release. MIDI has no implicit
-        // post-roll: moving a collective cutoff a fraction of a beat before
-        // the file end still makes the ensemble disappear together.
-        // Judge independent owners, not the number of chord tones. A deliberately
-        // authored hard stop is a valid exception, but ordinary resolution is not.
-        const auto endingDescription = lower(plan.narrativeSpine.resolution + " " +
-            endingAct->resolutionTarget + " " + plan.sections.back().function);
-        const auto hardStop = endingDescription.find("hard stop") != std::string::npos ||
-            endingDescription.find("hard cut") != std::string::npos ||
-            endingDescription.find("cut to silence") != std::string::npos ||
-            endingDescription.find("corte seco") != std::string::npos ||
-            endingDescription.find("final seco") != std::string::npos;
-        if (!hardStop && plan.totalBars >= 8) {
-            const auto lastBeat = plan.totalBars * plan.beatsPerBar;
-            // MIDI stops at lastBeat: a final note reaching that boundary has
-            // no audible post-roll, even if every other owner leaves earlier.
-            // Reserve half a bar for the AI-authored final breath. This is an
-            // acceptance criterion, never a MIDI edit.
-            const auto terminalBreath = std::clamp(
-                plan.beatsPerBar * .5, 1.0, 2.0);
-            auto lastRelease = 0.0;
-            for (const auto& note : pattern.notes) {
-                if (note.partId == 0 || note.partId > plan.instruments.size() ||
-                    note.endBeat() <= lastBeat - plan.beatsPerBar * 2.0 ||
-                    eventInstrument(plan, plan.instruments[note.partId - 1]) ||
-                    voiceDefinition(note.voice).family == VoiceFamily::Rhythm)
-                    continue;
-                lastRelease = std::max(lastRelease, note.endBeat());
-            }
-            // A complete terminal rest can follow an intentional ensemble
-            // cadence. Do not demand staggered note-offs once the song has
-            // already made room for the final silence.
-            if (lastRelease <= lastBeat - terminalBreath + .001)
-                lastRelease = 0.0;
-            const auto releaseClusterStart = lastRelease - .75;
-            const auto earlierMoment = lastRelease - std::max(1.5, plan.beatsPerBar * .375);
-            std::set<std::size_t> lateOwners;
-            std::set<std::size_t> clusteredOwners;
-            std::set<std::size_t> terminalOwners;
-            for (const auto& note : pattern.notes) {
-                if (note.partId == 0 || note.partId > plan.instruments.size() ||
-                    note.durationBeats <= 0.0) continue;
-                const auto owner = static_cast<std::size_t>(note.partId - 1);
-                if (eventInstrument(plan, plan.instruments[owner]) ||
-                    voiceDefinition(note.voice).family == VoiceFamily::Rhythm)
-                    continue;
-                if (lastRelease <= 0.0) break;
-                if (note.startBeat <= earlierMoment &&
-                    note.endBeat() > earlierMoment)
-                    lateOwners.insert(owner);
-                if (note.endBeat() >= releaseClusterStart - .001 &&
-                    note.endBeat() <= lastRelease + .01 &&
-                    note.durationBeats >= .5)
-                    clusteredOwners.insert(owner);
-                if (note.endBeat() > lastBeat - terminalBreath - .001 &&
-                    note.startBeat < lastBeat)
-                    terminalOwners.insert(owner);
-            }
-            review.simultaneousTerminalOwners = clusteredOwners.size();
-            if (lastRelease > lastBeat - terminalBreath + .001) {
-                review.ready = false;
-                review.ensembleReleaseReady = false;
-                review.deficit += .35;
-                review.sectionIndices.push_back(plan.sections.size() - 1);
-                review.terminalReleaseOwnerIndices.assign(
-                    terminalOwners.begin(), terminalOwners.end());
-                review.instrumentIndices.insert(review.instrumentIndices.end(),
-                    terminalOwners.begin(), terminalOwners.end());
-                review.issues.push_back("The final pitched sound reaches the MIDI boundary "
-                    "without an audible terminal breath; ask the AI to author "
-                    "the final note-offs and leave a resolving rest");
-            }
-            if (clusteredOwners.size() >= 3 &&
-                clusteredOwners.size() * 5 >= lateOwners.size() * 3) {
-                review.ready = false;
-                review.ensembleReleaseReady = false;
-                review.deficit += .35;
-                review.sectionIndices.push_back(plan.sections.size() - 1);
-                review.terminalReleaseOwnerIndices.insert(
-                    review.terminalReleaseOwnerIndices.end(),
-                    clusteredOwners.begin(), clusteredOwners.end());
-                review.issues.push_back("The final MIDI cuts off " +
-                    std::to_string(clusteredOwners.size()) +
-                    " sustained instrument owners within the same short final release; "
-                    "author a coordinated final-scene release or an explicitly intended hard stop, "
-                    "without changing the earlier score");
-                review.instrumentIndices.insert(review.instrumentIndices.end(),
-                    clusteredOwners.begin(), clusteredOwners.end());
-            }
-        }
+        // Release timing and simultaneous final note-offs are musical choices.
+        // They do not establish a narrative defect or require a terminal rest.
     }
     std::set<std::size_t> seen;
     std::erase_if(review.instrumentIndices, [&](const auto index) {
@@ -2615,8 +2529,7 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                 }
             }
             if (protagonist) {
-                const auto narrativeWindowBars =
-                    plan.compositionBehavior == CompositionBehavior::Hypnotic ? 16 : 8;
+                const auto narrativeWindowBars = compositionStateBars(plan.compositionBehavior);
                 auto eligibleNarrativeSections = std::size_t{};
                 std::vector<std::size_t> activeNarrativeSectionIndices;
                 std::set<std::size_t> connectedNarrativeSections;
@@ -2725,7 +2638,8 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                     [](auto largest, const auto& item) { return std::max(largest, item.second); });
                 deficit.literalPlacementRatio = static_cast<double>(dominant) /
                     static_cast<double>(std::max<std::size_t>(1, total));
-                if (total >= 4 && (states.size() < 2 || deficit.literalPlacementRatio > .70)) {
+                if (plan.compositionBehavior != CompositionBehavior::Club &&
+                    total >= 4 && (states.size() < 2 || deficit.literalPlacementRatio > .70)) {
                     deficit.missingThematicDevelopment = true;
                     incomplete = true;
                 }
@@ -2746,7 +2660,8 @@ std::vector<PerformanceCoverageDeficit> SelectiveRepair::performanceDeficitsImpl
                 // not speak. Conversely, an uninterrupted scalar walk is connective
                 // but equally synthetic. Preserve characteristic leaps inside an
                 // audibly singable amount of conjunct motion.
-                if (deficit.melodicIntervals >= 8 &&
+                if (plan.compositionBehavior != CompositionBehavior::Club &&
+                    deficit.melodicIntervals >= 8 &&
                     (deficit.melodicStepRatio < .25 || deficit.melodicStepRatio > .68)) {
                     deficit.missingMelodicSpeech = true;
                     incomplete = true;
@@ -3380,8 +3295,7 @@ bool SelectiveRepair::focusedProtagonistAdditionInScope(
         audit.unplacedSourceNotes > 0 || audit.excludedByFragment > 0 ||
         audit.excludedBySection > 0 || audit.incompatibleVoiceMap > 0)
         return false;
-    const auto windowBars = plan.compositionBehavior ==
-        CompositionBehavior::Hypnotic ? 16 : 8;
+    const auto windowBars = compositionStateBars(plan.compositionBehavior);
     auto renderedNotes = std::size_t{};
     for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size();
          ++sectionIndex) {
@@ -3500,8 +3414,7 @@ std::vector<int> SelectiveRepair::focusedProtagonistWindowTargets(
     if (!deficit.missingNarrativePresence ||
         deficit.instrumentIndex >= plan.instruments.size()) return {};
     const auto& instrument = plan.instruments[deficit.instrumentIndex];
-    const auto windowBars = plan.compositionBehavior == CompositionBehavior::Hypnotic
-        ? 16 : 8;
+    const auto windowBars = compositionStateBars(plan.compositionBehavior);
     const std::set<int> missing(deficit.missingNarrativeWindowStartBars.begin(),
         deficit.missingNarrativeWindowStartBars.end());
     std::vector<std::size_t> activeSections;

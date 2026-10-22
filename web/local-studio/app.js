@@ -22,6 +22,7 @@ firstPassLabel.title = 'Activada: conservar la primera interpretación MIDI téc
 const firstPassInput = document.createElement('input');
 firstPassInput.type = 'checkbox'; firstPassInput.id = 'first-pass-audition';
 let firstPassPreference = true;
+let nonClubFirstPassPreference = true;
 firstPassLabel.append(firstPassInput, document.createTextNode('Primera pasada · sin revisión musical'));
 proofLabel.after(firstPassLabel);
 const syncProofMode = () => {
@@ -36,6 +37,13 @@ $('#duration').addEventListener('change', syncProofMode);
 $('#render-mode').addEventListener('change', syncProofMode);
 proofInput.addEventListener('change', syncProofMode);
 firstPassInput.addEventListener('change', () => { firstPassPreference = firstPassInput.checked; });
+$('#club-mode').addEventListener('change', () => {
+  const club = $('#club-mode').checked;
+  $('#behavior').disabled = club;
+  if (club) { nonClubFirstPassPreference = firstPassPreference; firstPassPreference = false; }
+  else firstPassPreference = nonClubFirstPassPreference;
+  syncProofMode();
+});
 syncProofMode();
 const states = { queued: 'EN COLA', running: 'COMPONIENDO', completed: 'LISTA', failed: 'FALLIDA', interrupted: 'INTERRUMPIDA', cancelled: 'CANCELADA' };
 const palette = { pad: '#dfb64e', bass: '#71a1d0', keys: '#8b9dca', pluck: '#cc8b6e', lead: '#d84f2b', drums: '#75b57c', synth: '#a899c7' };
@@ -99,7 +107,9 @@ function reuse(job) {
   firstPassPreference = Boolean(job.request.first_pass_audition);
   syncProofMode();
   $('#bpm').value = String(job.request.bpm);
-  $('#behavior').value = job.request.behavior || 'adaptive';
+  $('#club-mode').checked = job.request.behavior === 'club';
+  $('#behavior').disabled = $('#club-mode').checked;
+  $('#behavior').value = job.request.behavior === 'club' ? 'adaptive' : job.request.behavior || 'adaptive';
   $('#seed').value = job.request.seed;
   $('#prompt-count').textContent = `${ui.prompt.value.length} / 600`;
   ui.history.hidden = true;
@@ -172,12 +182,15 @@ function renderSession(job) {
       `Articulación revisada por IA: ${articulation.changedNotes} duraciones de ${job.manifest.all_midi_notes} notas. Alturas, entradas, velocidades y otras pistas intactas.`));
   }
   if (job.request.editorial_profile === 'ai-only-v2') ui.session.append(node('p', 'session-note', 'Perfil editorial local IA v2 · cada nota es autoría IA.'));
+  if (job.request.behavior === 'club') ui.session.append(node('p', 'session-note', 'Club · células reconocibles y evolución de capas. Horizonte aproximado de 64 compases, sin cambios obligatorios.'));
   if (job.request.first_pass_audition && !articulation) ui.session.append(node('p', 'session-note', 'Primera pasada IA: sin reescritura musical. La integridad técnica MIDI permanece activa.'));
   if (job.request.review_from_job && !articulation) ui.session.append(node('p', 'session-note',
     `Revisión A/B de la primera pasada ${job.request.review_from_job.slice(0, 8)}: se conserva el mismo plan y solo la revisión IA puede cambiar notas.`));
   if (job.request.phrase_architecture_experiment) ui.session.append(node('p', 'session-note',
     'Plan de frases y relaciones entre voces escrito por la IA antes del MIDI. Las notas siguen siendo íntegramente autoría de la IA.'));
-  if (job.phraseAudit) ui.session.append(node('p', 'session-note',
+  if (job.phraseAudit?.kind === 'club_production_v1') ui.session.append(node('p', 'session-note',
+    `Producción Club: ${job.phraseAudit.layers.length} capas; ${job.phraseAudit.issues.length} diferencias entre el plan y el MIDI. La escucha musical sigue siendo necesaria.`));
+  else if (job.phraseAudit) ui.session.append(node('p', 'session-note',
     `Plan de frases: ${job.phraseAudit.phrases.length} intenciones; ${job.phraseAudit.silentSpeakerPhrases} sin notas del portavoz y ${job.phraseAudit.plannedResponsesWithoutNotes} respuestas sin notas. Estos datos no califican la musicalidad: escuchá el diálogo real.`));
   if (job.state === 'running' || job.state === 'queued') {
     const elapsed = Math.max(0, (Date.now() - Date.parse(job.request.created_at)) / 1000);
@@ -238,7 +251,8 @@ function renderSession(job) {
   }));
   if (job.manifest?.comparisonFile) actions.append(download(job, job.manifest.comparisonFile, 'Referencia A/B'));
   if (job.manifest?.planFile) actions.append(download(job, job.manifest.planFile, 'Plan compositivo'));
-  if (job.manifest?.phraseArchitectureFile) actions.append(download(job, job.manifest.phraseArchitectureFile, 'Plan de frases IA'));
+  if (job.manifest?.phraseArchitectureFile) actions.append(download(job, job.manifest.phraseArchitectureFile,
+    job.manifest.clubProductionPlanFile ? 'Plan de producción Club' : 'Plan de frases IA'));
   if (job.phraseAudit) actions.append(download(job, 'phrase-audit.json', 'Contraste plan/MIDI'));
   if (job.manifest?.auditFile) actions.append(download(job, job.manifest.auditFile, 'Auditoría musical'));
   if (job.compositionAudit) actions.append(download(job, 'composition-audit.json', 'Desarrollo MIDI'));
@@ -457,7 +471,7 @@ async function refresh() {
 }
 ui.form.addEventListener('submit', async event => {
   event.preventDefault(); showNotice(''); ui.submit.disabled = true;
-  const payload = { prompt: ui.prompt.value, allow_chromatic: $('#allow-chromatic').checked, duration_seconds: Number($('#duration').value), bpm: Number($('#bpm').value), behavior: $('#behavior').value, render_mode: $('#render-mode').value, seed: $('#seed').value.trim(), proof_mode: proofInput.checked && !proofInput.disabled, first_pass_audition: firstPassInput.checked && !firstPassInput.disabled };
+  const payload = { prompt: ui.prompt.value, allow_chromatic: $('#allow-chromatic').checked, duration_seconds: Number($('#duration').value), bpm: Number($('#bpm').value), behavior: $('#club-mode').checked ? 'club' : $('#behavior').value, render_mode: $('#render-mode').value, seed: $('#seed').value.trim(), proof_mode: proofInput.checked && !proofInput.disabled, first_pass_audition: firstPassInput.checked && !firstPassInput.disabled };
   try { const result = await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Pulso-Local': '1' }, body: JSON.stringify(payload) }); selectedId = result.job.id; loadedKey = null; previewDiagnostic = false; await refresh(); }
   catch (error) { showNotice(error.message); ui.submit.disabled = false; }
 });

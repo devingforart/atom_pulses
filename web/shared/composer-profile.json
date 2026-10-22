@@ -1,6 +1,7 @@
 {
   "name": "ai-only-v2-connected-discourse",
   "defaultFirstPass": true,
+  "clubDefaultFirstPass": false,
   "defaultPhraseArchitecture": true,
   "workerEnvironment": {
     "PULSO_AI_PITCHED_ONLY": "1",

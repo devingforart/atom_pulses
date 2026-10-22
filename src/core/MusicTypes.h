@@ -17,7 +17,7 @@ enum class ScoreDepartment : std::uint8_t { Rhythm = 0, Harmony, Melody };
 // High-level musical behaviour is deliberately independent from genre. A techno,
 // ambient or orchestral prompt may all ask for either slow perceptual evolution or
 // an explicit dramatic argument. Adaptive preserves the established PULSO path.
-enum class CompositionBehavior : std::uint8_t { Adaptive = 0, Hypnotic, Narrative };
+enum class CompositionBehavior : std::uint8_t { Adaptive = 0, Hypnotic, Narrative, Club };
 
 [[nodiscard]] constexpr std::string_view compositionBehaviorKey(
     CompositionBehavior behavior) noexcept {
@@ -25,8 +25,16 @@ enum class CompositionBehavior : std::uint8_t { Adaptive = 0, Hypnotic, Narrativ
         case CompositionBehavior::Adaptive: return "adaptive";
         case CompositionBehavior::Hypnotic: return "hypnotic";
         case CompositionBehavior::Narrative: return "narrative";
+        case CompositionBehavior::Club: return "club";
     }
     return "adaptive";
+}
+
+// A listening/coverage horizon, never a note grid or a scheduled transformation.
+// Appending Club preserves the persisted indices of all existing behaviours.
+[[nodiscard]] constexpr int compositionStateBars(CompositionBehavior behavior) noexcept {
+    return behavior == CompositionBehavior::Club ? 64 :
+        behavior == CompositionBehavior::Hypnotic ? 16 : 8;
 }
 enum class InstrumentSoundModel : std::uint8_t {
     Generic = 0, Kick, SnareClap, Hats, Timpani, Taiko, LatinPercussion, Shaker, Cymbal,

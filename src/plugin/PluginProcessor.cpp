@@ -900,7 +900,7 @@ int PulsoAudioProcessor::currentPhraseBars() const noexcept {
 
 CompositionBehavior PulsoAudioProcessor::compositionBehavior() const noexcept {
     const auto value = std::clamp(
-        static_cast<int>(parameters.getRawParameterValue(ids::compositionBehavior)->load()), 0, 2);
+        static_cast<int>(parameters.getRawParameterValue(ids::compositionBehavior)->load()), 0, 3);
     return static_cast<CompositionBehavior>(value);
 }
 
@@ -930,7 +930,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PulsoAudioProcessor::createP
     result.push_back(std::make_unique<Choice>(ids::mode, "Phrase Mode",
                                               juce::StringArray{"Loop", "Evolve"}, 0));
     result.push_back(std::make_unique<Choice>(ids::compositionBehavior, "Composition Behavior",
-                                              juce::StringArray{"Adaptive", "Hypnotic", "Narrative"}, 0));
+                                              juce::StringArray{"Adaptive", "Hypnotic", "Narrative", "Club"}, 0));
     result.push_back(std::make_unique<Bool>(ids::preview, "Preview", true));
     result.push_back(std::make_unique<Bool>(ids::performance, "Human Performance", false));
     result.push_back(std::make_unique<Choice>(ids::language, "Interface Language",
@@ -1440,7 +1440,7 @@ void PulsoAudioProcessor::generationThreadMain(const std::stop_token token) {
             }
             const auto userSongDirection = songDirection;
             const auto selectedBehavior = static_cast<CompositionBehavior>(std::clamp(
-                static_cast<int>(newest.compositionBehavior), 0, 2));
+                static_cast<int>(newest.compositionBehavior), 0, 3));
             const auto requestedBehavior = selectedBehavior;
             SongGenerationRequest songRequest;
             songRequest.direction = userSongDirection;

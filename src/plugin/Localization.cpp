@@ -47,7 +47,7 @@ const char8_t* english(TextId id) noexcept {
         case TextId::TitleTip: return u8"PULSO turns compositional intent into editable multitrack MIDI.";
         case TextId::SubtitleTip: return u8"Installed version and current product mode.";
         case TextId::StatusTip: return u8"AI composition and generation status.";
-        case TextId::BehaviorTip: return u8"Adaptive preserves PULSO's established range. Hypnotic favors long stable states, staggered micro-evolution and a low novelty budget. Narrative favors explicit contrast, climax and resolution.";
+        case TextId::BehaviorTip: return u8"Adaptive preserves PULSO's established range. Hypnotic favors long stable states and staggered micro-evolution. Narrative favors explicit contrast, climax and resolution. Club retains recognizable bass, arpeggio and stab cells while layers evolve over an approximate 64-bar horizon, without mandatory cuts.";
         case TextId::AiTip: return u8"Configure your OpenAI API key to compose. Failed requests keep the current idea.";
         case TextId::IdeaTitleTip: return u8"Title and tonal centre proposed for the current composition.";
         case TextId::IdeaDescriptionTip: return u8"Compositional intention behind the current idea.";
@@ -143,7 +143,7 @@ const char8_t* spanish(TextId id) noexcept {
         case TextId::TitleTip: return u8"PULSO convierte intención compositiva en MIDI multipista editable.";
         case TextId::SubtitleTip: return u8"Versión instalada y modo actual del producto.";
         case TextId::StatusTip: return u8"Estado de composición y generación con IA.";
-        case TextId::BehaviorTip: return u8"Adaptativo conserva el rango actual de PULSO. Hipnótico prioriza estados largos, microevolución escalonada y poca novedad. Narrativo prioriza contraste, clímax y resolución explícitos.";
+        case TextId::BehaviorTip: return u8"Adaptativo conserva el rango actual de PULSO. Hipnótico prioriza estados largos y microevolución escalonada. Narrativo prioriza contraste, clímax y resolución explícitos. Club conserva células reconocibles de bajo, arpegio y stabs mientras evolucionan las capas, con un horizonte aproximado de 64 compases y sin cortes obligatorios.";
         case TextId::AiTip: return u8"Configura tu clave API de OpenAI para componer. Las solicitudes fallidas conservan la idea actual.";
         case TextId::IdeaTitleTip: return u8"Título y centro tonal propuestos para la composición actual.";
         case TextId::IdeaDescriptionTip: return u8"Intención compositiva de la idea actual.";

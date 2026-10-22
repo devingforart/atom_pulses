@@ -43,6 +43,13 @@ const SongSection* sectionAt(const SongPlan& plan, double beat) noexcept {
 std::size_t HarmonicFloorContext::requiredLayers(const SongPlan& plan, double beat) noexcept {
     const auto* section = sectionAt(plan, beat);
     if (section == nullptr) return 1;
+    // A Club premise may establish its tonal identity with bass/arp before the
+    // chord beds enter. This is an authored introduction, not missing pads.
+    // Audibility and the whole-work density/voice contracts remain independent.
+    if (plan.compositionBehavior == CompositionBehavior::Club && section->startBar == 0 &&
+        std::any_of(plan.narrativeSpine.acts.begin(), plan.narrativeSpine.acts.end(),
+            [&](const auto& act) { return act.sectionName == section->name && act.stage == NarrativeStage::Premise; }))
+        return 0;
     const auto identity = lower(section->name + " " + section->function + " " +
                                 section->motifTreatment);
     const auto intensity = section->energy * .58 + section->density * .42;

@@ -35,6 +35,8 @@ const RECOVERY_CALL_USD: u64 = 20;
 #[serde(rename_all = "camelCase")]
 pub struct CreateJob {
     #[serde(default)]
+    club: bool,
+    #[serde(default)]
     allow_chromatic: bool,
     prompt: String,
     duration_seconds: i32,
@@ -155,6 +157,7 @@ pub async fn create(
         "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at,allow_chromatic FROM cloud_jobs WHERE user_id=$1 AND idempotency_key=$2")
         .bind(user.id).bind(&input.idempotency_key).fetch_optional(&mut *tx).await? {
         if existing.prompt != input.prompt.trim()
+            || existing.behavior != if input.club { "club" } else { CLOUD_BEHAVIOR }
             || existing.allow_chromatic != input.allow_chromatic
             || existing.duration_seconds != input.duration_seconds
             || existing.bpm != input.bpm
@@ -196,7 +199,7 @@ pub async fn create(
     let now = unix_time();
     sqlx::query("INSERT INTO cloud_jobs(id,user_id,idempotency_key,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign,status,stage,created_at,updated_at,allow_chromatic) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued','queued',$10,$10,$11)")
         .bind(id).bind(user.id).bind(&input.idempotency_key).bind(input.prompt.trim())
-        .bind(input.duration_seconds).bind(input.bpm).bind(CLOUD_BEHAVIOR).bind(seed).bind(CLOUD_AI_SOVEREIGN)
+        .bind(input.duration_seconds).bind(input.bpm).bind(if input.club { "club" } else { CLOUD_BEHAVIOR }).bind(seed).bind(CLOUD_AI_SOVEREIGN)
         .bind(now).bind(input.allow_chromatic).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok((
@@ -207,7 +210,7 @@ pub async fn create(
             prompt: input.prompt.trim().to_owned(),
             duration_seconds: input.duration_seconds,
             bpm: input.bpm,
-            behavior: CLOUD_BEHAVIOR.into(),
+            behavior: if input.club { "club" } else { CLOUD_BEHAVIOR }.into(),
             ai_sovereign: CLOUD_AI_SOVEREIGN,
             seed: seed.to_string(),
             status: "queued".into(),
@@ -503,7 +506,7 @@ async fn run_one(state: &AppState, job: ClaimedJob) -> ApiResult<()> {
         "prompt": job.prompt, "duration_seconds": job.duration_seconds,
         "bpm": job.bpm, "behavior": job.behavior, "seed": job.seed.to_string(),
         "ai_sovereign": job.ai_sovereign,
-        "first_pass_audition": composer_profile()["defaultFirstPass"].as_bool() == Some(true),
+        "first_pass_audition": composer_profile()[if job.behavior == "club" { "clubDefaultFirstPass" } else { "defaultFirstPass" }].as_bool() == Some(true),
     });
     let worker = state
         .config
@@ -854,6 +857,7 @@ mod tests {
     #[test]
     fn input_boundaries_and_idempotency_key() {
         let valid = CreateJob {
+            club: false,
             allow_chromatic: false,
             prompt: "Una obra con desarrollo".into(),
             duration_seconds: 390,
@@ -862,6 +866,10 @@ mod tests {
             seed: None,
         };
         assert!(valid_request(&valid));
+        assert!(valid_request(&CreateJob {
+            club: true,
+            ..valid.clone()
+        }));
         assert!(!valid_request(&CreateJob {
             duration_seconds: 29,
             ..valid.clone()

@@ -96,7 +96,7 @@ export const api = {
   cloudJobs: () => request<CloudJob[]>('/api/cloud/jobs'),
   cloudStatus: () => request<{ available: boolean; dailyJobLimit: number; unlimited: boolean }>('/api/cloud/status'),
   cloudJob: (id: string) => request<CloudJob>(`/api/cloud/jobs/${id}`),
-  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; idempotencyKey: string; allowChromatic: boolean }) =>
+  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; idempotencyKey: string; allowChromatic: boolean; club?: boolean }) =>
     request<CloudJob>('/api/cloud/jobs', { method: 'POST', body: JSON.stringify(input) }),
   cancelCloudJob: (id: string) => request<void>(`/api/cloud/jobs/${id}`, { method: 'DELETE' }),
   shareCloudJob: (id: string) => request<{ url: string }>(`/api/cloud/jobs/${id}/share`, { method: 'POST' }),

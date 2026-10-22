@@ -12,7 +12,7 @@ import { canAutomaticallyRecover, automaticRecoveryRequest,
 import { parseMidi } from '../shared/midi.mjs';
 import { composerProfile, defaultEditorialSettings, experimentalProfile, workerEnvironmentFor } from './composer-environment.mjs';
 import { originForJob, originForRoute } from './job-origin.mjs';
-import { blueprintRequestMatchesSource, exactResumeMatchesCheckpoint } from './checkpoint-integrity.mjs';
+import { blueprintRequestMatchesSource, exactResumeMatchesCheckpoint, completedMusicalWindows, completedMidiResume } from './checkpoint-integrity.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -185,7 +185,7 @@ function validate(input) {
   if (!prompt || prompt.length > 600) throw new InputError('La idea debe contener entre 1 y 600 caracteres.');
   if (!Number.isInteger(duration) || duration < 30 || duration > 900) throw new InputError('La duración debe estar entre 30 y 900 segundos.');
   if (!Number.isFinite(bpm) || bpm < 60 || bpm > 180) throw new InputError('El tempo debe estar entre 60 y 180 BPM.');
-  if (!['adaptive', 'hypnotic', 'narrative'].includes(behavior)) throw new InputError('El enfoque musical no es válido.');
+  if (!['adaptive', 'hypnotic', 'narrative', 'club'].includes(behavior)) throw new InputError('El enfoque musical no es válido.');
   if (!['ai_sovereign', 'standard'].includes(renderMode)) throw new InputError('El modo de render no es válido.');
   if (suppliedSeed !== null && (!/^[1-9][0-9]{0,18}$/.test(suppliedSeed) || BigInt(suppliedSeed) > 9223372036854775807n)) throw new InputError('La semilla debe ser un entero positivo de 64 bits.');
   const seed = suppliedSeed || String((randomBytes(8).readBigUInt64LE() & 9223372036854775807n) || 1n);
@@ -282,13 +282,21 @@ function resumeScoreFromJob(request, controlledReview = false) {
       readJson(path.join(previousDirectory, 'manifest.json'))?.first_pass_audition !== true))
     throw new InputError('Review source must be a completed first-pass composition.');
   const checkpoint = readJson(path.join(previousDirectory, 'checkpoint.json'));
+  const exactResume = readJson(path.join(previousDirectory, 'resume-score.json'));
+  const published = readJson(path.join(previousDirectory, 'manifest.json'));
+  if (published?.render_mode === 'ai_sovereign' && (!checkpoint?.file || published.all_midi_notes !== exactResume?.notes?.length)) {
+    if (published.fullFile !== 'full-song.mid') throw new InputError('Completed score MIDI is missing.');
+    const plan = readJson(path.join(previousDirectory, published.planFile || 'composition-plan.json'));
+    const finalResume = completedMidiResume(parseMidi(readFileSync(path.join(previousDirectory, published.fullFile))),
+      plan, published, exactResume);
+    if (!finalResume) throw new InputError('Completed MIDI does not match its cast; refusing a partial resume.');
+    return finalResume;
+  }
   if (!checkpoint?.file || !/^partial-[0-9]+\.mid$/.test(checkpoint.file))
     throw new InputError('Previous job has no accepted MIDI checkpoint.');
-  const exactResume = readJson(path.join(previousDirectory, 'resume-score.json'));
   if (exactResumeMatchesCheckpoint(checkpoint, exactResume)) {
       if (controlledReview) {
-        const expectedWindows = exactResume.sections.reduce((sum, section) =>
-          sum + Math.ceil(section.bars / 16), 0);
+        const expectedWindows = completedMusicalWindows(exactResume, request.behavior);
         if (exactResume.completed_units !== expectedWindows)
           throw new InputError('Review source does not contain every completed musical window.');
       }
@@ -467,6 +475,7 @@ const server = http.createServer(async (req, res) => {
       if (!job) return json(res, 404, { error: 'Composición no encontrada.' });
       const filename = decodeURIComponent(fileMatch[2]);
       const allowed = new Set(['job.json', 'manifest.json', 'checkpoint.json', 'diagnostic.json', job.compositionAudit && 'composition-audit.json', job.phraseAudit && 'phrase-audit.json', job.checkpoint?.file, job.diagnostic?.file, job.diagnostic?.planFile, job.diagnostic?.auditFile, job.manifest?.planFile, job.manifest?.phraseArchitectureFile, job.manifest?.auditFile, job.manifest?.fullFile, job.manifest?.comparisonFile, ...(job.manifest?.tracks || []).map(track => track.filename)]);
+      if (job.manifest?.clubProductionPlanFile) allowed.add(job.manifest.clubProductionPlanFile);
       if (!allowed.has(filename) || !/^[a-zA-Z0-9._-]+$/.test(filename)) return json(res, 404, { error: 'Archivo no disponible.' });
       const file = path.join(jobDirectory(job.id), filename);
       if (!existsSync(file)) return json(res, 404, { error: 'Archivo no disponible.' });

@@ -1272,6 +1272,7 @@ ElectronicProductionReport ElectronicProductionDirector::audit(const Pattern& pa
                                                                  const SongPlan& plan) {
     ElectronicProductionReport report;
     report.percussionFree = plan.percussionFreeIntent;
+    report.intentionalRepetition = plan.compositionBehavior == CompositionBehavior::Club;
     report.active = electronicCoreActive(plan.productionLanguage);
     if (!report.active) return report;
     report.lowEndCollisionsAfter = lowEndCollisions(pattern);
@@ -1332,8 +1333,8 @@ ElectronicProductionReport ElectronicProductionDirector::audit(const Pattern& pa
         })) / pattern.parts.size();
     report.intentionMatch = std::clamp(instrumentMatch * 1.25, 0.0, 1.0);
     report.score = std::clamp(1.0 - collisionRatio * 0.32 -
-        std::max(0.0, static_cast<double>(runs.maximum) - 4.0) * 0.025 -
-        std::max(0.0, static_cast<double>(report.maximumHarmonicRun) - 8.0) * 0.018 -
+        (report.intentionalRepetition ? 0.0 : std::max(0.0, static_cast<double>(runs.maximum) - 4.0) * 0.025) -
+        (report.intentionalRepetition ? 0.0 : std::max(0.0, static_cast<double>(report.maximumHarmonicRun) - 8.0) * 0.018) -
         std::max(0.0, report.kickOrnamentRatio - 0.08) * 0.75 -
         (report.thematicWindows >= 6 ? std::max(0.0, 0.24 - report.thematicRecurrenceRatio) * 0.90 : 0.0) -
         (report.percussionNotes >= 12
@@ -1354,9 +1355,9 @@ void ElectronicProductionDirector::stamp(Pattern& pattern,
                                            const ElectronicProductionReport& report) {
     if (!report.active) return;
     pattern.productionScore = std::clamp(pattern.productionScore * 0.68 + report.score * 0.32, 0.0, 1.0);
-    if (report.maximumRhythmRun > 6)
+    if (!report.intentionalRepetition && report.maximumRhythmRun > 6)
         pattern.productionIssues.push_back("warning:electronic_loop_needs_evolution");
-    if (report.maximumHarmonicRun > 8)
+    if (!report.intentionalRepetition && report.maximumHarmonicRun > 8)
         pattern.productionIssues.push_back("warning:harmonic_body_needs_evolution");
     if (report.kickOrnamentRatio > 0.08)
         pattern.productionIssues.push_back("warning:kick_ornaments_overused");

@@ -1,4 +1,6 @@
 #include "AiMelodicDiscourse.h"
+#include "AiClubPolicy.h"
+#include "AiClubProductionPlan.h"
 #include "core/Orchestration.h"
 
 #include <algorithm>
@@ -47,8 +49,25 @@ juce::String AiMelodicDiscourse::extendSchema(const juce::String& schema) {
     return juce::JSON::toString(result, true);
 }
 
-juce::String AiMelodicDiscourse::planningBrief(double bpm) {
+juce::String AiMelodicDiscourse::planningBrief(double bpm, CompositionBehavior behavior) {
     if (!enabled()) return {};
+    if (behavior == CompositionBehavior::Club)
+        return "CLUB DELIVERY: In the delivery sketch, structural_tones are AI-authored anchors "
+            "of the retained cell, not a quota of new melody. proposition names that cell, "
+            "continuation describes its deliberate recurrence, arrival the long-range release, "
+            "connection preserves its pulse and dialogue describes complementary layers. "
+            "For a hook speaker, connection must specify a connected sung phrase "
+            "and its arrival, not isolated staccato anchors. A short arp gate "
+            "is not a default for foreground bearing tones. Distinguish space "
+            "between complete statements from holes inside an unfinished thought. "
+            "Do not invent unrelated answering phrases to fill this schema. "
+            "structural_tones is a selective sketch for the phrase's speaker: each object "
+            "uses pitch (integer MIDI inside that phrase's register_low..register_high), "
+            "beat (onset relative to the PHRASE start, NOT section or song), duration "
+            "(positive quarter-note beats), and a concrete nonempty purpose. Both beat "
+            "and duration use the quarter-beat grid; beat+duration must not exceed "
+            "bars*beats_per_bar for this phrase. Choose only necessary anchors, at most "
+            "12, not a full expanded loop. The later writer authors all repetitions.\n";
     juce::String out;
     out << "\nMELODIC DISCOURSE AND DELIVERY: Plan a sentence a performer can "
         "mean, not a motif label followed by decorative activity. In delivery, "
@@ -102,7 +121,8 @@ int AiMelodicDiscourse::planningOutputTokenBudget(int sections) {
     return std::min(20000, 6500 + std::clamp(sections, 0, 64) * (enabled() ? 1200 : 360));
 }
 
-juce::String AiMelodicDiscourse::macroBrief() {
+juce::String AiMelodicDiscourse::macroBrief(CompositionBehavior behavior) {
+    if (behavior == CompositionBehavior::Club) return club::brief();
     if (!enabled()) return {};
     return " MELODIC DISCOURSE PRIORITY: Design a story that can be heard through "
         "complete interacting melodic sentences. A short motivic clue seeds a "
@@ -122,6 +142,23 @@ juce::String AiMelodicDiscourse::macroBrief() {
 
 std::vector<std::vector<std::size_t>> AiMelodicDiscourse::writingGroups(
     const SongPlan& plan, const std::vector<std::size_t>& owners) {
+    if (plan.compositionBehavior == CompositionBehavior::Club) {
+        std::vector<std::size_t> core, support;
+        const auto json = juce::String::fromUTF8(plan.phraseArchitectureJson.c_str());
+        for (const auto owner : owners) if (owner < plan.instruments.size())
+            (club::production::coreLayer(json, plan.instruments[owner].id) ? core : support).push_back(owner);
+        if (!core.empty()) {
+            std::vector<std::vector<std::size_t>> groups{core};
+            // Scope only: no layer is deleted, duplicated or filled by code.
+            for (std::size_t begin = 0; begin < support.size(); begin += 8)
+                groups.emplace_back(support.begin() + begin,
+                    support.begin() + std::min(begin + 8, support.size()));
+            return groups;
+        }
+    }
+    // Preserve historical Club plans without manufacturing a new core.
+    if (plan.compositionBehavior == CompositionBehavior::Club && owners.size() <= 12)
+        return {owners};
     if (!enabled()) return {owners};
     std::set<std::string> speakers;
     const auto architecture = juce::JSON::parse(
@@ -175,7 +212,9 @@ bool AiMelodicDiscourse::validate(const juce::var& phrase, double beats,
     if (tones == nullptr || tones->size() > 12) {
         error = "AI delivery sketch has an invalid bearing-tone list"; return false;
     }
+    auto toneIndex = 0;
     for (const auto& tone : *tones) {
+        ++toneIndex;
         double beat{}, duration{}, pitch{};
         const auto* obj = tone.getDynamicObject();
         if (obj == nullptr || !number(obj->getProperty("beat"), beat) ||
@@ -188,7 +227,12 @@ bool AiMelodicDiscourse::validate(const juce::var& phrase, double beats,
             !obj->getProperty("purpose").isString() ||
             obj->getProperty("purpose").toString().trim().isEmpty() ||
             obj->getProperty("purpose").toString().length() > 1000) {
-            error = "AI bearing tone has invalid phrase-local timing, register or purpose";
+            error = "AI bearing tone " + juce::String(toneIndex) +
+                " has invalid phrase-local timing, register or purpose: beat=" + juce::String(beat) +
+                " duration=" + juce::String(duration) + " pitch=" + juce::String(pitch) +
+                "; require beat>=0, duration>0, beat+duration<=" + juce::String(beats) +
+                ", quarter-beat grid, MIDI pitch in " + juce::String(minimumPitch) +
+                ".." + juce::String(maximumPitch) + " and nonempty purpose";
             return false;
         }
     }
@@ -227,7 +271,8 @@ juce::String AiMelodicDiscourse::phraseBrief(const juce::var& phrase,
     return out;
 }
 
-juce::String AiMelodicDiscourse::realizationBrief(double bpm) {
+juce::String AiMelodicDiscourse::realizationBrief(double bpm, CompositionBehavior behavior) {
+    if (behavior == CompositionBehavior::Club) return club::brief();
     if (!enabled()) return {};
     juce::String out;
     out << "\nMELODIC DELIVERY PRIORITY: The user needs audible, connected "
@@ -268,7 +313,8 @@ juce::String AiMelodicDiscourse::actualVoiceMemory(const SongPlan& plan,
         "duration/velocity; your earlier MIDI, not prose intentions):\n";
     for (std::size_t owner = 0; owner < plan.instruments.size(); ++owner) {
         const auto& part = plan.instruments[owner];
-        if (!isVoiceInFamily(part.sourceVoice, VoiceFamily::Melodic) &&
+        if (plan.compositionBehavior != CompositionBehavior::Club &&
+            !isVoiceInFamily(part.sourceVoice, VoiceFamily::Melodic) &&
             part.id != plan.narrativeSpine.protagonistInstrumentId) continue;
         std::vector<const NoteEvent*> notes;
         for (const auto& note : accepted.notes)
@@ -279,8 +325,10 @@ juce::String AiMelodicDiscourse::actualVoiceMemory(const SongPlan& plan,
         });
         out << juce::String::fromUTF8(part.id.c_str()) << ": ";
         std::set<std::size_t> selected;
-        for (std::size_t n = 0; n < std::min<std::size_t>(4, notes.size()); ++n) selected.insert(n);
-        for (auto n = notes.size() > 8 ? notes.size() - 8 : 0; n < notes.size(); ++n) selected.insert(n);
+        const auto retained = plan.compositionBehavior == CompositionBehavior::Club ? 16U : 4U;
+        const auto recent = plan.compositionBehavior == CompositionBehavior::Club ? 16U : 8U;
+        for (std::size_t n = 0; n < std::min<std::size_t>(retained, notes.size()); ++n) selected.insert(n);
+        for (auto n = notes.size() > recent ? notes.size() - recent : 0; n < notes.size(); ++n) selected.insert(n);
         for (const auto n : selected) {
             const auto& note = *notes[n];
             out << juce::String(note.startBeat, 2) << "/" << note.pitch << "/"

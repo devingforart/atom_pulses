@@ -4,8 +4,14 @@
 #include "plugin/AiInstrumentationPolicy.h"
 #include "plugin/AiPhraseArchitecture.h"
 #include "plugin/AiMelodicDiscourse.h"
+#include "plugin/AiClubPolicy.h"
+#include "plugin/AiClubProductionPlan.h"
+#include "plugin/AiNoteAddress.h"
 #include "plugin/JointWindowRecovery.h"
 #include "core/SovereignScoreRenderer.h"
+#include "core/NarrativeScore.h"
+#include "core/HarmonicFloorContext.h"
+#include "core/SelectiveRepair.h"
 
 #include <array>
 #include <cmath>
@@ -35,6 +41,7 @@ void samePattern(const pulso::Pattern& left, const pulso::Pattern& right) {
 } // namespace
 
 int main() {
+    static_assert(pulso::compositionStateBars(pulso::CompositionBehavior::Club) == 64);
     try {
         using namespace pulso;
         using namespace pulso::plugin;
@@ -179,6 +186,245 @@ int main() {
                   AiMelodicDiscourse::planningOutputTokenBudget(64) == 20000,
               "the richer AI plan needs bounded output headroom proportional to its sections");
         auto dialoguePlan = orderPlan;
+        auto clubPlan = orderPlan;
+        clubPlan.compositionBehavior = CompositionBehavior::Club;
+        const juce::String inheritedMacro = R"({"properties":{"sections":{"minItems":3,"maxItems":24,"items":{"properties":{"bars":{"type":"integer"}}}},"narrative_spine":{"properties":{"acts":{"minItems":3,"maxItems":20}}}}})";
+        const auto sectionMacro = juce::JSON::parse(club::production::macroSchema(
+            inheritedMacro, CompositionBehavior::Club, "SECCION PLENA de 32 compases", 32));
+        check(static_cast<int>(sectionMacro.getProperty("properties", {}).getProperty("sections", {}).getProperty("minItems", 0)) == 1 &&
+                  static_cast<int>(sectionMacro.getProperty("properties", {}).getProperty("sections", {}).getProperty("maxItems", 0)) == 1 &&
+                  static_cast<int>(sectionMacro.getProperty("properties", {}).getProperty("sections", {}).getProperty("items", {}).getProperty("properties", {}).getProperty("bars", {}).getProperty("enum", {})[0]) == 32 &&
+                  club::production::macroSchema(inheritedMacro, CompositionBehavior::Adaptive, "section", 32) == inheritedMacro,
+              "a single Club production section must not inherit three mandatory dramatic sections; Adaptive stays unchanged");
+        const std::vector<std::size_t> grooveOwners{0, 1, 2, 3, 4};
+        check(AiMelodicDiscourse::writingGroups(clubPlan, grooveOwners) ==
+                  std::vector<std::vector<std::size_t>>{grooveOwners},
+              "a compact Club nucleus must be jointly authored, not divided into speakers and companions");
+        check(club::grooveBrief().contains("SHARED cycle") &&
+                  club::grooveBrief().contains("Choose these positions yourself") &&
+                  club::grooveBrief().contains("sustained chord bodies"),
+              "Club planning must assign a shared AI-chosen metric grammar without prescribing MIDI");
+        auto clubProduction = juce::JSON::parse(R"json({"kind":"club_production_v1",
+          "format":"continuous_section","identity":"dark layered loop","focus_owner_id":"",
+          "shared_pulse":"joint tonal pulse","layers":[]})json");
+        for (const auto& instrument : clubPlan.instruments) {
+            auto layer = juce::JSON::parse(R"json({"instrument_id":"","production_role":"test layer",
+              "cycle_beats":8,"cycle_origin_beat":0,"rhythm_cell":[0,2,4,6],
+              "register_low":48,"register_high":72,"harmonic_job":"complementary harmony",
+              "articulation":"sustain","interaction":"retain shared pulse","polyphonic":true,
+              "states":[{"section_index":0,"mode":"active","minimum_sounding_fraction":0.5,
+                "material":"voiced chord","evolution":"retain"},
+                {"section_index":1,"mode":"reduced","minimum_sounding_fraction":0,
+                "material":"chosen reply","evolution":"withdraw selectively"}]})json");
+            layer.getDynamicObject()->setProperty("instrument_id", juce::String(instrument.id));
+            layer.getDynamicObject()->setProperty("register_low", instrument.minimumPitch);
+            layer.getDynamicObject()->setProperty("register_high", instrument.maximumPitch);
+            clubProduction.getDynamicObject()->getProperty("layers").getArray()->add(layer);
+        }
+        auto productionJson = juce::JSON::toString(clubProduction);
+        check(AiPhraseArchitecture::validate(productionJson, clubPlan, phraseError),
+              "Club must accept an exact-cast production plan without a required melodic speaker");
+        auto developedProduction = juce::JSON::parse(productionJson);
+        auto arc = juce::JSON::parse(R"({"start_bar":0,"bars":16,"foreground_id":"",
+          "subject":"a complete rising phrase","continuation":"retain contour and answer its descent",
+          "arrival":"arrive on a sustained chord tone","support_response":"pads move inner voices beneath the phrase"})");
+        arc.getDynamicObject()->setProperty("foreground_id", juce::String(clubPlan.instruments[0].id));
+        developedProduction.getDynamicObject()->setProperty("musical_arcs", juce::Array<juce::var>{arc});
+        check(AiPhraseArchitecture::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError) &&
+                  club::production::developmentBrief(juce::JSON::toString(developedProduction), 32, 64, 4)
+                    .contains("retain contour") &&
+                  club::production::developmentBrief(juce::JSON::toString(developedProduction), 64, 96, 4).isEmpty(),
+              "AI musical arguments must survive technical windows without restarting or appearing outside their span");
+        developedProduction.getDynamicObject()->getProperty("musical_arcs").getArray()->getReference(0)
+            .getDynamicObject()->setProperty("foreground_id", "nonexistent");
+        check(!AiPhraseArchitecture::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError),
+              "musical arcs cannot refer to invented MIDI owners");
+        check(!juce::JSON::parse(AiPhraseArchitecture::schema(CompositionBehavior::Club))
+                  .getProperty("properties", {}).hasProperty("phrases"),
+              "Club generation must use its own layer schema, not hidden chamber phrases");
+        auto productionMidi = Pattern{};
+        productionMidi.notes.push_back({0, 8, 60, 70, 1, VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
+        const auto evidenceBefore = productionMidi.notes.size();
+        check(club::production::realization(productionJson, clubPlan, productionMidi).contains("actual_sounding_fraction=0.250") &&
+                  productionMidi.notes.size() == evidenceBefore,
+              "Club realization must measure union sounding time without fabricating material");
+        juce::String layerEvidence;
+        check(!club::production::missingLayers(productionJson, clubPlan, productionMidi,
+                  0, 0, 32, {0}, layerEvidence).empty() && productionMidi.notes.size() == evidenceBefore,
+              "AI-authored sounding-time and polyphony promises must be reviewed without local note repairs");
+        productionMidi.notes.push_back({0, 8, 64, 70, 1, VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
+        check(club::production::missingLayers(productionJson, clubPlan, productionMidi,
+                  0, 0, 32, {0}, layerEvidence).empty(),
+              "partial activity estimates must not force extra notes or duration changes when actual polyphonic material exists");
+        auto productionPlanForWriting = clubPlan;
+        productionPlanForWriting.phraseArchitectureJson = productionJson.toStdString();
+        auto coreProduction = juce::JSON::parse(productionJson);
+        coreProduction.getDynamicObject()->setProperty("groove_core_ids",
+            juce::Array<juce::var>{juce::String(clubPlan.instruments[0].id), juce::String(clubPlan.instruments[1].id)});
+        const auto coreJson = juce::JSON::toString(coreProduction);
+        auto corePlan = productionPlanForWriting;
+        corePlan.phraseArchitectureJson = coreJson.toStdString();
+        check(club::production::validate(coreJson, corePlan, phraseError) &&
+                  club::production::coreAttackAllowed(coreJson, corePlan.instruments[0].id, 32) &&
+                  !club::production::coreAttackAllowed(coreJson, corePlan.instruments[0].id, 32.5) &&
+                  club::production::coreAttackAllowed(coreJson, corePlan.instruments[4].id, 32.5),
+              "core phase is the AI-authored cycle, not arbitrary grid membership or a ban on support syncopation");
+        check(AiMelodicDiscourse::writingGroups(corePlan, grooveOwners) ==
+                  std::vector<std::vector<std::size_t>>{{0, 1}, {2, 3, 4}},
+              "the AI-elected core must be written jointly before support, without deleting owners");
+        juce::var phaseResponse(new juce::DynamicObject());
+        phaseResponse.getDynamicObject()->setProperty(juce::String(corePlan.instruments[0].id),
+            juce::Array<juce::var>{juce::JSON::parse(R"({"beat":0.5,"duration":0.5,"pitch":60,"velocity":80})")});
+        PerformanceScore phaseScore;
+        check(!AiComposer::parseDirectWindowJson(juce::JSON::toString(phaseResponse), corePlan,
+                  {0}, 0, 0, 8, phaseScore, phraseError) && phraseError.contains("absolute rhythm phase") && phaseScore.empty(),
+              "an unplanned core phase must request AI rewriting, never silently shift notes");
+        phaseResponse.getDynamicObject()->getProperty(juce::String(corePlan.instruments[0].id))
+            .getArray()->getReference(0).getDynamicObject()->setProperty("beat", 0);
+        check(AiComposer::parseDirectWindowJson(juce::JSON::toString(phaseResponse), corePlan,
+                  {0}, 0, 0, 8, phaseScore, phraseError) &&
+                  phaseScore.placements.size() == 1 && phaseScore.placements[0].fragmentEnd == 32,
+              "a direct AI passage needs its exact clip span before checkpointing, not only after rendering normalization");
+        AiPhraseArchitecture::applyTerminalHandoff(productionJson, productionPlanForWriting);
+        check(productionPlanForWriting.continuousProductionSection && !clubPlan.continuousProductionSection,
+              "section scope must be explicit and must not silently change full-song closure semantics");
+        const auto sectionFormat = juce::JSON::parse(AiPhraseArchitecture::schema(
+            CompositionBehavior::Club, "SECCION PLENA de 32 compases"))
+            .getProperty("properties", {}).getProperty("format", {}).getProperty("enum", {});
+        check(sectionFormat.size() == 1 && sectionFormat[0].toString() == "continuous_section",
+              "an explicit production section must not be relabeled as a complete song by the AI");
+        const auto layerWriting = AiComposer::directWindowPromptFor("club loop", productionPlanForWriting,
+            Pattern{}, {0, 1, 2, 3, 4}, 0, 0, 8);
+        check(layerWriting.contains("FULL PRODUCTION SECTION") &&
+                  !layerWriting.contains("ENDING RESPONSIBILITY") &&
+                  !layerWriting.contains("protagonist's transformed motif"),
+              "the production writer must not inherit chamber endings or mandatory solo development");
+        auto wrongMode = clubPlan; wrongMode.compositionBehavior = CompositionBehavior::Adaptive;
+        check(!AiPhraseArchitecture::validate(productionJson, wrongMode, phraseError),
+              "Club plans must not silently replace the Adaptive phrase engine");
+        clubProduction.getDynamicObject()->getProperty("layers").getArray()->getReference(0)
+            .getDynamicObject()->getProperty("rhythm_cell").getArray()->add(8);
+        check(!AiPhraseArchitecture::validate(juce::JSON::toString(clubProduction), clubPlan, phraseError),
+              "cyclic attack offsets at the next cycle boundary must be rejected, not wrapped procedurally");
+        const auto clubPhrasePrompt = AiPhraseArchitecture::prompt(clubPlan, "Progressive house", true);
+        const auto boundedNotes = club::production::boundedNoteSchema(32).getProperty("anyOf", {});
+        check(boundedNotes.size() == 128 &&
+                  static_cast<double>(boundedNotes[116].getProperty("properties", {})
+                    .getProperty("duration", {}).getProperty("maximum", 0)) == 3.0,
+              "output schema must forbid a 3.5-beat note at beat 29 of a 32-beat window before generation");
+        TonalAuditReport voicingEvidence;
+        voicingEvidence.issues = {
+            TonalIssue{.pitch = 64, .otherPitch = 65, .kind = "harsh_overlap", .partId = 1, .otherPartId = 5, .overlapBeats = 8},
+            TonalIssue{.pitch = 64, .otherPitch = 77, .kind = "harsh_overlap", .partId = 1, .otherPartId = 5, .overlapBeats = 8},
+            TonalIssue{.pitch = 76, .otherPitch = 77, .kind = "harsh_overlap", .partId = 4, .otherPartId = 5, .overlapBeats = .5},
+            TonalIssue{.pitch = 76, .otherPitch = 77, .kind = "harsh_overlap", .partId = 4, .otherPartId = 5, .overlapBeats = 1}
+        };
+        const auto selectedVoicings = club::adjacentPlanes(clubPlan, voicingEvidence);
+        check(selectedVoicings.issues.size() == 3 && club::adjacentWeight(selectedVoicings) == 17,
+              "Club voicing review must include held compound minor ninths, not just adjacent pitches");
+        voicingEvidence.issues = {
+            TonalIssue{.pitch = 62, .otherPitch = 84, .kind = "harsh_overlap", .partId = 1, .otherPartId = 5, .overlapBeats = 8},
+            TonalIssue{.pitch = 62, .otherPitch = 76, .kind = "harsh_overlap", .partId = 1, .otherPartId = 5, .overlapBeats = 8},
+            TonalIssue{.pitch = 64, .otherPitch = 77, .kind = "harsh_overlap", .partId = 1, .otherPartId = 5, .overlapBeats = .5}
+        };
+        check(club::adjacentPlanes(clubPlan, voicingEvidence).issues.empty(),
+              "minor sevenths, ordinary ninths and brief compound passing colors are not held minor-ninth evidence");
+        Pattern exposedColor;
+        exposedColor.notes = {
+            NoteEvent{0, 8, 64, 70, 1, VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored},
+            NoteEvent{1, 1, 65, 80, 4, VoiceId::Lead, 4, true, NoteOrigin::AiAuthored}};
+        check(club::voicingEvidence(clubPlan, exposedColor).issues.size() == 1 &&
+                  club::internalPlaneWeight(clubPlan, exposedColor) == 0,
+              "the Club AI reviewer must see actual exposed pad/melody collisions even when both pitches are diatonic");
+        exposedColor.notes.back().partId = 1;
+        exposedColor.notes.back().voice = VoiceId::HarmonicFoundation;
+        check(club::internalPlaneWeight(clubPlan, exposedColor) == 1 &&
+                  club::voicingEvidence(clubPlan, exposedColor).issues.size() == 1,
+              "a proposed voicing cannot hide a new close cluster inside the same pad");
+        exposedColor.notes.back().partId = 4;
+        exposedColor.notes.back().voice = VoiceId::Lead;
+        exposedColor.notes.back().pitch = 64;
+        exposedColor.notes.back().startBeat = .25;
+        const auto masking = club::voicingEvidence(clubPlan, exposedColor);
+        check(masking.issues.size() == 1 && masking.issues[0].kind == "retrigger_mask",
+              "the AI reviewer must see a held support onset just before the same rhythmic pitch");
+        exposedColor.notes.back().startBeat = 0;
+        check(club::voicingEvidence(clubPlan, exposedColor).issues.empty(),
+              "simultaneous unison layering must not be mislabeled as a near-attack retrigger");
+        PerformanceScore recoveredNotes;
+        PerformanceCell recoveredCell;
+        recoveredCell.id = "arbitrary-checkpoint-name";
+        recoveredCell.lengthBeats = 32;
+        recoveredCell.notes.push_back(AuthoredNote{.beat = 4, .durationBeats = 8,
+            .pitch = 64, .instrumentId = "bed"});
+        recoveredNotes.cells.push_back(recoveredCell);
+        recoveredNotes.placements.push_back(PerformancePlacement{.cellId = recoveredCell.id, .sectionIndex = 0});
+        const auto address = findAiNoteAddress(recoveredNotes, clubPlan, 0, 64, 8, 0, 32);
+        check(address && address->cellId == recoveredCell.id && address->absoluteBeat == 4,
+              "AI pitch review must address recovered notes by ownership and placement, not live cell names");
+        check(!findAiNoteAddress(recoveredNotes, clubPlan, 0, 64, 8, 8, 32),
+              "pitch review must not reach behind its protected window");
+        recoveredNotes.placements[0].repeats = 2;
+        check(!findAiNoteAddress(recoveredNotes, clubPlan, 0, 64, 8, 0, 32),
+              "pitch review must not change multiple occurrences through a shared cell");
+        const auto clubWriting = AiComposer::directWindowPromptFor("Progressive house", clubPlan, Pattern{}, {0, 4}, 0, 0, 8);
+        check(!clubWriting.contains("do not merely transpose and repeat") &&
+                  !clubWriting.contains("Do not leave a whole section represented by one chord") &&
+                  clubWriting.contains("quarter-beat grid"),
+              "Club writing must remove contradictory novelty commands while retaining technical timing constraints");
+        check(clubWriting.contains("ABSOLUTE song beat") &&
+                  clubWriting.contains("NOT permission to restart"),
+              "section-local MIDI coordinates must not reset the shared Club cycle phase");
+        auto clubOutro = clubPlan;
+        clubOutro.totalBars = 24;
+        clubOutro.rootPitchClass = 0;
+        clubOutro.narrativeSpine.authored = true;
+        clubOutro.narrativeSpine.protagonistInstrumentId = "speaker";
+        clubOutro.sections = {SongSection{.name = "opening", .startBar = 0, .bars = 8},
+            SongSection{.name = "peak", .startBar = 8, .bars = 8},
+            SongSection{.name = "outro", .startBar = 16, .bars = 8}};
+        HarmonicChord finalChord;
+        finalChord.pitchClasses = {0, 4, 7};
+        clubOutro.chordPalette = {finalChord};
+        clubOutro.sections.back().harmonicEvents = {HarmonicEvent{}};
+        clubOutro.narrativeSpine.acts = {
+            NarrativeAct{.sectionName = "opening", .stage = NarrativeStage::Premise},
+            NarrativeAct{.sectionName = "peak", .stage = NarrativeStage::Climax},
+            NarrativeAct{.sectionName = "outro", .stage = NarrativeStage::Resolution}};
+        check(HarmonicFloorContext::requiredLayers(clubOutro, 4) == 0,
+              "an authored Club premise can introduce bass and arp before sustained chord beds");
+        Pattern outroMidi;
+        outroMidi.lengthBeats = 96;
+        for (const auto start : {0, 32}) {
+            auto beat = static_cast<double>(start);
+            for (const auto pitch : {72, 76, 74, 72}) {
+                outroMidi.notes.push_back({beat++, .75, pitch, 80, 4, VoiceId::Lead, 4, true, NoteOrigin::AiAuthored});
+            }
+        }
+        for (const auto pitch : {48, 52, 55})
+            outroMidi.notes.push_back({64, 32, pitch, 70, 1, VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
+        check(NarrativeScoreGate::audit(outroMidi, clubOutro).terminalPhraseReady,
+              "a recalled Club theme can yield its final word to a stable sustained tonic outro");
+        auto unstableOutro = outroMidi;
+        unstableOutro.notes.back().pitch = 56;
+        check(!NarrativeScoreGate::audit(unstableOutro, clubOutro).terminalPhraseReady,
+              "Club ending assessment must still reject a foreign unresolved terminal pitch");
+        auto loopScope = clubOutro;
+        loopScope.continuousProductionSection = true;
+        const auto loopReview = SelectiveRepair::reviewFinalScore(loopScope, unstableOutro);
+        check(std::none_of(loopReview.issues.begin(), loopReview.issues.end(), [](const auto& issue) {
+                  return issue.find("final MIDI does not enact") != std::string::npos;
+              }), "a continuous production excerpt must not require a full-song final melodic cadence");
+        clubOutro.compositionBehavior = CompositionBehavior::Adaptive;
+        check(HarmonicFloorContext::requiredLayers(clubOutro, 4) >= 1,
+              "Club introduction semantics must preserve Adaptive harmonic-floor requirements");
+        check(!NarrativeScoreGate::audit(outroMidi, clubOutro).terminalPhraseReady,
+              "Club outro semantics must not relax the existing Adaptive melodic closure contract");
+        check(clubPhrasePrompt.contains("64-bar") &&
+                  !clubPhrasePrompt.contains("The clue is a seed, NOT the whole melody") &&
+                  AiMelodicDiscourse::realizationBrief(120, CompositionBehavior::Club)
+                      .contains("repeat literally"),
+              "Club planning and writing must agree on deliberate repetition instead of conflicting narrative quotas");
         dialoguePlan.phraseArchitectureJson = phraseJson.toStdString();
         const auto dialogueGroups = AiMelodicDiscourse::writingGroups(
             dialoguePlan, {0, 1, 2, 3, 4});
@@ -756,6 +1002,19 @@ int main() {
             parsedClosedCast.preserveAuthoredCast &&
             parsedClosedCast.instruments.size() == authoredCast.size(),
             "blueprint parser expanded the AI-authored joint-window ensemble");
+        SongPlan parsedClub;
+        parsedClub.preserveAuthoredCast = true;
+        const auto clubBlueprint = closedBlueprint.replaceFirstOccurrenceOf("{", "{\"composition_behavior\":\"club\",");
+        check(AiComposer::parseSongPlanJson(clubBlueprint, 120, 24, 120.0, 4.0,
+                  1, parsedClub, closedCastError) &&
+                  parsedClub.compositionBehavior == CompositionBehavior::Club,
+              "Club intent must survive accepted blueprint serialization and resume");
+        auto singleSectionClub = juce::JSON::parse(clubBlueprint);
+        singleSectionClub.getDynamicObject()->setProperty("sections",
+            juce::Array<juce::var>{juce::JSON::parse(R"({"name":"Full body","bars":24})")});
+        check(AiComposer::parseSongPlanJson(juce::JSON::toString(singleSectionClub), 48, 24, 120, 4,
+                  1, parsedClub, closedCastError) && parsedClub.sections.size() == 1 && parsedClub.sections[0].bars == 24,
+              "the real blueprint parser must accept one Club section without inventing dramatic parts");
         for (std::size_t i = 0; i < authoredCast.size(); ++i)
             check(parsedClosedCast.instruments[i].id ==
                 "owner_" + std::to_string(i),

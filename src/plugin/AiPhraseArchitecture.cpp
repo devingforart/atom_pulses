@@ -1,5 +1,7 @@
 #include "AiPhraseArchitecture.h"
 #include "AiMelodicDiscourse.h"
+#include "AiClubPolicy.h"
+#include "AiClubProductionPlan.h"
 
 #include <algorithm>
 #include <cmath>
@@ -29,7 +31,8 @@ bool shortText(const juce::var& value, int maximum = 2000) {
 
 } // namespace
 
-juce::String AiPhraseArchitecture::schema() {
+juce::String AiPhraseArchitecture::schema(CompositionBehavior behavior, const juce::String& direction) {
+    if (behavior == CompositionBehavior::Club) return club::production::schema(direction);
     return AiMelodicDiscourse::extendSchema(R"json({"type":"object","additionalProperties":false,
       "required":["motif_clue","dramatic_question","answer_principle","phrases"],
       "properties":{
@@ -62,8 +65,11 @@ juce::String AiPhraseArchitecture::schema() {
 juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
                                           const juce::String& direction,
                                           bool longFormArc) {
+    if (plan.compositionBehavior == CompositionBehavior::Club)
+        return club::production::prompt(plan, direction);
     juce::String out;
-    out << "You are the phrase architect for a complete symbolic MIDI work. "
+    if (plan.compositionBehavior == CompositionBehavior::Club) out << club::phraseBrief();
+    else out << "You are the phrase architect for a complete symbolic MIDI work. "
         "The form, harmony and instrument cast below are fixed. Plan audible phrases "
         "and relationships BEFORE any notes are written. This is a creative score "
         "intention, not a quota, algorithm or instruction to fill every bar. "
@@ -102,8 +108,8 @@ juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
         "An octave leap, a two-octave arpeggio, a narrow repeated figure, a solo, "
         "a long held note or silence are equally valid if the harmony and story "
         "earn them. Do not default to one of these gestures. Do not output MIDI "
-        "notes or invent instruments. The note writer remains the sole AI author.\n"
-        "USER DIRECTION: " << direction << "\n"
+        "notes or invent instruments. The note writer remains the sole AI author.\n";
+    out << "USER DIRECTION: " << direction << "\n"
         "WHOLE WORK: " << plan.targetSeconds << " seconds, " << plan.totalBars
         << " bars, " << juce::String::fromUTF8(plan.key.c_str()) << ", "
         << juce::String(plan.bpm, 2) << " BPM. Existing motif identity: "
@@ -140,7 +146,7 @@ juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
             out << "  chord local_bar=" << event.barOffset << " id="
                 << juce::String::fromUTF8(event.chordId.c_str()) << "\n";
     }
-    if (longFormArc)
+    if (longFormArc && plan.compositionBehavior != CompositionBehavior::Club)
         out << "LONG-WORK CONTINUITY: An ensemble can answer the main voice, but "
             "do not mistake a relay through a new instrument every section for "
             "development. Let a recognizable speaker or small partnership carry "
@@ -153,7 +159,7 @@ juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
             "only at the opening and coda. Use the existing voices for meaningful dialogue, "
             "not as substitutes for a missing central argument. This is an "
             "expressive instruction, not a note count or periodic cadence rule.\n";
-    if (juce::SystemStats::getEnvironmentVariable(
+    if (plan.compositionBehavior != CompositionBehavior::Club && juce::SystemStats::getEnvironmentVariable(
             "PULSO_AI_EXPRESSIVE_ENSEMBLE_EXPERIMENT", {}) == "1")
         out << "EXPRESSIVE ENSEMBLE STUDY: Plan the actual development of the "
             "musical thought, not only its identifying cell. In gesture and contour, "
@@ -179,7 +185,7 @@ juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
             "consequence so the note writer can enact it. Reserve the clearest "
             "answer and a deliberate release for the ending appropriate to this "
             "work's tonal or modal language. No MIDI is requested here.\n";
-    out << AiMelodicDiscourse::planningBrief(plan.bpm);
+    out << AiMelodicDiscourse::planningBrief(plan.bpm, plan.compositionBehavior);
     out << "Use ZERO-BASED section_index exactly as listed and ZERO-BASED "
         "local_start_bar: the first bar of each section is 0. bars must be at "
         "least 1. A phrase MAY CROSS a section boundary when its continuation "
@@ -197,6 +203,12 @@ juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
 bool AiPhraseArchitecture::validate(const juce::String& json,
                                     const SongPlan& plan, juce::String& error,
                                     bool enforceActiveSections) {
+    if (club::production::isPlan(json)) {
+        if (plan.compositionBehavior != CompositionBehavior::Club) {
+            error = "A Club production plan cannot replace an Adaptive phrase plan"; return false;
+        }
+        return club::production::validate(json, plan, error);
+    }
     const auto value = juce::JSON::parse(json);
     const auto* root = value.getDynamicObject();
     const auto* phrases = root == nullptr ? nullptr :
@@ -328,6 +340,7 @@ juce::String AiPhraseArchitecture::windowBrief(const juce::String& json,
                                                 const SongPlan& plan,
                                                 std::size_t sectionIndex,
                                                 int firstBar, int bars) {
+    if (club::production::isPlan(json)) return club::production::windowBrief(json, sectionIndex);
     if (json.isEmpty() || sectionIndex >= plan.sections.size()) return {};
     const auto value = juce::JSON::parse(json);
     const auto* root = value.getDynamicObject();
@@ -413,6 +426,9 @@ juce::String AiPhraseArchitecture::windowBrief(const juce::String& json,
 
 void AiPhraseArchitecture::applyTerminalHandoff(const juce::String& json,
     SongPlan& plan) {
+    plan.continuousProductionSection = plan.compositionBehavior == CompositionBehavior::Club &&
+        club::production::isPlan(json) &&
+        juce::JSON::parse(json).getProperty("format", {}).toString() == "continuous_section";
     plan.narrativeSpine.terminalSpeakerInstrumentId.clear();
     plan.narrativeSpine.terminalPhraseStartBar = -1;
     if (json.isEmpty() || plan.sections.empty()) return;
@@ -449,6 +465,7 @@ void AiPhraseArchitecture::applyTerminalHandoff(const juce::String& json,
 
 juce::String AiPhraseArchitecture::realizationBrief(const juce::String& json,
     const SongPlan& plan, const Pattern& midi) {
+    if (club::production::isPlan(json)) return club::production::realization(json, plan, midi);
     if (json.isEmpty() || plan.sections.empty()) return {};
     const auto parsed = juce::JSON::parse(json);
     const auto* root = parsed.getDynamicObject();

@@ -9,6 +9,8 @@ namespace pulso::plugin {
 
 juce::String SongGenerationPipeline::aiDirection(const SongGenerationRequest& request) {
     auto direction = request.direction;
+    if (request.behavior == CompositionBehavior::Club)
+        direction += "\nCOMPOSITION INTENT: Club. Patient retained pitched cells and evolving arrangement, not constant new solos. Follow all exclusions.";
     if (request.supportingContext.isNotEmpty())
         direction += "\n" + request.supportingContext;
     switch (request.orchestration) {

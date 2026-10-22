@@ -135,6 +135,7 @@ struct SongPlan {
     ProductionLanguage productionLanguage;
     std::string productionModeSource{"adaptive_inference"};
     CompositionBehavior compositionBehavior{CompositionBehavior::Adaptive};
+    bool continuousProductionSection{}; // Explicit excerpt/loop scope, not a finished-song cadence.
     std::uint64_t seed{1};
     std::vector<int> motifIntervals{0, 3, 5, 7, 3};
     std::vector<HarmonicChord> chordPalette;

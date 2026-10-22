@@ -335,6 +335,7 @@ void PulsoAudioProcessorEditor::applyTranslations() {
     behaviorSelector.changeItemText(1, language == UiLanguage::Spanish ? "ADAPTATIVO" : "ADAPTIVE");
     behaviorSelector.changeItemText(2, language == UiLanguage::Spanish ? juce::String::fromUTF8("HIPN\xC3\x93TICO") : "HYPNOTIC");
     behaviorSelector.changeItemText(3, language == UiLanguage::Spanish ? "NARRATIVO" : "NARRATIVE");
+    behaviorSelector.changeItemText(4, "CLUB");
     prompt.setTextToShowWhenEmpty(tr(language, TextId::PromptPlaceholder), colours::muted);
     generateButton.setButtonText(tr(language, processor.targetSongDurationSeconds() > 0
         ? TextId::ComposeSong : TextId::GenerateIdea));

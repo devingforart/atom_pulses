@@ -12,7 +12,7 @@ export function defaultEditorialSettings(input, proofMode, renderMode) {
   const sovereign = !proofMode && renderMode === 'ai_sovereign';
   return {
     firstPass: input.first_pass_audition === undefined
-      ? Boolean(composerProfile.defaultFirstPass && sovereign && !input.review_from_job)
+      ? Boolean((input.behavior === 'club' ? composerProfile.clubDefaultFirstPass : composerProfile.defaultFirstPass) && sovereign && !input.review_from_job)
       : input.first_pass_audition === true,
     phraseArchitecture: input.phrase_architecture_experiment === undefined
       ? Boolean(composerProfile.defaultPhraseArchitecture && sovereign)

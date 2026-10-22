@@ -88,6 +88,13 @@ test('first-pass audition never starts an automatic editorial recovery after a f
   assert.equal(canAutomaticallyRecover(job, true), false);
 });
 
+test('Club defaults to bounded AI voicing review, with an explicit local first-pass override', () => {
+  assert.deepEqual(defaultEditorialSettings({ behavior: 'club' }, false, 'ai_sovereign'),
+    { firstPass: false, phraseArchitecture: true });
+  assert.deepEqual(defaultEditorialSettings({ behavior: 'club', first_pass_audition: true }, false, 'ai_sovereign'),
+    { firstPass: true, phraseArchitecture: true });
+});
+
 test('controlled review audition is local, explicit and cannot trigger automatic recovery', () => {
   const source = { PULSO_AI_REVIEW_AUDITION: '1' };
   const normal = workerEnvironmentFor(source, '/jobs/normal', '/data', false, false);

@@ -47,6 +47,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Cloud Suite', () => {
+  it('sends Club independently of chromatic permission', async () => {
+    mock.createCloudJob.mockReset().mockResolvedValue({ ...job, behavior: 'club' })
+    render(<Cloud />)
+    await waitFor(() => expect(screen.getByText(/hasta 2 obras completadas cada 24 horas/i)).toBeInTheDocument())
+    fireEvent.change(screen.getByRole('textbox', { name: /Idea musical/i }), { target: { value: 'Progressive house oscuro' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /Club/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Componer obra/i }))
+    await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalledWith(expect.objectContaining({
+      club: true, allowChromatic: false, prompt: 'Progressive house oscuro',
+    })))
+  })
   it('opens a public exhibition without authentication, library access or composition requests', async () => {
     mock.user = null
     render(<Cloud shareToken="private-token" />)

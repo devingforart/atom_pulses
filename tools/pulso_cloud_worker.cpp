@@ -1,6 +1,7 @@
 #include "plugin/AiComposer.h"
 #include "plugin/AiInstrumentationPolicy.h"
 #include "plugin/AiChromaticPolicy.h"
+#include "plugin/AiClubProductionPlan.h"
 #include "plugin/MidiExporter.h"
 #include "plugin/SongGenerationPipeline.h"
 #include "core/CoherentProofGate.h"
@@ -59,6 +60,7 @@ int fail(const juce::File& output, const juce::String& message) {
 }
 
 pulso::CompositionBehavior behaviorFrom(const juce::String& value) {
+    if (value == "club") return pulso::CompositionBehavior::Club;
     if (value == "hypnotic") return pulso::CompositionBehavior::Hypnotic;
     if (value == "narrative") return pulso::CompositionBehavior::Narrative;
     return pulso::CompositionBehavior::Adaptive;
@@ -67,12 +69,14 @@ pulso::CompositionBehavior behaviorFrom(const juce::String& value) {
 juce::var planAuditFor(const pulso::SongPlan& plan) {
     auto* root = new juce::DynamicObject();
     root->setProperty("schema_version", 2);
+    root->setProperty("composition_behavior", juce::String(pulso::compositionBehaviorKey(plan.compositionBehavior).data()));
     root->setProperty("title", juce::String::fromUTF8(plan.title.c_str()));
     root->setProperty("key", juce::String::fromUTF8(plan.key.c_str()));
     root->setProperty("root_pitch_class", plan.rootPitchClass);
     root->setProperty("tonal_policy", juce::String(pulso::tonalPolicyKey(
         plan.harmonicLanguage.tonalPolicy).data()));
     root->setProperty("total_bars", plan.totalBars);
+    root->setProperty("continuous_production_section", plan.continuousProductionSection);
     root->setProperty("requested_cast_count", static_cast<int>(plan.requestedCastCount));
     root->setProperty("beats_per_bar", plan.beatsPerBar);
     root->setProperty("protagonist_id",
@@ -568,6 +572,13 @@ int main(int argc, char** argv) {
                         static_cast<int>(total));
         }, &finalAudit);
     if (song.notes.empty()) return fail(output, "Rendered score has no MIDI notes");
+    const auto productionJson = juce::String::fromUTF8(plan.phraseArchitectureJson.c_str());
+    if (pulso::plugin::club::production::isPlan(productionJson)) {
+        if (!output.getChildFile("club-production-plan.json").replaceWithText(productionJson, false, false, "\n") ||
+            !output.getChildFile("club-production-audit.txt").replaceWithText(
+                pulso::plugin::club::production::realization(productionJson, plan, song), false, false, "\n"))
+            return fail(output, "Could not preserve the Club production plan and actual layer evidence");
+    }
     if (pulso::plugin::AiChromaticPolicy::strict()) {
         if (plan.scale == pulso::ScaleKind::Chromatic)
             return fail(output, "Chromaticism is OFF: AI must choose a non-chromatic key/mode");
@@ -740,6 +751,13 @@ int main(int argc, char** argv) {
     }
     manifest->setProperty("engineVersion", PULSO_VERSION_STRING);
     manifest->setProperty("first_pass_audition", firstPassAudition);
+    manifest->setProperty("composition_behavior", juce::String(pulso::compositionBehaviorKey(request.behavior).data()));
+    if (request.behavior == pulso::CompositionBehavior::Club) {
+        manifest->setProperty("club_policy_version", 5);
+        if (pulso::plugin::club::production::isPlan(productionJson))
+            manifest->setProperty("clubProductionPlanFile", "club-production-plan.json");
+        manifest->setProperty("development_horizon_bars", pulso::compositionStateBars(request.behavior));
+    }
     if (object->hasProperty("allow_chromatic"))
         manifest->setProperty("allow_chromatic", object->getProperty("allow_chromatic"));
     manifest->setProperty("pitched_only", pulso::plugin::AiInstrumentationPolicy::pitchedOnly());

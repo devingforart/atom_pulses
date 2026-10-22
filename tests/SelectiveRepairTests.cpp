@@ -1321,6 +1321,19 @@ void runSelectiveRepairTests() {
             "A ubiquitous literal leap-cell must not masquerade as a developed AI protagonist");
 
     auto patientLead = literalLead;
+    auto clubPlan = longNarrative;
+    clubPlan.compositionBehavior = CompositionBehavior::Club;
+    const auto clubFindings = SelectiveRepair::performanceDeficits(clubPlan, literalLead, {0});
+    require(std::all_of(clubFindings.begin(), clubFindings.end(), [](const auto& finding) {
+                return !finding.missingThematicDevelopment && !finding.missingMelodicSpeech &&
+                    finding.minimumSectionalStates <= 1;
+            }),
+            "Club literal hook repetition is not a thematic novelty deficit");
+    require(compositionStateBars(CompositionBehavior::Club) == 64 &&
+                compositionStateBars(CompositionBehavior::Adaptive) == 8 &&
+                compositionStateBars(CompositionBehavior::Hypnotic) == 16 &&
+                compositionBehaviorKey(CompositionBehavior::Club) == "club",
+            "Club has a distinct persisted intent without changing existing behaviour horizons");
     patientLead.placements.erase(
         std::remove_if(patientLead.placements.begin(), patientLead.placements.end(),
             [](const auto& placement) { return placement.startBeat > 0.0; }),
@@ -2167,11 +2180,9 @@ void runSelectiveRepairTests() {
             note.durationBeats = note.partId == 3 ? 3.0 : 4.0;
     const auto collectiveCutReview = SelectiveRepair::reviewFinalScore(
         unfinishedStory, collectiveCut);
-    require(!collectiveCutReview.ensembleReleaseReady &&
-                !collectiveCutReview.ready &&
-                collectiveCutReview.simultaneousTerminalOwners == 3 &&
-                collectiveCutReview.terminalReleaseOwnerIndices.size() == 3,
-            "A tonic landing must not approve three sustained owners cut at the final MIDI tick");
+    require(collectiveCutReview.ensembleReleaseReady &&
+                collectiveCutReview.terminalReleaseOwnerIndices.empty(),
+            "Simultaneous final note-offs at the MIDI boundary must not trigger a timing rejection");
 
     auto disguisedCut = collectiveCut;
     for (auto& note : disguisedCut.notes)
@@ -2179,9 +2190,9 @@ void runSelectiveRepairTests() {
             note.durationBeats = 3.5;
         else if (note.startBeat >= 92.0 && note.partId == 2)
             note.durationBeats = 3.25;
-    require(!SelectiveRepair::reviewFinalScore(
+    require(SelectiveRepair::reviewFinalScore(
                 unfinishedStory, disguisedCut).ensembleReleaseReady,
-            "Moving the collective cutoff slightly before the final tick is not an authored release");
+            "A short terminal rest must not be rejected for failing a fixed silence quota");
 
     auto stagedRelease = collectiveCut;
     for (auto& note : stagedRelease.notes)
@@ -2210,10 +2221,22 @@ void runSelectiveRepairTests() {
             note.durationBeats = 3.0;
     const auto loneCutoffReview = SelectiveRepair::reviewFinalScore(
         unfinishedStory, loneCutoff);
-    require(!loneCutoffReview.ensembleReleaseReady &&
-                loneCutoffReview.terminalReleaseOwnerIndices.size() == 1 &&
-                loneCutoffReview.terminalReleaseOwnerIndices.front() == 2,
-            "A solo tonic note cut at the MIDI boundary is abrupt despite a staged ensemble");
+    require(loneCutoffReview.ensembleReleaseReady &&
+                loneCutoffReview.terminalReleaseOwnerIndices.empty(),
+            "The last voice may reach the MIDI boundary without a required trailing rest");
+    for (const auto rest : {0.0, .25, 1.0, 2.0}) {
+        auto authoredEnding = collectiveCut;
+        for (auto& note : authoredEnding.notes)
+            if (note.startBeat >= 92.0)
+                note.durationBeats = 96.0 - rest - note.startBeat;
+        const auto reviewed = SelectiveRepair::reviewFinalScore(unfinishedStory, authoredEnding);
+        require(reviewed.ensembleReleaseReady && reviewed.terminalReleaseOwnerIndices.empty(),
+            "Zero, short and long final rests must not schedule release-only repairs");
+        require(std::none_of(reviewed.issues.begin(), reviewed.issues.end(), [](const auto& issue) {
+            return issue.find("terminal breath") != std::string::npos ||
+                issue.find("short final release") != std::string::npos;
+        }), "The removed fixed-duration release heuristics must not leak into the final gate");
+    }
 
     auto deliberateCutPlan = unfinishedStory;
     deliberateCutPlan.narrativeSpine.resolution = "deliberate hard cut to silence";

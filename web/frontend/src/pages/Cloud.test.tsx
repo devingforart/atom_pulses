@@ -4,9 +4,11 @@ import { Cloud } from './Cloud'
 
 const mock = vi.hoisted(() => ({
   cloudJobs: vi.fn(), cloudJob: vi.fn(), cloudStatus: vi.fn(), createCloudJob: vi.fn(), cancelCloudJob: vi.fn(),
+  shareCloudJob: vi.fn(), revokeCloudShare: vi.fn(), sharedCloudJob: vi.fn(),
+  user: { id: 'user-1', email: 'test@example.com' } as { id: string; email: string } | null,
 }))
 vi.mock('../api', () => ({ api: mock }))
-vi.mock('../auth', () => ({ useAuth: () => ({ user: { id: 'user-1', email: 'test@example.com' }, loading: false }) }))
+vi.mock('../auth', () => ({ useAuth: () => ({ user: mock.user, loading: false }) }))
 
 const u16 = (value: number) => [(value >> 8) & 255, value & 255]
 const u32 = (value: number) => [(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255]
@@ -27,6 +29,12 @@ const job = {
 }
 
 beforeEach(() => {
+  mock.user = { id: 'user-1', email: 'test@example.com' }
+  mock.shareCloudJob.mockReset().mockResolvedValue({ url: 'https://pulso.cargo-core.com/share/private-token' })
+  mock.revokeCloudShare.mockReset().mockResolvedValue(undefined)
+  mock.sharedCloudJob.mockReset().mockResolvedValue({ ...job, prompt: '' })
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.setAttribute('open', '') } })
+  Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function (this: HTMLDialogElement) { this.removeAttribute('open') } })
   mock.cloudJobs.mockReset().mockResolvedValue([job])
   mock.cloudJob.mockReset().mockResolvedValue(job)
   mock.cloudStatus.mockReset().mockResolvedValue({ available: true, dailyJobLimit: 2, unlimited: false })
@@ -39,6 +47,32 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Cloud Suite', () => {
+  it('opens a public exhibition without authentication, library access or composition requests', async () => {
+    mock.user = null
+    render(<Cloud shareToken="private-token" />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Reproducir' })).not.toBeDisabled())
+    expect(screen.getByText(/EXHIBICIÓN COMPARTIDA/)).toBeInTheDocument()
+    expect(mock.sharedCloudJob).toHaveBeenCalledWith('private-token')
+    expect(mock.cloudJobs).not.toHaveBeenCalled()
+    expect(mock.cloudStatus).not.toHaveBeenCalled()
+    expect(mock.cloudJob).not.toHaveBeenCalled()
+    expect(mock.createCloudJob).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Historial' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Idea musical/)).not.toBeInTheDocument()
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/exhibitions/private-token/tracks/'), expect.objectContaining({ credentials: 'omit' }))
+  })
+  it('creates and revokes an owner-authorized exhibition link', async () => {
+    render(<Cloud />)
+    const button = await screen.findByRole('button', { name: 'Share' })
+    await waitFor(() => expect(button).not.toBeDisabled())
+    fireEvent.click(button)
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(mock.shareCloudJob).toHaveBeenCalledWith(job.id)
+    expect(screen.getByLabelText('Enlace de exhibición')).toHaveValue('https://pulso.cargo-core.com/share/private-token')
+    fireEvent.click(screen.getByRole('button', { name: 'Desactivar todos los enlaces de esta obra' }))
+    await waitFor(() => expect(mock.revokeCloudShare).toHaveBeenCalledWith(job.id))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
   it('shows the correct daily policy for regular and unlimited accounts', async () => {
     const regular = render(<Cloud />)
     await waitFor(() => expect(screen.getByText(/hasta 2 obras completadas cada 24 horas/i)).toBeInTheDocument())
@@ -92,6 +126,7 @@ describe('Cloud Suite', () => {
     await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalled())
     const request = mock.createCloudJob.mock.calls[0][0]
     expect(request).toMatchObject({ prompt: 'Una obra nueva', durationSeconds: 390, bpm: 120 })
+    expect(request.allowChromatic).toBe(false)
     expect(request).toHaveProperty('idempotencyKey')
     expect(request).not.toHaveProperty('behavior')
     expect(request).not.toHaveProperty('aiSovereign')

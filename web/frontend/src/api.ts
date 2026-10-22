@@ -32,6 +32,7 @@ export type CloudTrack = {
   }
 }
 export type CloudJob = {
+  allowChromatic?: boolean
   id: string; prompt: string; durationSeconds: number; bpm: number
   behavior: 'adaptive' | 'hypnotic' | 'narrative'
   aiSovereign: boolean; seed: string
@@ -95,7 +96,15 @@ export const api = {
   cloudJobs: () => request<CloudJob[]>('/api/cloud/jobs'),
   cloudStatus: () => request<{ available: boolean; dailyJobLimit: number; unlimited: boolean }>('/api/cloud/status'),
   cloudJob: (id: string) => request<CloudJob>(`/api/cloud/jobs/${id}`),
-  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; idempotencyKey: string }) =>
+  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; idempotencyKey: string; allowChromatic: boolean }) =>
     request<CloudJob>('/api/cloud/jobs', { method: 'POST', body: JSON.stringify(input) }),
   cancelCloudJob: (id: string) => request<void>(`/api/cloud/jobs/${id}`, { method: 'DELETE' }),
+  shareCloudJob: (id: string) => request<{ url: string }>(`/api/cloud/jobs/${id}/share`, { method: 'POST' }),
+  revokeCloudShare: (id: string) => request<void>(`/api/cloud/jobs/${id}/share`, { method: 'DELETE' }),
+  sharedCloudJob: async (token: string): Promise<CloudJob> => {
+    const result = await request<{ id: string; resultManifest: NonNullable<CloudJob['resultManifest']> }>(`/api/exhibitions/${encodeURIComponent(token)}`)
+    return { ...result, prompt: '', seed: '', durationSeconds: 0, bpm: result.resultManifest.bpm,
+      behavior: 'adaptive', aiSovereign: true, status: 'completed', stage: 'ready',
+      completedSteps: 1, totalSteps: 1, errorCode: null, createdAt: 0, updatedAt: 0 }
+  },
 }

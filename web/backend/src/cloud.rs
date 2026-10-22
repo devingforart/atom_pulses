@@ -34,6 +34,8 @@ const RECOVERY_CALL_USD: u64 = 20;
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateJob {
+    #[serde(default)]
+    allow_chromatic: bool,
     prompt: String,
     duration_seconds: i32,
     bpm: f64,
@@ -49,6 +51,7 @@ fn composer_profile() -> Value {
 #[derive(Debug, FromRow, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudJob {
+    allow_chromatic: bool,
     id: Uuid,
     prompt: String,
     duration_seconds: i32,
@@ -149,9 +152,10 @@ pub async fn create(
         .execute(&mut *tx)
         .await?;
     if let Some(existing) = sqlx::query_as::<_, CloudJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at FROM cloud_jobs WHERE user_id=$1 AND idempotency_key=$2")
+        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at,allow_chromatic FROM cloud_jobs WHERE user_id=$1 AND idempotency_key=$2")
         .bind(user.id).bind(&input.idempotency_key).fetch_optional(&mut *tx).await? {
         if existing.prompt != input.prompt.trim()
+            || existing.allow_chromatic != input.allow_chromatic
             || existing.duration_seconds != input.duration_seconds
             || existing.bpm != input.bpm
             || input.seed.as_ref().is_some_and(|seed| seed != &existing.seed) {
@@ -190,14 +194,15 @@ pub async fn create(
         .unwrap_or_else(|| (i64::from_le_bytes(seed_bytes) & i64::MAX).max(1));
     let id = Uuid::new_v4();
     let now = unix_time();
-    sqlx::query("INSERT INTO cloud_jobs(id,user_id,idempotency_key,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign,status,stage,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued','queued',$10,$10)")
+    sqlx::query("INSERT INTO cloud_jobs(id,user_id,idempotency_key,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign,status,stage,created_at,updated_at,allow_chromatic) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued','queued',$10,$10,$11)")
         .bind(id).bind(user.id).bind(&input.idempotency_key).bind(input.prompt.trim())
         .bind(input.duration_seconds).bind(input.bpm).bind(CLOUD_BEHAVIOR).bind(seed).bind(CLOUD_AI_SOVEREIGN)
-        .bind(now).execute(&mut *tx).await?;
+        .bind(now).bind(input.allow_chromatic).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
         Json(CloudJob {
+            allow_chromatic: input.allow_chromatic,
             id,
             prompt: input.prompt.trim().to_owned(),
             duration_seconds: input.duration_seconds,
@@ -223,7 +228,7 @@ pub async fn list(
 ) -> ApiResult<Json<Vec<CloudJob>>> {
     let user = require_user(&state, &headers).await?;
     let jobs = sqlx::query_as::<_, CloudJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at FROM cloud_jobs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 30")
+        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at,allow_chromatic FROM cloud_jobs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 30")
         .bind(user.id).fetch_all(&state.db).await?;
     Ok(Json(jobs))
 }
@@ -245,7 +250,7 @@ pub async fn get(
 ) -> ApiResult<Json<CloudJob>> {
     let user = require_user(&state, &headers).await?;
     let mut job = sqlx::query_as::<_, CloudJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at FROM cloud_jobs WHERE user_id=$1 AND id=$2")
+        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at,allow_chromatic FROM cloud_jobs WHERE user_id=$1 AND id=$2")
         .bind(user.id).bind(id).fetch_optional(&state.db).await?
         .ok_or_else(|| ApiError::public(StatusCode::NOT_FOUND, "Obra no encontrada."))?;
     enrich_instruments(&state, &mut job).await;
@@ -370,6 +375,7 @@ pub async fn track(
 
 #[derive(FromRow)]
 struct ClaimedJob {
+    allow_chromatic: bool,
     id: Uuid,
     prompt: String,
     duration_seconds: i32,
@@ -382,7 +388,7 @@ struct ClaimedJob {
 async fn claim(state: &AppState) -> ApiResult<Option<ClaimedJob>> {
     let mut tx = state.db.begin().await?;
     let job = sqlx::query_as::<_, ClaimedJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign FROM cloud_jobs WHERE status='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED")
+        "SELECT id,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign,allow_chromatic FROM cloud_jobs WHERE status='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED")
         .fetch_optional(&mut *tx).await?;
     if let Some(job) = &job {
         sqlx::query("UPDATE cloud_jobs SET status='running',stage='starting',attempt=attempt+1,lease_until=$2,updated_at=$3 WHERE id=$1")
@@ -492,6 +498,8 @@ async fn run_one(state: &AppState, job: ClaimedJob) -> ApiResult<()> {
     let directory = state.config.cloud_output_dir.join(job.id.to_string());
     tokio::fs::create_dir_all(&directory).await?;
     let original_body = serde_json::json!({
+        "allow_chromatic": job.allow_chromatic,
+        "pitched_only": true,
         "prompt": job.prompt, "duration_seconds": job.duration_seconds,
         "bpm": job.bpm, "behavior": job.behavior, "seed": job.seed.to_string(),
         "ai_sovereign": job.ai_sovereign,
@@ -846,6 +854,7 @@ mod tests {
     #[test]
     fn input_boundaries_and_idempotency_key() {
         let valid = CreateJob {
+            allow_chromatic: false,
             prompt: "Una obra con desarrollo".into(),
             duration_seconds: 390,
             bpm: 120.0,

@@ -1,4 +1,6 @@
 #include "plugin/AiComposer.h"
+#include "plugin/AiInstrumentationPolicy.h"
+#include "plugin/AiChromaticPolicy.h"
 #include "plugin/MidiExporter.h"
 #include "plugin/SongGenerationPipeline.h"
 #include "core/CoherentProofGate.h"
@@ -412,6 +414,15 @@ int main(int argc, char** argv) {
     const auto job = juce::JSON::parse(input);
     const auto* object = job.getDynamicObject();
     if (object == nullptr) return fail(output, "Invalid job input");
+    if (object->hasProperty("allow_chromatic") && !object->getProperty("allow_chromatic").isBool())
+        return fail(output, "allow_chromatic must be a boolean");
+    const auto chromaticSetting = object->hasProperty("allow_chromatic")
+        ? (object->getProperty("allow_chromatic") == juce::var(true) ? "1" : "0") : "";
+#ifdef _WIN32
+    _putenv_s("PULSO_AI_ALLOW_CHROMATIC", chromaticSetting);
+#else
+    setenv("PULSO_AI_ALLOW_CHROMATIC", chromaticSetting, 1);
+#endif
     const auto prompt = object->getProperty("prompt").toString().trim();
     const auto duration = static_cast<int>(object->getProperty("duration_seconds"));
     const auto bpm = static_cast<double>(object->getProperty("bpm"));
@@ -505,6 +516,11 @@ int main(int argc, char** argv) {
             request.resume.notes.push_back(std::move(note));
         }
     }
+    if (request.resume.blueprintJson.isNotEmpty()) {
+        juce::String scopeError;
+        if (!pulso::plugin::AiInstrumentationPolicy::validateCast(request.resume.blueprintJson, scopeError))
+            return fail(output, scopeError);
+    }
     writeStatus(output, "running", "blueprint", 0, 1);
     juce::String error;
     std::size_t checkpointNumber = 0;
@@ -552,6 +568,20 @@ int main(int argc, char** argv) {
                         static_cast<int>(total));
         }, &finalAudit);
     if (song.notes.empty()) return fail(output, "Rendered score has no MIDI notes");
+    if (pulso::plugin::AiChromaticPolicy::strict()) {
+        if (plan.scale == pulso::ScaleKind::Chromatic)
+            return fail(output, "Chromaticism is OFF: AI must choose a non-chromatic key/mode");
+        for (const auto& note : song.notes)
+            if (!pulso::isVoiceInFamily(note.voice, pulso::VoiceFamily::Rhythm) &&
+                !pulso::plugin::AiChromaticPolicy::allows(plan, note.pitch))
+                return fail(output, "Chromaticism is OFF: final MIDI contains an out-of-scale note; part=" +
+                    juce::String(note.partId) + " beat=" + juce::String(note.startBeat, 2) +
+                    " MIDI=" + juce::String(note.pitch) + ". No notes were retuned or removed.");
+    }
+    if (pulso::plugin::AiInstrumentationPolicy::pitchedOnly())
+        for (const auto& note : song.notes)
+            if (pulso::isVoiceInFamily(note.voice, pulso::VoiceFamily::Rhythm))
+                return fail(output, "Pitched-only MIDI contains a percussion voice; no notes were removed");
     const auto aiNotes = static_cast<std::size_t>(std::count_if(song.notes.begin(), song.notes.end(),
         [](const auto& note) {
             return note.origin == pulso::NoteOrigin::AiAuthored ||
@@ -710,6 +740,9 @@ int main(int argc, char** argv) {
     }
     manifest->setProperty("engineVersion", PULSO_VERSION_STRING);
     manifest->setProperty("first_pass_audition", firstPassAudition);
+    if (object->hasProperty("allow_chromatic"))
+        manifest->setProperty("allow_chromatic", object->getProperty("allow_chromatic"));
+    manifest->setProperty("pitched_only", pulso::plugin::AiInstrumentationPolicy::pitchedOnly());
     manifest->setProperty("phrase_architecture_experiment",
         !plan.phraseArchitectureJson.empty());
     if (!plan.phraseArchitectureJson.empty())

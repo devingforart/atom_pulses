@@ -1,6 +1,6 @@
 export function blueprintRequestMatchesSource(source, request, allowEditorialChange = false) {
   return Boolean(source && ['prompt', 'duration_seconds', 'bpm', 'behavior', 'seed',
-    'ai_sovereign', 'phrase_architecture_experiment'].every(field => source[field] === request[field]) &&
+    'ai_sovereign', 'phrase_architecture_experiment', 'allow_chromatic', 'pitched_only'].every(field => source[field] === request[field]) &&
     (source.first_pass_audition === request.first_pass_audition || allowEditorialChange));
 }
 

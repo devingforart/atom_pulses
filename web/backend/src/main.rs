@@ -4,6 +4,7 @@ mod cloud;
 mod config;
 mod crypto;
 mod error;
+mod exhibitions;
 mod licenses;
 mod mail;
 mod models;
@@ -61,6 +62,15 @@ fn router(state: AppState) -> Router {
         .route("/cloud/status", get(cloud::status))
         .route("/cloud/jobs/{id}", get(cloud::get).delete(cloud::cancel))
         .route("/cloud/jobs/{id}/tracks/{filename}", get(cloud::track))
+        .route(
+            "/cloud/jobs/{id}/share",
+            post(exhibitions::create).delete(exhibitions::revoke),
+        )
+        .route("/exhibitions/{token}", get(exhibitions::get))
+        .route(
+            "/exhibitions/{token}/tracks/{filename}",
+            get(exhibitions::track),
+        )
         .route("/releases/latest", get(releases::latest_public))
         .route("/downloads/latest/windows", get(releases::download_windows))
         .route("/licenses/device-code", post(licenses::create_device_code))

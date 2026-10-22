@@ -1,5 +1,7 @@
 #include "plugin/SongGenerationPipeline.h"
 #include "plugin/AiComposer.h"
+#include "plugin/AiChromaticPolicy.h"
+#include "plugin/AiInstrumentationPolicy.h"
 #include "plugin/AiPhraseArchitecture.h"
 #include "plugin/AiMelodicDiscourse.h"
 #include "plugin/JointWindowRecovery.h"
@@ -36,6 +38,50 @@ int main() {
     try {
         using namespace pulso;
         using namespace pulso::plugin;
+        {
+            const auto originalPitch = juce::SystemStats::getEnvironmentVariable("PULSO_AI_ALLOW_CHROMATIC", {});
+            const auto originalCast = juce::SystemStats::getEnvironmentVariable("PULSO_AI_PITCHED_ONLY", {});
+            const auto setPolicy = [](const char* key, const juce::String& value) {
+#ifdef _WIN32
+                _putenv_s(key, value.toRawUTF8());
+#else
+                if (value.isEmpty()) unsetenv(key);
+                else setenv(key, value.toRawUTF8(), 1);
+#endif
+            };
+            setPolicy("PULSO_AI_ALLOW_CHROMATIC", "0");
+            setPolicy("PULSO_AI_PITCHED_ONLY", "1");
+            SongPlan tonal;
+            tonal.rootPitchClass = 0;
+            tonal.scale = ScaleKind::Major;
+            check(AiChromaticPolicy::allows(tonal, 60) && AiChromaticPolicy::allows(tonal, 84),
+                "strict pitch policy must retain every octave of the declared scale");
+            check(!AiChromaticPolicy::allows(tonal, 61), "strict pitch policy allowed C sharp in C major");
+            tonal.rootPitchClass = 9;
+            tonal.scale = ScaleKind::Minor;
+            check(!AiChromaticPolicy::allows(tonal, 68), "natural minor must not silently allow a raised leading tone");
+            const auto source = juce::String(R"json({"instructions":"Preserve the musical narrative","text":{"format":{"schema":{"type":"object","properties":{"instrument":{"type":"string","enum":["kick_drum","piano","lead_synth"]},"percussion_free":{"type":"boolean"},"rhythm_motifs":{"type":"array","items":{"type":"string"}}}}}}})json");
+            const auto prepared = juce::JSON::parse(AiInstrumentationPolicy::prepareRequest(source));
+            const auto props = prepared.getProperty("text", {}).getProperty("format", {})
+                .getProperty("schema", {}).getProperty("properties", {});
+            check(props.getProperty("instrument", {}).getProperty("enum", {}).size() == 2,
+                "pitched-only schema must remove drums but retain pitched identities");
+            check(static_cast<int>(props.getProperty("rhythm_motifs", {}).getProperty("maxItems", -1)) == 0,
+                "pitched-only schemas must disable percussion motifs");
+            check(prepared.getProperty("instructions", {}).toString().startsWith("Preserve the musical narrative"),
+                "instrument policy must preserve the original musical instructions");
+            juce::String policyError;
+            check(!AiInstrumentationPolicy::validateCast(R"({"instruments":[{"id":"kit","instrument":"kick_drum","source_voice":"core_drums"}]})", policyError),
+                "a percussion cast must not pass the pitched-only boundary");
+            check(AiInstrumentationPolicy::validateCast(R"({"instruments":[{"id":"arp","instrument":"lead_synth","source_voice":"lead"}]})", policyError),
+                "pitched-only must preserve tonal rhythmic instruments");
+            setPolicy("PULSO_AI_ALLOW_CHROMATIC", "1");
+            check(AiChromaticPolicy::allows(tonal, 68), "chromatic permission did not enable external pitches");
+            check(AiChromaticPolicy::instructions().contains("permitted, not required"),
+                "chromatic permission must not demand chromatic notes");
+            setPolicy("PULSO_AI_ALLOW_CHROMATIC", originalPitch);
+            setPolicy("PULSO_AI_PITCHED_ONLY", originalCast);
+        }
         SongPlan orderPlan;
         const auto part = [](std::string id, VoiceId voice, std::string function = {}) {
             InstrumentAssignment owner;

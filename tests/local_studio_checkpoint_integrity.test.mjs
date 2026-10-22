@@ -34,6 +34,7 @@ test('blueprint editorial comparisons preserve the musical request and need an e
   assert.equal(blueprintRequestMatchesSource(source, review), false);
   assert.equal(blueprintRequestMatchesSource(source, review, true), true);
   for (const changed of [{ bpm: 121 }, { duration_seconds: 90 }, { seed: '5678' },
+    { allow_chromatic: true }, { pitched_only: true },
     { prompt: 'Another work' }, { behavior: 'narrative' },
     { ai_sovereign: false }, { phrase_architecture_experiment: false }])
     assert.equal(blueprintRequestMatchesSource(source, { ...review, ...changed }, true), false);

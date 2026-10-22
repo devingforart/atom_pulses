@@ -1,4 +1,6 @@
 #include "AiComposer.h"
+#include "AiInstrumentationPolicy.h"
+#include "AiChromaticPolicy.h"
 #include "AiPhraseArchitecture.h"
 #include "AiMelodicDiscourse.h"
 
@@ -156,6 +158,7 @@ VoiceId rhythmVoiceForPitch(int pitch) noexcept {
 }
 
 bool explicitlyPercussionFreeDirection(const juce::String& direction) {
+    if (AiInstrumentationPolicy::pitchedOnly()) return true;
     const auto lower = direction.toLowerCase();
     constexpr std::array phrases{"no percussion", "without percussion", "sin percusion",
         "sin percusi", "no drums", "without drums", "sin bateria", "sin bater",
@@ -187,6 +190,8 @@ bool explicitlyRhythmicElectronicDirection(const juce::String& direction) {
 bool validateExplicitRhythmCast(const juce::String& source,
                                 const juce::String& direction,
                                 juce::String& error) {
+    if (AiInstrumentationPolicy::pitchedOnly())
+        return AiInstrumentationPolicy::validateCast(source, error);
     if (!explicitlyRhythmicElectronicDirection(direction)) return true;
     const auto document = juce::JSON::parse(source);
     const auto* root = document.getDynamicObject();
@@ -225,6 +230,7 @@ bool enforceExplicitCastExclusionsImpl(const juce::String& source,
                                        juce::String& error) {
     removed = 0;
     sanitized = source;
+    if (!AiInstrumentationPolicy::validateCast(source, error)) return false;
     const auto percussionFree = explicitlyPercussionFreeDirection(direction);
     // The later score contract counts only independent, developable MIDI owners.
     // Apply that same definition at the manifest boundary for every explicit
@@ -2551,6 +2557,8 @@ void cancelBackgroundResponse(const juce::String& responseId, const juce::String
 
 HttpResponse performRequest(juce::String body, const juce::String& apiKey,
                             std::stop_token token, std::chrono::milliseconds budget) {
+    body = AiInstrumentationPolicy::prepareRequest(body);
+    body = AiChromaticPolicy::prepareRequest(body);
     if (juce::SystemStats::getEnvironmentVariable("PULSO_AI_FAST_MODE", {}) == "1") {
         auto request = juce::JSON::parse(body);
         if (auto* object = request.getDynamicObject()) {
@@ -3883,6 +3891,13 @@ juce::String directWindowSchema(const SongPlan& plan,
     auto* root = schema.getDynamicObject();
     auto* properties = root->getProperty("properties").getDynamicObject();
     juce::Array<juce::var> required;
+    if (AiChromaticPolicy::strict()) {
+        auto pitch = juce::JSON::parse(R"json({"type":"integer"})json");
+        AiChromaticPolicy::constrain(*pitch.getDynamicObject(), plan, VoiceId::Lead, 0, 127);
+        juce::var definitions(new juce::DynamicObject());
+        definitions.getDynamicObject()->setProperty("scalePitch", pitch);
+        root->setProperty("$defs", definitions);
+    }
     for (const auto index : owners) {
         if (index >= plan.instruments.size()) continue;
         const auto& owner = plan.instruments[index];
@@ -3898,6 +3913,9 @@ juce::String directWindowSchema(const SongPlan& plan,
             "Direct MIDI notes for " + id + "; preferred pitches " +
             juce::String(owner.minimumPitch) + " through " +
             juce::String(owner.maximumPitch));
+        if (AiChromaticPolicy::strict() && !isVoiceInFamily(owner.sourceVoice, VoiceFamily::Rhythm))
+            part.getProperty("items", {}).getProperty("properties", {}).getDynamicObject()->setProperty(
+                "pitch", juce::JSON::parse(R"json({"$ref":"#/$defs/scalePitch"})json"));
         properties->setProperty(id, part);
         required.add(id);
     }
@@ -3944,6 +3962,12 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
         const auto pitch = static_cast<int>(object->getProperty("pitch"));
         const auto velocity = static_cast<int>(object->getProperty("velocity"));
         auto latestRelease = length;
+        if (!isVoiceInFamily(owner.sourceVoice, VoiceFamily::Rhythm) &&
+            !AiChromaticPolicy::allows(plan, pitch)) {
+            error = "Chromaticism is OFF: voice=" + id + " MIDI=" + juce::String(pitch) +
+                " is outside the declared scale. Rewrite in key; no retuning was applied.";
+            return false;
+        }
         if (longFormContinuity) {
             const auto& section = plan.sections[sectionIndex];
             const auto sectionBeat = firstBar * plan.beatsPerBar + beat;
@@ -16965,6 +16989,7 @@ bool AiComposer::parseSongPlanJson(const juce::String& text, int targetSeconds,
                                    int requestedBars, double bpm, double beatsPerBar,
                                    std::uint64_t seed, SongPlan& result,
                                    juce::String& error, TonalPolicy tonalPolicy) {
+    if (!AiInstrumentationPolicy::validateCast(text, error)) return false;
     const auto parsed = juce::JSON::parse(text);
     const auto* object = parsed.getDynamicObject();
     if (object == nullptr || requestedBars < 8 || requestedBars > 512) {

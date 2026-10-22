@@ -4,6 +4,8 @@ import { ProductionAudio } from './production-audio.mjs';
 import { PATCHES, SOUND_BANK_VERSION, patchOptions, patchForTrack } from './sound-palette.mjs';
 
 const $ = selector => document.querySelector(selector);
+const exhibitionId = new URLSearchParams(location.search).get('share');
+const exhibitionMode = exhibitionId !== null;
 const ui = { form: $('#compose-form'), prompt: $('#prompt'), submit: $('#submit'), notice: $('#notice'), health: $('#health'), jobs: $('#jobs'), session: $('#session-content'), timeline: $('#timeline'), play: $('#play'), stop: $('#stop'), back: $('#back'), export: $('#export-all'), exportOne: $('#export-one'), history: $('#history-panel') };
 ui.prompt.placeholder = 'Describí la obra, su energía, el recorrido emocional y lo que debería cambiar hasta el final.';
 const proofLabel = document.createElement('label');
@@ -46,6 +48,13 @@ const number = value => new Intl.NumberFormat('es-AR').format(Number(value) || 0
 const linkedJobId = new URLSearchParams(location.search).get('job');
 let jobs = [], selectedId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(linkedJobId || '') ? linkedJobId : null, loadedKey = null, loadVersion = 0, current = null, barPx = 22, playhead = null, previewDiagnostic = false, lastAutoRecoverySelection = null, historyCategory = 'personal';
 const audio = new ProductionAudio(updatePosition, () => { ui.play.textContent = '▶'; ui.play.setAttribute('aria-label', 'Reproducir'); });
+ui.share = node('button', 'ghost-button', 'Share');
+ui.share.type = 'button';
+ui.share.disabled = true;
+ui.share.title = 'Compartir esta obra en un visualizador de solo lectura';
+ui.share.setAttribute('aria-label', 'Compartir obra');
+$('#history-toggle').before(ui.share);
+ui.share.addEventListener('click', openShareDialog);
 const patchStorageKey = (jobId, filename) => `pulso:audition:${SOUND_BANK_VERSION}:${jobId}:${filename}`;
 function updateListeningLabels() {
   $('#listen-description').textContent = audio.mode === 'piano'
@@ -64,6 +73,8 @@ function updateListeningLabels() {
 async function api(url, options = {}) { const response = await fetch(url, { cache: 'no-store', ...options }); const result = await response.json(); if (!response.ok) throw new Error(result.error || `Error HTTP ${response.status}`); return result; }
 function showNotice(message) { ui.notice.textContent = message || ''; ui.notice.hidden = !message; }
 function setExport(job, filename) {
+  ui.share.disabled = exhibitionMode || !job?.manifest || job.state !== 'completed' ||
+    !current || current.job.id !== job.id || filename !== job.manifest.fullFile;
   ui.exportOne.disabled = !job?.manifest?.fullFile || filename !== job.manifest.fullFile || !current || current.job.id !== job.id;
   if (filename) { ui.export.classList.remove('disabled'); ui.export.removeAttribute('aria-disabled'); ui.export.href = fileUrl(job, filename); ui.export.download = filename; }
   else { ui.export.classList.add('disabled'); ui.export.setAttribute('aria-disabled', 'true'); ui.export.removeAttribute('href'); ui.export.removeAttribute('download'); }
@@ -81,6 +92,7 @@ function updatePosition(seconds) {
 function actionButton(label, callback, className = '') { const button = node('button', className, label); button.type = 'button'; button.addEventListener('click', callback); return button; }
 function reuse(job) {
   ui.prompt.value = job.request.prompt;
+  $('#allow-chromatic').checked = job.request.allow_chromatic === true;
   $('#duration').value = String(job.request.duration_seconds);
   $('#render-mode').value = job.request.ai_sovereign ? 'ai_sovereign' : 'standard';
   proofInput.checked = Boolean(job.request.proof_mode);
@@ -108,6 +120,7 @@ async function resumeAcceptedMidi(job, button) {
     seed: request.seed,
     proof_mode: false,
     first_pass_audition: request.first_pass_audition === true,
+    ...(typeof request.allow_chromatic === 'boolean' ? { allow_chromatic: request.allow_chromatic } : {}),
     phrase_architecture_experiment: request.phrase_architecture_experiment === true,
     resume_from_job: job.id,
   };
@@ -140,6 +153,9 @@ function renderSession(job) {
       ? 'PRIMERA PASADA' : job.state === 'completed' && job.manifest?.review_audition
         ? 'REVISIÓN A/B' : states[job.state] || job.state.toUpperCase()));
   ui.session.append(node('p', 'session-prompt', job.request.prompt));
+  if (typeof job.request.allow_chromatic === 'boolean')
+    ui.session.append(node('p', 'session-note', job.request.allow_chromatic
+      ? 'Cromatismos permitidos.' : 'Sin cromatismos: escala declarada estricta.'));
   const date = new Date(job.request.created_at).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
   ui.session.append(node('p', 'session-meta', `${date} · ${fmt(job.request.duration_seconds)} · ${job.request.bpm} BPM · semilla ${job.request.seed}`));
   if (articulation || articulationRevision) {
@@ -282,6 +298,7 @@ function mergedMidi(parts, manifest) {
 async function loadSong(job, diagnostic = false) {
   const version = ++loadVersion;
   audio.stop(); current = null; playhead = null;
+  ui.share.disabled = true;
   ui.play.disabled = true; ui.exportOne.disabled = true; $('#preview-wav').disabled = true; $('#full-wav').disabled = true;
   ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Leyendo las notas MIDI de esta obra…'));
   $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
@@ -396,6 +413,7 @@ function showSelected() {
   if (key !== loadedKey) { loadedKey = key; loadSong(job, previewDiagnostic && Boolean(job.diagnostic?.file)); }
 }
 async function refresh() {
+  if (exhibitionMode) return loadExhibition();
   try {
     const [status, listing] = await Promise.all([api('/api/status'), api('/api/jobs')]);
     jobs = listing.jobs;
@@ -439,7 +457,7 @@ async function refresh() {
 }
 ui.form.addEventListener('submit', async event => {
   event.preventDefault(); showNotice(''); ui.submit.disabled = true;
-  const payload = { prompt: ui.prompt.value, duration_seconds: Number($('#duration').value), bpm: Number($('#bpm').value), behavior: $('#behavior').value, render_mode: $('#render-mode').value, seed: $('#seed').value.trim(), proof_mode: proofInput.checked && !proofInput.disabled, first_pass_audition: firstPassInput.checked && !firstPassInput.disabled };
+  const payload = { prompt: ui.prompt.value, allow_chromatic: $('#allow-chromatic').checked, duration_seconds: Number($('#duration').value), bpm: Number($('#bpm').value), behavior: $('#behavior').value, render_mode: $('#render-mode').value, seed: $('#seed').value.trim(), proof_mode: proofInput.checked && !proofInput.disabled, first_pass_audition: firstPassInput.checked && !firstPassInput.disabled };
   try { const result = await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Pulso-Local': '1' }, body: JSON.stringify(payload) }); selectedId = result.job.id; loadedKey = null; previewDiagnostic = false; await refresh(); }
   catch (error) { showNotice(error.message); ui.submit.disabled = false; }
 });
@@ -503,4 +521,80 @@ $('#full-wav').addEventListener('click', async () => {
   finally { button.textContent = 'WAV completo'; button.disabled = !current?.job.manifest; }
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden && audio.playing) { audio.pause(); ui.play.textContent = '▶'; } });
-refresh(); setInterval(refresh, 2000);
+if (exhibitionMode) configureExhibition();
+refresh();
+if (!exhibitionMode) setInterval(refresh, 2000);
+
+function openShareDialog() {
+  if (ui.share.disabled || !current?.job.manifest || current.job.state !== 'completed') return;
+  const job = current.job;
+  const url = new URL('/', location.origin);
+  url.searchParams.set('share', job.id);
+  const dialog = node('dialog', 'share-dialog');
+  const heading = node('h2', '', 'Comparte tu obra');
+  heading.id = 'share-heading';
+  dialog.setAttribute('aria-labelledby', heading.id);
+  const close = actionButton('Cerrar', () => dialog.close(), 'ghost-button');
+  const header = node('div', 'share-dialog-head'); header.append(heading, close);
+  const title = node('p', 'share-work-title', job.manifest.title || 'Obra PULSO');
+  const description = node('p', '', 'Una exhibición de solo lectura: la partitura y su reproductor, sin el estudio ni tus registros.');
+  const label = node('label', '', 'Enlace de la exhibición');
+  label.htmlFor = 'share-url';
+  const input = node('input'); input.id = 'share-url'; input.type = 'url';
+  input.readOnly = true; input.value = url.href;
+  input.addEventListener('focus', () => input.select());
+  const feedback = node('p', 'share-feedback'); feedback.setAttribute('role', 'status');
+  const copy = actionButton('Copiar enlace', async () => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(url.href);
+      feedback.textContent = 'Enlace copiado.';
+    } catch {
+      input.focus(); input.select();
+      feedback.textContent = 'Copia el enlace seleccionado con Ctrl+C o ⌘C.';
+    }
+  }, 'dark-button');
+  const open = node('a', 'ghost-button', 'Abrir exhibición');
+  open.href = url.href; open.target = '_blank'; open.rel = 'noopener noreferrer';
+  const actions = node('div', 'share-actions'); actions.append(copy, open);
+  const note = node('p', 'share-local-note', 'Enlace local: abre en este equipo mientras el estudio esté encendido. No publica la obra en Internet ni concede acceso público a Cloud.');
+  dialog.append(header, title, description, label, input, actions, feedback, note);
+  dialog.addEventListener('close', () => { dialog.remove(); ui.share.focus(); }, { once: true });
+  document.body.append(dialog);
+  dialog.showModal(); input.focus(); input.select();
+}
+
+function configureExhibition() {
+  document.body.classList.add('shared-exhibition');
+  document.title = 'PULSO · Exhibición compartida';
+  const badge = node('span', 'exhibition-badge', 'EXHIBICIÓN COMPARTIDA');
+  $('.top-actions').replaceChildren(badge);
+  $('.sidebar').hidden = true;
+  $('.arrangement-head').after(ui.notice);
+  ui.history.hidden = true;
+  ui.health.hidden = true;
+  $('.arrangement-head .section-kicker').textContent = 'PARTITURA · SOLO LECTURA';
+  $('#song-title').textContent = 'Abriendo la obra compartida…';
+  $('#song-subtitle').textContent = 'Preparando las notas y el reproductor.';
+  for (const selector of ['#preview-wav', '#full-wav']) $(selector).hidden = true;
+  $('#listen-description').textContent = 'Exhibición compartida · Escuchar no modifica la obra.';
+}
+
+async function loadExhibition() {
+  try {
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(exhibitionId || ''))
+      throw new Error('El enlace de la exhibición no es válido.');
+    const { job } = await api(`/api/jobs/${encodeURIComponent(exhibitionId)}`);
+    if (job?.state !== 'completed' || !job.manifest?.fullFile || !job.manifest?.tracks?.length)
+      throw new Error('Esta obra todavía no está disponible como exhibición terminada.');
+    await loadSong(job);
+    if (!current || current.job.id !== job.id) throw new Error('No se pudo cargar la partitura compartida.');
+    document.title = `${job.manifest.title || 'Obra PULSO'} · Exhibición compartida`;
+  } catch (error) {
+    audio.stop(); current = null; ui.play.disabled = true;
+    $('#song-title').textContent = 'Exhibición no disponible';
+    $('#song-subtitle').textContent = error.message;
+    $('#song-subtitle').setAttribute('role', 'alert');
+    ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Comprueba el enlace y que el estudio que comparte esta obra esté disponible.'));
+  }
+}

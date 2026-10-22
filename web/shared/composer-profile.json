@@ -3,6 +3,7 @@
   "defaultFirstPass": true,
   "defaultPhraseArchitecture": true,
   "workerEnvironment": {
+    "PULSO_AI_PITCHED_ONLY": "1",
     "PULSO_AI_EDITORIAL_V2": "1",
     "PULSO_LOCAL_EDITORIAL_V2": "1",
     "PULSO_AI_JOINT_SHORT_CAST": "1",

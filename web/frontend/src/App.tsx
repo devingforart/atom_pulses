@@ -9,10 +9,10 @@ import { Pricing } from './pages/Pricing'
 import { Product } from './pages/Product'
 import { Activate } from './pages/Activate'
 import { ForgotPassword, ResetPassword, VerifyEmail } from './pages/Recovery'
-import { Cloud } from './pages/Cloud'
+import { Cloud, SharedCloud } from './pages/Cloud'
 
 export function App() {
-  return <BrowserRouter><AuthProvider><Routes><Route element={<Layout />}>
+  return <BrowserRouter><AuthProvider><Routes><Route path="share/:token" element={<SharedCloud />} /><Route element={<Layout />}>
     <Route index element={<Home />} /><Route path="product" element={<Product />} /><Route path="pricing" element={<Pricing />} />
     <Route path="login" element={<AuthPage mode="login" />} /><Route path="register" element={<AuthPage mode="register" />} />
     <Route path="forgot-password" element={<ForgotPassword />} /><Route path="reset-password" element={<ResetPassword />} />

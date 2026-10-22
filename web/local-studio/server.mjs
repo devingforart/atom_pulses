@@ -169,6 +169,11 @@ function validate(input) {
   const renderMode = input.render_mode || 'ai_sovereign';
   const suppliedSeed = input.seed === undefined || input.seed === '' ? null : String(input.seed);
   const proofMode = input.proof_mode === true;
+  if (input.allow_chromatic !== undefined && typeof input.allow_chromatic !== 'boolean')
+    throw new InputError('Permitir cromatismos debe ser verdadero o falso.');
+  const policySourceId = input.resume_from_job || input.blueprint_from_job || input.review_from_job;
+  const policySource = typeof policySourceId === 'string' ? readJson(path.join(jobDirectory(policySourceId) || dataRoot, 'job.json')) : null;
+  const allowChromatic = input.allow_chromatic ?? policySource?.allow_chromatic ?? false;
   const { firstPass: firstPassAudition,
     phraseArchitecture: phraseArchitectureExperiment } =
     defaultEditorialSettings(input, proofMode, renderMode);
@@ -202,7 +207,7 @@ function validate(input) {
   if (reviewFromJob !== null && (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(reviewFromJob) ||
       resumeFromJob !== null || blueprintFromJob !== null || firstPassAudition || proofMode || renderMode !== 'ai_sovereign'))
     throw new InputError('Invalid first-pass review source.');
-  return { prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, first_pass_audition: firstPassAudition, phrase_architecture_experiment: phraseArchitectureExperiment, replan_phrases: replanPhrases, compare_editorial_modes: compareEditorialModes, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, review_from_job: reviewFromJob, created_at: new Date().toISOString() };
+  return { allow_chromatic: allowChromatic, pitched_only: true, prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, first_pass_audition: firstPassAudition, phrase_architecture_experiment: phraseArchitectureExperiment, replan_phrases: replanPhrases, compare_editorial_modes: compareEditorialModes, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, review_from_job: reviewFromJob, created_at: new Date().toISOString() };
 }
 
 function blueprintOnlyScoreFromJob(request) {
@@ -266,6 +271,8 @@ function resumeScoreFromJob(request, controlledReview = false) {
   const previous = readJson(path.join(previousDirectory, 'job.json'));
   const same = ['prompt', 'duration_seconds', 'bpm', 'behavior', 'seed', 'ai_sovereign']
     .every(field => previous?.[field] === request[field]) &&
+    previous?.allow_chromatic === request.allow_chromatic &&
+    previous?.pitched_only === request.pitched_only &&
     Boolean(previous?.phrase_architecture_experiment) === Boolean(request.phrase_architecture_experiment) &&
     (controlledReview ? previous?.first_pass_audition === true && request.first_pass_audition === false :
       Boolean(previous?.first_pass_audition) === Boolean(request.first_pass_audition));
@@ -331,9 +338,9 @@ function childEnvironment(dir) {
   // stored in Windows Credential Manager.
   const job = readJson(path.join(dir, 'job.json'));
   const automatic = (job?.automatic_recovery_attempt || 0) > 0;
-  return workerEnvironmentFor(process.env, dir, dataRoot, automatic, experimentalProfile,
+  return { ...workerEnvironmentFor(process.env, dir, dataRoot, automatic, experimentalProfile,
     job?.first_pass_audition === true, typeof job?.review_from_job === 'string',
-    job?.phrase_architecture_experiment === true);
+    job?.phrase_architecture_experiment === true), PULSO_AI_PITCHED_ONLY: '1' };
 }
 
 function startAutomaticRecovery(sourceId) {
@@ -410,7 +417,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   const pathname = url.pathname;
   try {
-    if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, editorialProfile: 'ai-only-v2', composerProfile: composerProfile.name, experimentalProfile,
+    if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, pitchedOnly: true, editorialProfile: 'ai-only-v2', composerProfile: composerProfile.name, experimentalProfile,
       musicalProfile: experimentalProfile && process.env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT === '1' ? 'connected-discourse' : 'shared-default' });
     if (req.method === 'GET' && pathname === '/api/jobs') return json(res, 200, { jobs: listJobs() });
     if (req.method === 'POST' && !mutatingRequestAllowed(req)) return json(res, 403, { error: 'Solicitud local no autorizada.' });

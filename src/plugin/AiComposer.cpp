@@ -3306,6 +3306,12 @@ juce::String jointWindowPrompt(const juce::String& direction, const SongPlan& pl
             "silence or a final cadence from a technical window boundary.\n";
         out << club::production::windowBrief(productionJson, sectionIndex);
         out << club::production::developmentBrief(productionJson, start, end, plan.beatsPerBar);
+        out << "ARRANGEMENT LIMITS: entry_beat/release_beat in each state are SECTION-LOCAL, "
+            "not window-local. Finish this layer's gesture before its release; leave its "
+            "planned absence empty. Do not manufacture a final note by clipping a continuing "
+            "pattern at that limit. In the actual final section, prepare the last word "
+            "through phrase completion and coordinated releases. A technical window earlier "
+            "in the piece is not a song ending.\n";
         out << "HARMONIC MAP (absolute song beats):\n";
         for (const auto& event : section.harmonicEvents) {
             const auto beat = section.startBar * plan.beatsPerBar + event.barOffset * plan.beatsPerBar + event.beatOffset;
@@ -4019,14 +4025,30 @@ juce::String directWindowSchema(const SongPlan& plan,
         if (boundedClub) part.getDynamicObject()->setProperty("items",
             juce::JSON::parse(R"({"$ref":"#/$defs/windowNote"})"));
         const auto productionJson = juce::String::fromUTF8(plan.phraseArchitectureJson.c_str());
-        if (boundedClub && sectionIndex && club::production::cycleBoundLayer(productionJson, owner.id)) {
+        const auto activity = boundedClub && sectionIndex ?
+            club::production::activitySpan(plan, owner.id, *sectionIndex) : std::pair<double, double>{0, 0};
+        const auto absoluteWindowStart = boundedClub && sectionIndex ?
+            (plan.sections[*sectionIndex].startBar + firstBar) * plan.beatsPerBar : 0;
+        const auto restrictedActivity = boundedClub && sectionIndex &&
+            (activity.first > absoluteWindowStart + .001 ||
+             activity.second < absoluteWindowStart + windowBars * plan.beatsPerBar - .001);
+        if (boundedClub && sectionIndex && (restrictedActivity ||
+                club::production::cycleBoundLayer(productionJson, owner.id))) {
             auto allowed = club::production::boundedNoteSchema(windowBars * plan.beatsPerBar);
             auto* choices = allowed.getProperty("anyOf", {}).getArray();
             const auto start = (plan.sections[*sectionIndex].startBar + firstBar) * plan.beatsPerBar;
+            const auto [entry, release] = activity;
             for (int choice = choices->size(); --choice >= 0;) {
                 const auto beat = static_cast<double>((*choices)[choice].getProperty("properties", {})
                     .getProperty("beat", {}).getProperty("enum", {})[0]);
-                if (!club::production::coreAttackAllowed(productionJson, owner.id, start + beat)) choices->remove(choice);
+                if (start + beat < entry - .001 || start + beat >= release - .001 ||
+                    !club::production::coreAttackAllowed(productionJson, owner.id, start + beat)) {
+                    choices->remove(choice);
+                } else {
+                    auto duration = (*choices)[choice].getProperty("properties", {}).getProperty("duration", {});
+                    duration.getDynamicObject()->setProperty("maximum", std::min(
+                        static_cast<double>(duration.getProperty("maximum", 0)), release - start - beat));
+                }
             }
             if (choices->isEmpty()) part.getDynamicObject()->setProperty("maxItems", 0);
             else part.getDynamicObject()->setProperty("items", allowed);
@@ -4084,6 +4106,15 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
             return false;
         }
         auto latestRelease = length;
+        if (plan.compositionBehavior == CompositionBehavior::Club && sectionIndex < plan.sections.size()) {
+            const auto start = (plan.sections[sectionIndex].startBar + firstBar) * plan.beatsPerBar;
+            const auto [entry, release] = club::production::activitySpan(plan, owner.id, sectionIndex);
+            if (start + beat < entry - .001 || start + beat + duration > release + .001) {
+                error = "Note contradicts your section entry/release plan: " + id +
+                    ". Compose a complete gesture inside the planned span; no notes were trimmed.";
+                return false;
+            }
+        }
         if (!isVoiceInFamily(owner.sourceVoice, VoiceFamily::Rhythm) &&
             !AiChromaticPolicy::allows(plan, pitch)) {
             error = "Chromaticism is OFF: voice=" + id + " MIDI=" + juce::String(pitch) +
@@ -4139,7 +4170,8 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
                               MetricIntent::StrictGrid, owner.id});
         }
     }
-    if (byOwner.empty() && !allowSilentGroup) {
+    const auto plannedSilent = club::production::silentWindow(plan, owners, sectionIndex, firstBar, bars);
+    if (byOwner.empty() && !allowSilentGroup && !plannedSilent) {
         error = "Direct ensemble window has no authored notes in any instrument";
         return false;
     }
@@ -6901,8 +6933,9 @@ juce::String AiComposer::performanceSchemaFor(
 }
 
 juce::String AiComposer::directWindowSchemaFor(
-    const SongPlan& plan, const std::vector<std::size_t>& indices) {
-    return directWindowSchema(plan, indices);
+    const SongPlan& plan, const std::vector<std::size_t>& indices,
+    std::optional<std::size_t> sectionIndex, int bars, int firstBar) {
+    return directWindowSchema(plan, indices, sectionIndex, bars, firstBar);
 }
 
 juce::String AiComposer::directWindowPromptFor(
@@ -9649,8 +9682,15 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 const auto localEnd = (firstBar + bars) * result.beatsPerBar;
                 const auto absoluteStart = (section.startBar + firstBar) * result.beatsPerBar;
                 const auto absoluteEnd = absoluteStart + bars * result.beatsPerBar;
-                for (std::size_t groupIndex = 0; groupIndex < writingGroups.size(); ++groupIndex) {
-                const auto& stageOwners = writingGroups[groupIndex];
+                const auto windowWritingGroups = club::production::windowGroups(result, writingGroups,
+                    sectionIndex, firstBar, bars);
+                for (std::size_t groupIndex = 0; groupIndex < windowWritingGroups.size(); ++groupIndex) {
+                const auto& stageOwners = windowWritingGroups[groupIndex];
+                if (club::production::silentWindow(result, stageOwners, sectionIndex, firstBar, bars)) {
+                    OperationalJournal::write("INFO", "CLUB_ARRANGEMENT",
+                        "AI-planned group withdrawal; no note generation or recovery required");
+                    continue;
+                }
                 juce::String feedback;
                 auto accepted = false;
                 PerformanceScore bestRejectedScore;
@@ -9668,7 +9708,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         windowCount, attempt, "ensemble window " +
                         juce::String(static_cast<int>(completedWindows + 1)) +
                         " group " + juce::String(static_cast<int>(groupIndex + 1)) +
-                        "/" + juce::String(static_cast<int>(writingGroups.size())) +
+                        "/" + juce::String(static_cast<int>(windowWritingGroups.size())) +
                         " review: " + feedback});
                 };
                 // One ensemble response plus bounded owner-specific revisions.
@@ -9726,7 +9766,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         juce::String(static_cast<int>(completedWindows + 1)) + "/" +
                         juce::String(static_cast<int>(windowCount)) + " group " +
                         juce::String(static_cast<int>(groupIndex + 1)) + "/" +
-                        juce::String(static_cast<int>(writingGroups.size()))});
+                        juce::String(static_cast<int>(windowWritingGroups.size()))});
                     const auto response = performRequest(body, apiKey, token,
                         std::min<std::chrono::seconds>(remaining, std::chrono::seconds(165)));
                     if (!response.connected || response.status < 200 || response.status >= 300 ||
@@ -9746,7 +9786,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         continue;
                     }
                     auto contained = passage.cells.empty() && passage.placements.empty() ?
-                        groupIndex > 0 :
+                        groupIndex > 0 || club::production::silentWindow(result, requestedOwners, sectionIndex, firstBar, bars) :
                         !passage.cells.empty() && !passage.placements.empty();
                     juce::String containmentDetail;
                     for (const auto& placement : passage.placements) {
@@ -9926,7 +9966,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             rendered.notes.end(), [&](const auto& note) {
                                 return note.partId == index + 1;
                             });
-                        const auto indispensableOpeningOwner = completedWindows == 0 && activeHere &&
+                        const auto plannedWithdrawal = club::production::silentWindow(
+                            result, {index}, sectionIndex, firstBar, bars);
+                        const auto indispensableOpeningOwner = completedWindows == 0 && activeHere && !plannedWithdrawal &&
                             (instrument.sourceVoice == VoiceId::HarmonicFoundation ||
                              isVoiceInFamily(instrument.sourceVoice, VoiceFamily::Bass) ||
                              instrument.id == result.narrativeSpine.protagonistInstrumentId);
@@ -10311,7 +10353,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     OperationalJournal::write("OK", "JOINT_WINDOW",
                         "accepted ensemble window group " +
                         juce::String(static_cast<int>(groupIndex + 1)) + "/" +
-                        juce::String(static_cast<int>(writingGroups.size())) +
+                        juce::String(static_cast<int>(windowWritingGroups.size())) +
                         " | rendered window notes=" +
                         juce::String(windowNotes));
                 }
@@ -10555,7 +10597,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         juce::String(static_cast<int>(completedWindows + 1)) + "/" +
                         juce::String(static_cast<int>(windowCount)) + " group " +
                         juce::String(static_cast<int>(groupIndex + 1)) + "/" +
-                        juce::String(static_cast<int>(writingGroups.size())) + ": " + feedback;
+                        juce::String(static_cast<int>(windowWritingGroups.size())) + ": " + feedback;
                     return {};
                 }
                 }

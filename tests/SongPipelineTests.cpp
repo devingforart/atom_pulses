@@ -320,6 +320,62 @@ int main() {
                   timedPlan.instruments[4].id, 32.25),
               "intentional syncopation in a flexible phrase must stay possible");
         AiPhraseArchitecture::applyTerminalHandoff(productionJson, productionPlanForWriting);
+        auto staged = juce::JSON::parse(coreJson);
+        auto state = staged.getProperty("layers", {})[0].getProperty("states", {})[0];
+        state.getDynamicObject()->setProperty("entry_beat", 8);
+        state.getDynamicObject()->setProperty("release_beat", 16);
+        auto stagedPlan = corePlan;
+        stagedPlan.phraseArchitectureJson = juce::JSON::toString(staged).toStdString();
+        check(club::production::validate(juce::String(stagedPlan.phraseArchitectureJson), stagedPlan, phraseError) &&
+                  club::production::activitySpan(stagedPlan, stagedPlan.instruments[0].id, 0) == std::pair<double, double>{8, 16},
+              "AI section entry/release decisions must survive the plan without local orchestration");
+        check(!AiComposer::parseDirectWindowJson(juce::JSON::toString(phaseResponse), stagedPlan,
+                  {0}, 0, 0, 8, untouched, phraseError) && phraseError.contains("entry/release"),
+              "an early note must be rejected rather than moved to the AI-planned entrance");
+        auto note = phaseResponse.getProperty(juce::String(corePlan.instruments[0].id), {})[0];
+        note.getDynamicObject()->setProperty("beat", 8);
+        note.getDynamicObject()->setProperty("duration", 8.25);
+        check(!AiComposer::parseDirectWindowJson(juce::JSON::toString(phaseResponse), stagedPlan,
+                  {0}, 0, 0, 8, untouched, phraseError) && phraseError.contains("entry/release"),
+              "a release after the AI withdrawal must request rewriting, never clipping");
+        note.getDynamicObject()->setProperty("duration", 8);
+        check(AiComposer::parseDirectWindowJson(juce::JSON::toString(phaseResponse), stagedPlan,
+                  {0}, 0, 0, 8, untouched, phraseError),
+              "the exact authored entrance and complete release remain legal");
+        phaseResponse.getDynamicObject()->setProperty(juce::String(corePlan.instruments[0].id), juce::Array<juce::var>{});
+        check(AiComposer::parseDirectWindowJson(juce::JSON::toString(phaseResponse), stagedPlan,
+                  {0}, 0, 0, 2, untouched, phraseError) && untouched.empty() &&
+                  club::production::silentWindow(stagedPlan, {0}, 0, 0, 2),
+              "a deliberately delayed core must not be forced to fill an opening window");
+        check(club::production::missingLayers(juce::String(stagedPlan.phraseArchitectureJson), stagedPlan,
+                  Pattern{}, 0, 0, 8, {0}, layerEvidence).empty(),
+              "support recovery must respect an AI-planned delayed entry");
+        const auto stagedSchema = juce::JSON::parse(AiComposer::directWindowSchemaFor(stagedPlan, {0}, 0, 8));
+        const auto choices = stagedSchema.getProperty("properties", {}).getProperty(
+            juce::String(stagedPlan.instruments[0].id), {}).getProperty("items", {}).getProperty("anyOf", {});
+        check(choices.size() == 4 && static_cast<double>(choices[0].getProperty("properties", {})
+                  .getProperty("beat", {}).getProperty("enum", {})[0]) == 8 &&
+                  static_cast<double>(choices[3].getProperty("properties", {})
+                  .getProperty("duration", {}).getProperty("maximum", 0)) == 2,
+              "generation schema must intersect the AI cycle, entrance and release before any notes are written");
+        const auto emptySchema = juce::JSON::parse(AiComposer::directWindowSchemaFor(stagedPlan, {0}, 0, 2));
+        check(static_cast<int>(emptySchema.getProperty("properties", {}).getProperty(
+                  juce::String(stagedPlan.instruments[0].id), {}).getProperty("maxItems", -1)) == 0,
+              "an AI-planned empty window must request an empty note array");
+        state.getDynamicObject()->setProperty("release_beat", 100000);
+        check(!club::production::validate(juce::JSON::toString(staged), stagedPlan, phraseError),
+              "activity limits outside a section must fail validation without modifying the score");
+        auto batchProduction = juce::JSON::parse(coreJson);
+        auto supportEnd = batchProduction.getProperty("layers", {})[4].getProperty("states", {})[0];
+        supportEnd.getDynamicObject()->setProperty("entry_beat", 0);
+        supportEnd.getDynamicObject()->setProperty("release_beat", 16);
+        auto batchPlan = corePlan;
+        batchPlan.phraseArchitectureJson = juce::JSON::toString(batchProduction).toStdString();
+        check(club::production::windowGroups(batchPlan, {{0, 1}, {2, 3, 4}}, 0, 0, 8) ==
+                  std::vector<std::vector<std::size_t>>{{0, 1}, {2, 3}, {4}} &&
+                  club::production::windowGroups(corePlan, {{0, 1}, {2, 3, 4}}, 0, 0, 8) ==
+                  std::vector<std::vector<std::size_t>>{{0, 1}, {2, 3, 4}},
+              "heterogeneous support release schemas must batch without splitting the core or legacy whole-window groups");
         check(productionPlanForWriting.continuousProductionSection && !clubPlan.continuousProductionSection,
               "section scope must be explicit and must not silently change full-song closure semantics");
         const auto sectionFormat = juce::JSON::parse(AiPhraseArchitecture::schema(

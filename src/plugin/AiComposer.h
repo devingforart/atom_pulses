@@ -74,7 +74,8 @@ public:
     [[nodiscard]] static juce::String performanceSchemaFor(
         const SongPlan&, const std::vector<std::size_t>& assignedInstruments);
     [[nodiscard]] static juce::String directWindowSchemaFor(
-        const SongPlan&, const std::vector<std::size_t>& assignedInstruments);
+        const SongPlan&, const std::vector<std::size_t>& assignedInstruments,
+        std::optional<std::size_t> sectionIndex = {}, int bars = 0, int firstBar = 0);
     [[nodiscard]] static juce::String directWindowPromptFor(
         const juce::String& direction, const SongPlan&, const Pattern& accepted,
         const std::vector<std::size_t>& assignedInstruments,

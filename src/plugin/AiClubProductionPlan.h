@@ -113,11 +113,13 @@ inline juce::String schema(const juce::String& direction = {}) {
             "interaction":{"type":"string"},"polyphonic":{"type":"boolean"},
             "states":{"type":"array","minItems":1,"maxItems":64,"items":{
               "type":"object","additionalProperties":false,
-              "required":["section_index","mode","minimum_sounding_fraction","material","evolution"],
+              "required":["section_index","mode","minimum_sounding_fraction","entry_beat","release_beat","material","evolution"],
               "properties":{
                 "section_index":{"type":"integer"},
                 "mode":{"type":"string","enum":["active","reduced","sustain","absent"]},
                 "minimum_sounding_fraction":{"type":"number"},
+                "entry_beat":{"type":"number","minimum":0,"multipleOf":0.25,"description":"AI-chosen earliest possible attack, in beats from this SECTION start. Not cycle origin or window-local. Use 0 for absent."},
+                "release_beat":{"type":"number","minimum":0,"multipleOf":0.25,"description":"AI-chosen latest possible note release, in beats from this SECTION start. At most section bars times beats/bar. Use 0 for absent. Notes need not fill this span."},
                 "material":{"type":"string"},"evolution":{"type":"string"}
               }}}
           }}}
@@ -194,7 +196,18 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
         "core that works on its own; elaborate decoration is not the metric foundation. "
         "Do not use unrelated cycle lengths in the core simply to sound sophisticated. "
         "For every instrument include exactly one state for EVERY section, absent when "
-        "withdrawn. CAST allowed_section_indices are the exact zero-based permissions "
+        "withdrawn. For each state choose entry_beat and release_beat in SECTION-LOCAL "
+        "beats, inside its duration. These are binding limits for this layer's activity, "
+        "not instructions to fill the interval. Choose 0/0 for absent; otherwise release "
+        "must exceed entry. Preserve the absolute rhythmic phase inside the chosen span. "
+        "For full_arrangement, explicitly organize discovery in the opening and the "
+        "order of completed gestures in the ending using these times and absent states. "
+        "Do not default every owner to every beat of every section. Explain the audible "
+        "handoff in evolution: what the listener has just heard, what remains to be said, "
+        "and who finishes it. Reserve foreground absence/recall where meaningful. Keep "
+        "the central full sections rich; an intro/outro is not a request to thin the whole "
+        "work. In continuous_section keep the requested repeatable body. "
+        "CAST allowed_section_indices are the exact zero-based permissions "
         "already chosen by the AI cast: outside that list the state MUST be absent "
         "with minimum_sounding_fraction=0. Within the list you may still withdraw a "
         "layer. Do not infer extra permissions from a role label. production_role is "
@@ -308,6 +321,16 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
                 error = "Club layer has invalid or duplicate section state: " + juce::String(id); return false;
             }
             const auto& section = plan.sections[static_cast<std::size_t>(sectionNumber)];
+            if (state.hasProperty("entry_beat") || state.hasProperty("release_beat")) {
+                double entry{}, release{};
+                if (!grid(state.getProperty("entry_beat", {}), entry) ||
+                    !grid(state.getProperty("release_beat", {}), release) || entry < 0 ||
+                    release > section.bars * plan.beatsPerBar ||
+                    (mode == "absent" ? (entry != 0 || release != 0) : release <= entry)) {
+                    error = "Club layer has invalid section-local entry/release: " + juce::String(id);
+                    return false;
+                }
+            }
             if (mode != "absent" && !owner->activeSections.empty() &&
                 std::find(owner->activeSections.begin(), owner->activeSections.end(), section.name) == owner->activeSections.end()) {
                 error = "Club layer activated outside its cast permission: " + juce::String(id) +
@@ -415,6 +438,67 @@ inline bool absent(const SongPlan& plan, const std::string& id, std::size_t sect
     return false;
 }
 
+// Read the AI's arrangement bounds. Legacy plans retain their full section span.
+// This never trims notes: schema/validation ask the AI to author within its own plan.
+inline std::pair<double, double> activitySpan(const SongPlan& plan, const std::string& id,
+                                            std::size_t sectionIndex) {
+    if (sectionIndex >= plan.sections.size()) return {0, 0};
+    const auto& section = plan.sections[sectionIndex];
+    const auto start = section.startBar * plan.beatsPerBar;
+    const auto root = juce::JSON::parse(juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()));
+    if (const auto* layers = root.getProperty("layers", {}).getArray()) for (const auto& layer : *layers)
+        if (layer.getProperty("instrument_id", {}).toString().toStdString() == id)
+            if (const auto* states = layer.getProperty("states", {}).getArray()) for (const auto& state : *states)
+                if (static_cast<int>(state.getProperty("section_index", -1)) == static_cast<int>(sectionIndex)) {
+                    if (state.getProperty("mode", {}).toString() == "absent") return {start, start};
+                    return {start + static_cast<double>(state.getProperty("entry_beat", 0)),
+                        start + static_cast<double>(state.getProperty("release_beat", section.bars * plan.beatsPerBar))};
+                }
+    return {start, start + section.bars * plan.beatsPerBar};
+}
+
+inline bool silentWindow(const SongPlan& plan, const std::vector<std::size_t>& owners,
+                         std::size_t sectionIndex, int firstBar, int bars) {
+    if (plan.compositionBehavior != CompositionBehavior::Club ||
+        sectionIndex >= plan.sections.size() || owners.empty()) return false;
+    const auto start = (plan.sections[sectionIndex].startBar + firstBar) * plan.beatsPerBar;
+    const auto end = start + bars * plan.beatsPerBar;
+    return std::all_of(owners.begin(), owners.end(), [&](const auto owner) {
+        if (owner >= plan.instruments.size()) return false;
+        const auto [entry, release] = activitySpan(plan, plan.instruments[owner].id, sectionIndex);
+        return release <= start + .001 || entry >= end - .001;
+    });
+}
+
+// Different release bounds create distinct large note schemas. Keep the groove
+// core joint; batch support by its realized window deadline. Every later batch
+// still receives the actual accepted ensemble. No musical plan is changed.
+inline std::vector<std::vector<std::size_t>> windowGroups(const SongPlan& plan,
+    const std::vector<std::vector<std::size_t>>& groups, std::size_t sectionIndex,
+    int firstBar, int bars) {
+    if (plan.compositionBehavior != CompositionBehavior::Club || sectionIndex >= plan.sections.size()) return groups;
+    const auto json = juce::String::fromUTF8(plan.phraseArchitectureJson.c_str());
+    const auto start = (plan.sections[sectionIndex].startBar + firstBar) * plan.beatsPerBar;
+    const auto end = start + bars * plan.beatsPerBar;
+    std::vector<std::vector<std::size_t>> result;
+    for (const auto& group : groups) {
+        if (std::any_of(group.begin(), group.end(), [&](const auto owner) {
+            return owner >= plan.instruments.size() || coreLayer(json, plan.instruments[owner].id);
+        })) { result.push_back(group); continue; }
+        std::vector<double> releases;
+        std::vector<std::vector<std::size_t>> batches;
+        for (const auto owner : group) {
+            const auto [entry, release] = activitySpan(plan, plan.instruments[owner].id, sectionIndex);
+            const auto bound = std::clamp(release, start, end);
+            const auto found = std::find(releases.begin(), releases.end(), bound);
+            if (found == releases.end()) { releases.push_back(bound); batches.push_back({owner}); }
+            else batches[static_cast<std::size_t>(std::distance(releases.begin(), found))].push_back(owner);
+        }
+        result.insert(result.end(), batches.begin(), batches.end());
+    }
+    return result;
+}
+
 // Read-only evidence against AI-chosen promises. No note is filled or retimed.
 inline std::vector<std::string> missingLayers(const juce::String& json, const SongPlan& plan,
     const Pattern& midi, std::size_t sectionIndex, double begin, double end,
@@ -442,7 +526,9 @@ inline std::vector<std::string> missingLayers(const juce::String& json, const So
             }
             const auto cycle = static_cast<double>(layer.getProperty("cycle_beats", 0));
             const auto required = static_cast<double>(state.getProperty("minimum_sounding_fraction", 0));
-            const auto completeCycle = end - begin >= cycle - .001;
+            const auto [entry, release] = activitySpan(plan, id, sectionIndex);
+            const auto available = std::max(0.0, std::min(end, release) - std::max(begin, entry));
+            const auto completeCycle = available >= cycle - .001;
             // A density estimate is not a musical correctness threshold. Only
             // a completely omitted promised layer is due for automatic recovery;
             // partial coverage goes to read-only evidence and musical listening.

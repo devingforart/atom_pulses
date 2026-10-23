@@ -62,6 +62,12 @@ juce::String AiPhraseArchitecture::schema(CompositionBehavior behavior, const ju
       }})json");
 }
 
+juce::String AiPhraseArchitecture::schema(const SongPlan& plan, const juce::String& direction) {
+    if (plan.compositionBehavior == CompositionBehavior::Club)
+        return club::production::schema(direction, &plan);
+    return schema(plan.compositionBehavior, direction);
+}
+
 juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
                                           const juce::String& direction,
                                           bool longFormArc) {

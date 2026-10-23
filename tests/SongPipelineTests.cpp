@@ -200,11 +200,14 @@ int main() {
         const juce::String inheritedMacro = R"({"properties":{"sections":{"minItems":3,"maxItems":24,"items":{"properties":{"bars":{"type":"integer"}}}},"narrative_spine":{"properties":{"acts":{"minItems":3,"maxItems":20}}}}})";
         const auto sectionMacro = juce::JSON::parse(club::production::macroSchema(
             inheritedMacro, CompositionBehavior::Club, "SECCION PLENA de 32 compases", 32));
+        const auto songMacro = juce::JSON::parse(club::production::macroSchema(
+            inheritedMacro, CompositionBehavior::Club, "complete progressive house song", 96));
         check(static_cast<int>(sectionMacro.getProperty("properties", {}).getProperty("sections", {}).getProperty("minItems", 0)) == 1 &&
                   static_cast<int>(sectionMacro.getProperty("properties", {}).getProperty("sections", {}).getProperty("maxItems", 0)) == 1 &&
                   static_cast<int>(sectionMacro.getProperty("properties", {}).getProperty("sections", {}).getProperty("items", {}).getProperty("properties", {}).getProperty("bars", {}).getProperty("enum", {})[0]) == 32 &&
+                  static_cast<int>(songMacro.getProperty("properties", {}).getProperty("sections", {}).getProperty("minItems", 0)) == 3 &&
                   club::production::macroSchema(inheritedMacro, CompositionBehavior::Adaptive, "section", 32) == inheritedMacro,
-              "a single Club production section must not inherit three mandatory dramatic sections; Adaptive stays unchanged");
+              "only an explicit Club production section may collapse to one state; full songs and Adaptive keep their form contract");
         const std::vector<std::size_t> grooveOwners{0, 1, 2, 3, 4};
         check(AiMelodicDiscourse::writingGroups(clubPlan, grooveOwners) ==
                   std::vector<std::vector<std::size_t>>{grooveOwners},
@@ -239,17 +242,23 @@ int main() {
           "arrival":"arrive on a sustained chord tone","support_response":"pads move inner voices beneath the phrase"})");
         arc.getDynamicObject()->setProperty("foreground_id", juce::String(clubPlan.instruments[0].id));
         developedProduction.getDynamicObject()->setProperty("musical_arcs", juce::Array<juce::var>{arc});
+        developedProduction.getDynamicObject()->setProperty("energy_trajectory", juce::Array<juce::var>{
+            juce::JSON::parse(R"({"section_index":0,"dramatic_function":"patient discovery","energy_intent":0.35,"density_intent":0.3,"identity_retained":"bass pulse","material_reserved":"complete hook","layer_change":"reveal the pulse","transition_consequence":"creates expectation"})"),
+            juce::JSON::parse(R"({"section_index":1,"dramatic_function":"earned arrival","energy_intent":0.78,"density_intent":0.68,"identity_retained":"bass pulse","material_reserved":"final release","layer_change":"return hook with chord body","transition_consequence":"repays the opening"})")});
         check(AiPhraseArchitecture::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError) &&
                   club::production::developmentBrief(juce::JSON::toString(developedProduction), 32, 64, 4)
                     .contains("retain contour") &&
-                  club::production::developmentBrief(juce::JSON::toString(developedProduction), 64, 96, 4).isEmpty(),
-              "AI musical arguments must survive technical windows without restarting or appearing outside their span");
+                  club::production::developmentBrief(juce::JSON::toString(developedProduction), 64, 96, 4).isEmpty() &&
+                  club::production::windowBrief(juce::JSON::toString(developedProduction), 0)
+                    .contains("NEXT ENERGY STATE"),
+              "AI musical arguments and energy trajectory must survive technical windows without restarting");
         developedProduction.getDynamicObject()->getProperty("musical_arcs").getArray()->getReference(0)
             .getDynamicObject()->setProperty("foreground_id", "nonexistent");
         check(!AiPhraseArchitecture::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError),
               "musical arcs cannot refer to invented MIDI owners");
-        check(!juce::JSON::parse(AiPhraseArchitecture::schema(CompositionBehavior::Club))
-                  .getProperty("properties", {}).hasProperty("phrases"),
+        const auto clubSchema = juce::JSON::parse(AiPhraseArchitecture::schema(CompositionBehavior::Club));
+        check(!clubSchema.getProperty("properties", {}).hasProperty("phrases") &&
+                  clubSchema.getProperty("properties", {}).hasProperty("energy_trajectory"),
               "Club generation must use its own layer schema, not hidden chamber phrases");
         auto productionMidi = Pattern{};
         productionMidi.notes.push_back({0, 8, 60, 70, 1, VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
@@ -363,8 +372,27 @@ int main() {
                   juce::String(stagedPlan.instruments[0].id), {}).getProperty("maxItems", -1)) == 0,
               "an AI-planned empty window must request an empty note array");
         state.getDynamicObject()->setProperty("release_beat", 100000);
-        check(!club::production::validate(juce::JSON::toString(staged), stagedPlan, phraseError),
-              "activity limits outside a section must fail validation without modifying the score");
+        check(!club::production::validate(juce::JSON::toString(staged), stagedPlan, phraseError) &&
+                  phraseError.contains("section_index=0") &&
+                  phraseError.contains("release_beat=100000") &&
+                  phraseError.contains("allowed range=0..32"),
+              "out-of-section activity must identify its exact value and limit for AI revision");
+        state.getDynamicObject()->setProperty("entry_beat", 24);
+        state.getDynamicObject()->setProperty("release_beat", 8);
+        check(!club::production::validate(juce::JSON::toString(staged), stagedPlan, phraseError) &&
+                  phraseError.contains("release_beat > entry_beat"),
+              "reversed AI activity spans must receive a specific revision reason");
+        const auto boundedClubSchema = juce::JSON::parse(AiPhraseArchitecture::schema(stagedPlan, "club"));
+        const auto boundedStates = boundedClubSchema.getProperty("properties", {})
+            .getProperty("layers", {}).getProperty("items", {}).getProperty("anyOf", {})[0]
+            .getProperty("properties", {}).getProperty("states", {})
+            .getProperty("items", {}).getProperty("anyOf", {})[0]
+            .getProperty("anyOf", {});
+        check(static_cast<double>(boundedStates[1].getProperty("properties", {})
+                  .getProperty("release_beat", {}).getProperty("maximum", -1)) == 32 &&
+                  static_cast<double>(boundedStates[1].getProperty("properties", {})
+                  .getProperty("entry_beat", {}).getProperty("maximum", -1)) == 32,
+              "Club planning schema must bound each section-local entry and release before AI generation");
         auto batchProduction = juce::JSON::parse(coreJson);
         auto supportEnd = batchProduction.getProperty("layers", {})[4].getProperty("states", {})[0];
         supportEnd.getDynamicObject()->setProperty("entry_beat", 0);
@@ -999,6 +1027,19 @@ int main() {
         check(AiComposer::castManifestHasRange(6, 3) &&
             AiComposer::castManifestHasRange(12, 8),
             "local compact cast schema raised its six-owner ceiling to eight");
+        check(AiComposer::requestedInstrumentCount(
+                  "dame solamente una pista de una progresion armonica en D#min") == 1 &&
+              AiComposer::castManifestUsesExactCount(1),
+            "an explicit single harmonic MIDI request lost its one-owner cast contract");
+        SongPlan singleHarmony;
+        singleHarmony.instrumentCastAuthored = true;
+        singleHarmony.preserveAuthoredCast = true;
+        singleHarmony.requestedCastCount = 1;
+        singleHarmony.instruments = {bed};
+        SongComposer::normalizePlan(singleHarmony);
+        check(singleHarmony.instruments.size() == 1 &&
+              singleHarmony.instruments.front().id == bed.id,
+            "single harmonic AI cast acquired unwanted instrumental owners");
         SongPlan narrativePromptPlan;
         narrativePromptPlan.totalBars = 8;
         narrativePromptPlan.sections.push_back({});

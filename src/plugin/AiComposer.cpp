@@ -154,6 +154,14 @@ std::size_t requestedInstrumentCountFromDirection(const juce::String& direction)
     }
 }
 
+bool singleHarmonicTrackRequested(const juce::String& direction) noexcept {
+    if (requestedInstrumentCountFromDirection(direction) != 1) return false;
+    const auto text = direction.toLowerCase();
+    return text.contains("armoni") || text.contains(juce::String::fromUTF8("armoní")) ||
+        text.contains("harmon") || text.contains("acorde") || text.contains("chord") ||
+        text.contains("progresion") || text.contains(juce::String::fromUTF8("progresión"));
+}
+
 VoiceId rhythmVoiceForPitch(int pitch) noexcept {
     if (pitch == 35 || pitch == 36) return VoiceId::CoreDrums;
     if (pitch >= 37 && pitch <= 40) return VoiceId::SnareClap;
@@ -918,7 +926,10 @@ bool validateProtagonistManifest(const juce::String& macroText,
             protagonistId;
         return false;
     }
-    if (protagonist->getProperty("source_voice").toString() != "lead") {
+    const auto protagonistVoice = protagonist->getProperty("source_voice").toString();
+    const auto singleChordNarrator = instruments->size() == 1 &&
+        protagonistVoice == "harmonic_foundation";
+    if (protagonistVoice != "lead" && !singleChordNarrator) {
         error = "Cast protagonist must own the Lead source voice: " + protagonistId;
         return false;
     }
@@ -1019,7 +1030,9 @@ bool reconcileProtagonistResolutionManifest(const juce::String& macroText,
     // Identity and voice errors are semantic cast errors and remain strict. Only
     // the mechanically missing section reference is safe to reconcile locally.
     if (matches != 1 || protagonist == nullptr ||
-        protagonist->getProperty("source_voice").toString() != "lead") return true;
+        (protagonist->getProperty("source_voice").toString() != "lead" &&
+         !(instruments->size() == 1 &&
+           protagonist->getProperty("source_voice").toString() == "harmonic_foundation"))) return true;
 
     juce::Array<juce::var> active;
     if (const auto* existing = protagonist->getProperty("active_sections").getArray())
@@ -1627,7 +1640,9 @@ bool reconcileMotionManifest(const juce::String& macroText,
         [](const auto& instrument) {
             return instrument.sourceVoice == VoiceId::MovementBass;
         });
-    if (percussionFree && !explicitlyNoBass && !hasMovementBass) {
+    const auto singleChordNarrator = assignments.size() == 1 &&
+        assignments.front().sourceVoice == VoiceId::HarmonicFoundation;
+    if (percussionFree && !explicitlyNoBass && !hasMovementBass && !singleChordNarrator) {
         error = "Percussion-free electronic cast requires one authored movement_bass owner unless bass is explicitly excluded";
         return false;
     }
@@ -7847,6 +7862,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         ? "Create a memorable instrumental song with a clear emotional narrative."
         : creativeDirection.trim();
     const auto requestedCastCount = requestedInstrumentCountFromDirection(direction);
+    const auto singleHarmonicTrack = singleHarmonicTrackRequested(direction);
     result.requestedCastCount = requestedCastCount;
     const auto jointWindowExperiment = localEditorial &&
         (targetSeconds <= 300 || firstPassAudition) &&
@@ -8236,9 +8252,22 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "Do not break an established multi-bar cycle merely to avoid equal sections: "
         "preserve its absolute-song phase through any chosen boundary. "
         "64 bars is an approximate macro horizon, not a hard grid. "
-        "Only for a requested full SONG, prepare a climax and a suitable final release. " +
+        "Only for a requested full SONG, design a patient, audible large-scale trajectory. "
+        "Do not expose the finished production body in the opening. Let identity emerge through "
+        "AI-chosen additions and withdrawals of micro-elements; 8- or 16-bar gestures are optional "
+        "producer-scale possibilities, not a compulsory schedule. Prepare at least one consequential "
+        "arrival, preserve recognizable memory through a meaningful withdrawal, create an earned "
+        "return, and give the work a suitable final release. Sections may merge these functions and "
+        "need not use conventional names, but their energy, density and role occupancy must not all "
+        "describe the same state. Energy and density are independent. " +
         (percussionFreeIntent ? juce::String("No drums or percussion: kick_state=muted, "
             "kick_continuity=optional, percussion_density=0; rhythmic gestures/mutations empty. ") : juce::String()) +
+        (singleHarmonicTrack ? juce::String(
+            "EXPLICIT SINGLE HARMONIC MIDI: the sole future instrument owns the entire "
+            "polyphonic chord narrative. Plan harmonic rhythm, voicing, tension and "
+            "resolution within that one lane; do not imply a separate bass, lead, "
+            "arpeggio, percussion or pad owner. Treat the harmonic instrument itself "
+            "as the narrative protagonist. ") : juce::String()) +
         "USER DIRECTION: " + direction : juce::String(
         "You are PULSO's long-form musical architect. Design the immutable macro composition, not its instruments or "
         "MIDI performances. Return a coherent dramatic journey whose sections cover exactly ") +
@@ -8444,7 +8473,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "protagonist. These three owners are sufficient: do not add a second pad, atmosphere, "
         "percussion or token part. Keep the chord bed present in the opening, development and closing, "
         "while allowing the bass and lead to breathe and trade focus. ") : juce::String{};
-    const auto matrixFloorBrief = behavior == CompositionBehavior::Club && requestedCastCount > 0 && requestedCastCount <= 4 ? juce::String(
+    const auto matrixFloorBrief = singleHarmonicTrack ? juce::String(
+        "one polyphonic harmonic foundation that carries the whole narrative; "
+        "no additional bass, melody, percussion or atmospheric track. ") :
+        behavior == CompositionBehavior::Club && requestedCastCount > 0 && requestedCastCount <= 4 ? juce::String(
         "a bass, a polyphonic rhythmic chord owner, a recurrence owner and a restrained hook, "
         "according to the requested compact cast. The rhythmic chord owner may be the "
         "primary_chord_bed: do not add sustained pads or a second bass to inflate this nucleus. ") : compactCast ? juce::String(
@@ -8526,7 +8558,20 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             "core_drums plus at least one independent hats, clap or percussion owner. The AI must compose their "
             "actual MIDI and sectional development; these are not local fallback tracks. ") : juce::String()) +
         "Original direction: ") + direction + "\nIMMUTABLE MACRO BLUEPRINT:\n" + macroText;
-    const auto manifestPrompt = behavior == CompositionBehavior::Club ?
+    const auto manifestPrompt = singleHarmonicTrack ?
+        castCountContract + independentCastContract + juce::String(
+        "Return exactly one instrument in the cast manifest. It is the sole "
+        "polyphonic harmonic narrator: source_voice=harmonic_foundation, "
+        "orchestral_function=foundation, role includes primary_chord_bed, "
+        "line_relationship=independent, and one unique content_lane_id. "
+        "protagonist_instrument_id must equal this instrument's id, even though "
+        "its source_voice is harmonic_foundation rather than lead. Keep this "
+        "instrument active in every section, including the resolution. Compose "
+        "all bass-register notes, chord voices and harmonic rhythm inside its "
+        "single MIDI lane when musically needed; do not add independent owners. "
+        "No drums or percussion. Return only the manifest schema, no MIDI. USER: ") +
+        direction + "\nMACRO:\n" + macroText :
+        behavior == CompositionBehavior::Club ?
         club::brief() + castCountContract + independentCastContract +
         "Choose a complete ELECTRONIC PRODUCTION CAST, not a chamber ensemble. "
         "Give every requested functional layer its own stable owner: voiced sustained "
@@ -8539,8 +8584,15 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "The primary sustained bed declares orchestral_function=foundation. A requested "
         "complementary sustained pad is a REAL BODY: declare source_voice=harmonic_upper "
         "or atmosphere AND orchestral_function=body, not color/extension/counterpoint. "
-        "Keep both available throughout a requested full section; plan actual breathing "
-        "within their notes, not by removing section permission. A pitched evolving texture "
+        "For a full arrangement, keep two such independent sustained bodies permitted together "
+        "in every ordinary section whose macro energy/density requires a two-body harmonic floor. "
+        "An opening, breakdown or release may deliberately require fewer bodies according to the "
+        "macro, but active_sections must still provide the requested floor across at least 85 percent "
+        "of the complete form. This permission is not constant tutti and does not pre-reveal the song: "
+        "reserve foreground hooks, arpeggios, stabs, register and voicing developments, while the later "
+        "production plan chooses the bodies' actual entries, withdrawals, rests and gates. Do not create "
+        "the gradual trajectory by making the harmonic floor structurally impossible. For a requested "
+        "full production section, keep both available throughout it. A pitched evolving texture "
         "is source_voice=atmosphere, never transitions or a one-shot FX destination. "
         "For schema compatibility, protagonist_instrument_id names one source_voice=lead "
         "owner active in the final section; this does NOT force a permanent lead solo "
@@ -8606,8 +8658,17 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             (manifestError.isNotEmpty() ? manifestError :
                 juce::String("response transport or schema failure")) +
             " Rebuild the cast manifest with the same creative direction and "
-            "requested size. The sustained harmonic bodies must be distinct "
-            "from sub-bass, arpeggio and melodic response owners.";
+            "requested size. " +
+            (singleHarmonicTrack ? juce::String(
+                "The ONE harmonic_foundation instrument is also the narrative protagonist. "
+                "Do not add a bass, lead, pad, percussion or other MIDI owner. "
+                "Preserve chordal continuity and the final resolution in that sole lane.") :
+                juce::String(
+                "The sustained harmonic bodies must be distinct from sub-bass, arpeggio "
+                "and melodic response owners. active_sections is permission, not a command "
+                "to play continuously: preserve the two-body harmonic-floor coverage "
+                "required by the macro and reserve later energy through foreground material, "
+                "register, voicing and the subsequent production plan instead of disabling both bodies."));
         manifestRecoveryBody = juce::String("{\"model\":\"") + model +
             "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
             realizationReasoningEffort +
@@ -8908,7 +8969,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     }
     // The parser normalizes the plan before returning it. Set the closed-cast
     // policy before parsing so its first normalization cannot add owners.
-    result.preserveAuthoredCast = jointWindowExperiment;
+    result.preserveAuthoredCast = jointWindowExperiment || singleHarmonicTrack;
     if (behavior == CompositionBehavior::Club) {
         auto authoritative = juce::JSON::parse(outputText);
         authoritative.getDynamicObject()->setProperty("composition_behavior", "club");
@@ -9362,7 +9423,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     juce::JSON::toString(juce::var(phrasePrompt)) +
                     ",\"text\":{\"format\":{\"type\":\"json_schema\","
                     "\"name\":\"pulso_phrase_architecture\",\"strict\":true,\"schema\":" +
-                    AiPhraseArchitecture::schema(behavior, direction) + "}}}";
+                    AiPhraseArchitecture::schema(result, direction) + "}}}";
                 const auto response = performRequest(body, apiKey, token,
                     std::min(remaining, std::chrono::seconds(
                         AiMelodicDiscourse::enabled() ? 180 : 100)));

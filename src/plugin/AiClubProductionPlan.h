@@ -81,9 +81,9 @@ inline bool explicitSection(const juce::String& direction) {
         lower.contains("production section");
 }
 
-inline juce::String schema(const juce::String& direction = {}) {
+inline juce::String schema(const juce::String& direction = {}, const SongPlan* plan = nullptr) {
     auto result = juce::JSON::parse(R"json({"type":"object","additionalProperties":false,
-      "required":["kind","format","identity","focus_owner_id","shared_pulse","groove_core_ids","musical_arcs","layers"],
+      "required":["kind","format","identity","focus_owner_id","shared_pulse","groove_core_ids","musical_arcs","energy_trajectory","layers"],
       "properties":{
         "kind":{"type":"string","enum":["club_production_v1"]},
         "format":{"type":"string","enum":["continuous_section","full_arrangement"]},
@@ -97,6 +97,19 @@ inline juce::String schema(const juce::String& direction = {}) {
             "foreground_id":{"type":"string"},"subject":{"type":"string"},
             "continuation":{"type":"string"},"arrival":{"type":"string"},"support_response":{"type":"string"}}
         }},
+        "energy_trajectory":{"type":"array","minItems":1,"maxItems":20,"items":{
+          "type":"object","additionalProperties":false,
+          "required":["section_index","dramatic_function","energy_intent","density_intent","identity_retained","material_reserved","layer_change","transition_consequence"],
+          "properties":{
+            "section_index":{"type":"integer","minimum":0},
+            "dramatic_function":{"type":"string"},
+            "energy_intent":{"type":"number","minimum":0,"maximum":1},
+            "density_intent":{"type":"number","minimum":0,"maximum":1},
+            "identity_retained":{"type":"string"},
+            "material_reserved":{"type":"string"},
+            "layer_change":{"type":"string"},
+            "transition_consequence":{"type":"string"}
+          }}},
         "layers":{"type":"array","minItems":1,"maxItems":64,"items":{
           "type":"object","additionalProperties":false,
           "required":["instrument_id","production_role","cycle_beats","cycle_origin_beat",
@@ -127,6 +140,73 @@ inline juce::String schema(const juce::String& direction = {}) {
     if (explicitSection(direction))
         result.getProperty("properties", {}).getProperty("format", {}).getDynamicObject()->setProperty(
             "enum", juce::Array<juce::var>{"continuous_section"});
+    if (plan != nullptr && !plan->instruments.empty() && !plan->sections.empty()) {
+        const auto properties = result.getProperty("properties", {});
+        const auto layerTemplate = properties.getProperty("layers", {}).getProperty("items", {});
+        juce::Array<juce::var> layerChoices;
+        for (const auto& instrument : plan->instruments) {
+            auto layer = juce::JSON::parse(juce::JSON::toString(layerTemplate));
+            const auto layerProperties = layer.getProperty("properties", {});
+            layerProperties.getProperty("instrument_id", {}).getDynamicObject()->setProperty(
+                "enum", juce::Array<juce::var>{juce::String::fromUTF8(instrument.id.c_str())});
+            const auto stateTemplate = layerProperties.getProperty("states", {}).getProperty("items", {});
+            juce::Array<juce::var> stateChoices;
+            for (std::size_t sectionIndex = 0; sectionIndex < plan->sections.size(); ++sectionIndex) {
+                const auto permitted = instrument.activeSections.empty() ||
+                    std::find(instrument.activeSections.begin(), instrument.activeSections.end(),
+                              plan->sections[sectionIndex].name) != instrument.activeSections.end();
+                auto absent = juce::JSON::parse(juce::JSON::toString(stateTemplate));
+                const auto absentProperties = absent.getProperty("properties", {});
+                absentProperties.getProperty("section_index", {}).getDynamicObject()->setProperty(
+                    "enum", juce::Array<juce::var>{static_cast<int>(sectionIndex)});
+                absentProperties.getProperty("mode", {}).getDynamicObject()->setProperty(
+                    "enum", juce::Array<juce::var>{"absent"});
+                for (const auto* key : {"minimum_sounding_fraction", "entry_beat", "release_beat"})
+                    absentProperties.getProperty(key, {}).getDynamicObject()->setProperty(
+                        "enum", juce::Array<juce::var>{0});
+                if (!permitted) {
+                    stateChoices.add(absent);
+                    continue;
+                }
+                auto sounding = juce::JSON::parse(juce::JSON::toString(stateTemplate));
+                const auto soundingProperties = sounding.getProperty("properties", {});
+                const auto sectionBeats = plan->sections[sectionIndex].bars * plan->beatsPerBar;
+                soundingProperties.getProperty("section_index", {}).getDynamicObject()->setProperty(
+                    "enum", juce::Array<juce::var>{static_cast<int>(sectionIndex)});
+                soundingProperties.getProperty("mode", {}).getDynamicObject()->setProperty(
+                    "enum", juce::Array<juce::var>{"active", "reduced", "sustain"});
+                for (const auto* key : {"entry_beat", "release_beat"})
+                    soundingProperties.getProperty(key, {}).getDynamicObject()->setProperty(
+                        "maximum", sectionBeats);
+                juce::var stateChoice(new juce::DynamicObject());
+                stateChoice.getDynamicObject()->setProperty("anyOf",
+                    juce::Array<juce::var>{absent, sounding});
+                stateChoices.add(stateChoice);
+            }
+            juce::var stateItems(new juce::DynamicObject());
+            stateItems.getDynamicObject()->setProperty("anyOf", stateChoices);
+            layerProperties.getProperty("states", {}).getDynamicObject()->setProperty(
+                "items", stateItems);
+            layerChoices.add(layer);
+        }
+        juce::var layerItems(new juce::DynamicObject());
+        layerItems.getDynamicObject()->setProperty("anyOf", layerChoices);
+        properties.getProperty("layers", {}).getDynamicObject()->setProperty("items", layerItems);
+
+        const auto trajectoryTemplate = properties.getProperty("energy_trajectory", {}).getProperty("items", {});
+        juce::Array<juce::var> trajectoryChoices;
+        for (std::size_t sectionIndex = 0; sectionIndex < plan->sections.size(); ++sectionIndex) {
+            auto moment = juce::JSON::parse(juce::JSON::toString(trajectoryTemplate));
+            moment.getProperty("properties", {}).getProperty("section_index", {})
+                .getDynamicObject()->setProperty("enum",
+                    juce::Array<juce::var>{static_cast<int>(sectionIndex)});
+            trajectoryChoices.add(moment);
+        }
+        juce::var trajectoryItems(new juce::DynamicObject());
+        trajectoryItems.getDynamicObject()->setProperty("anyOf", trajectoryChoices);
+        properties.getProperty("energy_trajectory", {}).getDynamicObject()->setProperty(
+            "items", trajectoryItems);
+    }
     return juce::JSON::toString(result, true);
 }
 
@@ -136,14 +216,14 @@ inline juce::String macroSchema(const juce::String& json, CompositionBehavior be
     auto root = juce::JSON::parse(json);
     const auto properties = root.getProperty("properties", {});
     const auto sections = properties.getProperty("sections", {});
-    sections.getDynamicObject()->setProperty("minItems", 1);
     const auto duration = sections.getProperty("items", {}).getProperty("properties", {}).getProperty("bars", {});
     duration.getDynamicObject()->setProperty("minimum", 1);
     const auto acts = properties.getProperty("narrative_spine", {}).getProperty("properties", {}).getProperty("acts", {});
-    acts.getDynamicObject()->setProperty("minItems", 1);
     if (explicitSection(direction)) {
+        sections.getDynamicObject()->setProperty("minItems", 1);
         sections.getDynamicObject()->setProperty("maxItems", 1);
         duration.getDynamicObject()->setProperty("enum", juce::Array<juce::var>{bars});
+        acts.getDynamicObject()->setProperty("minItems", 1);
         acts.getDynamicObject()->setProperty("maxItems", 1);
     }
     return juce::JSON::toString(root, true);
@@ -164,6 +244,17 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
         "different rhythmic chord layer and cannot replace it. Several complementary "
         "recurrence layers can coexist without each becoming a solo. Textures need their "
         "own pitched material, not an empty effects label.\n"
+        "For a full_arrangement, energy_trajectory must contain exactly one entry for every "
+        "section. Design one patient producer-scale journey rather than exposing the finished "
+        "body immediately. dramatic_function is freely named musical intent: opening, "
+        "establishment, accumulation, arrival, withdrawal, return and release are examples, "
+        "not a required fixed order. The opening must reserve some recognizable material for a "
+        "later consequential arrival. A withdrawal must retain audible identity, and a return "
+        "must change the meaning of something already heard. Energy and density are independent: "
+        "tension may rise while notes disappear. Choose micro-layer additions/removals when they "
+        "serve the music; 8 or 16 bars are useful possibilities, never an automatic schedule. "
+        "Do not give every section effectively the same energy, density and layer occupancy. "
+        "For continuous_section, describe one sustainable state and its musical wrap instead.\n"
         "Plan musical_arcs in ABSOLUTE zero-based bars: an actual subject, its continuation, "
         "perceptible arrival and the response of the supporting fabric. These span technical "
         "windows and may overlap; choose a few meaningful spans, not one arc for every track. "
@@ -240,7 +331,9 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
     for (std::size_t s = 0; s < plan.sections.size(); ++s) {
         const auto& section = plan.sections[s];
         out << static_cast<int>(s) << " | " << juce::String::fromUTF8(section.name.c_str())
-            << " | absolute bars " << section.startBar << ".." << section.startBar + section.bars << "\n";
+            << " | absolute bars " << section.startBar << ".." << section.startBar + section.bars
+            << " | SECTION-LOCAL entry/release range 0.."
+            << juce::String(section.bars * plan.beatsPerBar, 2) << " beats\n";
         for (const auto& event : section.harmonicEvents)
             out << " chord " << juce::String::fromUTF8(event.chordId.c_str())
                 << " local bar " << event.barOffset << " beat " << event.beatOffset << "\n";
@@ -323,11 +416,23 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
             const auto& section = plan.sections[static_cast<std::size_t>(sectionNumber)];
             if (state.hasProperty("entry_beat") || state.hasProperty("release_beat")) {
                 double entry{}, release{};
-                if (!grid(state.getProperty("entry_beat", {}), entry) ||
-                    !grid(state.getProperty("release_beat", {}), release) || entry < 0 ||
-                    release > section.bars * plan.beatsPerBar ||
+                const auto entryValue = state.getProperty("entry_beat", {});
+                const auto releaseValue = state.getProperty("release_beat", {});
+                const auto sectionBeats = section.bars * plan.beatsPerBar;
+                const auto entryOnGrid = grid(entryValue, entry);
+                const auto releaseOnGrid = grid(releaseValue, release);
+                if (!entryOnGrid || !releaseOnGrid || entry < 0 || entry > sectionBeats ||
+                    release < 0 || release > sectionBeats ||
                     (mode == "absent" ? (entry != 0 || release != 0) : release <= entry)) {
-                    error = "Club layer has invalid section-local entry/release: " + juce::String(id);
+                    error = "Club layer has invalid section-local entry/release: " + juce::String(id) +
+                        " | section_index=" + juce::String(static_cast<int>(sectionNumber)) +
+                        " | section=" + juce::String::fromUTF8(section.name.c_str()) +
+                        " | mode=" + mode + " | entry_beat=" + entryValue.toString() +
+                        " | release_beat=" + releaseValue.toString() +
+                        " | allowed range=0.." + juce::String(sectionBeats, 2) +
+                        " section-local beats, on quarter-beat grid" +
+                        (mode == "absent" ? "; absent requires 0/0" :
+                            "; sounding requires release_beat > entry_beat");
                     return false;
                 }
             }
@@ -343,6 +448,49 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
     }
     const auto focus = root.getProperty("focus_owner_id", {}).toString().toStdString();
     if (!focus.empty() && !ids.contains(focus)) { error = "Club focus is not a cast owner"; return false; }
+    // New plans make the producer-scale journey explicit. Historical checkpoints
+    // remain resumable: they predate this field and are validated by their original
+    // layer/arc contract rather than being silently assigned a new trajectory.
+    if (root.hasProperty("energy_trajectory")) {
+        const auto* trajectory = root.getProperty("energy_trajectory", {}).getArray();
+        if (!trajectory || trajectory->size() != static_cast<int>(plan.sections.size())) {
+            error = "Club energy trajectory must describe every section exactly once"; return false;
+        }
+        std::set<int> covered;
+        std::set<std::string> functions;
+        std::set<int> energyShapes;
+        std::set<int> densityShapes;
+        for (const auto& moment : *trajectory) {
+            double sectionNumber{};
+            const auto energyValue = moment.getProperty("energy_intent", {});
+            const auto densityValue = moment.getProperty("density_intent", {});
+            const auto energy = static_cast<double>(energyValue);
+            const auto density = static_cast<double>(densityValue);
+            if (!grid(moment.getProperty("section_index", {}), sectionNumber) ||
+                sectionNumber != std::floor(sectionNumber) || sectionNumber < 0 ||
+                sectionNumber >= static_cast<double>(plan.sections.size()) ||
+                !covered.insert(static_cast<int>(sectionNumber)).second ||
+                !(energyValue.isInt() || energyValue.isInt64() || energyValue.isDouble()) ||
+                !(densityValue.isInt() || densityValue.isInt64() || densityValue.isDouble()) ||
+                !std::isfinite(energy) || !std::isfinite(density) ||
+                energy < 0 || energy > 1 || density < 0 || density > 1) {
+                error = "Club energy trajectory has an invalid section or intent"; return false;
+            }
+            for (const auto* key : {"dramatic_function", "identity_retained", "material_reserved",
+                                    "layer_change", "transition_consequence"})
+                if (moment.getProperty(key, {}).toString().trim().isEmpty()) {
+                    error = "Club energy trajectory omits " + juce::String(key); return false;
+                }
+            functions.insert(moment.getProperty("dramatic_function", {}).toString().toLowerCase().toStdString());
+            energyShapes.insert(static_cast<int>(std::round(energy * 100)));
+            densityShapes.insert(static_cast<int>(std::round(density * 100)));
+        }
+        if (format == "full_arrangement" && plan.sections.size() >= 3 &&
+            (functions.size() < 2 || (energyShapes.size() < 2 && densityShapes.size() < 2))) {
+            error = "Club full arrangement needs an AI-authored contrast trajectory, not one static state";
+            return false;
+        }
+    }
     if (root.hasProperty("musical_arcs")) {
         const auto* arcs = root.getProperty("musical_arcs", {}).getArray();
         if (!arcs || arcs->isEmpty() || arcs->size() > 12) { error = "Club musical arcs are missing"; return false; }
@@ -391,6 +539,17 @@ inline juce::String windowBrief(const juce::String& json, std::size_t sectionInd
         out << "GROOVE CORE OWNERS: " << juce::JSON::toString(root.getProperty("groove_core_ids", {}))
             << ". Their attack grammar/absolute phase is fixed by YOUR plan. Omit attacks when needed, "
             "but do not add unplanned offsets. Supporting layers must leave space for this real core.\n";
+    if (const auto* trajectory = root.getProperty("energy_trajectory", {}).getArray()) {
+        for (int offset = -1; offset <= 1; ++offset) {
+            const auto index = static_cast<int>(sectionIndex) + offset;
+            if (index < 0 || index >= trajectory->size()) continue;
+            out << (offset < 0 ? "PREVIOUS ENERGY STATE: " :
+                    offset > 0 ? "NEXT ENERGY STATE: " : "CURRENT ENERGY STATE: ")
+                << juce::JSON::toString((*trajectory)[index], true) << "\n";
+        }
+        out << "Realize this transition through the planned layers and actual MIDI. Preserve the "
+            "shared groove identity, but do not pre-reveal material reserved for a later state.\n";
+    }
     out << "TIMING REALIZATION: cycle_bound applies to every marked owner, including pads/textures. "
         "Use only its declared absolute cycle attacks; softness is an envelope, not a MIDI delay. "
         "For phrase_flexible voices write connected gestures and intelligible arrivals against "

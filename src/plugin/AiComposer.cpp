@@ -3296,12 +3296,18 @@ juce::String jointWindowPrompt(const juce::String& direction, const SongPlan& pl
         const auto corePass = std::any_of(owners.begin(), owners.end(), [&](const auto owner) {
             return owner < plan.instruments.size() && club::production::coreLayer(productionJson, plan.instruments[owner].id);
         });
-        out << (corePass ? "\nCORE PASS: Write the small shared groove first. It must work without "
-            "future decorative tracks. Follow YOUR declared cycle attacks exactly; choose convincing "
-            "pitches, voicings, note lengths and accents. Do not shift phase at section changes.\n" :
-            "\nSUPPORT PASS: The bass/chord/sequence core in the accepted MIDI is immutable. "
-            "Add useful sustained harmony, hook and atmosphere around its ACTUAL attacks. "
-            "Do not compete for every gap or create a second unrelated metrical floor.\n");
+        out << (corePass ? "\nFOUNDATION AND FOCUS PASS: Author the shared groove together with "
+            "the AI-chosen focus/protagonist owners requested in this call. They must form one "
+            "recognizable musical proposition with an audible phrase, not a groove followed "
+            "by unrelated decorative notes. The declared cycle attacks bind ONLY owners named "
+            "in groove_core_ids or marked cycle_bound; a phrase_flexible focus can breathe, "
+            "answer and land freely. The groove must still work without future colours. "
+            "Do not shift its phase at section changes.\n" :
+            "\nSUPPORT PASS: The accepted MIDI already contains the shared groove AND its "
+            "actual focus/protagonist material. Preserve those notes. Add complementary "
+            "harmony and atmosphere that support or answer a SPECIFIC heard gesture, "
+            "rather than inventing another unrelated foreground or filling every gap. "
+            "Do not create a second metrical floor.\n");
         out << "\nAuthor ALL requested layers together as an electronic production section, "
             "not independent solos. Return the supplied direct MIDI schema, one array per "
             "requested owner. Write every literal repetition explicitly. No renderer fills "
@@ -7877,10 +7883,15 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     const auto thematicReview = localEditorial && targetSeconds >= 120 &&
         juce::SystemStats::getEnvironmentVariable(
             "PULSO_AI_THEMATIC_REVIEW", {}) == "1";
+    const auto clubGroundedStory = localEditorial && phraseArchitectureExperiment &&
+        behavior == CompositionBehavior::Club && targetSeconds >= 120 &&
+        juce::SystemStats::getEnvironmentVariable(
+            "PULSO_AI_CLUB_GROUNDED_STORY", {}) == "1";
     const auto groundedStory = localEditorial && phraseArchitectureExperiment &&
         targetSeconds > 180 &&
         juce::SystemStats::getEnvironmentVariable(
             "PULSO_AI_GROUNDED_STORY_EXPERIMENT", {}) == "1";
+    const auto openingGroundedArc = groundedStory || clubGroundedStory;
     if (longFormContinuity)
         OperationalJournal::write("INFO", "CONTINUITY",
             "isolated long-form AI continuity A/B enabled");
@@ -9619,10 +9630,19 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             writingGroups = AiMelodicDiscourse::writingGroups(result, jointOwners);
             OperationalJournal::write("INFO", "DISCOURSE",
                 juce::String(behavior == CompositionBehavior::Club ?
-                    "AI authors its chosen groove core before supporting production layers; " :
+                    "AI authors its chosen groove and focal argument together before supporting production layers; " :
                     "AI-chosen speakers and harmonic context are written together; ") +
                 "remaining voices answer the actual accepted MIDI | groups=" +
                 juce::String(static_cast<int>(writingGroups.size())));
+        }
+        if (singleEnsembleGroup && behavior == CompositionBehavior::Club) {
+            // Controlled local A/B: the joint groove, melodic sentence and
+            // supporting voices are one AI decision. No owner is filled or
+            // silenced by code; only the request grouping changes.
+            writingGroups = {jointOwners};
+            OperationalJournal::write("INFO", "DISCOURSE",
+                "one complete Club ensemble per window | AI chooses every note "
+                "and every rest together");
         }
         if (singleEnsembleGroup && !AiMelodicDiscourse::enabled())
             OperationalJournal::write("INFO", "WRITING",
@@ -9641,7 +9661,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         auto completedWindows = std::size_t{};
         auto serial = std::size_t{};
         const auto ensureGroundedStory = [&]() -> bool {
-            if (!groundedStory) return true;
+            if (!openingGroundedArc) return true;
             const auto currentPhrase = juce::JSON::parse(
                 juce::String::fromUTF8(result.phraseArchitectureJson.c_str()));
             const auto* currentRoot = currentPhrase.getDynamicObject();
@@ -9682,7 +9702,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     juce::JSON::toString(juce::var(storyPrompt)) +
                     ",\"text\":{\"format\":{\"type\":\"json_schema\"," +
                     "\"name\":\"pulso_grounded_story\",\"strict\":true,\"schema\":" +
-                    AiPhraseArchitecture::groundedStorySchema() + "}}}";
+                    AiPhraseArchitecture::groundedStorySchema(result) + "}}}";
                 const auto response = performRequest(body, apiKey, token,
                     std::min(remaining, std::chrono::seconds(110)));
                 const auto draft = extractOutputText(juce::JSON::parse(response.body));
@@ -9704,6 +9724,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     "attempt " + juce::String(storyAttempt) +
                     " rejected | " + storyError);
             }
+            if (clubGroundedStory) {
+                OperationalJournal::write("WARN", "GROUNDED_STORY",
+                    "Club opening accepted; grounded arc unavailable, retaining the original AI plan: " + storyError);
+                return true;
+            }
             error = "AI grounded-story plan failed; accepted opening MIDI remains "
                 "recoverable from its exact checkpoint: " + storyError;
             return false;
@@ -9718,9 +9743,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             if (!importAcceptedMidiCheckpoint(result, *resume, score, restoredOwners, error))
                 return {};
             completedWindows = std::min(resume->completedUnits, windowCount);
-            if (groundedStory && completedWindows > 0 &&
+            if (openingGroundedArc && completedWindows > 0 &&
                 !ensureGroundedStory()) return {};
-            if (groundedStory && completedWindows == 1 && checkpoint) {
+            if (openingGroundedArc && completedWindows == 1 && checkpoint) {
                 auto snapshot = result;
                 snapshot.performanceScore = score;
                 checkpoint(snapshot, completedWindows, true, false);
@@ -10668,7 +10693,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     snapshot.performanceScore = score;
                     checkpoint(snapshot, completedWindows, true, false);
                 }
-                if (groundedStory && completedWindows == 1) {
+                if (openingGroundedArc && completedWindows == 1) {
                     if (!ensureGroundedStory()) return {};
                     if (checkpoint) {
                         auto snapshot = result;
@@ -11587,11 +11612,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             !fullSceneNarrativeExperiment &&
             juce::SystemStats::getEnvironmentVariable(
                 "PULSO_AI_RHYTHMIC_ARC_EXPERIMENT", {}) == "1";
-        if (!finaleOnlyExperiment &&
+        if ((!finaleOnlyExperiment || rhythmicArcExperiment) &&
             (globalNarrativeExperiment ||
              juce::SystemStats::getEnvironmentVariable(
                  "PULSO_AI_MELODIC_EXPERIMENT", {}) == "1") &&
-            !(acceptedReleaseOnly && resume != nullptr &&
+            // A terminal repair normally ends this controlled review. An
+            // explicit local rhythmic-arc experiment still needs to hear the
+            // repaired ending before choosing non-final phrase windows.
+            !(acceptedReleaseOnly && !rhythmicArcExperiment && resume != nullptr &&
               !resume->blueprintOnly && completedWindows == windowCount) &&
             !result.sections.empty()) {
             const auto protagonist = std::find_if(result.instruments.begin(),
@@ -11678,8 +11706,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         "do NOT demand constant change, extra notes, or novelty for its "
                         "own sake. If the current phrasing already makes the dramatic "
                         "turns audible, return ZERO targets and preserve the score. "
-                        "Otherwise select ONE or TWO non-final windows in different "
-                        "scenes where a carefully motivated change of phrase rhythm "
+                        "Otherwise select ONE or TWO non-final windows where a "
+                        "carefully motivated change of phrase rhythm "
                         "would make the question, consequence or response clearer. "
                         "Do not redesign an entire scene. Cite the actual pitches, "
                         "onsets, durations and rests that motivate each choice, and "
@@ -11937,7 +11965,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             (finalNarrativeExperiment ?
                                 orderedTargets.size() == 1 && sections.size() == 1 :
                             rhythmicArcExperiment ?
-                                sections.size() == orderedTargets.size() :
+                                orderedTargets.size() <= plannedNarrativeWindows :
                                 narrativeFocus.isNotEmpty() ?
                                     sections.size() >= std::min<std::size_t>(2,
                                         plannedNarrativeWindows) : true);
@@ -12013,6 +12041,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                             before.narrative.issues.end(), issue) ==
                                             before.narrative.issues.end();
                                     })) return false;
+                            // Timing can become more expressive without moving a
+                            // motif/density score. For this local A/B, preserve
+                            // technical and narrative safety, then let the human
+                            // listener judge the audible phrasing change.
+                            if (rhythmicArcExperiment) return true;
                             if (before.narrative.creativeReady) return true;
                             const auto phraseJson = juce::String::fromUTF8(
                                 result.phraseArchitectureJson.c_str());
@@ -12110,6 +12143,17 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                 "or making the phrase uniformly busier. The revised "
                                 "rhythm must be audibly distinct, not merely new "
                                 "pitches or velocities on the same onset grid.\n";
+                        if (rhythmicArcExperiment &&
+                            result.compositionBehavior == CompositionBehavior::Club) {
+                            const auto [entry, release] = club::production::activitySpan(
+                                result, result.instruments[editOwner].id,
+                                static_cast<std::size_t>(sectionIndex));
+                            rewritePrompt << "The AI production plan permits this owner "
+                                "to sound only from absolute beat " << juce::String(entry, 2)
+                                << " until absolute beat " << juce::String(release, 2)
+                                << ". Keep silence outside that interval even when the "
+                                   "technical window extends further.\n";
+                        }
                         if (fullSceneNarrativeExperiment)
                             rewritePrompt << "\nFULL-SCENE AUTHORSHIP: rewrite this "
                                 "narrative voice over the entire selected scene, "
@@ -12155,7 +12199,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             juce::JSON::toString(juce::var(rewritePrompt)) +
                             ",\"text\":{\"format\":{\"type\":\"json_schema\","
                             "\"name\":\"pulso_direct_window\",\"strict\":true,\"schema\":" +
-                            directWindowSchema(result, {editOwner}) + "}}}";
+                            directWindowSchema(result, {editOwner},
+                                static_cast<std::size_t>(sectionIndex), bars, firstBar) + "}}}";
                         if (progress) progress({AiSongStage::Recovery, windowCount,
                             windowCount, 2, "AI rewriting one protagonist phrase window"});
                         const auto editResponse = performRequest(editBody, apiKey,

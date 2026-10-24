@@ -427,7 +427,8 @@ int main(int argc, char** argv) {
 #else
     setenv("PULSO_AI_ALLOW_CHROMATIC", chromaticSetting, 1);
 #endif
-    const auto prompt = object->getProperty("prompt").toString().trim();
+    const auto prompt = (object->hasProperty("worker_prompt") ?
+        object->getProperty("worker_prompt") : object->getProperty("prompt")).toString().trim();
     const auto duration = static_cast<int>(object->getProperty("duration_seconds"));
     const auto bpm = static_cast<double>(object->getProperty("bpm"));
     const auto seedText = object->getProperty("seed").toString();

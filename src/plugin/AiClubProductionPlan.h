@@ -6,6 +6,16 @@
 
 namespace pulso::plugin::club::production {
 
+inline bool foregroundGrooveExperiment() {
+    return juce::SystemStats::getEnvironmentVariable(
+        "PULSO_AI_CLUB_FOREGROUND_GROOVE_EXPERIMENT", {}) == "1";
+}
+
+inline bool jointGrooveNucleusExperiment() {
+    return juce::SystemStats::getEnvironmentVariable(
+        "PULSO_AI_CLUB_JOINT_GROOVE_EXPERIMENT", {}) == "1";
+}
+
 inline bool isPlan(const juce::String& json) {
     return juce::JSON::parse(json).getProperty("kind", {}).toString() == "club_production_v1";
 }
@@ -137,6 +147,23 @@ inline juce::String schema(const juce::String& direction = {}, const SongPlan* p
               }}}
           }}}
       }})json");
+    if (jointGrooveNucleusExperiment()) {
+        auto* object = result.getDynamicObject();
+        object->getProperty("required").getArray()->add("groove_interlock");
+        object->getProperty("properties").getDynamicObject()->setProperty("groove_interlock",
+            juce::JSON::parse(R"json({"type":"object","additionalProperties":false,
+              "required":["bass_owner_id","chord_owner_id","foreground_owner_id",
+                "shared_landings","bass_chord_relationship","foreground_sentence","breathing_space"],
+              "properties":{
+                "bass_owner_id":{"type":"string"},"chord_owner_id":{"type":"string"},
+                "foreground_owner_id":{"type":"string"},
+                "shared_landings":{"type":"array","minItems":1,"maxItems":8,
+                  "items":{"type":"number","minimum":0,"multipleOf":0.25}},
+                "bass_chord_relationship":{"type":"string"},
+                "foreground_sentence":{"type":"string"},
+                "breathing_space":{"type":"string"}
+              }})json"));
+    }
     if (explicitSection(direction))
         result.getProperty("properties", {}).getProperty("format", {}).getDynamicObject()->setProperty(
             "enum", juce::Array<juce::var>{"continuous_section"});
@@ -316,6 +343,37 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
         "to fill.\nUSER: " << direction << "\nWORK: " << plan.totalBars << " bars; "
         << plan.beatsPerBar << " beats/bar; " << plan.bpm << " BPM; "
         << juce::String::fromUTF8(plan.key.c_str()) << "\nCAST:\n";
+    if (foregroundGrooveExperiment() && !plan.continuousProductionSection)
+        out << "\nLISTENING-BACKED CLUB A/B: The previous complete MIDI had a bass that "
+            "played every slot of its cycle through seventeen repetitions, while "
+            "the named focus was an arpeggiated sequence and the lead rarely became "
+            "a memorable independent sentence. Plan a NEW interpretation of this "
+            "same brief. Keep the durable pulse, but make groove emerge from a "
+            "deliberate relationship among bass, chord rhythm, sequence and rests: "
+            "the cycle is a vocabulary of possible attacks, not a command to play "
+            "every slot each time. The AI should decide where a bass anticipation "
+            "drops out, a chord accent answers it, or the sequence yields the floor. "
+            "Do not create random variation or abandon the recurring identity. "
+            "Give the listener a foreground voice capable of a distinctive, "
+            "breathing melodic sentence that can return changed; do not make its "
+            "principal idea just another continuous arpeggio. Choose its actual "
+            "owner from the cast and make focus_owner_id point to that voice when "
+            "the full song promises a tonal subject. The supporting sequence may "
+            "stay hypnotic, but should not substitute for the foreground statement. "
+            "These are role and phrase relationships, not prescribed MIDI notes, "
+            "rhythms, quotas or a fixed song form.\n";
+    if (jointGrooveNucleusExperiment())
+        out << "\nJOINT GROOVE NUCLEUS EXPERIMENT: Design bass and chord pulse "
+            "as ONE interlocking phrase before individual layers. Fill groove_interlock "
+            "with their exact owner ids, the foreground melodic owner, and AI-chosen "
+            "absolute beat offsets in their first common cycle where bass and chord "
+            "both land. Those landings must occur in BOTH declared rhythm_cells. "
+            "Explain which bass attacks invite chord answers, where the chord leaves "
+            "room for bass, what complete melodic sentence sits above them, and where "
+            "that sentence breathes. The foreground is a musical thought with a "
+            "beginning and consequence, not a third arpeggio. Every onset and pitch "
+            "remains your own choice. Do not maximize note count or cycle diversity. "
+            "A common pulse may be spare, but its parts must make sense together.\n";
     for (const auto& part : plan.instruments) {
         juce::Array<juce::var> allowed;
         for (std::size_t index = 0; index < plan.sections.size(); ++index)
@@ -448,6 +506,32 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
     }
     const auto focus = root.getProperty("focus_owner_id", {}).toString().toStdString();
     if (!focus.empty() && !ids.contains(focus)) { error = "Club focus is not a cast owner"; return false; }
+    if (root.hasProperty("groove_interlock")) {
+        const auto link = root.getProperty("groove_interlock", {});
+        const auto bass = link.getProperty("bass_owner_id", {}).toString().toStdString();
+        const auto chord = link.getProperty("chord_owner_id", {}).toString().toStdString();
+        const auto foreground = link.getProperty("foreground_owner_id", {}).toString().toStdString();
+        const auto* landings = link.getProperty("shared_landings", {}).getArray();
+        if (!ids.contains(bass) || !ids.contains(chord) || !ids.contains(foreground) ||
+            bass == chord || bass == foreground || chord == foreground ||
+            !coreLayer(json, bass) || !coreLayer(json, chord) ||
+            focus != foreground || !landings || landings->isEmpty()) {
+            error = "Club groove interlock must name two distinct core owners and the actual foreground focus";
+            return false;
+        }
+        for (const auto* field : {"bass_chord_relationship", "foreground_sentence", "breathing_space"})
+            if (link.getProperty(field, {}).toString().trim().isEmpty()) {
+                error = "Club groove interlock omits its musical relationship"; return false;
+            }
+        for (const auto& landing : *landings) {
+            double beat{};
+            if (!grid(landing, beat) || beat < 0 ||
+                !coreAttackAllowed(json, bass, beat) || !coreAttackAllowed(json, chord, beat)) {
+                error = "Club groove interlock names a landing not shared by bass and chord cells";
+                return false;
+            }
+        }
+    }
     // New plans make the producer-scale journey explicit. Historical checkpoints
     // remain resumable: they predate this field and are validated by their original
     // layer/arc contract rather than being silently assigned a new trajectory.
@@ -556,6 +640,23 @@ inline juce::String windowBrief(const juce::String& json, std::size_t sectionInd
         "the accepted ensemble. Do not stagger every layer by a sixteenth or make each one "
         "a competing syncopated solo. Sharing an arrival is allowed. Do not blanket-straighten "
         "the music: retain syncopation when it contributes to the shared phrase.\n";
+    if (root.hasProperty("groove_interlock"))
+        out << "AI-AUTHORED JOINT GROOVE NUCLEUS: "
+            << juce::JSON::toString(root.getProperty("groove_interlock", {}), true)
+            << "\nHear bass and chord as one phrase with shared landings and answering "
+               "space. Their listed rhythm_cells are possibilities, not a demand to "
+               "play every slot. Let the foreground sentence speak over that joint "
+               "pulse; leave its declared breathing space audible. Do not turn every "
+               "voice into a competing arpeggio.\n";
+    if (foregroundGrooveExperiment())
+        out << "FOREGROUND/GROOVE A/B: Treat the recurring bass and chord cell as "
+            "a shared language, not a full grid to exhaust. Author purposeful "
+            "omissions, note lengths, accents and harmonic responses in this "
+            "section while retaining an audible common pulse. If the sequence "
+            "is active, let it support or answer the foreground rather than "
+            "doubling a stream of equal notes. The focus voice needs connected "
+            "phrases, a perceptible arrival and silence that makes its return "
+            "meaningful. Decide every MIDI event yourself.\n";
     if (root.getProperty("format", {}).toString() == "continuous_section")
         out << "This is a FULL PRODUCTION SECTION, not a miniature complete song. Keep the "
             "body and groove through its wrap. Do not impose a breakdown, final solo cadence "
@@ -569,6 +670,33 @@ inline juce::String windowBrief(const juce::String& json, std::size_t sectionInd
         copy.getDynamicObject()->removeProperty("states");
         copy.getDynamicObject()->setProperty("current_state", stateForSection);
         out << juce::JSON::toString(copy, true) << "\n";
+    }
+    if (const auto* story = root.getProperty("grounded_story", {}).getDynamicObject()) {
+        out << "SCORE-GROUNDED CLUB ARGUMENT: This AI reading of the accepted opening MIDI "
+            "takes precedence over a contradictory pre-MIDI arc, without changing the "
+            "fixed chord map, cast, layer states or core attack cycles. Opening="
+            << story->getProperty("opening_evidence").toString()
+            << "; related counteridea=" << story->getProperty("related_counteridea").toString()
+            << "; conflict=" << story->getProperty("central_conflict").toString()
+            << "; necessary turn=" << story->getProperty("necessary_turn").toString()
+            << "; final consequence=" << story->getProperty("final_consequence").toString() << "\n";
+    }
+    if (const auto* links = root.getProperty("act_links", {}).getArray()) {
+        out << "ACTUAL-MIDI GROUNDED SCENES: Let each later section inherit and audibly "
+            "transform the established material. Do not restart a new tune at this "
+            "technical window. These are AI-authored musical instructions, not note quotas.\n";
+        for (int offset = -1; offset <= 1; ++offset) {
+            const auto index = static_cast<int>(sectionIndex) + offset;
+            if (index < 0 || index >= links->size()) continue;
+            const auto& link = (*links)[index];
+            out << (offset < 0 ? "previous " : offset > 0 ? "next " : "current ")
+                << "section " << index << " carrier=" << link.getProperty("carrier_id", {}).toString()
+                << " inherited=" << link.getProperty("inherited_question", {}).toString()
+                << " transformation=" << link.getProperty("audible_transformation", {}).toString()
+                << " consequence=" << link.getProperty("consequence", {}).toString()
+                << " left_open=" << link.getProperty("left_open", {}).toString()
+                << " opening_evidence=" << link.getProperty("score_evidence", {}).toString() << "\n";
+        }
     }
     return out;
 }

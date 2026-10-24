@@ -287,9 +287,77 @@ int main() {
                   !club::production::coreAttackAllowed(coreJson, corePlan.instruments[0].id, 32.5) &&
                   club::production::coreAttackAllowed(coreJson, corePlan.instruments[4].id, 32.5),
               "core phase is the AI-authored cycle, not arbitrary grid membership or a ban on support syncopation");
+        auto interlocked = juce::JSON::parse(coreJson);
+        interlocked.getDynamicObject()->setProperty("focus_owner_id",
+            juce::String(clubPlan.instruments[2].id));
+        auto joint = juce::JSON::parse(R"json({"bass_owner_id":"","chord_owner_id":"",
+          "foreground_owner_id":"","shared_landings":[0,2],
+          "bass_chord_relationship":"bass poses, chord answers",
+          "foreground_sentence":"melody rises and resolves",
+          "breathing_space":"melody rests after arrival"})json");
+        joint.getDynamicObject()->setProperty("bass_owner_id", juce::String(clubPlan.instruments[0].id));
+        joint.getDynamicObject()->setProperty("chord_owner_id", juce::String(clubPlan.instruments[1].id));
+        joint.getDynamicObject()->setProperty("foreground_owner_id", juce::String(clubPlan.instruments[2].id));
+        interlocked.getDynamicObject()->setProperty("groove_interlock", joint);
+        const auto interlockedJson = juce::JSON::toString(interlocked);
+        check(club::production::validate(interlockedJson, corePlan, phraseError) &&
+                  club::production::windowBrief(interlockedJson, 0).contains("JOINT GROOVE NUCLEUS"),
+              "an AI-authored shared groove and foreground sentence must reach the MIDI writer");
+        joint.getDynamicObject()->setProperty("shared_landings", juce::Array<juce::var>{1});
+        check(!club::production::validate(juce::JSON::toString(interlocked), corePlan, phraseError),
+              "the interlock cannot claim a landing absent from either AI-authored core cell");
         check(AiMelodicDiscourse::writingGroups(corePlan, grooveOwners) ==
                   std::vector<std::vector<std::size_t>>{{0, 1}, {2, 3, 4}},
               "the AI-elected core must be written jointly before support, without deleting owners");
+        auto focusedCorePlan = corePlan;
+        auto focusedProduction = juce::JSON::parse(coreJson);
+        focusedProduction.getDynamicObject()->setProperty("focus_owner_id", "speaker");
+        focusedCorePlan.phraseArchitectureJson = juce::JSON::toString(focusedProduction).toStdString();
+        focusedCorePlan.narrativeSpine.protagonistInstrumentId = "moving_bass";
+        check(AiMelodicDiscourse::writingGroups(focusedCorePlan, grooveOwners) ==
+                  std::vector<std::vector<std::size_t>>{{0, 1, 3, 2}, {4}} &&
+                  !club::production::coreLayer(
+                      juce::String::fromUTF8(focusedCorePlan.phraseArchitectureJson.c_str()), "speaker"),
+              "Club focus and protagonist must be written with the actual groove before colours, without becoming cycle-bound or adding owners");
+        const auto focusedWindows = club::production::windowGroups(focusedCorePlan,
+            AiMelodicDiscourse::writingGroups(focusedCorePlan, grooveOwners), 0, 0, 8);
+        check(!focusedWindows.empty() &&
+                  focusedWindows.front() == std::vector<std::size_t>{0, 1, 3, 2},
+              "window batching must keep the groove and focal argument in the same AI transaction");
+        auto groundedClubJson = juce::String::fromUTF8(
+            focusedCorePlan.phraseArchitectureJson.c_str());
+        const juce::String groundedClubResponse = R"json({
+          "grounded_story":{"opening_evidence":"speaker rises from D to F against the bass pulse",
+            "related_counteridea":"bass keeps D while speaker falls to E",
+            "central_conflict":"the returning figure no longer settles on D",
+            "necessary_turn":"the chord pulse opens space for a complete answer",
+            "final_consequence":"speaker and bass reach D together"},
+          "act_links":[
+            {"section_index":0,"carrier_id":"speaker","inherited_question":"opening rise",
+              "audible_transformation":"allow the rise to pause on F","consequence":"bass can answer",
+              "left_open":"D unresolved","score_evidence":"opening speaker notes"},
+            {"section_index":1,"carrier_id":"moving_bass","inherited_question":"D unresolved",
+              "audible_transformation":"bass answers the original rise","consequence":"speaker returns changed",
+              "left_open":"none","score_evidence":"opening bass pulse"}]
+        })json";
+        const auto groundedSchema = juce::JSON::parse(
+            AiPhraseArchitecture::groundedStorySchema(focusedCorePlan));
+        const auto linksSchema = groundedSchema.getProperty("properties", {}).getProperty("act_links", {});
+        check(static_cast<int>(linksSchema.getProperty("minItems", 0)) == 2 &&
+                  static_cast<int>(linksSchema.getProperty("maxItems", 0)) == 2 &&
+                  linksSchema.getProperty("items", {}).getProperty("properties", {})
+                    .getProperty("carrier_id", {}).getProperty("enum", {}).size() == 5,
+              "the grounded Club response schema must require one scene per section and exact cast owners");
+        check(AiPhraseArchitecture::groundedStoryPrompt(focusedCorePlan, "Club work",
+                  groundedClubJson, Pattern{}).contains("Club MIDI work") &&
+                  AiPhraseArchitecture::attachGroundedStory(groundedClubJson,
+                      groundedClubResponse, focusedCorePlan, phraseError),
+              "Club must accept an AI causal arc grounded in the actual opening MIDI");
+        check(club::production::windowBrief(groundedClubJson, 1)
+                  .contains("SCORE-GROUNDED CLUB ARGUMENT") &&
+                  club::production::windowBrief(groundedClubJson, 1)
+                  .contains("bass answers the original rise"),
+              "the score-grounded consequence must reach later Club writer windows");
         juce::var phaseResponse(new juce::DynamicObject());
         phaseResponse.getDynamicObject()->setProperty(juce::String(corePlan.instruments[0].id),
             juce::Array<juce::var>{juce::JSON::parse(R"({"beat":0.5,"duration":0.5,"pitch":60,"velocity":80})")});

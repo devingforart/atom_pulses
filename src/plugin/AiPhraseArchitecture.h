@@ -53,6 +53,7 @@ public:
                                                  const SongPlan& plan,
                                                  juce::String& error);
     [[nodiscard]] static juce::String groundedStorySchema();
+    [[nodiscard]] static juce::String groundedStorySchema(const SongPlan& plan);
     [[nodiscard]] static juce::String groundedStoryPrompt(const SongPlan& plan,
         const juce::String& direction, const juce::String& phraseJson,
         const Pattern& openingMidi);

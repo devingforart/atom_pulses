@@ -731,11 +731,43 @@ juce::String AiPhraseArchitecture::groundedStorySchema() {
             "score_evidence":{"type":"string"}}}}}})json";
 }
 
+juce::String AiPhraseArchitecture::groundedStorySchema(const SongPlan& plan) {
+    auto schema = juce::JSON::parse(groundedStorySchema());
+    auto links = schema.getProperty("properties", {}).getProperty("act_links", {});
+    links.getDynamicObject()->setProperty("minItems", static_cast<int>(plan.sections.size()));
+    links.getDynamicObject()->setProperty("maxItems", static_cast<int>(plan.sections.size()));
+    auto properties = links.getProperty("items", {}).getProperty("properties", {});
+    juce::Array<juce::var> ids;
+    for (const auto& owner : plan.instruments)
+        ids.add(juce::String::fromUTF8(owner.id.c_str()));
+    properties.getProperty("carrier_id", {}).getDynamicObject()->setProperty("enum", ids);
+    properties.getProperty("section_index", {}).getDynamicObject()->setProperty("minimum", 0);
+    properties.getProperty("section_index", {}).getDynamicObject()->setProperty("maximum",
+        static_cast<int>(plan.sections.size()) - 1);
+    return juce::JSON::toString(schema);
+}
+
 juce::String AiPhraseArchitecture::groundedStoryPrompt(const SongPlan& plan,
     const juce::String& direction, const juce::String& phraseJson,
     const Pattern& openingMidi) {
     juce::String out;
-    out << "You are the dramatic editor of an ORIGINAL complete MIDI work. "
+    if (plan.compositionBehavior == CompositionBehavior::Club) {
+        out << "You are the producer-composer of an ORIGINAL Club MIDI work. "
+            "The first technical window is already composed and immutable. Ground every "
+            "later production state in its ACTUAL pitch-and-rhythm relationships, not in "
+            "the pre-MIDI plan's claims. The fixed cast, chord map, layer states and "
+            "AI-chosen core attack cycles remain binding. Identify which opening gesture "
+            "is worth remembering and how the bass, chord pulse and focal voice jointly "
+            "make it recognizable. For each later section, state a concrete audible "
+            "transformation, a consequential withdrawal or arrival, and what the following "
+            "section inherits. Build a patient club-scale arc: energy need not mean more "
+            "attacks, and a climax must change the meaning of an earlier gesture rather "
+            "than merely add simultaneous tracks. Preserve hypnotic recurrence when it "
+            "earns identity; avoid static repetition and unrelated new mini-songs. The "
+            "ending must answer the work's own premise. Every instruction should be "
+            "audible on neutral piano. Return score-level instructions, not MIDI notes; "
+            "the AI writer will author all later notes.\n";
+    } else out << "You are the dramatic editor of an ORIGINAL complete MIDI work. "
         "The first technical window has ALREADY been composed; its notes are immutable. "
         "Ground the rest of the story in those ACTUAL notes, not in the plan's "
         "claims. The form, chord events and cast are fixed, but every later note "
@@ -752,8 +784,12 @@ juce::String AiPhraseArchitecture::groundedStoryPrompt(const SongPlan& plan,
         "with a dramatic event. The result must be perceptible on neutral piano. "
         "For each scene, describe a specific audible score-level action and what "
         "it inherits, changes and leaves open. Avoid repeating the same instruction "
-        "with different adjectives. Do not return MIDI notes or alter the opening.\n"
-        "USER: " << direction << "\nKEY: "
+        "with different adjectives. Do not return MIDI notes or alter the opening.\n";
+    out << "Return EXACTLY " << static_cast<int>(plan.sections.size())
+        << " act_links, one for each listed section in ascending section_index order "
+           "from 0. carrier_id must be an exact instrument ID from the fixed cast, "
+           "not a role or a new name. Keep every required field concise and musical.\n"
+        << "USER: " << direction << "\nKEY: "
         << juce::String::fromUTF8(plan.key.c_str())
         << "\nORIGINAL DECLARED MOTIF: "
         << juce::String::fromUTF8(plan.narrativeSpine.motifIdentity.c_str())

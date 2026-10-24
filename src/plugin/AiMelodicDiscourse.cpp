@@ -145,9 +145,24 @@ std::vector<std::vector<std::size_t>> AiMelodicDiscourse::writingGroups(
     if (plan.compositionBehavior == CompositionBehavior::Club) {
         std::vector<std::size_t> core, support;
         const auto json = juce::String::fromUTF8(plan.phraseArchitectureJson.c_str());
+        const auto production = juce::JSON::parse(json);
+        const auto focusId = production.getProperty("focus_owner_id", {}).toString().toStdString();
         for (const auto owner : owners) if (owner < plan.instruments.size())
             (club::production::coreLayer(json, plan.instruments[owner].id) ? core : support).push_back(owner);
         if (!core.empty()) {
+            // The AI-chosen focus and protagonist must hear and shape the actual
+            // groove while it is authored. They are not made cycle-bound: only
+            // the owners explicitly elected to groove_core_ids keep that rule.
+            // Supporting colours are written later against this real shared MIDI.
+            for (const auto& id : {focusId, plan.narrativeSpine.protagonistInstrumentId}) {
+                if (id.empty() || core.size() >= 6) continue;
+                const auto found = std::find_if(support.begin(), support.end(), [&](const auto owner) {
+                    return plan.instruments[owner].id == id;
+                });
+                if (found == support.end()) continue;
+                core.push_back(*found);
+                support.erase(found);
+            }
             std::vector<std::vector<std::size_t>> groups{core};
             // Scope only: no layer is deleted, duplicated or filled by code.
             for (std::size_t begin = 0; begin < support.size(); begin += 8)

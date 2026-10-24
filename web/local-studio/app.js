@@ -6,6 +6,7 @@ import { PATCHES, SOUND_BANK_VERSION, patchOptions, patchForTrack } from './soun
 const $ = selector => document.querySelector(selector);
 const exhibitionId = new URLSearchParams(location.search).get('share');
 const exhibitionMode = exhibitionId !== null;
+const comparisonId = new URLSearchParams(location.search).get('compare');
 const ui = { form: $('#compose-form'), prompt: $('#prompt'), submit: $('#submit'), notice: $('#notice'), health: $('#health'), jobs: $('#jobs'), session: $('#session-content'), timeline: $('#timeline'), play: $('#play'), stop: $('#stop'), back: $('#back'), export: $('#export-all'), exportOne: $('#export-one'), history: $('#history-panel') };
 ui.prompt.placeholder = 'Describí la obra, su energía, el recorrido emocional y lo que debería cambiar hasta el final.';
 const proofLabel = document.createElement('label');
@@ -37,13 +38,15 @@ $('#duration').addEventListener('change', syncProofMode);
 $('#render-mode').addEventListener('change', syncProofMode);
 proofInput.addEventListener('change', syncProofMode);
 firstPassInput.addEventListener('change', () => { firstPassPreference = firstPassInput.checked; });
-$('#club-mode').addEventListener('change', () => {
-  const club = $('#club-mode').checked;
+const updateClubMode = (club, wasClub) => {
   $('#behavior').disabled = club;
-  if (club) { nonClubFirstPassPreference = firstPassPreference; firstPassPreference = false; }
-  else firstPassPreference = nonClubFirstPassPreference;
+  if (club !== wasClub) {
+    if (club) { nonClubFirstPassPreference = firstPassPreference; firstPassPreference = true; }
+    else firstPassPreference = nonClubFirstPassPreference;
+  }
   syncProofMode();
-});
+};
+$('#club-mode').addEventListener('change', () => updateClubMode($('#club-mode').checked, !$('#club-mode').checked));
 syncProofMode();
 const states = { queued: 'EN COLA', running: 'COMPONIENDO', completed: 'LISTA', failed: 'FALLIDA', interrupted: 'INTERRUMPIDA', cancelled: 'CANCELADA' };
 const palette = { pad: '#dfb64e', bass: '#71a1d0', keys: '#8b9dca', pluck: '#cc8b6e', lead: '#d84f2b', drums: '#75b57c', synth: '#a899c7' };
@@ -55,7 +58,19 @@ const download = (job, filename, label, className = '') => { const a = node('a',
 const number = value => new Intl.NumberFormat('es-AR').format(Number(value) || 0);
 const linkedJobId = new URLSearchParams(location.search).get('job');
 let jobs = [], selectedId = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(linkedJobId || '') ? linkedJobId : null, loadedKey = null, loadVersion = 0, current = null, barPx = 22, playhead = null, previewDiagnostic = false, lastAutoRecoverySelection = null, historyCategory = 'personal';
+const evaluationsByJob = new Map();
+let selectedBenchmarkCase = null;
 const audio = new ProductionAudio(updatePosition, () => { ui.play.textContent = '▶'; ui.play.setAttribute('aria-label', 'Reproducir'); });
+ui.evaluate = node('button', 'ghost-button', 'Evaluar');
+ui.evaluate.type = 'button'; ui.evaluate.id = 'evaluate'; ui.evaluate.disabled = true;
+ui.evaluate.title = 'Puntuar esta obra y guardar tu escucha para futuras mejoras';
+$('#history-toggle').before(ui.evaluate);
+ui.evaluate.addEventListener('click', openEvaluationDialog);
+ui.lab = node('button', 'ghost-button', 'Laboratorio');
+ui.lab.type = 'button'; ui.lab.id = 'lab';
+ui.lab.title = 'Banco de pruebas, comparaciones A/B e informe musical';
+$('#history-toggle').before(ui.lab);
+ui.lab.addEventListener('click', () => openEvaluationLab());
 ui.share = node('button', 'ghost-button', 'Share');
 ui.share.type = 'button';
 ui.share.disabled = true;
@@ -81,6 +96,8 @@ function updateListeningLabels() {
 async function api(url, options = {}) { const response = await fetch(url, { cache: 'no-store', ...options }); const result = await response.json(); if (!response.ok) throw new Error(result.error || `Error HTTP ${response.status}`); return result; }
 function showNotice(message) { ui.notice.textContent = message || ''; ui.notice.hidden = !message; }
 function setExport(job, filename) {
+  ui.evaluate.disabled = exhibitionMode || !job?.manifest || job.state !== 'completed' ||
+    !current || current.job.id !== job.id || filename !== job.manifest.fullFile;
   ui.share.disabled = exhibitionMode || !job?.manifest || job.state !== 'completed' ||
     !current || current.job.id !== job.id || filename !== job.manifest.fullFile;
   ui.exportOne.disabled = !job?.manifest?.fullFile || filename !== job.manifest.fullFile || !current || current.job.id !== job.id;
@@ -99,6 +116,7 @@ function updatePosition(seconds) {
 }
 function actionButton(label, callback, className = '') { const button = node('button', className, label); button.type = 'button'; button.addEventListener('click', callback); return button; }
 function reuse(job) {
+  selectedBenchmarkCase = null;
   ui.prompt.value = job.request.prompt;
   $('#allow-chromatic').checked = job.request.allow_chromatic === true;
   $('#duration').value = String(job.request.duration_seconds);
@@ -131,6 +149,7 @@ async function resumeAcceptedMidi(job, button) {
     proof_mode: false,
     first_pass_audition: request.first_pass_audition === true,
     ...(typeof request.allow_chromatic === 'boolean' ? { allow_chromatic: request.allow_chromatic } : {}),
+    ...(request.benchmark_case_id ? { benchmark_case_id: request.benchmark_case_id } : {}),
     phrase_architecture_experiment: request.phrase_architecture_experiment === true,
     resume_from_job: job.id,
   };
@@ -150,6 +169,29 @@ async function resumeAcceptedMidi(job, button) {
     button.disabled = false;
   }
 }
+async function reviewFirstPass(job, button) {
+  if (!confirm('¿Crear una revisión IA de esta primera pasada? Conserva el plan y el MIDI como punto de partida y realiza nuevas llamadas de pago a la API. En Club revisa principalmente armonía, capas y cierre; no rediseña la idea rítmica. La obra original no cambia.')) return;
+  button.disabled = true;
+  const request = job.request;
+  try {
+    const route = job.origin === 'auto' ? '/api/auto/jobs' : '/api/jobs';
+    const result = await api(route, { method: 'POST', headers: {
+      'Content-Type': 'application/json', 'X-Pulso-Local': '1',
+    }, body: JSON.stringify({
+      prompt: request.prompt, duration_seconds: request.duration_seconds, bpm: request.bpm,
+      behavior: request.behavior, render_mode: 'ai_sovereign', seed: request.seed,
+      allow_chromatic: request.allow_chromatic === true, proof_mode: false,
+      first_pass_audition: false,
+      phrase_architecture_experiment: request.phrase_architecture_experiment === true,
+      ...(request.benchmark_case_id ? { benchmark_case_id: request.benchmark_case_id } : {}),
+      review_from_job: job.id,
+    }) });
+    selectedId = result.job.id; loadedKey = null; previewDiagnostic = false;
+    showNotice('Revisión IA iniciada. La primera pasada permanece intacta para comparar.');
+    await refresh();
+  } catch (error) { showNotice(error.message); }
+  finally { button.disabled = false; }
+}
 function renderSession(job) {
   if (!job) return;
   const articulation = job.manifest?.articulationReview;
@@ -163,6 +205,11 @@ function renderSession(job) {
       ? 'PRIMERA PASADA' : job.state === 'completed' && job.manifest?.review_audition
         ? 'REVISIÓN A/B' : states[job.state] || job.state.toUpperCase()));
   ui.session.append(node('p', 'session-prompt', job.request.prompt));
+  const savedEvaluation = evaluationsByJob.get(job.id);
+  if (savedEvaluation) ui.session.append(node('p', 'session-note',
+    `Tu evaluación: ${savedEvaluation.would_use === 'yes' ? 'la usaría' :
+      savedEvaluation.would_use === 'maybe' ? 'tal vez la usaría' : 'no la usaría'} · ` +
+    `actualizada ${new Date(savedEvaluation.updated_at).toLocaleString('es-AR')}.`));
   if (typeof job.request.allow_chromatic === 'boolean')
     ui.session.append(node('p', 'session-note', job.request.allow_chromatic
       ? 'Cromatismos permitidos.' : 'Sin cromatismos: escala declarada estricta.'));
@@ -184,8 +231,17 @@ function renderSession(job) {
   if (job.request.editorial_profile === 'ai-only-v2') ui.session.append(node('p', 'session-note', 'Perfil editorial local IA v2 · cada nota es autoría IA.'));
   if (job.request.behavior === 'club') ui.session.append(node('p', 'session-note', 'Club · células reconocibles y evolución de capas. Horizonte aproximado de 64 compases, sin cambios obligatorios.'));
   if (job.request.first_pass_audition && !articulation) ui.session.append(node('p', 'session-note', 'Primera pasada IA: sin reescritura musical. La integridad técnica MIDI permanece activa.'));
-  if (job.request.review_from_job && !articulation) ui.session.append(node('p', 'session-note',
-    `Revisión A/B de la primera pasada ${job.request.review_from_job.slice(0, 8)}: se conserva el mismo plan y solo la revisión IA puede cambiar notas.`));
+  if (job.request.review_from_job && !articulation) {
+    const pair = node('p', 'session-note');
+    const original = node('a', '', 'ORIGINAL');
+    original.href = `?job=${encodeURIComponent(job.request.review_from_job)}`;
+    const revised = node('a', '', 'REVISIÓN');
+    revised.href = `?job=${encodeURIComponent(job.id)}`;
+    pair.append(original, document.createTextNode('  >  '), revised);
+    ui.session.append(pair);
+    ui.session.append(node('p', 'session-note',
+      `Revisión A/B de la primera pasada ${job.request.review_from_job.slice(0, 8)}: se conserva el mismo plan y solo la revisión IA puede cambiar notas.`));
+  }
   if (job.request.phrase_architecture_experiment) ui.session.append(node('p', 'session-note',
     'Plan de frases y relaciones entre voces escrito por la IA antes del MIDI. Las notas siguen siendo íntegramente autoría de la IA.'));
   if (job.phraseAudit?.kind === 'club_production_v1') ui.session.append(node('p', 'session-note',
@@ -229,6 +285,13 @@ function renderSession(job) {
   }
   const actions = node('div', 'session-actions');
   actions.append(actionButton('Repetir ajustes', () => reuse(job)));
+  if (job.state === 'completed' && job.manifest?.first_pass_audition &&
+      job.request.ai_sovereign && job.manifest.fullFile) {
+    const reviewButton = actionButton(job.request.behavior === 'club'
+      ? 'Revisar armonía y cierre con IA' : 'Revisar esta primera pasada con IA',
+      () => reviewFirstPass(job, reviewButton));
+    actions.append(reviewButton);
+  }
   if (job.checkpoint?.file && !job.manifest &&
       (job.state === 'failed' || job.state === 'interrupted')) {
     const resumeButton = actionButton('Retomar MIDI aceptado', () => resumeAcceptedMidi(job, resumeButton));
@@ -472,10 +535,18 @@ async function refresh() {
 ui.form.addEventListener('submit', async event => {
   event.preventDefault(); showNotice(''); ui.submit.disabled = true;
   const payload = { prompt: ui.prompt.value, allow_chromatic: $('#allow-chromatic').checked, duration_seconds: Number($('#duration').value), bpm: Number($('#bpm').value), behavior: $('#club-mode').checked ? 'club' : $('#behavior').value, render_mode: $('#render-mode').value, seed: $('#seed').value.trim(), proof_mode: proofInput.checked && !proofInput.disabled, first_pass_audition: firstPassInput.checked && !firstPassInput.disabled };
+  if (selectedBenchmarkCase && selectedBenchmarkCase.prompt === payload.prompt.trim() &&
+      selectedBenchmarkCase.duration_seconds === payload.duration_seconds &&
+      selectedBenchmarkCase.bpm === payload.bpm &&
+      selectedBenchmarkCase.behavior === payload.behavior)
+    payload.benchmark_case_id = selectedBenchmarkCase.id;
   try { const result = await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Pulso-Local': '1' }, body: JSON.stringify(payload) }); selectedId = result.job.id; loadedKey = null; previewDiagnostic = false; await refresh(); }
   catch (error) { showNotice(error.message); ui.submit.disabled = false; }
 });
-ui.prompt.addEventListener('input', () => { $('#prompt-count').textContent = `${ui.prompt.value.length} / 600`; });
+ui.prompt.addEventListener('input', () => {
+  $('#prompt-count').textContent = `${ui.prompt.value.length} / 600`;
+  if (selectedBenchmarkCase?.prompt !== ui.prompt.value.trim()) selectedBenchmarkCase = null;
+});
 $('#history-toggle').addEventListener('click', () => { ui.history.hidden = !ui.history.hidden; });
 for (const category of ['personal', 'auto']) $('#history-' + category).addEventListener('click', () => {
   historyCategory = category;
@@ -536,7 +607,10 @@ $('#full-wav').addEventListener('click', async () => {
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden && audio.playing) { audio.pause(); ui.play.textContent = '▶'; } });
 if (exhibitionMode) configureExhibition();
-refresh();
+refresh().then(() => {
+  if (!exhibitionMode && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(comparisonId || ''))
+    openEvaluationLab(comparisonId);
+});
 if (!exhibitionMode) setInterval(refresh, 2000);
 
 function openShareDialog() {
@@ -576,6 +650,283 @@ function openShareDialog() {
   dialog.addEventListener('close', () => { dialog.remove(); ui.share.focus(); }, { once: true });
   document.body.append(dialog);
   dialog.showModal(); input.focus(); input.select();
+}
+
+function dialogShell(title) {
+  const dialog = node('dialog', 'evaluation-dialog');
+  const heading = node('h2', '', title);
+  const close = actionButton('Cerrar', () => dialog.close(), 'ghost-button');
+  const header = node('div', 'share-dialog-head'); header.append(heading, close);
+  const body = node('div', 'evaluation-body');
+  const feedback = node('p', 'share-feedback'); feedback.setAttribute('role', 'status');
+  dialog.append(header, body, feedback);
+  dialog.addEventListener('close', () => dialog.remove(), { once: true });
+  document.body.append(dialog);
+  dialog.showModal();
+  return { dialog, body, feedback };
+}
+
+function labeledSelect(title, options, selected) {
+  const wrap = node('div', 'evaluation-field');
+  const label = node('label', '', title);
+  const select = node('select');
+  for (const [value, caption] of options) select.add(new Option(caption, value));
+  select.value = selected || options[0][0];
+  wrap.append(label, select);
+  return { wrap, select };
+}
+
+function labeledText(title, value = '', multiline = false) {
+  const wrap = node('div', 'evaluation-field');
+  const label = node('label', '', title);
+  const input = node(multiline ? 'textarea' : 'input');
+  input.value = value; input.maxLength = multiline ? 1200 : 240;
+  if (multiline) input.rows = 3;
+  wrap.append(label, input);
+  return { wrap, input };
+}
+
+async function openEvaluationDialog() {
+  if (ui.evaluate.disabled || !current?.job.manifest) return;
+  const job = current.job;
+  const shell = dialogShell('Evaluar la obra');
+  shell.body.append(node('p', 'evaluation-intro',
+    `${job.manifest.title} · Tu escucha queda vinculada a este MIDI. Podés actualizar la ficha después.`));
+  try {
+    const { evaluation, reference, criteria, problemTags } = await api(`/api/evaluations/${job.id}`);
+    if (!shell.dialog.open) return;
+    const referenceBox = node('div', 'evaluation-reference');
+    if (reference) {
+      referenceBox.append(node('strong', '', `Referencia anterior: ${reference.title}`));
+      referenceBox.append(node('p', '', 'Mismo prompt, semilla, duración, tempo y enfoque. Estos puntajes son solo una referencia; no se copian a esta ficha.'));
+      const previous = node('a', '', 'Escuchar la versión anterior');
+      previous.href = `/?job=${encodeURIComponent(reference.job_id)}`;
+      previous.target = '_blank'; previous.rel = 'noopener noreferrer';
+      referenceBox.append(previous);
+    } else {
+      referenceBox.append(node('p', '', 'No hay una evaluación anterior comparable para este prompt y estos ajustes.'));
+    }
+    shell.body.append(referenceBox);
+    const form = node('form', 'evaluation-form');
+    const scores = node('div', 'evaluation-scores');
+    for (const [key, title] of Object.entries(criteria)) {
+      const field = node('fieldset', 'score-row');
+      field.append(node('legend', '', title));
+      const previousScore = reference?.evaluation?.scores?.[key];
+      if (Number.isInteger(previousScore))
+        field.append(node('span', 'previous-score', `Anterior ${previousScore}/5`));
+      for (let value = 1; value <= 5; value++) {
+        const label = node('label', 'score-choice');
+        const radio = node('input'); radio.type = 'radio'; radio.name = `score-${key}`;
+        radio.value = String(value); radio.required = true;
+        radio.checked = evaluation?.scores?.[key] === value;
+        label.append(radio, document.createTextNode(String(value)));
+        field.append(label);
+      }
+      scores.append(field);
+    }
+    form.append(node('p', 'evaluation-help', '1 = no funciona · 3 = prometedor pero incompleto · 5 = convincente. Puntúa lo que escuchaste, no lo que promete el plan.'));
+    form.append(scores);
+    const scope = labeledSelect('¿Cuánto escuchaste?', [['full', 'La obra completa'], ['excerpt', 'Solo fragmentos']], evaluation?.scope);
+    const listening = labeledSelect('¿Cómo la escuchaste?', [['piano', 'Piano MIDI'], ['neutral', 'Senoidal neutro'], ['live', 'En Ableton Live'], ['other', 'Otro sonido']], evaluation?.listening_mode || audio.mode);
+    const use = labeledSelect('¿La usarías en una producción?', [['no', 'No, necesita otra composición'], ['maybe', 'Tal vez, con trabajo musical'], ['yes', 'Sí, es material utilizable']], evaluation?.would_use);
+    const confidence = labeledSelect('Seguridad de tu juicio', [['high', 'Alta'], ['medium', 'Media'], ['low', 'Baja']], evaluation?.confidence);
+    const fields = node('div', 'evaluation-grid');
+    fields.append(scope.wrap, listening.wrap, use.wrap, confidence.wrap);
+    form.append(fields);
+    form.append(node('h3', '', 'Problemas principales (hasta seis)'));
+    const tagLabels = { sin_idea: 'Sin idea central', repeticion_vacia: 'Repetición vacía',
+      voces_desconectadas: 'Voces desconectadas', disonancia: 'Choques armónicos',
+      ritmo_torpe: 'Ritmo torpe', demasiadas_notas: 'Demasiadas notas',
+      muy_vacio: 'Demasiado vacío', climax_plano: 'Clímax plano',
+      final_abrupto: 'Final abrupto', timbre_confunde: 'El timbre confunde', otro: 'Otro' };
+    const tags = node('div', 'evaluation-tags');
+    for (const tag of problemTags) {
+      const label = node('label', 'evaluation-tag');
+      const checkbox = node('input'); checkbox.type = 'checkbox'; checkbox.value = tag;
+      checkbox.checked = evaluation?.problems?.includes(tag) || false;
+      label.append(checkbox, document.createTextNode(tagLabels[tag] || tag));
+      tags.append(label);
+    }
+    form.append(tags);
+    const best = labeledText('Mejor momento (compás o tiempo)', evaluation?.best_moment);
+    const worst = labeledText('Momento que más falla (compás o tiempo)', evaluation?.worst_moment);
+    const observation = labeledText('¿Qué escuchaste? ¿Qué debería cambiar?', evaluation?.observation, true);
+    form.append(best.wrap, worst.wrap, observation.wrap);
+    const save = node('button', 'compose-button', 'Guardar evaluación'); save.type = 'submit';
+    form.append(save);
+    form.addEventListener('submit', async event => {
+      event.preventDefault(); save.disabled = true; shell.feedback.textContent = 'Guardando…';
+      const payload = { scores: Object.fromEntries(Object.keys(criteria).map(key =>
+        [key, Number(form.querySelector(`input[name="score-${key}"]:checked`)?.value)])),
+      scope: scope.select.value, listening_mode: listening.select.value,
+      would_use: use.select.value, confidence: confidence.select.value,
+      problems: [...tags.querySelectorAll('input:checked')].map(input => input.value),
+      best_moment: best.input.value, worst_moment: worst.input.value,
+      observation: observation.input.value };
+      try {
+        const result = await api(`/api/evaluations/${job.id}`, { method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-Pulso-Local': '1' },
+          body: JSON.stringify(payload) });
+        evaluationsByJob.set(job.id, result.evaluation);
+        if (selectedId === job.id) renderSession(job);
+        shell.feedback.textContent = 'Evaluación guardada. Quedó disponible en el informe local.';
+      } catch (error) { shell.feedback.textContent = error.message; }
+      finally { save.disabled = false; }
+    });
+    shell.body.append(form);
+  } catch (error) { shell.feedback.textContent = error.message; }
+}
+
+async function openEvaluationLab(existingComparisonId = null) {
+  if (exhibitionMode) return;
+  const shell = dialogShell('Laboratorio musical');
+  if (existingComparisonId) {
+    await renderBlindComparison(shell, existingComparisonId);
+    return;
+  }
+  shell.body.append(node('p', 'evaluation-intro',
+    'Pruebas reproducibles y escucha humana. Cargar un encargo no consulta la API: solo prepara el formulario.'));
+  try {
+    const [bank, report] = await Promise.all([api('/api/benchmarks'), api('/api/evaluations/report')]);
+    if (!shell.dialog.open) return;
+    const summary = node('div', 'evaluation-summary');
+    summary.append(node('strong', '', `${report.evaluated_works} obras evaluadas · ${report.blind_comparisons.length} comparaciones votadas`));
+    summary.append(node('p', '', `Usaría: ${report.would_use.yes} · Tal vez: ${report.would_use.maybe} · No usaría: ${report.would_use.no}. Las medias son descriptivas, no una aprobación musical.`));
+    const keys = Object.entries(report.criterion_averages).filter(([, value]) => value !== null);
+    if (keys.length) summary.append(node('p', '', `Promedios: ${keys.map(([key, value]) => `${report.criteria[key]} ${value}/5`).join(' · ')}`));
+    const frequentProblems = Object.entries(report.problem_counts || {}).filter(([, count]) => count > 0)
+      .sort((a, b) => b[1] - a[1]).slice(0, 3);
+    if (frequentProblems.length) summary.append(node('p', '',
+      `Problemas más marcados: ${frequentProblems.map(([tag, count]) => `${tag.replaceAll('_', ' ')} (${count})`).join(' · ')}.`));
+    const downloadReport = node('a', 'ghost-button', 'Descargar informe JSON');
+    downloadReport.href = '/api/evaluations/report?download=1';
+    summary.append(downloadReport); shell.body.append(summary);
+    shell.body.append(node('h3', '', 'Banco de encargos'));
+    const cases = labeledSelect('Ensayo', bank.cases.map(item => [item.id, item.label]));
+    const caseDetail = node('p', 'evaluation-help');
+    const selectedCase = () => bank.cases.find(item => item.id === cases.select.value);
+    const describe = () => { const item = selectedCase(); caseDetail.textContent =
+      `${item.duration_seconds / 60} min · ${item.bpm} BPM · Escuchar: ${item.listen_for.join(', ')}.`; };
+    cases.select.addEventListener('change', describe); describe();
+    const load = actionButton('Cargar encargo para componer', () => {
+      const item = selectedCase();
+      selectedBenchmarkCase = item;
+      ui.prompt.value = item.prompt;
+      $('#duration').value = String(item.duration_seconds);
+      $('#bpm').value = String(item.bpm);
+      const wasClub = $('#club-mode').checked;
+      $('#club-mode').checked = item.behavior === 'club';
+      $('#behavior').value = item.behavior === 'club' ? 'adaptive' : item.behavior;
+      $('#prompt-count').textContent = `${ui.prompt.value.length} / 600`;
+      updateClubMode($('#club-mode').checked, wasClub);
+      shell.dialog.close(); ui.prompt.focus();
+      showNotice('Encargo cargado. Revisá los ajustes y pulsá Componer cuando quieras; la API aún no se consultó.');
+    }, 'dark-button');
+    shell.body.append(cases.wrap, caseDetail, load);
+    shell.body.append(node('h3', '', 'Comparación A/B a ciegas'));
+    shell.body.append(node('p', 'evaluation-help',
+      'Elegí dos obras con el mismo prompt, duración, tempo, enfoque y semilla. Durante la escucha solo verás A y B; se revelan después de votar. Ambas usan el mismo piano y volumen.'));
+    const completed = jobs.filter(job => job.state === 'completed' && job.manifest?.fullFile);
+    if (completed.length < 2) {
+      shell.body.append(node('p', 'evaluation-help', 'Necesitás al menos dos obras terminadas para comparar.'));
+      return;
+    }
+    const choices = completed.map(job => [job.id, `${job.manifest.title || 'Obra'} · ${job.id.slice(0, 8)}`]);
+    const first = labeledSelect('Primera obra', choices);
+    const second = labeledSelect('Segunda obra', choices, completed[1].id);
+    const create = actionButton('Crear comparación ciega', async () => {
+      create.disabled = true;
+      try {
+        const result = await api('/api/comparisons', { method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Pulso-Local': '1' },
+          body: JSON.stringify({ first_job_id: first.select.value,
+            second_job_id: second.select.value }) });
+        shell.body.replaceChildren();
+        await renderBlindComparison(shell, result.comparison.id);
+      } catch (error) { shell.feedback.textContent = error.message; create.disabled = false; }
+    }, 'dark-button');
+    shell.body.append(first.wrap, second.wrap, create);
+  } catch (error) { shell.feedback.textContent = error.message; }
+}
+
+function showComparisonResult(shell, comparison) {
+  const linkFor = side => {
+    const jobId = comparison.sides[side];
+    const job = jobs.find(item => item.id === jobId);
+    const link = node('a', 'ghost-button',
+      `Abrir ${side}: ${job?.manifest?.title || jobId} · ${job?.origin === 'auto' ? 'Auto' : 'Personal'} · ${jobId.slice(0, 8)}`);
+    link.href = `?job=${encodeURIComponent(jobId)}`;
+    return link;
+  };
+  shell.body.replaceChildren(node('h3', '', 'Resultado revelado'), linkFor('A'), linkFor('B'),
+    node('p', '', `Tu voto: ${comparison.vote.winner === 'tie' ? 'Empate' :
+      comparison.vote.winner === 'neither' ? 'Ninguna sirve' : comparison.vote.winner}.`));
+  shell.feedback.textContent = 'Podés abrir cada obra y completar su ficha de evaluación por separado.';
+}
+
+async function renderBlindComparison(shell, id) {
+  audio.stop();
+  const { comparison } = await api(`/api/comparisons/${id}`);
+  if (comparison.vote) { showComparisonResult(shell, comparison); return; }
+  const clock = node('output', 'blind-clock', '00:00 / 00:00 · compás 1');
+  const seek = node('input', 'blind-seek');
+  seek.type = 'range'; seek.min = '0'; seek.max = '0'; seek.step = '0.1'; seek.value = '0';
+  seek.disabled = true; seek.setAttribute('aria-label', 'Posición de reproducción A/B');
+  const player = new ProductionAudio(seconds => {
+    const duration = player.duration || 0;
+    seek.max = String(duration);
+    seek.value = String(Math.min(seconds, duration));
+    const beat = player.midi?.secondsToBeat(seconds) || 0;
+    const bar = Math.floor(beat / (player.midi?.beatsPerBar || 4)) + 1;
+    clock.textContent = `${fmt(seconds)} / ${fmt(duration)} · compás ${bar}`;
+  }, () => {});
+  player.setVolume(.72);
+  seek.addEventListener('input', () => player.seek(Number(seek.value)));
+  let activeSide = null;
+  shell.dialog.addEventListener('close', () => player.stop(), { once: true });
+  shell.body.append(node('p', 'evaluation-intro',
+    'Escuchá A y B con el mismo piano. Las identidades y los diagnósticos permanecen ocultos hasta votar.'));
+  const controls = node('div', 'blind-controls');
+  for (const side of ['A', 'B']) {
+    const button = actionButton(`Escuchar ${side}`, async () => {
+      try {
+        if (activeSide === side && player.playing) { player.pause(); return; }
+        player.stop();
+        const response = await fetch(`/api/comparisons/${id}/sides/${side}.mid`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`No se pudo abrir ${side}.`);
+        const midi = parseMidi(await response.arrayBuffer());
+        const tracks = midi.tracks.filter(track => track.notes.length).map((track, index) =>
+          ({ name: `Pista ${index + 1}`, notes: track.notes, instrument: 'synth' }));
+        player.setSong(midi, tracks);
+        seek.disabled = false;
+        clock.textContent = `00:00 / ${fmt(player.duration)} · compás 1`;
+        activeSide = side;
+        await player.play();
+        shell.feedback.textContent = `Reproduciendo ${side}. Pulsá el mismo botón para pausar.`;
+      } catch (error) { shell.feedback.textContent = error.message; }
+    }, 'dark-button');
+    controls.append(button);
+  }
+  controls.append(actionButton('Detener', () => player.stop(), 'ghost-button'));
+  shell.body.append(controls, clock, seek);
+  const choice = labeledSelect('¿Cuál preferís musicalmente?', [['A', 'A'], ['B', 'B'],
+    ['tie', 'Empate'], ['neither', 'Ninguna sirve']]);
+  const scope = labeledSelect('¿Cuánto escuchaste?', [['full', 'Ambas completas'], ['excerpt', 'Fragmentos comparables']]);
+  const reason = labeledText('¿Por qué? Indicá el momento decisivo si podés.', '', true);
+  reason.input.maxLength = 800;
+  const vote = actionButton('Guardar voto y revelar obras', async () => {
+    vote.disabled = true;
+    try {
+      const result = await api(`/api/comparisons/${id}/vote`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Pulso-Local': '1' },
+        body: JSON.stringify({ winner: choice.select.value, scope: scope.select.value,
+          listening_mode: 'piano', reason: reason.input.value }) });
+      player.stop();
+      showComparisonResult(shell, result.comparison);
+    } catch (error) { shell.feedback.textContent = error.message; vote.disabled = false; }
+  }, 'compose-button');
+  shell.body.append(choice.wrap, scope.wrap, reason.wrap, vote);
 }
 
 function configureExhibition() {

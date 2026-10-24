@@ -6,6 +6,7 @@ import { JSDOM } from '../web/frontend/node_modules/jsdom/lib/api.js';
 import * as midi from '../web/shared/midi.mjs';
 import * as sounds from '../web/shared/sound-palette.mjs';
 import { instrumentFor } from '../web/shared/audio-engine.mjs';
+import { criteria, problemTags } from '../web/local-studio/evaluation-store.mjs';
 
 const id = '11111111-1111-4111-8111-111111111111';
 const request = { prompt: 'Private production prompt', seed: '123', duration_seconds: 60,
@@ -32,6 +33,7 @@ async function studio(query, item = job) {
     }
     stop() { this.playing = false; this.onPosition(0); this.onStop(); }
     setSong(score, tracks) { this.midi = score; this.tracks = tracks; }
+    setVolume(value) { this.volume = value; }
     async play() { this.playing = true; }
     pause() { this.playing = false; }
     seek(value) { this.onPosition(value); }
@@ -43,8 +45,24 @@ async function studio(query, item = job) {
     fetch: async (url, options = {}) => {
       calls.push({ url, options });
       if (url === '/api/status') return { ok: true, json: async () => ({ workerReady: true, apiKeyConfigured: true }) };
+      if (url === '/api/jobs' && options.method === 'POST')
+        return { ok: true, json: async () => ({ job: { id: item.id } }) };
       if (url === '/api/jobs') return { ok: true, json: async () => ({ jobs: [item] }) };
       if (url === `/api/jobs/${id}`) return { ok: true, json: async () => ({ job: item }) };
+      if (url === `/api/evaluations/${id}` && !options.method)
+        return { ok: true, json: async () => ({ evaluation: null, criteria, problemTags }) };
+      if (url === `/api/evaluations/${id}` && options.method === 'PUT')
+        return { ok: true, json: async () => ({ evaluation: {
+          ...JSON.parse(options.body), updated_at: '2026-10-23T12:00:00Z' } }) };
+      if (url === '/api/benchmarks') return { ok: true, json: async () => ({ cases: [{
+        id: 'test', label: 'Ensayo de prueba', prompt: 'Una idea breve que evoluciona',
+        duration_seconds: 180, bpm: 122, behavior: 'club', listen_for: ['Motivo'] }] }) };
+      if (url === '/api/evaluations/report') return { ok: true, json: async () => ({
+        evaluated_works: 0, blind_comparisons: [], would_use: { yes: 0, maybe: 0, no: 0 },
+        criterion_averages: {}, criteria }) };
+      if (url === '/api/comparisons/22222222-2222-4222-8222-222222222222')
+        return { ok: true, json: async () => ({ comparison: {
+          id: '22222222-2222-4222-8222-222222222222', voted: false, sides: ['A', 'B'] } }) };
       if (url.endsWith('.mid')) return { ok: true, arrayBuffer: async () => bytes.buffer };
       throw new Error(`Unexpected network request: ${url}`);
     } });
@@ -90,6 +108,71 @@ test('invalid or unfinished exhibitions show an error without exposing the studi
   assert.equal(running.calls.length, 1);
   assert.equal(running.document.querySelector('#play').disabled, true);
   running.dom.window.close();
+});
+
+test('local evaluator saves a complete listening sheet without changing the composition', async () => {
+  const result = await studio('', job);
+  const { document, calls } = result;
+  document.querySelector('#evaluate').click(); await flush();
+  assert.equal(document.querySelectorAll('.score-row').length, Object.keys(criteria).length);
+  for (const key of Object.keys(criteria))
+    document.querySelector(`input[name="score-${key}"][value="4"]`).checked = true;
+  document.querySelector('.evaluation-form').dispatchEvent(new result.dom.window.Event('submit', { bubbles: true, cancelable: true }));
+  await flush();
+  const saved = calls.find(call => call.url === `/api/evaluations/${id}` && call.options.method === 'PUT');
+  assert.ok(saved);
+  assert.equal(JSON.parse(saved.options.body).scores.melody, 4);
+  assert.match(document.querySelector('.share-feedback').textContent, /guardada/i);
+  assert.equal(calls.some(call => call.url === '/api/jobs' && call.options.method === 'POST'), false);
+  result.dom.window.close();
+});
+
+test('benchmark bank only loads controls and never launches a paid composition', async () => {
+  const result = await studio('', job);
+  const { document, calls } = result;
+  document.querySelector('#lab').click(); await flush();
+  assert.match(document.querySelector('.evaluation-dialog').textContent, /Banco de encargos/);
+  [...document.querySelectorAll('.evaluation-dialog button')]
+    .find(button => button.textContent === 'Cargar encargo para componer').click();
+  assert.equal(document.querySelector('#prompt').value, 'Una idea breve que evoluciona');
+  assert.equal(document.querySelector('#duration').value, '180');
+  assert.equal(document.querySelector('#club-mode').checked, true);
+  assert.equal(document.querySelector('#first-pass-audition').checked, true);
+  assert.equal(calls.some(call => call.options.method === 'POST'), false);
+  result.dom.window.close();
+});
+
+test('completed first pass offers an explicit paid review preserving its exact request', async () => {
+  const source = { ...job, request: { ...request, behavior: 'club',
+    benchmark_case_id: 'club_nucleus', phrase_architecture_experiment: true,
+    first_pass_audition: true, allow_chromatic: false },
+  manifest: { ...job.manifest, first_pass_audition: true } };
+  const result = await studio(`?job=${id}`, source);
+  const button = [...result.document.querySelectorAll('#session-content button')]
+    .find(item => item.textContent === 'Revisar armonía y cierre con IA');
+  assert.ok(button);
+  button.click(); await flush();
+  const call = result.calls.find(item => item.url === '/api/jobs' && item.options.method === 'POST');
+  assert.ok(call);
+  const payload = JSON.parse(call.options.body);
+  assert.equal(payload.review_from_job, id);
+  assert.equal(payload.first_pass_audition, false);
+  assert.equal(payload.seed, request.seed);
+  assert.equal(payload.benchmark_case_id, 'club_nucleus');
+  result.dom.window.close();
+});
+
+test('a direct comparison link opens blinded A/B without generating another work', async () => {
+  const result = await studio('?compare=22222222-2222-4222-8222-222222222222');
+  const dialog = result.document.querySelector('.evaluation-dialog');
+  assert.ok(dialog?.open);
+  assert.match(dialog.textContent, /Escuchar A/);
+  assert.match(dialog.textContent, /Escuchar B/);
+  assert.match(dialog.textContent, /compás/);
+  assert.ok(dialog.querySelector('[aria-label="Posición de reproducción A/B"]'));
+  assert.equal(dialog.textContent.includes('Una obra compartida'), false);
+  assert.equal(result.calls.some(call => call.options.method === 'POST'), false);
+  result.dom.window.close();
 });
 
 test('Share opens a dialog with a read-only exhibition link, without altering the job', async () => {

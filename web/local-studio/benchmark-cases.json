@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "purpose": "Evaluar musicalidad en encargos contrastantes. No ejecutar automaticamente: cada composicion consume API.",
+  "cases": [
+    {
+      "id": "club_nucleus",
+      "label": "Club: nucleo y evolucion",
+      "prompt": "Musica electronica de club hipnotica y oscura. Un nucleo tonal reconocible, bajo y capas armonicas complementarias. Desarrolla el material por entradas, retiradas y transformaciones audibles; conserva el pulso y conduce a un regreso significativo. Sin bateria ni percusion.",
+      "duration_seconds": 180,
+      "bpm": 122,
+      "behavior": "club",
+      "listen_for": ["Identidad del nucleo", "Evolucion sin amontonamiento", "Regreso preparado"]
+    },
+    {
+      "id": "melodic_dialogue",
+      "label": "Dialogo melodico",
+      "prompt": "Obra instrumental de tres minutos con una voz melodica protagonista y una segunda voz que le responda de forma independiente. Presenta una pregunta reconocible, cambia su sentido durante el desarrollo y dale una respuesta audible al final. La armonia debe sostener ese relato sin taparlo.",
+      "duration_seconds": 180,
+      "bpm": 108,
+      "behavior": "narrative",
+      "listen_for": ["Motivo reconocible", "Respuesta especifica", "Final ganado"]
+    },
+    {
+      "id": "modal_atmosphere",
+      "label": "Atmosfera modal",
+      "prompt": "Obra modal contemplativa con armonia sostenida, contrapunto discreto y textura tonal evolutiva. Debe haber continuidad sin estancamiento, espacios intencionales y una transformacion perceptible del color armonico. Evita una melodia hiperactiva.",
+      "duration_seconds": 180,
+      "bpm": 96,
+      "behavior": "adaptive",
+      "listen_for": ["Armonia viva", "Espacio significativo", "Cambio perceptible"]
+    },
+    {
+      "id": "chamber_contrast",
+      "label": "Camara: contraste y respuesta",
+      "prompt": "Musica de camara original, dramatica pero clara. Varias voces independientes deben intercambiar una idea breve, contradecirla y reunirse en una conclusion convincente. Usa cambios de densidad y registro con causa musical, no por calendario.",
+      "duration_seconds": 180,
+      "bpm": 116,
+      "behavior": "narrative",
+      "listen_for": ["Independencia de voces", "Contraste con causa", "Conclusion"]
+    },
+    {
+      "id": "short_hook",
+      "label": "Idea breve desarrollada",
+      "prompt": "Una idea musical breve y memorable para sintetizadores, bajo y acordes. En un minuto presenta la idea, dale una consecuencia distinta y termina de manera intencional. Pocas notas pueden bastar si cada frase tiene sentido.",
+      "duration_seconds": 60,
+      "bpm": 120,
+      "behavior": "adaptive",
+      "listen_for": ["Gancho memorable", "Consecuencia", "Cierre proporcionado"]
+    },
+    {
+      "id": "sparse_tension",
+      "label": "Tension con pocas notas",
+      "prompt": "Pieza instrumental tensa y contenida. Usa pocas notas bien articuladas, silencios que cambien el significado del motivo y armonias que preparen una llegada final. No llenes cada espacio ni dependas de repetir un arpegio constante.",
+      "duration_seconds": 180,
+      "bpm": 104,
+      "behavior": "adaptive",
+      "listen_for": ["Silencios expresivos", "Tension dirigida", "Llegada final"]
+    }
+  ]
+}

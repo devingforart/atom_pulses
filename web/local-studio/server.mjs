@@ -13,6 +13,10 @@ import { parseMidi } from '../shared/midi.mjs';
 import { composerProfile, defaultEditorialSettings, experimentalProfile, workerEnvironmentFor } from './composer-environment.mjs';
 import { originForJob, originForRoute } from './job-origin.mjs';
 import { blueprintRequestMatchesSource, exactResumeMatchesCheckpoint, completedMusicalWindows, completedMidiResume } from './checkpoint-integrity.mjs';
+import { evaluationStore, comparisonStore, publicComparison, evaluationReport,
+  previousComparableEvaluation,
+  criteria as evaluationCriteria, problemTags } from './evaluation-store.mjs';
+import { referencePrompt } from './reference-anchor.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
@@ -21,6 +25,9 @@ const worker = process.env.PULSO_LOCAL_WORKER_PATH || path.join(root, 'build-clo
 const port = Number(process.env.PULSO_LOCAL_PORT || 4177);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PULSO_LOCAL_PORT');
 mkdirSync(jobsRoot, { recursive: true });
+const evaluations = evaluationStore(dataRoot);
+const comparisons = comparisonStore(dataRoot);
+const benchmarkCases = JSON.parse(readFileSync(path.join(here, 'benchmark-cases.json'), 'utf8'));
 
 let active = null;
 const stages = { blueprint: 'Diseñando la obra', writing: 'Escribiendo las pistas', recovery: 'Revisando material', validation: 'Validando la composición', rendering: 'Preparando MIDI', ready: 'Lista' };
@@ -137,7 +144,8 @@ function jobDetails(id) {
     try { endedAt = statSync(path.join(dir, terminalFile)).mtimeMs; } catch { /* Keep elapsed time. */ }
   }
   const trace = traceFor(id, request.created_at, endedAt);
-  return { id, origin, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, compositionAudit, phraseAudit, checkpoint, recovery, diagnostic, telemetry: trace.summary, error: state === 'cancelled' ? null : explainJobFailure(failure?.error) || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
+  const engine = readJson(path.join(dir, 'experiment-context.json'));
+  return { id, origin, request, state, stage: stages[progress?.stage] || progress?.stage || '', completed: progress?.completed || 0, total: progress?.total || 0, manifest, compositionAudit, phraseAudit, checkpoint, recovery, diagnostic, engine: engine ? { composerProfile: engine.composerProfile, workerSha256: engine.workerSha256 } : null, telemetry: trace.summary, error: state === 'cancelled' ? null : explainJobFailure(failure?.error) || (state === 'interrupted' ? 'El proceso se interrumpió. Los archivos existentes se conservaron.' : null) };
 }
 
 function listJobs() {
@@ -166,6 +174,7 @@ function validate(input) {
   const duration = input.duration_seconds;
   const bpm = input.bpm;
   const behavior = input.behavior || 'adaptive';
+  const benchmarkCaseId = input.benchmark_case_id === undefined ? null : String(input.benchmark_case_id);
   const renderMode = input.render_mode || 'ai_sovereign';
   const suppliedSeed = input.seed === undefined || input.seed === '' ? null : String(input.seed);
   const proofMode = input.proof_mode === true;
@@ -182,10 +191,18 @@ function validate(input) {
   const replanPhrases = input.replan_phrases === true;
   const compareEditorialModes = input.compare_editorial_modes === true;
   const reviewFromJob = input.review_from_job === undefined ? null : String(input.review_from_job);
+  const referenceFromJob = input.reference_from_job === undefined ? null : String(input.reference_from_job);
   if (!prompt || prompt.length > 600) throw new InputError('La idea debe contener entre 1 y 600 caracteres.');
   if (!Number.isInteger(duration) || duration < 30 || duration > 900) throw new InputError('La duración debe estar entre 30 y 900 segundos.');
   if (!Number.isFinite(bpm) || bpm < 60 || bpm > 180) throw new InputError('El tempo debe estar entre 60 y 180 BPM.');
   if (!['adaptive', 'hypnotic', 'narrative', 'club'].includes(behavior)) throw new InputError('El enfoque musical no es válido.');
+  if (benchmarkCaseId !== null) {
+    const benchmark = benchmarkCases.cases.find(item => item.id === benchmarkCaseId);
+    if (!benchmark || benchmark.prompt !== prompt ||
+        benchmark.duration_seconds !== duration || benchmark.bpm !== bpm ||
+        benchmark.behavior !== behavior)
+      throw new InputError('El encargo del banco cambió. Volvé a cargarlo o enviá la obra como idea libre.');
+  }
   if (!['ai_sovereign', 'standard'].includes(renderMode)) throw new InputError('El modo de render no es válido.');
   if (suppliedSeed !== null && (!/^[1-9][0-9]{0,18}$/.test(suppliedSeed) || BigInt(suppliedSeed) > 9223372036854775807n)) throw new InputError('La semilla debe ser un entero positivo de 64 bits.');
   const seed = suppliedSeed || String((randomBytes(8).readBigUInt64LE() & 9223372036854775807n) || 1n);
@@ -207,7 +224,10 @@ function validate(input) {
   if (reviewFromJob !== null && (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(reviewFromJob) ||
       resumeFromJob !== null || blueprintFromJob !== null || firstPassAudition || proofMode || renderMode !== 'ai_sovereign'))
     throw new InputError('Invalid first-pass review source.');
-  return { allow_chromatic: allowChromatic, pitched_only: true, prompt, duration_seconds: duration, bpm, behavior, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, first_pass_audition: firstPassAudition, phrase_architecture_experiment: phraseArchitectureExperiment, replan_phrases: replanPhrases, compare_editorial_modes: compareEditorialModes, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, review_from_job: reviewFromJob, created_at: new Date().toISOString() };
+  if (referenceFromJob !== null && (!experimentalProfile || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(referenceFromJob) ||
+      resumeFromJob || blueprintFromJob || reviewFromJob || proofMode || renderMode !== 'ai_sovereign'))
+    throw new InputError('La extensión MIDI es solo experimental y requiere una obra de referencia válida.');
+  return { allow_chromatic: allowChromatic, pitched_only: true, prompt, duration_seconds: duration, bpm, behavior, benchmark_case_id: benchmarkCaseId, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, first_pass_audition: firstPassAudition, phrase_architecture_experiment: phraseArchitectureExperiment, replan_phrases: replanPhrases, compare_editorial_modes: compareEditorialModes, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, review_from_job: reviewFromJob, reference_from_job: referenceFromJob, created_at: new Date().toISOString() };
 }
 
 function blueprintOnlyScoreFromJob(request) {
@@ -383,7 +403,7 @@ function startAutomaticRecovery(sourceId) {
 
 function launch(id, dir) {
   const environment = childEnvironment(dir);
-  if (experimentalProfile) writeFileSync(path.join(dir, 'experiment-context.json'), JSON.stringify({
+  writeFileSync(path.join(dir, 'experiment-context.json'), JSON.stringify({
     composerProfile: composerProfile.name,
     workerSha256: createHash('sha256').update(readFileSync(worker)).digest('hex'),
     workerPath: worker,
@@ -428,12 +448,84 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, pitchedOnly: true, editorialProfile: 'ai-only-v2', composerProfile: composerProfile.name, experimentalProfile,
       musicalProfile: experimentalProfile && process.env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT === '1' ? 'connected-discourse' : 'shared-default' });
     if (req.method === 'GET' && pathname === '/api/jobs') return json(res, 200, { jobs: listJobs() });
-    if (req.method === 'POST' && !mutatingRequestAllowed(req)) return json(res, 403, { error: 'Solicitud local no autorizada.' });
+    if (req.method === 'GET' && pathname === '/api/benchmarks')
+      return json(res, 200, benchmarkCases);
+    if (req.method === 'GET' && pathname === '/api/evaluations/report') {
+      if (url.searchParams.get('download') === '1')
+        res.setHeader('Content-Disposition', 'attachment; filename="pulso-evaluaciones-locales.json"');
+      return json(res, 200, evaluationReport(evaluations.all(), comparisons.all(), jobDetails));
+    }
+    const evaluationMatch = pathname.match(/^\/api\/evaluations\/([0-9a-f-]+)$/i);
+    if (req.method === 'GET' && evaluationMatch) {
+      const job = jobDetails(evaluationMatch[1]);
+      if (!job) return json(res, 404, { error: 'Obra no encontrada.' });
+      return json(res, 200, { evaluation: evaluations.get(job.id),
+        reference: previousComparableEvaluation(job, evaluations.all(), jobDetails),
+        criteria: evaluationCriteria, problemTags });
+    }
+    if (req.method === 'GET' && pathname === '/api/comparisons')
+      return json(res, 200, { comparisons: comparisons.all().map(publicComparison) });
+    const comparisonMatch = pathname.match(/^\/api\/comparisons\/([0-9a-f-]+)$/i);
+    if (req.method === 'GET' && comparisonMatch) {
+      const comparison = comparisons.get(comparisonMatch[1]);
+      return comparison ? json(res, 200, { comparison: publicComparison(comparison) }) :
+        json(res, 404, { error: 'Comparación no encontrada.' });
+    }
+    const sideMatch = pathname.match(/^\/api\/comparisons\/([0-9a-f-]+)\/sides\/(A|B)\.mid$/i);
+    if (req.method === 'GET' && sideMatch) {
+      const comparison = comparisons.get(sideMatch[1]);
+      if (!comparison) return json(res, 404, { error: 'Comparación no encontrada.' });
+      const job = jobDetails(comparison.sides[sideMatch[2].toUpperCase()]);
+      if (!job?.manifest?.fullFile || job.state !== 'completed')
+        return json(res, 404, { error: 'MIDI no disponible.' });
+      const file = path.join(jobDirectory(job.id), job.manifest.fullFile);
+      return existsSync(file) ? serveFile(res, file, 'audio/midi') :
+        json(res, 404, { error: 'MIDI no disponible.' });
+    }
+    if (['POST', 'PUT'].includes(req.method) && !mutatingRequestAllowed(req))
+      return json(res, 403, { error: 'Solicitud local no autorizada.' });
+    if (req.method === 'PUT' && evaluationMatch) {
+      const job = jobDetails(evaluationMatch[1]);
+      if (!job || job.state !== 'completed')
+        return json(res, 404, { error: 'Solo podés evaluar una obra terminada.' });
+      try { return json(res, 200, { evaluation: evaluations.save(job.id, await bodyJson(req)) }); }
+      catch (error) { return json(res, 400, { error: error.message }); }
+    }
+    if (req.method === 'POST' && pathname === '/api/comparisons') {
+      try {
+        const input = await bodyJson(req);
+        const first = jobDetails(input?.first_job_id);
+        const second = jobDetails(input?.second_job_id);
+        if (!first?.manifest || first.state !== 'completed' ||
+            !second?.manifest || second.state !== 'completed')
+          return json(res, 400, { error: 'Elegí dos obras locales terminadas.' });
+        if (!['prompt', 'duration_seconds', 'bpm', 'behavior', 'seed']
+          .every(key => first.request[key] === second.request[key]))
+          return json(res, 400, { error: 'Para un A/B controlado, ambas obras deben tener el mismo prompt, duración, tempo, enfoque y semilla.' });
+        return json(res, 201, { comparison: publicComparison(
+          comparisons.create(first.id, second.id)) });
+      } catch (error) { return json(res, 400, { error: error.message }); }
+    }
+    const voteMatch = pathname.match(/^\/api\/comparisons\/([0-9a-f-]+)\/vote$/i);
+    if (req.method === 'POST' && voteMatch) {
+      try { return json(res, 200, { comparison: publicComparison(
+        comparisons.vote(voteMatch[1], await bodyJson(req))) }); }
+      catch (error) { return json(res, 400, { error: error.message }); }
+    }
     if (req.method === 'POST' && (pathname === '/api/jobs' || pathname === '/api/auto/jobs')) {
       if (active) return json(res, 409, { error: 'Ya hay una composición en curso. Esperá a que termine o cancelala.' });
       if (!existsSync(worker)) return json(res, 503, { error: 'No se encontró el generador local. Revisá PULSO_LOCAL_WORKER_PATH.' });
       if (!process.env.OPENAI_API_KEY) return json(res, 503, { error: 'OPENAI_API_KEY no está configurada en este proceso.' });
       const request = validate(await bodyJson(req));
+      if (request.reference_from_job) {
+        const sourceDir = jobDirectory(request.reference_from_job);
+        const source = sourceDir && readJson(path.join(sourceDir, 'job.json'));
+        const blueprint = sourceDir && readJson(path.join(sourceDir, 'accepted-blueprint.json'));
+        const checkpoint = sourceDir && readJson(path.join(sourceDir, 'resume-score.json'));
+        if (!sourceDir || !existsSync(path.join(sourceDir, 'manifest.json')))
+          throw new InputError('La referencia debe ser una obra terminada.');
+        request.worker_prompt = referencePrompt(request, source, blueprint, checkpoint);
+      }
       const resumeScore = request.review_from_job ? resumeScoreFromJob(request, true) :
         request.resume_from_job ? resumeScoreFromJob(request) :
         request.blueprint_from_job ? blueprintOnlyScoreFromJob(request) : null;

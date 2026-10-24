@@ -24,7 +24,7 @@ const firstPassInput = document.createElement('input');
 firstPassInput.type = 'checkbox'; firstPassInput.id = 'first-pass-audition';
 let firstPassPreference = true;
 let nonClubFirstPassPreference = true;
-firstPassLabel.append(firstPassInput, document.createTextNode('Primera pasada · sin revisión musical'));
+firstPassLabel.append(firstPassInput, document.createTextNode('Primera pasada · sin revisión global'));
 proofLabel.after(firstPassLabel);
 const syncProofMode = () => {
   proofInput.disabled = Number($('#duration').value) > 60 || $('#render-mode').value !== 'ai_sovereign';
@@ -230,7 +230,7 @@ function renderSession(job) {
   }
   if (job.request.editorial_profile === 'ai-only-v2') ui.session.append(node('p', 'session-note', 'Perfil editorial local IA v2 · cada nota es autoría IA.'));
   if (job.request.behavior === 'club') ui.session.append(node('p', 'session-note', 'Club · células reconocibles y evolución de capas. Horizonte aproximado de 64 compases, sin cambios obligatorios.'));
-  if (job.request.first_pass_audition && !articulation) ui.session.append(node('p', 'session-note', 'Primera pasada IA: sin reescritura musical. La integridad técnica MIDI permanece activa.'));
+  if (job.request.first_pass_audition && !articulation) ui.session.append(node('p', 'session-note', 'Primera pasada IA: sin revisión global. Solo se revisan huecos armónicos medidos si contradicen el plan.'));
   if (job.request.review_from_job && !articulation) {
     const pair = node('p', 'session-note');
     const original = node('a', '', 'ORIGINAL');
@@ -411,7 +411,7 @@ async function loadSong(job, diagnostic = false) {
     renderTimeline();
     updateListeningLabels();
     $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
-    $('#song-subtitle').textContent = diagnostic ? `Candidato rechazado · ${tracks.length} pistas con notas · NO aprobado` : job.manifest?.first_pass_audition ? `Primera pasada IA · ${tracks.length} pistas con notas · sin revisión musical` : job.manifest ? `${job.manifest.key || 'Tonalidad no declarada'} · ${job.manifest.bars || Math.ceil(timing.lengthBeats / timing.beatsPerBar)} compases · ${tracks.length} pistas con notas` : `Escucha provisional · ${tracks.length} pistas con notas · sin aprobación musical final`;
+    $('#song-subtitle').textContent = diagnostic ? `Candidato rechazado · ${tracks.length} pistas con notas · NO aprobado` : job.manifest?.first_pass_audition ? `Primera pasada IA · ${tracks.length} pistas con notas · revisión armónica focalizada` : job.manifest ? `${job.manifest.key || 'Tonalidad no declarada'} · ${job.manifest.bars || Math.ceil(timing.lengthBeats / timing.beatsPerBar)} compases · ${tracks.length} pistas con notas` : `Escucha provisional · ${tracks.length} pistas con notas · sin aprobación musical final`;
     $('#song-bpm').textContent = `${Math.round(job.manifest?.bpm || 60e6 / timing.tempos[0].microseconds)} BPM`;
     $('#song-key').textContent = job.manifest?.key || 'MIDI provisional';
     $('#song-stat').textContent = `${number(tracks.reduce((sum, track) => sum + track.notes.length, 0))} NOTAS · ${tracks.length} PISTAS`;

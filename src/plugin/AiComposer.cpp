@@ -4086,7 +4086,8 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
                        std::size_t sectionIndex, int firstBar, int bars,
                        PerformanceScore& score, juce::String& error,
                        bool longFormContinuity = false,
-                       bool allowSilentGroup = false) {
+                       bool allowSilentGroup = false,
+                       bool harmonicPhraseReview = false) {
     score = {};
     const auto parsed = juce::JSON::parse(text);
     const auto* root = parsed.getDynamicObject();
@@ -4119,9 +4120,16 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
         const auto duration = static_cast<double>(object->getProperty("duration"));
         const auto pitch = static_cast<int>(object->getProperty("pitch"));
         const auto velocity = static_cast<int>(object->getProperty("velocity"));
+        const auto absoluteBeat = sectionIndex < plan.sections.size() ?
+            (plan.sections[sectionIndex].startBar + firstBar) * plan.beatsPerBar + beat : beat;
+        const auto harmonicBedReviewAttack = harmonicPhraseReview &&
+            owner.role.find("primary_chord_bed") != std::string::npos &&
+            !club::production::coreLayer(
+                juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()), owner.id);
         if (plan.compositionBehavior == CompositionBehavior::Club && sectionIndex < plan.sections.size() &&
+            !harmonicBedReviewAttack &&
             !club::production::coreAttackAllowed(juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()),
-                owner.id, (plan.sections[sectionIndex].startBar + firstBar) * plan.beatsPerBar + beat)) {
+                owner.id, absoluteBeat)) {
             error = "Cycle-bound attack contradicts your declared absolute rhythm phase: " + id +
                 " local beat=" + juce::String(beat, 2) + ". Rewrite this voice; no notes were shifted.";
             return false;
@@ -4828,6 +4836,189 @@ std::vector<bool> renderedSustainedBodyBars(const SongPlan& plan,
         }
     }
     return sustained;
+}
+
+// Editorial QA for an active primary chord bed that states one chord, then
+// disappears through the remainder of a four-bar harmonic phrase while the
+// other harmony continues. Detection and validation are deterministic; every
+// replacement pitch, attack, gate and velocity is authored by the AI.
+void mergePerformanceBlock(PerformanceScore&, PerformanceScore, std::size_t);
+void reviewHarmonicPhrases(PerformanceScore& score, const SongPlan& plan,
+    const juce::String& direction, const juce::String& apiKey,
+    const juce::String& effort, std::stop_token token,
+    const AiSongProgress& progress, const AiSongCheckpoint& checkpoint) {
+    GenerationContext context;
+    context.role = Role::Ensemble;
+    context.rootPitchClass = plan.rootPitchClass;
+    context.scale = plan.scale;
+    context.beatsPerBar = plan.beatsPerBar;
+    context.seed = plan.seed;
+    const auto render = [&](const PerformanceScore& candidate,
+                            CompositionRenderReport& report) {
+        auto snapshot = plan;
+        snapshot.performanceScore = candidate;
+        return SongComposer{}.render(snapshot, context, {}, &report);
+    };
+    CompositionRenderReport initialReport;
+    const auto original = render(score, initialReport);
+    const auto gaps = HarmonicFloorContext::phraseGaps(plan, original, 4);
+    if (gaps.empty()) return;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(4);
+    for (std::size_t position = 0; position < gaps.size() && !token.stop_requested(); ++position) {
+        const auto& gap = gaps[position];
+        const auto& section = plan.sections[gap.sectionIndex];
+        const auto& owner = plan.instruments[gap.ownerIndex];
+        if (plan.compositionBehavior == CompositionBehavior::Club &&
+            club::production::absent(plan, owner.id, gap.sectionIndex)) continue;
+        const auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
+            deadline - std::chrono::steady_clock::now());
+        if (remaining < std::chrono::seconds(20)) break;
+        CompositionRenderReport beforeReport;
+        const auto before = render(score, beforeReport);
+        const auto stillMissing = HarmonicFloorContext::phraseGaps(plan, before, 32);
+        if (std::none_of(stillMissing.begin(), stillMissing.end(), [&](const auto& item) {
+                return item.ownerIndex == gap.ownerIndex &&
+                       item.sectionIndex == gap.sectionIndex &&
+                       item.firstBar == gap.firstBar;
+            })) continue;
+        auto immutable = score;
+        if (!removeDirectOwnerWindow(immutable, plan, gap.ownerIndex,
+                gap.sectionIndex, gap.firstBar, gap.bars, true)) {
+            OperationalJournal::write("WARN", "HARMONIC_PHRASE",
+                "source uses shared or transformed cells; focused edit skipped");
+            continue;
+        }
+        CompositionRenderReport immutableReport;
+        const auto accepted = render(immutable, immutableReport);
+        const auto absoluteStart = (section.startBar + gap.firstBar) * plan.beatsPerBar;
+        const auto absoluteEnd = absoluteStart + gap.bars * plan.beatsPerBar;
+        juce::String prompt;
+        prompt << "You are composing a focused MIDI revision for one sustained harmonic "
+            "voice of an otherwise finished song. USER: " << direction
+            << "\nKEY: " << juce::String::fromUTF8(plan.key.c_str())
+            << "\nSECTION: " << juce::String::fromUTF8(section.name.c_str())
+            << "\nVOICE: " << juce::String::fromUTF8(owner.id.c_str())
+            << " | " << juce::String::fromUTF8(owner.role.c_str())
+            << " | MIDI range " << owner.minimumPitch << ".." << owner.maximumPitch
+            << "\nWindow: absolute beats " << absoluteStart << ".." << absoluteEnd
+            << "; output note.beat is LOCAL to the window.\n"
+            "HARMONIC CHANGES [local beat, chord, pitch classes]:\n";
+        for (const auto& event : section.harmonicEvents) {
+            const auto localBeat = (event.barOffset - gap.firstBar) * plan.beatsPerBar +
+                event.beatOffset;
+            if (localBeat < -.001 || localBeat >= gap.bars * plan.beatsPerBar) continue;
+            prompt << localBeat << "," << juce::String::fromUTF8(event.chordId.c_str()) << ",";
+            const auto chord = std::find_if(plan.chordPalette.begin(), plan.chordPalette.end(),
+                [&](const auto& item) { return item.id == event.chordId; });
+            if (chord != plan.chordPalette.end())
+                for (const auto pitchClass : chord->pitchClasses) prompt << pitchClass << " ";
+            prompt << "\n";
+        }
+        if (section.harmonicEvents.empty() || gap.firstBar >=
+            std::max_element(section.harmonicEvents.begin(), section.harmonicEvents.end(),
+                [](const auto& a, const auto& b) { return a.barOffset < b.barOffset; })->barOffset + 1) {
+            prompt << "The written section chord map may be a shorter cycle than this "
+                "window. Infer its current repetition from the fixed ensemble MIDI.\n";
+        }
+        prompt << "FOCUSED HARMONIC-PHRASE REVIEW: The actual exported MIDI for the "
+            "active primary sustained chord bed sounds in only "
+            << gap.sustainedBarsBefore << " of these " << gap.bars
+            << " bars while another harmonic voice continues. Recompose this "
+            "WHOLE phrase as one connected argument, not a single chord repair "
+            "or an automatic note fill. Use meaningful inner voice-leading "
+            "through the actual planned harmonic changes, with a perceptible "
+            "sustained body in each bar. Retain useful rhythmic identity and "
+            "negative space between voices; the primary bed itself must no "
+            "longer vanish for three consecutive bars. Do not stack almost "
+            "every scale tone at once or double the bass/pulse mechanically. "
+            "The bass, pulse, protagonist, other instruments and all music "
+            "outside this phrase are fixed. Decide every note yourself. "
+            "CRITICAL MIDI COORDINATES: beat is the offset within this ENTIRE "
+            "four-bar window, not a per-bar beat. In 4/4 the four bar onsets "
+            "are beat 0, beat 4, beat 8 and beat 12. Each bar needs its own "
+            "audible sustained chord body, with notes lasting at least two "
+            "beats in that bar. Place successive chord changes at their "
+            "distinct offsets; do not stack four different chords at beat 0. "
+            "If no musically convincing solution exists, return an empty "
+            "array and the original will remain.\n"
+            "ORIGINAL BED NOTES [absolute beat,pitch,duration,velocity]:\n";
+        for (const auto& note : before.notes)
+            if (note.partId == gap.ownerIndex + 1 &&
+                note.startBeat >= absoluteStart - .001 &&
+                note.startBeat < absoluteEnd - .001)
+                prompt << note.startBeat << "," << note.pitch << ","
+                    << note.durationBeats << "," << note.velocity << "; ";
+        prompt << "\nFULL FIXED ENSEMBLE IN THIS PHRASE [part,absolute beat,pitch,duration]:\n";
+        for (const auto& note : accepted.notes)
+            if (note.startBeat < absoluteEnd && note.endBeat() > absoluteStart)
+                prompt << note.partId << "," << note.startBeat << ","
+                    << note.pitch << "," << note.durationBeats << "; ";
+        const auto body = juce::String("{\"model\":\"") + model +
+            "\",\"background\":true,\"reasoning\":{\"effort\":\"" + effort +
+            "\"},\"max_output_tokens\":4200,\"input\":" +
+            juce::JSON::toString(juce::var(prompt)) +
+            ",\"text\":{\"format\":{\"type\":\"json_schema\","
+            "\"name\":\"pulso_harmonic_phrase_review\",\"strict\":true,\"schema\":" +
+            directWindowSchema(plan, {gap.ownerIndex}) + "}}}";
+        if (progress) progress({AiSongStage::Recovery, position, gaps.size(), 1,
+            "AI reviewing an underwritten sustained harmonic phrase"});
+        const auto response = performRequest(body, apiKey, token,
+            std::min(remaining, std::chrono::seconds(90)));
+        const auto output = response.connected && response.status == 200 ?
+            extractOutputText(juce::JSON::parse(response.body)) : juce::String{};
+        PerformanceScore passage;
+        juce::String error;
+        if (output.isEmpty() || !parseDirectWindow(output, plan, {gap.ownerIndex},
+                gap.sectionIndex, gap.firstBar, gap.bars, passage, error, true, false, true)) {
+            OperationalJournal::write("WARN", "HARMONIC_PHRASE",
+                "AI phrase unavailable; original retained | " + error);
+            continue;
+        }
+        auto proposal = immutable;
+        mergePerformanceBlock(proposal, std::move(passage),
+            9200 + gap.ownerIndex * 128 + gap.sectionIndex * 16 + gap.firstBar);
+        CompositionRenderReport afterReport;
+        const auto after = render(proposal, afterReport);
+        const auto covered = renderedSustainedBodyBars(plan, proposal, gap.ownerIndex);
+        auto sustainedBars = 0;
+        for (int bar = section.startBar + gap.firstBar;
+             bar < section.startBar + gap.firstBar + gap.bars; ++bar)
+            if (bar >= 0 && static_cast<std::size_t>(bar) < covered.size() &&
+                covered[static_cast<std::size_t>(bar)]) ++sustainedBars;
+        const auto beforeDebt = SelectiveRepair::measuredTonalDebt(beforeReport);
+        const auto afterDebt = SelectiveRepair::measuredTonalDebt(afterReport);
+        const auto acceptedRevision = sustainedBars == gap.bars &&
+            preservesOutsideEditedWindow(before, after, {gap.ownerIndex},
+                absoluteStart, absoluteEnd) &&
+            EditorialSafety::technicallySafeAiScore(after, afterReport) &&
+            (afterDebt <= beforeDebt ||
+                (before.notes.size() > 0 &&
+                 afterDebt * static_cast<long long>(before.notes.size()) <=
+                 beforeDebt * static_cast<long long>(after.notes.size()))) &&
+            afterReport.finalTonalPass.after.invalidSustains <=
+                beforeReport.finalTonalPass.after.invalidSustains &&
+            (plan.compositionBehavior != CompositionBehavior::Club ||
+                club::adjacentWeight(club::voicingEvidence(plan, after)) <=
+                    club::adjacentWeight(club::voicingEvidence(plan, before)) + .001);
+        OperationalJournal::write(acceptedRevision ? "OK" : "WARN", "HARMONIC_PHRASE",
+            "AI phrase " + juce::String(acceptedRevision ? "accepted" : "rejected") +
+            " | owner=" + juce::String::fromUTF8(owner.id.c_str()) +
+            " | first_bar=" + juce::String(section.startBar + gap.firstBar + 1) +
+            " | sustained_bars=" + juce::String(gap.sustainedBarsBefore) +
+            "->" + juce::String(sustainedBars) +
+            " | tonal_debt=" + juce::String(beforeDebt) + "->" +
+            juce::String(afterDebt));
+        if (!acceptedRevision) continue;
+        score = std::move(proposal);
+        if (checkpoint) {
+            auto snapshot = plan;
+            snapshot.performanceScore = score;
+            std::size_t units = 0;
+            for (const auto& item : plan.sections)
+                units += (item.bars + 7) / 8;
+            checkpoint(snapshot, units, true, false);
+        }
+    }
 }
 
 std::size_t requiredSustainedBodyBars(const SongPlan& plan,
@@ -10701,6 +10892,19 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         checkpoint(snapshot, completedWindows, true, false);
                     }
                 }
+            }
+        }
+        if (juce::SystemStats::getEnvironmentVariable(
+                "PULSO_AI_HARMONIC_PHRASE_REVIEW", {}) == "1" &&
+            !token.stop_requested()) {
+            reviewHarmonicPhrases(score, result, direction, apiKey,
+                executionReasoningEffort, token, progress, checkpoint);
+            if (resume != nullptr && !resume->blueprintOnly &&
+                juce::SystemStats::getEnvironmentVariable(
+                    "PULSO_AI_HARMONIC_PHRASE_ONLY", {}) == "1") {
+                result.performanceScore = std::move(score);
+                error.clear();
+                return result;
             }
         }
         if (firstPassAudition) {

@@ -102,4 +102,67 @@ double HarmonicFloorContext::plannedCoverage(const SongPlan& plan) noexcept {
     return static_cast<double>(covered) / static_cast<double>(plan.totalBars);
 }
 
+std::vector<HarmonicPhraseGap> HarmonicFloorContext::phraseGaps(
+    const SongPlan& plan, const Pattern& rendered, std::size_t limit) {
+    std::vector<HarmonicPhraseGap> candidates;
+    if (plan.beatsPerBar <= 0.0 || limit == 0) return candidates;
+    for (std::size_t ownerIndex = 0; ownerIndex < plan.instruments.size(); ++ownerIndex) {
+        const auto& owner = plan.instruments[ownerIndex];
+        if (owner.role.find("primary_chord_bed") == std::string::npos ||
+            (owner.sourceVoice != VoiceId::HarmonicFoundation &&
+             owner.sourceVoice != VoiceId::HarmonicUpper)) continue;
+        for (std::size_t sectionIndex = 0; sectionIndex < plan.sections.size(); ++sectionIndex) {
+            const auto& section = plan.sections[sectionIndex];
+            if (section.bars < 4 ||
+                (!owner.activeSections.empty() &&
+                 std::find(owner.activeSections.begin(), owner.activeSections.end(),
+                           section.name) == owner.activeSections.end())) continue;
+            const auto identity = lower(section.name + " " + section.function + " " +
+                                        section.motifTreatment);
+            if (containsBreathMarker(identity)) continue;
+            auto best = HarmonicPhraseGap{};
+            for (int firstBar = 0; firstBar + 4 <= section.bars; firstBar += 4) {
+                int sustained = 0, supported = 0;
+                for (int bar = 0; bar < 4; ++bar) {
+                    const auto start = (section.startBar + firstBar + bar) * plan.beatsPerBar;
+                    const auto end = start + plan.beatsPerBar;
+                    bool ownerSounds = false, accompanimentSounds = false;
+                    for (const auto& note : rendered.notes) {
+                        const auto overlap = std::min(note.endBeat(), end) -
+                            std::max(note.startBeat, start);
+                        if (overlap <= .001 || note.partId == 0) continue;
+                        if (note.partId == ownerIndex + 1 &&
+                            overlap + .001 >= std::min(2.0, plan.beatsPerBar * .5))
+                            ownerSounds = true;
+                        else if (note.partId != ownerIndex + 1 &&
+                                 note.partId <= plan.instruments.size()) {
+                            const auto voice = plan.instruments[note.partId - 1].sourceVoice;
+                            if (voice == VoiceId::HarmonicFoundation ||
+                                voice == VoiceId::HarmonicUpper ||
+                                voice == VoiceId::HarmonicPulse)
+                                accompanimentSounds = true;
+                        }
+                    }
+                    sustained += ownerSounds ? 1 : 0;
+                    supported += accompanimentSounds ? 1 : 0;
+                }
+                // A whole-window withdrawal may be intentional. A chord bed
+                // that states one chord and abandons three changes while the
+                // pulse continues is the specific incomplete musical promise.
+                if (sustained != 1 || supported < 3) continue;
+                if (best.bars == 0 || firstBar < best.firstBar)
+                    best = {ownerIndex, sectionIndex, firstBar, 4, sustained};
+            }
+            if (best.bars != 0) candidates.push_back(best);
+        }
+    }
+    std::stable_sort(candidates.begin(), candidates.end(),
+        [&](const auto& a, const auto& b) {
+            return (plan.sections[a.sectionIndex].startBar + a.firstBar) <
+                   (plan.sections[b.sectionIndex].startBar + b.firstBar);
+        });
+    if (candidates.size() > limit) candidates.resize(limit);
+    return candidates;
+}
+
 } // namespace pulso

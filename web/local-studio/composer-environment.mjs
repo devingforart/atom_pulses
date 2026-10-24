@@ -12,7 +12,7 @@ export function defaultEditorialSettings(input, proofMode, renderMode) {
   const sovereign = !proofMode && renderMode === 'ai_sovereign';
   return {
     firstPass: input.first_pass_audition === undefined
-      ? Boolean((input.behavior === 'club' ? true : composerProfile.defaultFirstPass) && sovereign && !input.review_from_job)
+      ? Boolean((input.behavior === 'club' ? composerProfile.clubDefaultFirstPass : composerProfile.defaultFirstPass) && sovereign && !input.review_from_job)
       : input.first_pass_audition === true,
     phraseArchitecture: input.phrase_architecture_experiment === undefined
       ? Boolean(composerProfile.defaultPhraseArchitecture && sovereign)
@@ -42,9 +42,6 @@ export function workerEnvironmentFor(source, directory, dataRoot, automatic = fa
     'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData'];
   return { ...Object.fromEntries(systemKeys.filter(key => source[key]).map(key => [key, source[key]])),
     ...composerProfile.workerEnvironment,
-    // Current local Club listening anchor: joint bass/chord/focus planning.
-    // This module is local-studio-only; Cloud keeps its published profile.
-    PULSO_AI_CLUB_JOINT_GROOVE_EXPERIMENT: '1',
     PULSO_TRACE_PATH: path.join(directory, 'api-events.jsonl'),
     ...(firstPassAudition ? { PULSO_AI_FIRST_PASS_AUDITION: '1' } : {}),
     ...(reviewAudition ? { PULSO_AI_REVIEW_AUDITION: '1' } : {}),

@@ -9,6 +9,7 @@
 #include "core/SelectiveRepair.h"
 #include "core/SovereignScoreRenderer.h"
 #include "core/TrackViability.h"
+#include "core/HarmonicFloorContext.h"
 
 #include <algorithm>
 #include <cmath>
@@ -19,6 +20,51 @@
 using namespace pulso;
 
 void runSelectiveRepairTests() {
+    {
+        SongPlan plan;
+        plan.totalBars = 12;
+        plan.beatsPerBar = 4.0;
+        SongSection section;
+        section.name = "First statement";
+        section.function = "premise";
+        section.bars = 12;
+        plan.sections = {section};
+        InstrumentAssignment bed;
+        bed.id = "sustained_chords";
+        bed.role = "primary_chord_bed";
+        bed.sourceVoice = VoiceId::HarmonicFoundation;
+        bed.activeSections = {section.name};
+        InstrumentAssignment pulse;
+        pulse.id = "chord_pulse";
+        pulse.sourceVoice = VoiceId::HarmonicPulse;
+        plan.instruments = {bed, pulse};
+        Pattern midi;
+        midi.lengthBeats = 48;
+        for (int bar = 0; bar < 12; ++bar)
+            midi.notes.push_back({bar * 4.0, 1.0, 60 + bar % 4, 70, 1,
+                VoiceId::HarmonicPulse, 2, true, NoteOrigin::AiAuthored});
+        midi.notes.push_back({32.0, 4.0, 55, 60, 1,
+            VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
+        auto gaps = HarmonicFloorContext::phraseGaps(plan, midi);
+        require(gaps.size() == 1 && gaps[0].ownerIndex == 0 &&
+                    gaps[0].sectionIndex == 0 && gaps[0].firstBar == 8 &&
+                    gaps[0].bars == 4,
+            "A one-chord primary bed followed by three missing bars should receive an AI phrase review; gaps=" +
+                std::to_string(gaps.size()) +
+                (gaps.empty() ? std::string{} : " first=" + std::to_string(gaps[0].firstBar)));
+        for (int bar = 9; bar < 12; ++bar)
+            midi.notes.push_back({bar * 4.0, 4.0, 55, 60, 1,
+                VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
+        require(HarmonicFloorContext::phraseGaps(plan, midi).empty(),
+            "A continuous authored chord bed needs no additional review");
+        section.function = "breakdown";
+        plan.sections = {section};
+        midi.notes.erase(std::remove_if(midi.notes.begin(), midi.notes.end(),
+            [](const auto& note) { return note.partId == 1 && note.startBeat >= 36; }),
+            midi.notes.end());
+        require(HarmonicFloorContext::phraseGaps(plan, midi).empty(),
+            "A planned breakdown must not be treated as an accidental harmonic gap");
+    }
     {
         InstrumentAssignment lead;
         lead.id = "lead";

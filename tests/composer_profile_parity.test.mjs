@@ -37,6 +37,8 @@ test('local production worker uses exactly the shared Cloud composer profile', (
   assert.equal(env.PULSO_AI_TERMINAL_CRITIC_EXPERIMENT, undefined);
   assert.equal(env.PULSO_AI_EXPRESSIVE_ENSEMBLE_EXPERIMENT, '1');
   assert.equal(env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT, '1');
+  assert.equal(env.PULSO_AI_HARMONIC_PHRASE_REVIEW, '1');
+  assert.equal(env.PULSO_AI_CLUB_JOINT_GROOVE_EXPERIMENT, '1');
   assert.equal(env.PULSO_AI_JOINT_ONE_GROUP, '1');
   assert.equal(env.PULSO_AI_LONG_FORM_CONTINUITY, undefined);
   assert.equal(env.PULSO_AI_THEMATIC_REVIEW, undefined);
@@ -88,9 +90,9 @@ test('first-pass audition never starts an automatic editorial recovery after a f
   assert.equal(canAutomaticallyRecover(job, true), false);
 });
 
-test('Club defaults to bounded AI voicing review, with an explicit local first-pass override', () => {
+test('Club keeps the accepted first-pass anchor with bounded harmonic-phrase review', () => {
   assert.deepEqual(defaultEditorialSettings({ behavior: 'club' }, false, 'ai_sovereign'),
-    { firstPass: false, phraseArchitecture: true });
+    { firstPass: true, phraseArchitecture: true });
   assert.deepEqual(defaultEditorialSettings({ behavior: 'club', first_pass_audition: true }, false, 'ai_sovereign'),
     { firstPass: true, phraseArchitecture: true });
 });

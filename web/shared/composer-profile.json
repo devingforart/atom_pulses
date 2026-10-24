@@ -1,18 +1,20 @@
 {
   "name": "ai-only-v2-connected-discourse",
   "defaultFirstPass": true,
-  "clubDefaultFirstPass": false,
+  "clubDefaultFirstPass": true,
   "defaultPhraseArchitecture": true,
   "workerEnvironment": {
     "PULSO_AI_PITCHED_ONLY": "1",
     "PULSO_AI_EDITORIAL_V2": "1",
     "PULSO_LOCAL_EDITORIAL_V2": "1",
     "PULSO_AI_JOINT_SHORT_CAST": "1",
+    "PULSO_AI_CLUB_JOINT_GROOVE_EXPERIMENT": "1",
     "PULSO_AI_JOINT_NARRATIVE_ANCHORS": "1",
     "PULSO_AI_GLOBAL_NARRATIVE_EDITOR": "1",
     "PULSO_AI_JOINT_ONE_GROUP": "1",
     "PULSO_AI_EXPRESSIVE_ENSEMBLE_EXPERIMENT": "1",
     "PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT": "1",
+    "PULSO_AI_HARMONIC_PHRASE_REVIEW": "1",
     "PULSO_DISABLE_SECURE_CREDENTIALS": "1"
   }
 }

@@ -1,0 +1,159 @@
+{
+  "sourceJobId": "1e8675dd-3ed5-49ef-b125-3b3b02277fd0",
+  "candidateJobId": "663cc430-f245-4c58-b49b-dcfa143273e5",
+  "responseId": "resp_006dcf357077f621006adcd053d5e087d1a0ae1342d2c27d51",
+  "usage": {
+    "input_tokens": 1976,
+    "input_tokens_details": {
+      "cache_write_tokens": 0,
+      "cached_tokens": 1973
+    },
+    "output_tokens": 1076,
+    "output_tokens_details": {
+      "reasoning_tokens": 767
+    },
+    "total_tokens": 3052
+  },
+  "diagnosis": "Los tonos comunes se prolongan para unir Cm9–Fm7 y Fm7–Abmaj7; las voces restantes se mueven por semitono o paso conjunto. En el último compás el acorde se reconfigura a Gm7, respondiendo al pulso sin dejar ningún compás vacío ni duplicar su patrón de ataques.",
+  "intent": "Cama armónica oscura y sostenida de cuatro compases, con cambios de voicing mínimos que dejan al bajo y al pulso articular las raíces.",
+  "before": [
+    [
+      32,
+      4,
+      48,
+      64
+    ],
+    [
+      32,
+      4,
+      51,
+      59
+    ],
+    [
+      32,
+      4,
+      53,
+      63
+    ],
+    [
+      32,
+      4,
+      55,
+      57
+    ],
+    [
+      32,
+      4,
+      56,
+      59
+    ],
+    [
+      32,
+      4,
+      58,
+      55
+    ],
+    [
+      32,
+      4,
+      60,
+      56
+    ],
+    [
+      32,
+      4,
+      62,
+      52
+    ],
+    [
+      32,
+      4,
+      63,
+      53
+    ],
+    [
+      32,
+      4,
+      65,
+      53
+    ],
+    [
+      32,
+      4,
+      67,
+      52
+    ]
+  ],
+  "after": [
+    [
+      32,
+      4,
+      55,
+      54
+    ],
+    [
+      32,
+      4,
+      58,
+      52
+    ],
+    [
+      32,
+      8,
+      60,
+      57
+    ],
+    [
+      32,
+      8,
+      63,
+      55
+    ],
+    [
+      36,
+      8,
+      56,
+      56
+    ],
+    [
+      36,
+      4,
+      65,
+      51
+    ],
+    [
+      40,
+      4,
+      67,
+      54
+    ],
+    [
+      44,
+      4,
+      55,
+      56
+    ],
+    [
+      44,
+      4,
+      58,
+      54
+    ],
+    [
+      44,
+      4,
+      62,
+      57
+    ],
+    [
+      44,
+      4,
+      65,
+      52
+    ]
+  ],
+  "targetBars": [
+    9,
+    12
+  ]
+}

@@ -1,10 +1,11 @@
 # Motor principal local: referencia mejor puntuada
 
 Desde el 26/10/2026, `scripts/start-local-studio.ps1` inicia por defecto el
-motor aislado en el commit `99798fb` (`candidate-club-2026-10-24`). El codigo
-fuente se mantiene en `build/anchor-best-rated-source` y el worker compilado
-en `build/anchor-best-rated-build`. El script de preparacion verifica el commit
-y recompila solo si falta el ejecutable o se solicita `-Rebuild`.
+motor aislado en el commit `7c407ca`. Parte del anclaje `99798fb` y agrega
+la revision armonica focalizada al flujo general. El codigo fuente se mantiene
+en `build/anchor-harmonic-review-source` y el worker compilado en
+`build/anchor-harmonic-review-build`. El script de preparacion verifica el
+commit y recompila solo si falta el ejecutable o se solicita `-Rebuild`.
 
 El estudio local habitual es `http://localhost:4177/`. Para abrir el motor
 experimental posterior de forma explicita: `scripts/start-local-studio.ps1
@@ -19,11 +20,20 @@ compartidas; ninguna obra ni puntuacion fue borrada.
   armonica 9-12*: 36/45, pero una revision focalizada de cuatro compases
   sobre la obra anterior, no una demostracion del motor generico.
 
-El worker recompilado usa exactamente el codigo del anclaje, aunque su hash
+El worker recompilado usa el codigo limpio de `7c407ca`, aunque su hash
 binario puede diferir del ejecutable historico por la compilacion. La ruta
 Club local mantiene `PULSO_AI_JOINT_ONE_GROUP=1`, como en el contexto guardado
 de la generacion de referencia. La casilla de primera pasada esta activada
-por defecto en esa interfaz.
+por defecto, pero la revision armonica focalizada corre antes de presentar
+esa primera pasada si detecta un hueco real en el colchon principal. No hay
+una regla que copie el MIDI historico ni que garantice 36/45 en nuevas obras.
+
+Prueba de integracion local: al retomar la partitura `1e8675dd` con el motor
+generalizado, el trabajo `cd43fc48-bc47-4e20-aeb9-03839fc64d50` reescribio
+solo el plano sostenido en los compases 9-12 (11 notas sustituidas por 16).
+Las otras nueve pistas y los compases exteriores conservaron sus notas.
+El resultado fue publicado y queda pendiente su evaluacion auditiva: superar
+las pruebas tecnicas no le adjudica automaticamente la puntuacion 36/45.
 
 Este cambio solo selecciona el motor de pruebas **locales**. No modifica el
 branch `1.0` con experimentos en curso, el VST ni PULSO Cloud; cualquier

@@ -5,8 +5,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$anchorSource = Join-Path $projectRoot 'build\anchor-best-rated-source'
-$anchorWorker = Join-Path $projectRoot 'build\anchor-best-rated-build\Release\pulso_cloud_worker.exe'
+$anchorSource = Join-Path $projectRoot 'build\anchor-harmonic-review-source'
+$anchorWorker = Join-Path $projectRoot 'build\anchor-harmonic-review-build\Release\pulso_cloud_worker.exe'
 if ($Engine -eq 'BestRated') {
     & (Join-Path $PSScriptRoot 'prepare-best-rated-engine.ps1') | Out-Host
     $serverPath = Join-Path $anchorSource 'web\local-studio\server.mjs'

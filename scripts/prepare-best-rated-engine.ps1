@@ -2,8 +2,7 @@ param([switch]$Rebuild)
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$revision = '7c407ca'
-$localTestRevision = 'f286d6208222503ca662c01d60a5550355c48169'
+$revision = '7184327372241caa41e81aadaec7f74a042c9d63'
 $source = Join-Path $projectRoot 'build\anchor-harmonic-review-source'
 $build = Join-Path $projectRoot 'build\anchor-harmonic-review-build'
 $worker = Join-Path $build 'Release\pulso_cloud_worker.exe'
@@ -17,7 +16,7 @@ if (-not (Test-Path -LiteralPath $source -PathType Container)) {
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo recuperar el anclaje sin tocar el arbol de trabajo actual.' }
 }
 $actual = (& git -C $source rev-parse HEAD 2>&1).Trim()
-if ($LASTEXITCODE -ne 0 -or $actual -notin @($expected, $localTestRevision)) {
+if ($LASTEXITCODE -ne 0 -or $actual -ne $expected) {
     throw "El codigo aislado no coincide con $revision. No se modifico ni borro nada."
 }
 if ($Rebuild -or -not (Test-Path -LiteralPath $worker -PathType Leaf)) {

@@ -1,8 +1,9 @@
 # Motor principal local: referencia mejor puntuada
 
 Desde el 26/10/2026, `scripts/start-local-studio.ps1` inicia por defecto el
-motor aislado en el commit `7c407ca`. Parte del anclaje `99798fb` y agrega
-la revision armonica focalizada al flujo general. El codigo fuente se mantiene
+motor aislado en el commit `7184327`. Parte del anclaje `99798fb`, incorpora
+la revision armonica focalizada de `7c407ca` al flujo general y da mas tiempo
+a una respuesta remota en cola sin hacer una segunda llamada. El codigo fuente se mantiene
 en `build/anchor-harmonic-review-source` y el worker compilado en
 `build/anchor-harmonic-review-build`. El script de preparacion verifica el
 commit y recompila solo si falta el ejecutable o se solicita `-Rebuild`.
@@ -20,7 +21,7 @@ compartidas; ninguna obra ni puntuacion fue borrada.
   armonica 9-12*: 36/45, pero una revision focalizada de cuatro compases
   sobre la obra anterior, no una demostracion del motor generico.
 
-El worker recompilado usa el codigo limpio de `7c407ca`, aunque su hash
+El worker recompilado usa el codigo de `7184327`, aunque su hash
 binario puede diferir del ejecutable historico por la compilacion. La ruta
 Club local mantiene `PULSO_AI_JOINT_ONE_GROUP=1`, como en el contexto guardado
 de la generacion de referencia. La casilla de primera pasada esta activada
@@ -34,6 +35,14 @@ solo el plano sostenido en los compases 9-12 (11 notas sustituidas por 16).
 Las otras nueve pistas y los compases exteriores conservaron sus notas.
 El resultado fue publicado y queda pendiente su evaluacion auditiva: superar
 las pruebas tecnicas no le adjudica automaticamente la puntuacion 36/45.
+
+La ruta normal de primera pasada tambien se probo retomando exactamente la
+obra fuente. El trabajo `dffd984a-d148-4164-932f-775d7a012889` publico
+una revision IA diferente: sustituyo 11 notas por 12 solo en el plano
+sostenido de los compases 9-12; las otras nueve pistas quedaron intactas.
+Una tentativa anterior agoto el tiempo de transporte y conservo el original,
+por eso se amplio de 90 a 150 segundos el presupuesto de esa unica respuesta
+dentro del limite total de cuatro minutos de la revision focalizada.
 
 Este cambio solo selecciona el motor de pruebas **locales**. No modifica el
 branch `1.0` con experimentos en curso, el VST ni PULSO Cloud; cualquier

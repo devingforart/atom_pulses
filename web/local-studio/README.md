@@ -96,7 +96,7 @@ Desde la raíz del repositorio, en PowerShell:
 ./scripts/start-local-studio.ps1
 ```
 
-El inicio local usa por defecto el motor limpio `7c407ca`: parte de la
+El inicio local usa por defecto el motor `7184327`: parte de la
 referencia `99798fb` y suma su revisión armónica focalizada al flujo general,
 aislado del branch de experimentos.
 Si falta el worker, lo reconstruye desde ese commit. Para abrir el motor

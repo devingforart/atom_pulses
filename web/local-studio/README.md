@@ -96,6 +96,12 @@ Desde la raíz del repositorio, en PowerShell:
 ./scripts/start-local-studio.ps1
 ```
 
+El inicio local usa por defecto el motor mejor evaluado de la referencia
+`candidate-club-2026-10-24` (`99798fb`), aislado del branch de experimentos.
+Si falta el worker, lo reconstruye desde ese commit. Para abrir el motor
+experimental posterior, elegi explicitamente `-Engine Experimental` y otro
+puerto. Detalles y puntuaciones: [motor principal local](../../docs/anchors/best-rated-local-motor.md).
+
 La clave `OPENAI_API_KEY` debe estar configurada como variable de entorno del usuario o del proceso. El script nunca imprime su valor. Abrí `http://127.0.0.1:4177`. La página indica si el ejecutable y la clave están disponibles. **Abrir la página no envía solicitudes a OpenAI**: solo el botón «Comenzar composición» lo hace y puede generar un cargo.
 
 Para medir latencia sin tocar el MIDI ni interrumpir una generación, ejecutá
@@ -158,7 +164,7 @@ incompleta del protagonista. Es una muestra A/B para escucha, no un candidato
 aprobado para activar en Cloud o VST. Los conflictos agudos largos del clímax
 siguen fuera de esa revisión limitada.
 
-Opcional: `./scripts/start-local-studio.ps1 -Port 4180`. Para usar otro worker existente, definí `PULSO_LOCAL_WORKER_PATH` antes de iniciar. El script no compila nada.
+Opcional: `./scripts/start-local-studio.ps1 -Port 4180`. Para probar el código posterior sin sustituir el anclaje: `./scripts/start-local-studio.ps1 -Engine Experimental -Port 4301`. En ese modo podés definir `PULSO_LOCAL_WORKER_PATH`. El modo principal compila su worker solo si falta.
 
 ### Revision tematica experimental
 

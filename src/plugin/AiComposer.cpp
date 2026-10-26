@@ -4962,8 +4962,11 @@ void reviewHarmonicPhrases(PerformanceScore& score, const SongPlan& plan,
             directWindowSchema(plan, {gap.ownerIndex}) + "}}}";
         if (progress) progress({AiSongStage::Recovery, position, gaps.size(), 1,
             "AI reviewing an underwritten sustained harmonic phrase"});
+        // The focused review has a separate four-minute total budget. A queued
+        // background response must not be cancelled at 90 seconds when the
+        // provider can still complete it without another paid request.
         const auto response = performRequest(body, apiKey, token,
-            std::min(remaining, std::chrono::seconds(90)));
+            std::min(remaining, std::chrono::seconds(150)));
         const auto output = response.connected && response.status == 200 ?
             extractOutputText(juce::JSON::parse(response.body)) : juce::String{};
         PerformanceScore passage;

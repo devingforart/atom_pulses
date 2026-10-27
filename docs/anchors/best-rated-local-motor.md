@@ -44,6 +44,13 @@ Una tentativa anterior agoto el tiempo de transporte y conservo el original,
 por eso se amplio de 90 a 150 segundos el presupuesto de esa unica respuesta
 dentro del limite total de cuatro minutos de la revision focalizada.
 
-Este cambio solo selecciona el motor de pruebas **locales**. No modifica el
-branch `1.0` con experimentos en curso, el VST ni PULSO Cloud; cualquier
-promocion a produccion requiere una decision y validacion separadas.
+El motor validado se integro en `1.0` mediante el merge `06c8fc9` y se
+desplego en PULSO Cloud desde la revision exacta `7184327`. El contenedor
+paso sus pruebas C++ durante el build; luego se verificaron el health check
+publico, la pagina Cloud, el ejecutable del worker y el perfil que activa
+`PULSO_AI_HARMONIC_PHRASE_REVIEW=1`. No se lanzo una composicion de pago desde
+una cuenta de usuario como prueba de produccion. El VST no se cambio.
+
+Los experimentos no promovidos se conservaron en `experiments-20261026`.
+Las planillas y scripts de nutricion pertenecen a otro proyecto y siguen
+locales, sin incluirse en la release ni en los commits de Pulso.

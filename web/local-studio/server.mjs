@@ -446,7 +446,8 @@ const server = http.createServer(async (req, res) => {
   const pathname = url.pathname;
   try {
     if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, pitchedOnly: true, editorialProfile: 'ai-only-v2', composerProfile: composerProfile.name, experimentalProfile,
-      musicalProfile: experimentalProfile && process.env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT === '1' ? 'connected-discourse' : 'shared-default' });
+      musicalProfile: experimentalProfile && process.env.PULSO_AI_CLUB_NUCLEUS_V2 === '1' ? 'tonal-club-nucleus-v2' :
+        experimentalProfile && process.env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT === '1' ? 'connected-discourse' : 'shared-default' });
     if (req.method === 'GET' && pathname === '/api/jobs') return json(res, 200, { jobs: listJobs() });
     if (req.method === 'GET' && pathname === '/api/benchmarks')
       return json(res, 200, benchmarkCases);

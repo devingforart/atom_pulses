@@ -34,7 +34,9 @@ const experimentalKeys = ['PULSO_AI_SINGLE_OWNER_WRITING', 'PULSO_AI_FAST_MODE',
   'PULSO_AI_THEMATIC_REVIEW', 'PULSO_AI_GROUNDED_STORY_EXPERIMENT',
   'PULSO_AI_CLUB_GROUNDED_STORY',
   'PULSO_AI_CLUB_FOREGROUND_GROOVE_EXPERIMENT',
-  'PULSO_AI_CLUB_JOINT_GROOVE_EXPERIMENT'];
+  'PULSO_AI_CLUB_JOINT_GROOVE_EXPERIMENT',
+  'PULSO_AI_TONAL_CLUB_BRIEF_V1', 'PULSO_AI_CLUB_NUCLEUS_V2',
+  'PULSO_AI_CLUB_VOICING_ONLY'];
 
 export function workerEnvironmentFor(source, directory, dataRoot, automatic = false,
     experimental = experimentalProfile, firstPassAudition = false, reviewAudition = false,
@@ -43,6 +45,11 @@ export function workerEnvironmentFor(source, directory, dataRoot, automatic = fa
     'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData'];
   return { ...Object.fromEntries(systemKeys.filter(key => source[key]).map(key => [key, source[key]])),
     ...composerProfile.workerEnvironment,
+    // Local A/B only: retain the accepted Club plan and groove contract while
+    // letting the AI write the core argument before its supporting layers.
+    // Production parity stays unchanged until a listener validates the result.
+    ...(experimental && source.PULSO_AI_EXPERIMENT_GROUPED_CLUB === '1' ?
+      { PULSO_AI_JOINT_ONE_GROUP: '0' } : {}),
     PULSO_TRACE_PATH: path.join(directory, 'api-events.jsonl'),
     ...(firstPassAudition ? { PULSO_AI_FIRST_PASS_AUDITION: '1' } : {}),
     ...(reviewAudition ? { PULSO_AI_REVIEW_AUDITION: '1' } : {}),

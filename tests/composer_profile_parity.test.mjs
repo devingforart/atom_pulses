@@ -58,8 +58,30 @@ test('focused harmonic-phrase replay is available only to the explicit local exp
   assert.equal(experimental.PULSO_AI_HARMONIC_PHRASE_REVIEW, '1');
 });
 
+test('Club grouped writing is isolated from the shared production profile', () => {
+  const source = { PULSO_AI_EXPERIMENT_GROUPED_CLUB: '1' };
+  const normal = workerEnvironmentFor(source, '/jobs/normal', '/data', false, false);
+  const experiment = workerEnvironmentFor(source, '/jobs/experiment', '/data', false, true);
+  assert.equal(normal.PULSO_AI_JOINT_ONE_GROUP, '1');
+  assert.equal(experiment.PULSO_AI_JOINT_ONE_GROUP, '0');
+});
+
+test('accepted Club nucleus is shared; unused editorial and voicing experiments remain isolated', () => {
+  const source = { PULSO_AI_TONAL_CLUB_BRIEF_V1: '1', PULSO_AI_CLUB_NUCLEUS_V2: '1', PULSO_AI_CLUB_VOICING_ONLY: '1' };
+  const normal = workerEnvironmentFor(source, '/jobs/normal', '/data', false, false);
+  const experiment = workerEnvironmentFor(source, '/jobs/experiment', '/data', false, true);
+  assert.equal(normal.PULSO_AI_TONAL_CLUB_BRIEF_V1, undefined);
+  assert.equal(experiment.PULSO_AI_TONAL_CLUB_BRIEF_V1, '1');
+  assert.equal(normal.PULSO_AI_CLUB_NUCLEUS_V2, '1');
+  assert.equal(experiment.PULSO_AI_CLUB_NUCLEUS_V2, '1');
+  assert.equal(normal.PULSO_AI_CLUB_VOICING_ONLY, undefined);
+  assert.equal(experiment.PULSO_AI_CLUB_VOICING_ONLY, '1');
+  assert.equal(experiment.PULSO_AI_PITCHED_ONLY, '1');
+  assert.equal(experiment.PULSO_AI_JOINT_ONE_GROUP, '1');
+});
+
 test('the accepted discourse profile matches the five-minute listening anchor', () => {
-  assert.equal(composerProfile.name, 'ai-only-v2-connected-discourse');
+  assert.equal(composerProfile.name, 'ai-only-v2-connected-discourse-club-nucleus');
   const normal = workerEnvironmentFor({}, '/jobs/cloud-parity', '/data', false, false,
     true, false, true);
   const experimental = workerEnvironmentFor({

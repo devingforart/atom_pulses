@@ -2,6 +2,7 @@
 
 #include "core/SongComposer.h"
 #include "core/TonalContract.h"
+#include "AiClubNucleus.h"
 #include <juce_core/juce_core.h>
 #include <cmath>
 
@@ -52,6 +53,28 @@ inline juce::String grooveBrief() {
 // Editorial instructions only. No note generation, repetition expansion,
 // quantisation, automatic orchestration or duration manipulation lives here.
 inline juce::String brief() {
+    if (nucleus::enabled()) return nucleus::editorial();
+    if (juce::SystemStats::getEnvironmentVariable("PULSO_AI_TONAL_CLUB_BRIEF_V1", {}) == "1")
+        return "TONAL CLUB COMPOSITION: Write an electronic dance piece with NO drums or percussion. "
+            "The MIDI itself must make the meter and motion audible on a neutral piano; do not rely on a kick, "
+            "sound design or effects to supply the missing groove. First invent a short, memorable rhythmic "
+            "relationship between bass and pitched chord attacks. Their accents, held notes and gaps must "
+            "interlock around one clear pulse, rather than sound like two unrelated solos or a bass root on "
+            "every bar. Add a recurring tonal sequence or arpeggio with its own contour, plus sustained "
+            "polyphonic harmony that makes the tonal floor audible. Give the foreground a recognisable "
+            "pitch-and-rhythm idea that can return; do not substitute scattered ornamental notes for a hook. "
+            "Choose the actual pitches, attacks, durations, repetitions and rests yourself. No preset rhythmic "
+            "cell, fixed number of notes, mandatory four-on-the-floor accent or automatic MIDI expansion is "
+            "provided. Keep the core relationship recognizable long enough to create expectation. Develop "
+            "it through purposeful variations in voicing, harmony, register, articulation and the entrance "
+            "or withdrawal of complementary layers, not by changing every lane every few bars. A later "
+            "return should be heard as the same musical identity under changed pressure. For a complete "
+            "song, prepare a fuller statement, meaningful contrast and an earned ending; for a requested "
+            "loop, preserve the cycle without forcing a finale. All parts must have distinct musical jobs "
+            "and fit together as a production, not imitate chamber-music counterpoint. Before submitting "
+            "the notes, imagine hearing only bass and chord pulse: if they do not establish a convincing "
+            "tonal dance groove, rewrite that relationship. Then check that adding sequence, pads and "
+            "foreground reveals a journey rather than just making the texture busier. ";
     return grooveBrief() + "CLUB COMPOSITION CONTRACT v3: Compose a continuous electronic club arrangement. "
         "The listener must retain a dependable tonal pulse, bass grammar and memorable hook. "
         "Think in approximately 64-bar macro developments, scaled to the available duration, "

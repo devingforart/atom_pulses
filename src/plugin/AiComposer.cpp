@@ -3333,8 +3333,10 @@ juce::String jointWindowPrompt(const juce::String& direction, const SongPlan& pl
             "pattern at that limit. In the actual final section, prepare the last word "
             "through phrase completion and coordinated releases. A technical window earlier "
             "in the piece is not a song ending.\n";
-        out << "HARMONIC MAP (absolute song beats):\n";
-        for (const auto& event : section.harmonicEvents) {
+        if (juce::JSON::parse(productionJson).hasProperty("tonal_nucleus"))
+            out << club::nucleus::harmonyWindow(plan, start, end);
+        else out << "HARMONIC MAP (absolute song beats):\n";
+        if (!juce::JSON::parse(productionJson).hasProperty("tonal_nucleus")) for (const auto& event : section.harmonicEvents) {
             const auto beat = section.startBar * plan.beatsPerBar + event.barOffset * plan.beatsPerBar + event.beatOffset;
             const auto chord = std::find_if(plan.chordPalette.begin(), plan.chordPalette.end(),
                 [&](const auto& c) { return c.id == event.chordId; });
@@ -4418,14 +4420,16 @@ std::optional<PerformanceScore> proposeAiPitchEdit(
     }
     auto targets = directPitchTargets(candidate, plan, novel, owners,
         sectionIndex, firstBar, bars, .0);
-    if (plan.compositionBehavior == CompositionBehavior::Club && targets.size() > 8)
-        targets.resize(8); // Bound this AI transaction, not the set of musical problems being reviewed.
+    const auto targetLimit = plan.compositionBehavior == CompositionBehavior::Club && club::nucleus::voicingOnly()
+        ? std::size_t{32} : std::size_t{8};
+    if (plan.compositionBehavior == CompositionBehavior::Club && targets.size() > targetLimit)
+        targets.resize(targetLimit); // Bound this AI transaction, not the musical problem set.
     OperationalJournal::write("INFO", "AI_EDITORIAL",
         "focused AI pitch review: " +
         juce::String(static_cast<int>(novel.issues.size())) +
         " new overlaps, " + juce::String(static_cast<int>(targets.size())) +
         " editable notes");
-    if (targets.empty() || targets.size() > 8) return std::nullopt;
+    if (targets.empty() || targets.size() > targetLimit) return std::nullopt;
     juce::String prompt;
     if (plan.compositionBehavior == CompositionBehavior::Club)
         prompt << "CLUB VOICING REVIEW: Judge these concrete sustained semitones, compound minor ninths "
@@ -4539,7 +4543,7 @@ std::optional<PerformanceScore> proposeAiPitchEdit(
         juce::JSON::toString(juce::var(prompt)) +
         ",\"text\":{\"format\":{\"type\":\"json_schema\","
         "\"name\":\"pulso_direct_pitch_revision\",\"strict\":true,\"schema\":" +
-        schema + "}}}";
+        schema.replace("\"maxItems\":8", "\"maxItems\":" + juce::String(static_cast<int>(targetLimit))) + "}}}";
     const auto response = performRequest(body, apiKey, token,
         std::min(budget, std::chrono::seconds(
             plan.compositionBehavior == CompositionBehavior::Club ? 90 : 65)));
@@ -9618,8 +9622,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 if (progress) progress({AiSongStage::Blueprint, 1, 2, attempt,
                     behavior == CompositionBehavior::Club ? "AI planning electronic production layers" :
                         "AI planning phrases and relationships between voices"});
-                const auto phraseOutputTokens = AiMelodicDiscourse::planningOutputTokenBudget(
-                    static_cast<int>(result.sections.size()));
+                const auto phraseOutputTokens = behavior == CompositionBehavior::Club && club::nucleus::enabled()
+                    ? 20000 : AiMelodicDiscourse::planningOutputTokenBudget(
+                        static_cast<int>(result.sections.size()));
                 const auto body = juce::String("{\"model\":\"") + model +
                     "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
                     realizationReasoningEffort +
@@ -10899,6 +10904,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         }
         if (juce::SystemStats::getEnvironmentVariable(
                 "PULSO_AI_HARMONIC_PHRASE_REVIEW", {}) == "1" &&
+            !(behavior == CompositionBehavior::Club && club::nucleus::voicingOnly()) &&
             !token.stop_requested()) {
             reviewHarmonicPhrases(score, result, direction, apiKey,
                 executionReasoningEffort, token, progress, checkpoint);
@@ -10909,6 +10915,17 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 error.clear();
                 return result;
             }
+        }
+        if (!firstPassAudition && behavior == CompositionBehavior::Club && club::nucleus::voicingOnly()) {
+            OperationalJournal::write("INFO", "CLUB_VOICING",
+                "isolated AI voicing review: all attacks, durations, velocities and rhythmic/melodic owners protected");
+            reviewClubVoicings(score, result, apiKey, executionReasoningEffort, token,
+                std::min(aiStarted + totalAiBudget, std::chrono::steady_clock::now() + std::chrono::minutes(8)),
+                barsPerWindow, progress, checkpoint);
+            if (token.stop_requested()) { error = "Generation cancelled"; return {}; }
+            result.performanceScore = std::move(score);
+            error.clear();
+            return result;
         }
         if (firstPassAudition) {
             OperationalJournal::write("INFO", "EDITORIAL",
@@ -10927,10 +10944,21 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             clubContext.scale = result.scale;
             clubContext.beatsPerBar = result.beatsPerBar;
             clubContext.seed = result.seed;
+            CompositionRenderReport beforeRender;
+            const auto beforeMidi = SongComposer{}.render(
+                measured, clubContext, {}, &beforeRender);
             const auto beforeReview = SelectiveRepair::reviewFinalScore(
-                measured, SongComposer{}.render(measured, clubContext));
-            if (beforeReview.ready && resume != nullptr && !resume->blueprintOnly &&
-                completedWindows == windowCount) {
+                measured, beforeMidi);
+            const auto needsScoreLevelReview =
+                !SelectiveRepair::publicationReady(beforeRender);
+            const auto reviewingCompleteCheckpoint = resume != nullptr &&
+                !resume->blueprintOnly && completedWindows == windowCount;
+            // A resolved ending alone does not make a resumed Club score ready.
+            // The first-pass route can publish a technically valid but creatively
+            // underdeveloped score; a controlled review must still reach the
+            // narrative editor in that case.
+            if (beforeReview.ready && !needsScoreLevelReview &&
+                reviewingCompleteCheckpoint) {
                 OperationalJournal::write("OK", "AI_FINALE",
                     "complete Club checkpoint passes final review; no unrelated musical edits requested");
                 result.performanceScore = std::move(score);
@@ -10941,7 +10969,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 beforeReview.terminalPhraseReady, beforeReview.ensembleReleaseReady) &&
                 beforeReview.developedVoices >= beforeReview.expectedVoices &&
                 beforeReview.harmonicContinuity >= .99 && beforeReview.climaxContrast >= .85;
-            if (!isolatedEnding) {
+            // A complete score resumed specifically for musical review should
+            // not spend its budget on pitch-only pad edits before the editor
+            // can assess the missing development or weak instrumental lanes.
+            if (!isolatedEnding &&
+                !(reviewingCompleteCheckpoint && needsScoreLevelReview)) {
               reviewClubVoicings(score, result, apiKey, executionReasoningEffort, token,
                 std::min(aiStarted + totalAiBudget, std::chrono::steady_clock::now() + std::chrono::minutes(6)),
                 barsPerWindow, progress, checkpoint);
@@ -10950,11 +10982,15 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             }
             if (token.stop_requested()) { error = "Generation cancelled"; return result; }
             measured.performanceScore = score;
+            CompositionRenderReport afterRender;
+            const auto afterMidi = SongComposer{}.render(
+                measured, clubContext, {}, &afterRender);
             const auto afterReview = SelectiveRepair::reviewFinalScore(
-                measured, SongComposer{}.render(measured, clubContext));
+                measured, afterMidi);
             clubFinaleOnly = club::production::requiresFinaleReview(result,
                 afterReview.terminalPhraseReady, afterReview.ensembleReleaseReady);
-            if (!clubFinaleOnly) {
+            if (!clubFinaleOnly &&
+                SelectiveRepair::publicationReady(afterRender)) {
                 result.performanceScore = std::move(score);
                 error.clear();
                 return result;

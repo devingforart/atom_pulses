@@ -234,6 +234,7 @@ inline juce::String schema(const juce::String& direction = {}, const SongPlan* p
         properties.getProperty("energy_trajectory", {}).getDynamicObject()->setProperty(
             "items", trajectoryItems);
     }
+    nucleus::extendSchema(result, plan);
     return juce::JSON::toString(result, true);
 }
 
@@ -374,6 +375,44 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
             "beginning and consequence, not a third arpeggio. Every onset and pitch "
             "remains your own choice. Do not maximize note count or cycle diversity. "
             "A common pulse may be spare, but its parts must make sense together.\n";
+    if (nucleus::enabled()) {
+        // Use a dedicated contract rather than stacking another instruction on
+        // the legacy dialogue/omission brief. Shared schema semantics stay exact.
+        out = brief() + nucleus::planningBrief();
+        out << "\nOUTPUT CONTRACT: one layer per cast owner, one state per section for each layer, "
+            "one energy_trajectory entry per section. Use full_arrangement for a song and "
+            "continuous_section for a requested loop. Keep sustained pads and a recurrent "
+            "sequencer distinct from short chord stabs and a spacious melodic hook. "
+            "groove_core_ids names the repeating metric anchors. Core owners must be "
+            "cycle_bound: choose cycle_beats, cycle_origin_beat and unique rhythm_cell "
+            "offsets >=0 and <cycle_beats yourself, matching their nucleus. Other genuinely "
+            "fixed sequences may also be cycle_bound. Use phrase_flexible for harmonic beds "
+            "and free melodic phrases; their rhythm_cell is descriptive, not an onset ban. "
+            "For a sounding state choose entry_beat >=0 and release_beat >entry_beat within "
+            "THIS SECTION's beat range. Outside allowed_section_indices use absent with "
+            "entry_beat=release_beat=minimum_sounding_fraction=0. The fraction is a conservative "
+            "sounding-time estimate, not a note quota. Preserve rich full-body spans; assign "
+            "absence where the arrangement benefits, not to every layer at every phrase. "
+            "polyphonic=true means actual simultaneous pitches. State material/evolution "
+            "names what remains from the nucleus and what changes over the long phrase. "
+            "musical_arcs use absolute zero-based bars within the work; these describe "
+            "long developments, not an obligation to tell a new story every window. "
+            "If groove_interlock is requested: bass_owner_id and chord_owner_id must be "
+            "distinct core owners; foreground_owner_id must be a third actual owner equal "
+            "to focus_owner_id. shared_landings are absolute beat positions permitted "
+            "by BOTH core cycles, or [] if their complementary attacks never coincide. "
+            "Explain their actual rhythmic relationship; interlock does not require a unison attack. "
+            "All IDs must exist. All timings refer to quarter-note beats, NOT seconds. "
+            "\nUSER: " << direction << "\nWORK: " << plan.totalBars << " bars; "
+            << plan.beatsPerBar << " beats/bar; " << plan.bpm << " BPM; "
+            << juce::String::fromUTF8(plan.key.c_str()) << "\nCHORD PALETTE:\n";
+        for (const auto& chord : plan.chordPalette) {
+            out << juce::String(chord.id) << " pitch_classes=";
+            for (const auto pc : chord.pitchClasses) out << pc << " ";
+            out << "bass_pc=" << chord.bassPitchClass << "\n";
+        }
+        out << "CAST:\n";
+    }
     for (const auto& part : plan.instruments) {
         juce::Array<juce::var> allowed;
         for (std::size_t index = 0; index < plan.sections.size(); ++index)
@@ -515,7 +554,7 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
         if (!ids.contains(bass) || !ids.contains(chord) || !ids.contains(foreground) ||
             bass == chord || bass == foreground || chord == foreground ||
             !coreLayer(json, bass) || !coreLayer(json, chord) ||
-            focus != foreground || !landings || landings->isEmpty()) {
+            focus != foreground || !landings || (landings->isEmpty() && !root.hasProperty("tonal_nucleus"))) {
             error = "Club groove interlock must name two distinct core owners and the actual foreground focus";
             return false;
         }
@@ -609,7 +648,7 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
             }
         }
     }
-    return true;
+    return nucleus::validate(root, plan, error);
 }
 
 inline juce::String windowBrief(const juce::String& json, std::size_t sectionIndex) {
@@ -621,8 +660,9 @@ inline juce::String windowBrief(const juce::String& json, std::size_t sectionInd
         << "; focus=" << root.getProperty("focus_owner_id", {}).toString() << "\n";
     if (root.hasProperty("groove_core_ids"))
         out << "GROOVE CORE OWNERS: " << juce::JSON::toString(root.getProperty("groove_core_ids", {}))
-            << ". Their attack grammar/absolute phase is fixed by YOUR plan. Omit attacks when needed, "
-            "but do not add unplanned offsets. Supporting layers must leave space for this real core.\n";
+            << (root.hasProperty("tonal_nucleus")
+                ? ". Preserve their declared attack grammar and absolute phase. A continuous meter carrier keeps its subdivision in continuing active states; omissions belong to explicit musical withdrawals, not arbitrary writing-window changes. Other lanes may breathe according to their own state.\n"
+                : ". Their attack grammar/absolute phase is fixed by YOUR plan. Omit attacks when needed, but do not add unplanned offsets. Supporting layers must leave space for this real core.\n");
     if (const auto* trajectory = root.getProperty("energy_trajectory", {}).getArray()) {
         for (int offset = -1; offset <= 1; ++offset) {
             const auto index = static_cast<int>(sectionIndex) + offset;
@@ -698,6 +738,7 @@ inline juce::String windowBrief(const juce::String& json, std::size_t sectionInd
                 << " opening_evidence=" << link.getProperty("score_evidence", {}).toString() << "\n";
         }
     }
+    out << nucleus::writerBrief(root);
     return out;
 }
 

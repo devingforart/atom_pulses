@@ -48,6 +48,16 @@ test('local production worker uses exactly the shared Cloud composer profile', (
   assert.equal(env.PULSO_AI_FIRST_PASS_AUDITION, undefined);
 });
 
+test('focused harmonic-phrase replay is available only to the explicit local experiment', () => {
+  const source = { PULSO_AI_HARMONIC_PHRASE_ONLY: '1' };
+  const normal = workerEnvironmentFor(source, '/jobs/normal', '/data', false, false);
+  const experimental = workerEnvironmentFor(source, '/jobs/experiment', '/data', false, true);
+  assert.equal(normal.PULSO_AI_HARMONIC_PHRASE_ONLY, undefined);
+  assert.equal(experimental.PULSO_AI_HARMONIC_PHRASE_ONLY, '1');
+  assert.equal(normal.PULSO_AI_HARMONIC_PHRASE_REVIEW, '1');
+  assert.equal(experimental.PULSO_AI_HARMONIC_PHRASE_REVIEW, '1');
+});
+
 test('the accepted discourse profile matches the five-minute listening anchor', () => {
   assert.equal(composerProfile.name, 'ai-only-v2-connected-discourse');
   const normal = workerEnvironmentFor({}, '/jobs/cloud-parity', '/data', false, false,

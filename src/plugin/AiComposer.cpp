@@ -3327,6 +3327,7 @@ juce::String jointWindowPrompt(const juce::String& direction, const SongPlan& pl
             "silence or a final cadence from a technical window boundary.\n";
         out << club::production::windowBrief(productionJson, sectionIndex);
         out << club::production::developmentBrief(productionJson, start, end, plan.beatsPerBar);
+        out << club::nucleus::closingBrief(juce::JSON::parse(productionJson), plan, sectionIndex);
         out << "ARRANGEMENT LIMITS: entry_beat/release_beat in each state are SECTION-LOCAL, "
             "not window-local. Finish this layer's gesture before its release; leave its "
             "planned absence empty. Do not manufacture a final note by clipping a continuing "
@@ -4065,7 +4066,7 @@ juce::String directWindowSchema(const SongPlan& plan,
                 const auto beat = static_cast<double>((*choices)[choice].getProperty("properties", {})
                     .getProperty("beat", {}).getProperty("enum", {})[0]);
                 if (start + beat < entry - .001 || start + beat >= release - .001 ||
-                    !club::production::coreAttackAllowed(productionJson, owner.id, start + beat)) {
+                    !club::production::windowAttackAllowed(plan, owner.id, *sectionIndex, start + beat)) {
                     choices->remove(choice);
                 } else {
                     auto duration = (*choices)[choice].getProperty("properties", {}).getProperty("duration", {});
@@ -4075,6 +4076,14 @@ juce::String directWindowSchema(const SongPlan& plan,
             }
             if (choices->isEmpty()) part.getDynamicObject()->setProperty("maxItems", 0);
             else part.getDynamicObject()->setProperty("items", allowed);
+        }
+        if (boundedClub && sectionIndex) {
+            const auto arrival = club::production::requiredArrival(plan, owner.id, *sectionIndex, firstBar, windowBars);
+            if (arrival >= 0) {
+                auto items = part.getProperty("items", {});
+                if (items.hasProperty("$ref")) items = root->getProperty("$defs").getProperty("windowNote", {});
+                part = club::production::withRequiredArrival(part, items, arrival);
+            }
         }
         properties->setProperty(id, part);
         required.add(id);
@@ -4107,7 +4116,15 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
         if (index >= plan.instruments.size()) continue;
         const auto& owner = plan.instruments[index];
         const auto id = juce::String::fromUTF8(owner.id.c_str());
+        juce::Array<juce::var> arrivalEvents;
         const auto* notes = root->getProperty(id).getArray();
+        const auto arrival = plan.compositionBehavior == CompositionBehavior::Club ?
+            club::production::requiredArrival(plan, owner.id, sectionIndex, firstBar, bars) : -1;
+        if (arrival >= 0) {
+            if (!club::production::readArrivalNotes(root->getProperty(id), arrival, arrivalEvents, error))
+                return false;
+            notes = &arrivalEvents;
+        }
         if (notes == nullptr) {
             error = "Direct ensemble window omitted instrument array: " + id;
             return false;
@@ -4130,8 +4147,7 @@ bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
                 juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()), owner.id);
         if (plan.compositionBehavior == CompositionBehavior::Club && sectionIndex < plan.sections.size() &&
             !harmonicBedReviewAttack &&
-            !club::production::coreAttackAllowed(juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()),
-                owner.id, absoluteBeat)) {
+            !club::production::windowAttackAllowed(plan, owner.id, sectionIndex, absoluteBeat)) {
             error = "Cycle-bound attack contradicts your declared absolute rhythm phase: " + id +
                 " local beat=" + juce::String(beat, 2) + ". Rewrite this voice; no notes were shifted.";
             return false;
@@ -10034,6 +10050,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             requestedOwners.size() < stageOwners.size(),
                         longFormContinuity, thematicFocusedRevision,
                         thematicReview || groundedStory);
+                    juce::String windowSchema;
+                    try {
+                        windowSchema = directWindowSchema(result, requestedOwners, sectionIndex, bars, firstBar);
+                    } catch (const std::exception& schemaError) {
+                        error = "AI writing plan is incompatible with its output schema: " +
+                            juce::String(schemaError.what()) + ". Accepted checkpoints preserved; no writing request sent.";
+                        return {};
+                    }
                     const auto body = juce::String("{\"model\":\"") + model +
                         "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
                         realizationReasoningEffort +
@@ -10043,7 +10067,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         juce::JSON::toString(juce::var(prompt)) +
                         ",\"text\":{\"format\":{\"type\":\"json_schema\","
                         "\"name\":\"pulso_direct_window\",\"strict\":true,\"schema\":" +
-                        directWindowSchema(result, requestedOwners, sectionIndex, bars, firstBar) + "}}}";
+                        windowSchema + "}}}";
                     if (attempt == 1) originalWindowRequest = body;
                     if (progress) progress({attempt == 1 ? AiSongStage::PerformanceBlock :
                         AiSongStage::Recovery, completedWindows, windowCount, attempt,

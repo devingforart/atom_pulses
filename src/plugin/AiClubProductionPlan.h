@@ -3,6 +3,7 @@
 #include "AiClubPolicy.h"
 #include <algorithm>
 #include <set>
+#include <stdexcept>
 
 namespace pulso::plugin::club::production {
 
@@ -82,6 +83,89 @@ inline juce::var boundedNoteSchema(double beats) {
     juce::var result(new juce::DynamicObject());
     result.getDynamicObject()->setProperty("anyOf", choices);
     return result;
+}
+
+// Translate an AI-declared arrival to this response's local coordinates.
+// A negative result means the ordinary note-array protocol remains unchanged.
+inline double requiredArrival(const SongPlan& plan, const std::string& id,
+                              std::size_t sectionIndex, int firstBar, int bars) {
+    if (!nucleus::closureEnabled() || plan.sections.empty() ||
+        sectionIndex + 1 != plan.sections.size()) return -1;
+    const auto root = juce::JSON::parse(juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()));
+    if (root.getProperty("format", {}).toString() != "full_arrangement") return -1;
+    const auto terminal = root.getProperty("terminal_resolution", {});
+    const auto arrival = static_cast<double>(terminal.getProperty("arrival_beat", -1));
+    const auto local = arrival - firstBar * plan.beatsPerBar;
+    if (arrival < 0 || local < 0 || local >= bars * plan.beatsPerBar) return -1;
+    if (const auto* lanes = terminal.getProperty("lanes", {}).getArray())
+        for (const auto& lane : *lanes)
+            if (lane.getProperty("instrument_id", {}).toString().toStdString() == id &&
+                static_cast<bool>(lane.getProperty("joins_arrival",
+                    std::abs(static_cast<double>(lane.getProperty("last_attack_beat", -1)) - arrival) < .001)))
+                return local;
+    return -1;
+}
+
+// Schema-level commitment, not note generation: the AI still authors every
+// pitch, duration and velocity. Ordinary notes cannot duplicate the arrival.
+inline bool windowAttackAllowed(const SongPlan& plan, const std::string& id,
+                                std::size_t sectionIndex, double absoluteBeat) {
+    if (sectionIndex < plan.sections.size()) {
+        const auto& section = plan.sections[sectionIndex];
+        const auto arrival = requiredArrival(plan, id, sectionIndex, 0, section.bars);
+        if (arrival >= 0 && std::abs(absoluteBeat - section.startBar * plan.beatsPerBar - arrival) < .001)
+            return true; // Explicit AI ending gesture, not a new repeating slot.
+    }
+    return coreAttackAllowed(juce::String::fromUTF8(plan.phraseArchitectureJson.c_str()), id, absoluteBeat);
+}
+
+inline juce::var withRequiredArrival(const juce::var& arraySchema,
+                                    const juce::var& resolvedItems, double arrival) {
+    auto ordinary = juce::JSON::parse(juce::JSON::toString(arraySchema));
+    auto items = juce::JSON::parse(juce::JSON::toString(resolvedItems));
+    auto* choices = items.getProperty("anyOf", {}).getArray();
+    juce::var landing;
+    if (choices) for (int i = choices->size(); --i >= 0;) {
+        const auto beat = static_cast<double>((*choices)[i].getProperty("properties", {})
+            .getProperty("beat", {}).getProperty("enum", {})[0]);
+        if (std::abs(beat - arrival) < .001) { landing = (*choices)[i]; choices->remove(i); }
+    }
+    if (!landing.isObject())
+        throw std::runtime_error("AI terminal arrival contradicts permitted writing onsets; reconcile the plan before requesting MIDI");
+    ordinary.getDynamicObject()->setProperty("items", choices->isEmpty() ? landing : items);
+    if (choices->isEmpty()) ordinary.getDynamicObject()->setProperty("maxItems", 0);
+    auto result = juce::JSON::parse(R"({"type":"object","additionalProperties":false,
+        "required":["notes","arrival_notes"],"properties":{"notes":{},
+        "arrival_notes":{"type":"array","minItems":1,"maxItems":32,"items":{}}}})");
+    result.getDynamicObject()->setProperty("description",
+        "Write the phrase in notes; write its AI-planned landing in arrival_notes at EXACT local beat " +
+        juce::String(arrival, 2) + ". Release a preceding same pitch before retriggering it.");
+    auto props = result.getProperty("properties", {});
+    props.getDynamicObject()->setProperty("notes", ordinary);
+    props.getProperty("arrival_notes", {}).getDynamicObject()->setProperty("items", landing);
+    return result;
+}
+
+// Flatten response containers only. Never manufacture, retime or trim events.
+inline bool readArrivalNotes(const juce::var& value, double arrival,
+                             juce::Array<juce::var>& events, juce::String& error) {
+    const auto* ordinary = value.getProperty("notes", {}).getArray();
+    const auto* landing = value.getProperty("arrival_notes", {}).getArray();
+    if (!ordinary || !landing || landing->isEmpty()) {
+        error = "Missing required notes/arrival_notes containers for AI-planned landing";
+        return false;
+    }
+    for (const auto& n : *ordinary)
+        if (std::abs(static_cast<double>(n.getProperty("beat", -1)) - arrival) < .001) {
+            error = "Put arrival attacks only in arrival_notes, not both containers"; return false;
+        }
+    for (const auto& n : *landing)
+        if (std::abs(static_cast<double>(n.getProperty("beat", -1)) - arrival) > .001) {
+            error = "arrival_notes contradicts the AI-planned landing time"; return false;
+        }
+    events.addArray(*ordinary);
+    events.addArray(*landing);
+    return true;
 }
 
 inline bool explicitSection(const juce::String& direction) {
@@ -378,7 +462,7 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
     if (nucleus::enabled()) {
         // Use a dedicated contract rather than stacking another instruction on
         // the legacy dialogue/omission brief. Shared schema semantics stay exact.
-        out = brief() + nucleus::planningBrief();
+        out = brief() + nucleus::planningBrief() + nucleus::closurePlanningBrief();
         out << "\nOUTPUT CONTRACT: one layer per cast owner, one state per section for each layer, "
             "one energy_trajectory entry per section. Use full_arrangement for a song and "
             "continuous_section for a requested loop. Keep sustained pads and a recurrent "
@@ -629,6 +713,7 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
                 if (arc.getProperty(key, {}).toString().trim().isEmpty()) {
                     error = "Club musical arc omits its " + juce::String(key); return false;
                 }
+            if (!nucleus::validateMelodicStatement(arc, plan, error)) return false;
         }
     }
     if (root.hasProperty("groove_core_ids")) {
@@ -748,9 +833,39 @@ inline juce::String developmentBrief(const juce::String& json, double begin, dou
     if (const auto* arcs = root.getProperty("musical_arcs", {}).getArray()) for (const auto& arc : *arcs) {
         const auto start = static_cast<double>(arc.getProperty("start_bar", 0)) * beatsPerBar;
         const auto stop = start + static_cast<double>(arc.getProperty("bars", 0)) * beatsPerBar;
-        if (start < end && stop > begin)
+        if (start < end && stop > begin) {
             out << "\nCONTINUING MUSICAL ARGUMENT (absolute beat " << start << ".." << stop << "): "
                 << juce::JSON::toString(arc, true) << "\n";
+            if (const auto* notes = arc.getProperty("melodic_statement", {}).getProperty("notes", {}).getArray()) {
+                out << "FOREGROUND SENTENCE IN OUTPUT-WINDOW COORDINATES (negative onset means already sounding; "
+                    "continue only its remaining sustain when compatible with the harmonic map):\n";
+                for (const auto& n : *notes) {
+                    const auto attack = start + static_cast<double>(n.getProperty("beat", 0));
+                    const auto release = attack + static_cast<double>(n.getProperty("duration", 0));
+                    if (attack < end && release > begin)
+                        out << "owner=" << arc.getProperty("foreground_id", {}).toString()
+                            << " onset=" << (attack - begin) << " release=" << (release - begin)
+                            << " pitch=" << static_cast<int>(n.getProperty("pitch", 0))
+                            << " velocity=" << static_cast<int>(n.getProperty("velocity", 0)) << "\n";
+                }
+                out << "These are AI-authored phrase anchors, not a cell to tile. Author the realization; "
+                    "do not restart the sentence in each window or invent a new attack for an already-held tone.\n";
+            }
+            if (const auto* parts = arc.getProperty("melodic_statement", {}).getProperty("ensemble_parts", {}).getArray()) {
+                for (const auto& part : *parts) if (const auto* notes = part.getProperty("notes", {}).getArray()) {
+                    for (const auto& n : *notes) {
+                        const auto attack = start + static_cast<double>(n.getProperty("beat", 0));
+                        const auto release = attack + static_cast<double>(n.getProperty("duration", 0));
+                        if (attack < end && release > begin)
+                            out << "JOINT PHRASE owner=" << part.getProperty("instrument_id", {}).toString()
+                                << " function=" << part.getProperty("musical_function", {}).toString()
+                                << " onset=" << (attack - begin) << " release=" << (release - begin)
+                                << " pitch=" << static_cast<int>(n.getProperty("pitch", 0))
+                                << " velocity=" << static_cast<int>(n.getProperty("velocity", 0)) << "\n";
+                    }
+                }
+            }
+        }
     }
     return out;
 }
@@ -870,6 +985,88 @@ inline std::vector<std::string> missingLayers(const juce::String& json, const So
                     << juce::String(covered / (end - begin), 3) << " AI-declared minimum=" << required
                     << " polyphonic=" << (polyphonic ? "yes" : "no") << "; ";
             }
+        }
+    }
+    // Check the AI's own declared terminal limits; never truncate or move notes.
+    if (sectionIndex + 1 == plan.sections.size()) {
+        const auto* terminalLanes = root.getProperty("terminal_resolution", {}).getProperty("lanes", {}).getArray();
+        const auto sectionStart = plan.sections[sectionIndex].startBar * plan.beatsPerBar;
+        if (terminalLanes) for (const auto& lane : *terminalLanes) {
+            const auto id = lane.getProperty("instrument_id", {}).toString().toStdString();
+            const auto owner = std::find_if(plan.instruments.begin(), plan.instruments.end(), [&](const auto& p) { return p.id == id; });
+            if (owner == plan.instruments.end()) continue;
+            const auto index = static_cast<std::size_t>(std::distance(plan.instruments.begin(), owner));
+            if (std::find(requested.begin(), requested.end(), index) == requested.end()) continue;
+            const auto attack = static_cast<double>(lane.getProperty("last_attack_beat", -1));
+            // Local closing experiment only. Same-owner/pitch retriggers under an
+            // outstanding note-off are ambiguous in MIDI 1.0. Inspect, never trim.
+            // Include preceding sustains so collisions at a window boundary count.
+            if (nucleus::closureEnabled()) {
+                std::vector<std::pair<int, std::pair<double, double>>> sounding;
+                for (const auto& n : midi.notes)
+                    if (n.partId == index + 1 && n.startBeat < end && n.endBeat() > begin)
+                        sounding.push_back({n.pitch, {n.startBeat, n.endBeat()}});
+                std::sort(sounding.begin(), sounding.end());
+                int pitch = -1;
+                double soundingUntil = -1;
+                for (const auto& event : sounding) {
+                    if (event.first != pitch) { pitch = event.first; soundingUntil = -1; }
+                    const auto onset = event.second.first;
+                    if (onset >= std::max(begin, static_cast<double>(sectionStart)) &&
+                        onset < soundingUntil - .001) {
+                        if (std::find(missing.begin(), missing.end(), id) == missing.end()) missing.push_back(id);
+                        evidence << juce::String(id) << " same-pitch overlap: pitch " << pitch
+                            << " retriggered at absolute beat " << onset << " before release "
+                            << soundingUntil << ". AI must choose a clear articulation; preserve the phrase and arrival, no automatic trimming. ";
+                        break;
+                    }
+                    soundingUntil = std::max(soundingUntil, event.second.second);
+                }
+            }
+            const auto release = static_cast<double>(lane.getProperty("release_beat", -1));
+            const auto arrival = static_cast<double>(root.getProperty("terminal_resolution", {}).getProperty("arrival_beat", -1));
+            const auto joins = static_cast<bool>(lane.getProperty("joins_arrival", std::abs(attack - arrival) < .001));
+            const auto arrivalInWindow = sectionStart + arrival >= begin && sectionStart + arrival < end;
+            const auto missingArrival = joins && arrivalInWindow && std::none_of(midi.notes.begin(), midi.notes.end(), [&](const auto& n) {
+                return n.partId == index + 1 && std::abs(n.startBeat - sectionStart - arrival) < .001;
+            });
+            const auto violation = std::any_of(midi.notes.begin(), midi.notes.end(), [&](const auto& n) {
+                return n.partId == index + 1 && n.startBeat >= std::max(begin, static_cast<double>(sectionStart)) && n.startBeat < end &&
+                    (attack < 0 || n.startBeat > sectionStart + attack + .001 || n.endBeat() > sectionStart + release + .001);
+            });
+            if (violation) {
+                if (std::find(missing.begin(), missing.end(), id) == missing.end()) missing.push_back(id);
+                evidence << juce::String(id) << " exceeds YOUR terminal plan: last section-local attack <= "
+                    << attack << ", release <= " << release << ". Recompose the concluding gesture; do not clip notes. ";
+            }
+            if (missingArrival) {
+                if (std::find(missing.begin(), missing.end(), id) == missing.end()) missing.push_back(id);
+                evidence << juce::String(id) << " promised to JOIN arrival at section-local beat "
+                    << arrival << " but has no attack there. An anticipation is not the promised landing. ";
+            }
+        }
+        const auto answer = root.getProperty("terminal_resolution", {}).getProperty("melodic_answer", {});
+        const auto id = answer.getProperty("instrument_id", {}).toString().toStdString();
+        const auto owner = std::find_if(plan.instruments.begin(), plan.instruments.end(), [&](const auto& p) { return p.id == id; });
+        if (owner != plan.instruments.end()) {
+            const auto index = static_cast<std::size_t>(std::distance(plan.instruments.begin(), owner));
+            if (std::find(requested.begin(), requested.end(), index) != requested.end())
+                if (const auto* notes = answer.getProperty("notes", {}).getArray()) for (const auto& promised : *notes) {
+                    const auto beat = sectionStart + static_cast<double>(promised.getProperty("beat", -1));
+                    if (beat < begin || beat >= end) continue;
+                    // A cross-window sustain may be split at the technical boundary.
+                    const auto duration = std::min(static_cast<double>(promised.getProperty("duration", 0)), end - beat);
+                    const auto pitch = static_cast<int>(promised.getProperty("pitch", -1));
+                    if (std::none_of(midi.notes.begin(), midi.notes.end(), [&](const auto& n) {
+                        return n.partId == index + 1 && n.pitch == pitch && std::abs(n.startBeat - beat) < .001 &&
+                            std::abs(n.durationBeats - duration) < .001;
+                    })) {
+                        if (std::find(missing.begin(), missing.end(), id) == missing.end()) missing.push_back(id);
+                        evidence << juce::String(id) << " did not realize its AI-authored farewell note: absolute beat "
+                            << beat << ", pitch " << pitch << ", duration " << duration << ". Rewrite this phrase faithfully; do not substitute a root tag. ";
+                        break;
+                    }
+                }
         }
     }
     return missing;

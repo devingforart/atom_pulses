@@ -36,7 +36,7 @@ const experimentalKeys = ['PULSO_AI_SINGLE_OWNER_WRITING', 'PULSO_AI_FAST_MODE',
   'PULSO_AI_CLUB_FOREGROUND_GROOVE_EXPERIMENT',
   'PULSO_AI_CLUB_JOINT_GROOVE_EXPERIMENT',
   'PULSO_AI_TONAL_CLUB_BRIEF_V1', 'PULSO_AI_CLUB_NUCLEUS_V2',
-  'PULSO_AI_CLUB_VOICING_ONLY'];
+  'PULSO_AI_CLUB_VOICING_ONLY', 'PULSO_AI_CLUB_CLOSURE_EXPERIMENT'];
 
 export function workerEnvironmentFor(source, directory, dataRoot, automatic = false,
     experimental = experimentalProfile, firstPassAudition = false, reviewAudition = false,

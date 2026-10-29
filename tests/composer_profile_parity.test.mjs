@@ -58,6 +58,12 @@ test('focused harmonic-phrase replay is available only to the explicit local exp
   assert.equal(experimental.PULSO_AI_HARMONIC_PHRASE_REVIEW, '1');
 });
 
+test('Dorian Current joint phrases and terminal writing are shared by Cloud and local', () => {
+  const source = { PULSO_AI_CLUB_CLOSURE_EXPERIMENT: '1' };
+  assert.equal(workerEnvironmentFor(source, '/jobs/a', '/data', false, false).PULSO_AI_CLUB_CLOSURE_EXPERIMENT, '1');
+  assert.equal(workerEnvironmentFor(source, '/jobs/b', '/data', false, true).PULSO_AI_CLUB_CLOSURE_EXPERIMENT, '1');
+});
+
 test('Club grouped writing is isolated from the shared production profile', () => {
   const source = { PULSO_AI_EXPERIMENT_GROUPED_CLUB: '1' };
   const normal = workerEnvironmentFor(source, '/jobs/normal', '/data', false, false);

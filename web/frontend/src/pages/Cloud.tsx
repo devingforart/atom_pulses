@@ -8,6 +8,15 @@ import { instrumentFor, type SuiteTrack } from '../../../shared/audio-engine.mjs
 import { ProductionAudio } from '../../../shared/production-audio.mjs'
 import { PATCHES, SOUND_BANK_VERSION, patchForTrack, patchOptions } from '../../../shared/sound-palette.mjs'
 import './CloudSuite.css'
+import './CloudEditorial.css'
+
+function SuiteDialog({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => { ref.current?.showModal() }, [])
+  return <dialog ref={ref} className="cloud-studio-dialog" aria-label={title} onCancel={onClose} onClose={onClose}>
+    <div className="cloud-dialog-header"><span>{title}</span><button type="button" onClick={onClose} aria-label={`Cerrar ${title}`}>×</button></div>{children}
+  </dialog>
+}
 
 type AudibleTrack = SuiteTrack & { color: string }
 type AudibleScore = { jobId: string; midi: MidiScore; tracks: AudibleTrack[] }
@@ -18,7 +27,7 @@ const stageText: Record<string, string> = {
   rendering: 'Preparando los MIDI', ready: 'Lista para escuchar',
   interrupted: 'Interrumpida', generation: 'La composición no se completó',
 }
-const palette: Record<string, string> = { pad: '#dfb64e', bass: '#71a1d0', keys: '#8b9dca', pluck: '#cc8b6e', lead: '#d84f2b', drums: '#75b57c', synth: '#a899c7' }
+const palette: Record<string, string> = { pad: '#dfb64e', bass: '#71a1d0', keys: '#75b57c', pluck: '#e37957', lead: '#e37957', drums: '#75b57c', synth: '#cfd0c7' }
 const neutralLabels: Record<string, string> = { pad: 'Seno · armonía', bass: 'Seno · bajo', keys: 'Seno · teclas', pluck: 'Seno · arpegio', lead: 'Seno · melodía', drums: 'Seno · percusión', synth: 'Seno · pista' }
 const fmt = (seconds: number) => { const value = Math.max(0, Math.floor(seconds || 0)); return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}` }
 const trackUrl = (jobId: string, filename: string, shareToken?: string) => shareToken
@@ -92,6 +101,12 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   const [jobs, setJobs] = useState<CloudJob[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [sessionOpen, setSessionOpen] = useState(false)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try { return localStorage.getItem('pulso-studio-theme') === 'light' ? 'light' : 'dark' } catch { return 'dark' }
+  })
+  const [draftLoaded, setDraftLoaded] = useState(false)
   const [score, setScore] = useState<AudibleScore | null>(null)
   const [scoreError, setScoreError] = useState('')
   const [scoreLoading, setScoreLoading] = useState(false)
@@ -121,7 +136,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
     if (!audio) return
     if (timeRef.current) timeRef.current.textContent = `${fmt(seconds)} / ${fmt(audio.duration)}`
     if (audio.midi && playheadRef.current) {
-      const x = 205 + audio.midi.secondsToBeat(seconds) / audio.midi.beatsPerBar * 22
+      const x = 222 + audio.midi.secondsToBeat(seconds) / audio.midi.beatsPerBar * 22
       playheadRef.current.style.left = `${x}px`
       const timeline = timelineRef.current
       if (timeline && audio.playing && x - timeline.scrollLeft > timeline.clientWidth - 70)
@@ -136,6 +151,22 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   const duration = activeScore ? activeScore.midi.beatToSeconds(activeScore.midi.lengthBeats) : 0
   const bars = activeScore ? Math.ceil(activeScore.midi.lengthBeats / activeScore.midi.beatsPerBar) : 0
   const timelineWidth = Math.max(620, bars * 22)
+
+  useEffect(() => {
+    if (!user || shared) return
+    try {
+      const draft = JSON.parse(localStorage.getItem(`pulso-cloud-draft:${user.id}`) || '{}')
+      if (typeof draft.prompt === 'string') setPrompt(draft.prompt.slice(0, 600))
+      if ([60,120,180,300,390,600,900].includes(draft.durationSeconds)) setDurationSeconds(draft.durationSeconds)
+      if (Number.isFinite(draft.bpm) && draft.bpm >= 60 && draft.bpm <= 180) setBpm(draft.bpm)
+      setClub(draft.club === true); setAllowChromatic(draft.allowChromatic === true)
+    } catch { /* A malformed draft must not block the studio. */ }
+    setDraftLoaded(true)
+  }, [user?.id, shared])
+  useEffect(() => {
+    if (!user || shared || !draftLoaded) return
+    try { localStorage.setItem(`pulso-cloud-draft:${user.id}`, JSON.stringify({ prompt, durationSeconds, bpm, club, allowChromatic })) } catch {}
+  }, [user?.id, shared, draftLoaded, prompt, durationSeconds, bpm, club, allowChromatic])
 
   useEffect(() => { if (user && !shared) void api.cloudStatus().then(setCloudStatus).catch(() => setCloudStatus(null)) }, [user, shared])
   useEffect(() => {
@@ -183,7 +214,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
       const job = await api.createCloudJob({ prompt: prompt.trim(), durationSeconds,
         bpm, allowChromatic, club, idempotencyKey: crypto.randomUUID() })
       setJobs(previous => [job, ...previous.filter(item => item.id !== job.id)])
-      setSelectedId(job.id); setPrompt('')
+      setSelectedId(job.id); setComposeOpen(false)
     } catch (problem) { setError(problem instanceof Error ? problem.message : 'No pudimos comenzar la composición.') }
     finally { setBusy(false) }
   }
@@ -247,15 +278,20 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   const status = selected?.status === 'completed' ? 'LISTA' : selected?.status === 'failed' ? 'NO COMPLETADA' :
     selected?.status === 'cancelled' ? 'CANCELADA' : selected ? stageText[selected.stage] || 'COMPONIENDO' : 'SIN OBRAS'
 
-  return <section className={`cloud-suite${shared ? ' cloud-exhibition' : ''}`}>
+  return <section data-theme={theme} className={`cloud-suite cloud-editorial${shared ? ' cloud-exhibition' : ''}`}>
     <header className="cloud-suite-bar">
-      <div className="cloud-suite-brand"><Logo /><span className="cloud-suite-brand-divider" /><strong>SUITE / CLOUD</strong></div>
-      <div className="cloud-suite-global">{shared ? <span className="cloud-exhibition-badge">EXHIBICIÓN COMPARTIDA · SOLO LECTURA</span> : <><span className="cloud-suite-online">● EN TU CUENTA</span><button type="button" disabled={selected?.status !== 'completed' || sharing} onClick={async () => { if (!selected) return; setSharing(true); try { const result = await api.shareCloudJob(selected.id); setShare({ ...result, jobId: selected.id }) } catch (problem) { setError(problem instanceof Error ? problem.message : 'No se pudo compartir.') } finally { setSharing(false) } }}>{sharing ? 'Preparando…' : 'Share'}</button><button type="button" onClick={() => setHistoryOpen(value => !value)}>Historial</button><button type="button" className="cloud-suite-export-one" disabled={!activeScore || downloadingSingleMidi} onClick={() => void downloadMergedMidi()} title="Todas las notas en una pista para tocar con un instrumento">↓ 1 pista MIDI</button>
+      <div className="cloud-suite-brand"><Logo /><span className="cloud-suite-brand-divider" /><strong>COMPOSITION STUDIO</strong></div>
+      <div className="cloud-suite-global"><button type="button" aria-label={theme === 'dark' ? 'Activar tema claro' : 'Activar tema oscuro'} onClick={() => { const next = theme === 'dark' ? 'light' : 'dark'; setTheme(next); try { localStorage.setItem('pulso-studio-theme', next) } catch {} }}>{theme === 'dark' ? 'Dark / Light' : 'Light / Dark'}</button>{shared ? <span className="cloud-exhibition-badge">EXHIBICIÓN COMPARTIDA · SOLO LECTURA</span> : <><span className="cloud-suite-online">● EN TU CUENTA</span><a href="/account">Mi cuenta</a><button type="button" disabled={selected?.status !== 'completed' || sharing} onClick={async () => { if (!selected) return; setSharing(true); try { const result = await api.shareCloudJob(selected.id); setShare({ ...result, jobId: selected.id }) } catch (problem) { setError(problem instanceof Error ? problem.message : 'No se pudo compartir.') } finally { setSharing(false) } }}>{sharing ? 'Preparando…' : 'Share'}</button><button type="button" onClick={() => setHistoryOpen(value => !value)}>Historial</button><button type="button" className="cloud-suite-export-one" disabled={!activeScore || downloadingSingleMidi} onClick={() => void downloadMergedMidi()} title="Todas las notas en una pista para tocar con un instrumento">↓ 1 pista MIDI</button>
         {selected?.status === 'completed' && selected.resultManifest ? <a className="cloud-suite-export" href={trackUrl(selected.id, selected.resultManifest.fullFile)} title="Obra original multipista con sus controles expresivos">↓ Multipista</a> : <span className="cloud-suite-export disabled">↓ Multipista</span>}</>}</div>
     </header>
-    <div className="cloud-suite-layout">{!shared && <aside className="cloud-suite-sidebar"><div className="cloud-suite-side-scroll"><div className="cloud-suite-compose">
-      <div className="cloud-suite-kicker"><span>01 / DIRECCIÓN</span><span>CREACIÓN</span></div><h1>Tu próxima<br /><em>obra.</em></h1>
-      <p className="cloud-suite-intro">Describe el carácter, el movimiento y la instrumentación. PULSO escribe la obra y la trae aquí para escucharla pista por pista.</p>
+    <div className="cloud-beta">0.1.0 version Beta</div>
+    {!shared && <button type="button" className="cloud-session-indicator" onClick={() => setSessionOpen(true)}>{status} · {selected?.resultManifest?.title || 'Seguimiento de la obra'} ↗</button>}
+    {error && !composeOpen && <p role="alert" className="cloud-suite-error cloud-global-error">{error}</p>}
+    <div className="cloud-suite-layout">{!shared && <aside className="cloud-focus-rail" aria-label="Herramientas del estudio"><button type="button" className="cloud-new-idea" title="Nueva composición" aria-label="Nueva composición" onClick={() => { setHistoryOpen(false); setComposeOpen(true) }}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 19 1-5L16 4l4 4-10 10-5 1Zm9-13 4 4"/></svg></button><button type="button" title="Explorar biblioteca" aria-label="Explorar biblioteca" onClick={() => setHistoryOpen(value => !value)}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 5v14m5-14v14m5-14 4 14"/></svg></button><button type="button" title="Seguimiento de la obra" aria-label="Seguimiento de la obra" onClick={() => setSessionOpen(true)}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 18V9m5 9V5m5 13v-7m5 7V7"/></svg></button></aside>}
+    {!shared && composeOpen && <SuiteDialog title="Nueva composición" onClose={() => setComposeOpen(false)}>
+      <div className="cloud-suite-compose">
+      <div className="cloud-suite-kicker"><span>01 / DIRECCIÓN MUSICAL</span></div><h1>Tu próxima <em>idea.</em></h1>
+      <p className="cloud-suite-intro">Imaginá la dirección. Explorá sus voces.</p>
       <form onSubmit={event => void compose(event)}><label htmlFor="cloud-prompt">Idea musical <small>{prompt.length} / 600</small></label>
         <textarea id="cloud-prompt" value={prompt} maxLength={600} required rows={5} onChange={event => setPrompt(event.target.value)} placeholder="Una historia electrónica profunda, con armonías que evolucionan y un motivo que regresa transformado…" />
         <label className="cloud-chromatic-option"><input type="checkbox" checked={allowChromatic} onChange={event => setAllowChromatic(event.target.checked)} /> Permitir cromatismos</label>
@@ -266,7 +302,8 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
         <button className="cloud-suite-compose-button" disabled={busy || !prompt.trim() || cloudStatus?.available !== true}>{busy ? 'Enviando…' : '✦  Componer obra ↗'}</button>
         <p className="cloud-suite-cost">{cloudStatus?.available ? cloudStatus.unlimited ? `Acceso ilimitado para esta cuenta. Solo puede haber una composición en curso.` : `Hasta ${cloudStatus.dailyJobLimit} obras completadas cada 24 horas. Los intentos fallidos no cuentan.` : 'Cloud no está habilitado para esta cuenta.'} Escuchar obras guardadas no consume créditos. La composición continúa aunque cierres la página.</p>
         {error && <p className="cloud-suite-error" role="alert">{error}</p>}
-      </form></div>
+      </form></div></SuiteDialog>}
+      {!shared && sessionOpen && <SuiteDialog title="Seguimiento de la obra" onClose={() => setSessionOpen(false)}>
       <div className="cloud-suite-session"><div className="cloud-suite-kicker"><span>02 / SESIÓN</span><span>{jobs.length} OBRAS</span></div>
         {selected ? <><h3>{selected.resultManifest?.title || 'Composición en curso'}</h3><strong className="cloud-suite-status">{status}</strong><p className="cloud-suite-session-prompt">{selected.prompt}</p>
           <small>{new Date(selected.createdAt * 1000).toLocaleString()} · {fmt(selected.durationSeconds)} · {selected.bpm} BPM</small>
@@ -274,10 +311,10 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
           {selected.status === 'completed' && selected.resultManifest && <div className="cloud-suite-session-actions"><a href={trackUrl(selected.id, selected.resultManifest.fullFile)}>↓ Obra completa MIDI</a><span>{selected.resultManifest.tracks.length} pistas · {selected.resultManifest.key}</span></div>}
           {selected.status === 'failed' && <p className="cloud-suite-error">La composición no se completó. No se publicó una obra incompleta.</p>}</> : <p className="cloud-suite-empty-copy">Tus obras aparecerán aquí cuando empieces a componer.</p>}</div>
       {activeScore && <div className="cloud-suite-audio-export"><button type="button" className="cloud-suite-preview-wav" disabled={renderingFullWav} onClick={() => void downloadFullWav()} title="Exportar toda la obra en WAV estéreo con el modo de escucha, volumen y pistas audibles actuales. No consume API.">{renderingFullWav ? `Exportando WAV ${fullWavProgress}%` : '↓ Exportar audio completo · WAV'}</button><button type="button" disabled={downloadingSingleMidi} onClick={() => void downloadMergedMidi()} title="Descargar todas las notas en una sola pista MIDI para probar la obra con un instrumento. El MIDI multipista original no cambia.">{downloadingSingleMidi ? 'Preparando MIDI…' : '↓ Todas las notas · 1 pista MIDI'}</button><span>WAV o MIDI de una pista · se generan en este dispositivo</span></div>}
-    </div></aside>}
-      <div className="cloud-suite-arrangement"><div className="cloud-suite-transport"><div className="cloud-suite-player"><button type="button" onClick={() => audio.seek(0)} disabled={!activeScore} aria-label="Volver al inicio">⏮</button><button type="button" className="cloud-suite-play" onClick={() => void togglePlay()} disabled={!activeScore} aria-label={playing ? 'Pausar' : 'Reproducir'}>{playing ? 'Ⅱ' : '▶'}</button><button type="button" onClick={() => { audio.stop(); setPlaying(false) }} disabled={!activeScore} aria-label="Detener">■</button><span ref={timeRef} className="cloud-suite-time">00:00 / {fmt(duration)}</span></div><div className="cloud-suite-transport-meta"><label htmlFor="cloud-listen-mode">Escucha</label><select id="cloud-listen-mode" aria-label="Modo de escucha" value={listeningMode} onChange={event => { const mode = event.target.value as 'piano' | 'neutral'; void audio.setMode(mode).then(() => setListeningMode(mode)).catch(problem => setScoreError(problem instanceof Error ? problem.message : 'No se pudo cargar el piano.')) }}><option value="piano">Piano MIDI</option><option value="neutral">MIDI neutro</option></select><button type="button" className="cloud-suite-preview-wav" disabled={!activeScore || renderingWav} onClick={() => void downloadWav()} title="Descargar 30 segundos de audio WAV desde la posición actual, con el modo de escucha elegido. No consume API.">{renderingWav ? 'Renderizando…' : 'WAV 30 s'}</button><span>{selected?.resultManifest?.bpm || selected?.bpm || '—'} BPM</span><span>{selected?.resultManifest?.key || '—'}</span><label htmlFor="cloud-volume">Volumen</label><input id="cloud-volume" type="range" min="0" max="100" defaultValue="72" onChange={event => audio.setVolume(Number(event.target.value) / 100)} /></div></div>
-        <div className="cloud-suite-score-head"><div><div className="cloud-suite-kicker">03 / PARTITURA</div><h2>{selected?.resultManifest?.title || 'El estudio está listo'}</h2><p>{activeScore ? `${selected?.resultManifest?.key || '—'} · ${bars} compases · ${activeScore.tracks.length} pistas con notas` : selected?.status === 'completed' ? 'Preparando las pistas MIDI…' : 'Elige una obra terminada para escuchar su partitura.'}</p></div><span>{activeScore ? `${activeScore.tracks.reduce((total, track) => total + track.notes.length, 0).toLocaleString('es-AR')} NOTAS · ${activeScore.tracks.length} PISTAS` : 'MIDI REAL · ESCUCHA PULSO'}</span></div>
-        <div className="cloud-suite-timeline" ref={timelineRef}>{activeScore ? <div className="cloud-suite-content" style={{ width: 205 + timelineWidth }}><div className="cloud-suite-ruler"><div className="cloud-suite-ruler-label">{bars} COMPASES</div><div className="cloud-suite-ruler-marks" style={{ width: timelineWidth }} onClick={seekAt}>{Array.from({ length: Math.floor(bars / (bars > 240 ? 16 : bars > 80 ? 8 : 4)) + 1 }, (_, i) => { const interval = bars > 240 ? 16 : bars > 80 ? 8 : 4; return <span key={i} style={{ left: i * interval * 22 }}>{i * interval + 1}</span> })}</div></div>
+    </SuiteDialog>}
+      <div className="cloud-suite-arrangement"><div className="cloud-suite-transport"><div className="cloud-suite-player"><button type="button" onClick={() => audio.seek(0)} disabled={!activeScore} aria-label="Volver al inicio">⏮</button><button type="button" className="cloud-suite-play" onClick={() => void togglePlay()} disabled={!activeScore} aria-label={playing ? 'Pausar' : 'Reproducir'}>{playing ? 'Ⅱ' : '▶'}</button><button type="button" onClick={() => { audio.stop(); setPlaying(false) }} disabled={!activeScore} aria-label="Detener">■</button><span ref={timeRef} className="cloud-suite-time">00:00 / {fmt(duration)}</span></div><div className="cloud-suite-transport-meta"><label htmlFor="cloud-listen-mode">Escucha</label><select id="cloud-listen-mode" aria-label="Modo de escucha" value={listeningMode} onChange={event => { const mode = event.target.value as 'piano' | 'neutral'; void audio.setMode(mode).then(() => setListeningMode(mode)).catch(problem => setScoreError(problem instanceof Error ? problem.message : 'No se pudo cargar el piano.')) }}><option value="piano">Piano MIDI</option><option value="neutral">MIDI neutro</option></select><button type="button" className="cloud-suite-preview-wav" disabled={!activeScore || renderingWav} onClick={() => void downloadWav()} title="Descargar 30 segundos de audio WAV desde la posición actual, con el modo de escucha elegido. No consume API.">{renderingWav ? 'Renderizando…' : 'WAV 30 s'}</button><button type="button" className="cloud-suite-preview-wav" disabled={!activeScore || renderingFullWav} onClick={() => void downloadFullWav()}>{renderingFullWav ? `Exportando WAV ${fullWavProgress}%` : 'WAV completo'}</button><span>{selected?.resultManifest?.bpm || selected?.bpm || '—'} BPM</span><span>{selected?.resultManifest?.key || '—'}</span><label htmlFor="cloud-volume">Volumen</label><input id="cloud-volume" type="range" min="0" max="100" defaultValue="72" onChange={event => audio.setVolume(Number(event.target.value) / 100)} /></div></div>
+        <div className="cloud-suite-score-head"><div><div className="cloud-suite-kicker">02 / COMPOSICIÓN & EXPLORACIÓN</div><h2>{selected?.resultManifest?.title || 'Espacio para tu próxima idea.'}</h2><p>{activeScore ? `${selected?.resultManifest?.key || '—'} · ${bars} compases · ${activeScore.tracks.length} pistas con notas` : selected?.status === 'completed' ? 'Preparando las pistas MIDI…' : 'Elige una obra terminada para escuchar su partitura.'}</p></div><span>{activeScore ? `${activeScore.tracks.reduce((total, track) => total + track.notes.length, 0).toLocaleString('es-AR')} NOTAS · ${activeScore.tracks.length} PISTAS` : 'MIDI REAL · ESCUCHA PULSO'}</span></div>
+        <div className="cloud-suite-timeline" ref={timelineRef}>{activeScore ? <div className="cloud-suite-content" style={{ width: 222 + timelineWidth }}><div className="cloud-suite-ruler"><div className="cloud-suite-ruler-label">{bars} COMPASES</div><div className="cloud-suite-ruler-marks" style={{ width: timelineWidth }} onClick={seekAt}>{Array.from({ length: Math.floor(bars / (bars > 240 ? 16 : bars > 80 ? 8 : 4)) + 1 }, (_, i) => { const interval = bars > 240 ? 16 : bars > 80 ? 8 : 4; return <span key={i} style={{ left: i * interval * 22 }}>{i * interval + 1}</span> })}</div></div>
           {activeScore.tracks.map((track, index) => <div className="cloud-suite-track" key={`${track.filename}-${index}`}><div className="cloud-suite-track-label" style={{ '--suite-track-color': track.color } as CSSProperties}><div className="cloud-suite-track-name"><i /><b title={track.name}>{track.name}</b></div><div className="cloud-suite-track-controls"><button type="button" className={audio.muted.has(index) ? 'active' : ''} aria-label={`Silenciar ${track.name}`} aria-pressed={audio.muted.has(index)} onClick={() => toggleMute(index)}>M</button><button type="button" className={audio.soloed.has(index) ? 'active' : ''} aria-label={`Escuchar solo ${track.name}`} aria-pressed={audio.soloed.has(index)} onClick={() => toggleSolo(index)}>S</button>{listeningMode === 'production' ? <select className="cloud-suite-sound-select" aria-label={`Sonido de ${track.name}`} title={`Cambiar el sonido de ${track.name} sin alterar su MIDI`} value={track.patchId} onChange={event => changePatch(index, event.target.value)}>{patchOptions(PATCHES[track.patchId || '']?.family || 'synth').map(id => <option value={id} key={id}>{PATCHES[id].label}</option>)}</select> : <small>{listeningMode === 'piano' ? 'Piano MIDI' : neutralLabels[track.instrument] || neutralLabels.synth}</small>}<a href={trackUrl(activeScore.jobId, track.filename)} aria-label={`Descargar MIDI de ${track.name}`} title={`Descargar MIDI de ${track.name}`}>↓</a></div></div><div className="cloud-suite-lane" style={{ width: timelineWidth }} onClick={seekAt}><MidiLane notes={track.notes} color={track.color} width={timelineWidth} beatsPerBar={activeScore.midi.beatsPerBar} /></div></div>)}<div className="cloud-suite-playhead" ref={playheadRef} style={{ left: 205 }} /></div> : <div className="cloud-suite-timeline-empty"><span>◫</span><h3>{scoreLoading ? 'Leyendo las notas MIDI…' : scoreError || 'Una vista para escuchar la composición.'}</h3><p>{scoreLoading ? 'La obra se carga desde tus archivos Cloud, sin generar una nueva composición.' : 'Las notas y silencios aparecerán aquí tal como están en los MIDI exportados.'}</p></div>}</div>
         <div className="cloud-suite-footer"><span>{scoreError || (listeningMode === 'piano' ? 'Piano MIDI: todas las pistas suenan con el mismo piano. El MIDI no cambia.' : 'MIDI neutro: monitor senoidal sin color instrumental. El MIDI no cambia.')}</span><span>{activeScore?.tracks.length || 0} pistas · {fmt(duration)}</span></div>
       </div></div>

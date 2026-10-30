@@ -1,9 +1,11 @@
-import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { Logo } from './Logo'
 
 export function Layout() {
   const { user } = useAuth()
+  const { pathname } = useLocation()
+  if (pathname === '/cloud') return <main id="content" className="studio-fullscreen"><Outlet /></main>
   return <div className="site-shell">
     <a className="skip-link" href="#content">Saltar al contenido</a>
     <header className="nav-wrap">

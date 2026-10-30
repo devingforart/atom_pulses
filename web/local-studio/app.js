@@ -4,6 +4,24 @@ import { ProductionAudio } from './production-audio.mjs';
 import { PATCHES, SOUND_BANK_VERSION, patchOptions, patchForTrack } from './sound-palette.mjs';
 
 const $ = selector => document.querySelector(selector);
+const themeToggle = $('#theme-toggle');
+try { document.documentElement.dataset.theme = localStorage.getItem('pulso-studio-theme') === 'light' ? 'light' : 'dark'; }
+catch { document.documentElement.dataset.theme = 'dark'; }
+function updateThemeButton() {
+  const light = document.documentElement.dataset.theme === 'light';
+  themeToggle.textContent = light ? 'Light / Dark' : 'Dark / Light';
+  themeToggle.setAttribute('aria-pressed', String(light));
+  themeToggle.setAttribute('aria-label', light ? 'Activar tema oscuro' : 'Activar tema claro');
+  themeToggle.title = light ? 'Cambiar a Dark' : 'Cambiar a Light';
+}
+themeToggle.addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('pulso-studio-theme', next); } catch {}
+  updateThemeButton();
+});
+updateThemeButton();
+document.querySelector('.suite').classList.add('studio-rail');
 const exhibitionId = new URLSearchParams(location.search).get('share');
 const exhibitionMode = exhibitionId !== null;
 const comparisonId = new URLSearchParams(location.search).get('compare');
@@ -48,8 +66,78 @@ const updateClubMode = (club, wasClub) => {
 };
 $('#club-mode').addEventListener('change', () => updateClubMode($('#club-mode').checked, !$('#club-mode').checked));
 syncProofMode();
+// Local development controls remain available without crowding the composition workflow.
+const studioOptions = document.createElement('details');
+studioOptions.className = 'studio-options';
+const studioOptionsTitle = document.createElement('summary');
+studioOptionsTitle.textContent = 'Laboratorio de composición';
+studioOptions.append(studioOptionsTitle);
+const studioOptionsBody = document.createElement('div');
+studioOptionsBody.className = 'studio-options-body';
+studioOptions.append(studioOptionsBody);
+const composeButton = $('#submit');
+composeButton.before(studioOptions);
+for (const control of [$('#club-layer-pace').closest('label'), $('#club-variety').closest('label'), proofLabel, firstPassLabel, $('#compose-form .advanced')])
+  studioOptionsBody.append(control);
+studioOptions.before(composeButton);
+function studioDialog(id, title) {
+  const dialog = document.createElement('dialog');
+  dialog.id = id; dialog.className = 'studio-dialog';
+  dialog.setAttribute('aria-label', title);
+  const header = document.createElement('div'); header.className = 'studio-dialog-header';
+  const caption = document.createElement('span'); caption.textContent = title;
+  const close = document.createElement('button'); close.type = 'button'; close.className = 'dock-button';
+  close.textContent = '×'; close.setAttribute('aria-label', 'Cerrar ' + title);
+  close.addEventListener('click', () => dialog.close()); header.append(caption, close); dialog.append(header);
+  document.body.append(dialog);
+  return dialog;
+}
+const composeDialog = studioDialog('composition-dialog', 'Nueva composición');
+composeDialog.append($('.compose-section'));
+const composeError = document.createElement('p'); composeError.className = 'notice'; composeError.hidden = true;
+ui.form.append(composeError);
+$('.arrangement-head').after(ui.notice);
+const sessionDialog = studioDialog('session-dialog', 'Seguimiento de la obra');
+sessionDialog.append($('.session-section'));
+function openComposeDialog() {
+  ui.history.hidden = true;
+  if (!composeDialog.open) composeDialog.showModal();
+  ui.prompt.focus({ preventScroll: true });
+}
+$('#sidebar-compose').addEventListener('click', openComposeDialog);
+$('#sidebar-library').addEventListener('click', () => $('#history-toggle').click());
+$('#sidebar-session').addEventListener('click', () => { if (!sessionDialog.open) sessionDialog.showModal(); });
+const draftControls = [...ui.form.querySelectorAll('input,select,textarea')].filter(el => el.id);
+function saveCompositionDraft() {
+  const draft = Object.fromEntries(draftControls.map(el => [el.id, el.type === 'checkbox' ? el.checked : el.value]));
+  try { localStorage.setItem('pulso-composition-draft-v1', JSON.stringify(draft)); } catch {}
+}
+try {
+  const draft = JSON.parse(localStorage.getItem('pulso-composition-draft-v1') || '{}');
+  for (const el of draftControls) {
+    if (!Object.hasOwn(draft, el.id)) continue;
+    if (el.type === 'checkbox' && typeof draft[el.id] === 'boolean') el.checked = draft[el.id];
+    else if (typeof draft[el.id] === 'string' && (el.tagName !== 'SELECT' || [...el.options].some(o => o.value === draft[el.id]))) el.value = draft[el.id];
+  }
+  firstPassPreference = firstPassInput.checked;
+  nonClubFirstPassPreference = firstPassPreference;
+  updateClubMode($('#club-mode').checked, $('#club-mode').checked);
+  $('#prompt-count').textContent = `${ui.prompt.value.length} / 600`;
+} catch {}
+ui.form.addEventListener('input', saveCompositionDraft);
+ui.form.addEventListener('change', saveCompositionDraft);
+composeDialog.addEventListener('close', saveCompositionDraft);
+const sessionIndicator = document.createElement('button'); sessionIndicator.type = 'button';
+sessionIndicator.className = 'session-indicator'; sessionIndicator.textContent = 'Seguimiento de la obra ↗';
+sessionIndicator.addEventListener('click', () => sessionDialog.showModal());
+$('#health').after(sessionIndicator);
+new MutationObserver(() => {
+  const status = ui.session.querySelector('.session-status')?.textContent?.trim();
+  const title = ui.session.querySelector('.session-title')?.textContent?.trim();
+  sessionIndicator.textContent = status ? `${status}${title ? ' · ' + title : ''} ↗` : 'Seguimiento de la obra ↗';
+}).observe(ui.session, { childList: true, subtree: true, characterData: true });
 const states = { queued: 'EN COLA', running: 'COMPONIENDO', completed: 'LISTA', failed: 'FALLIDA', interrupted: 'INTERRUMPIDA', cancelled: 'CANCELADA' };
-const palette = { pad: '#dfb64e', bass: '#71a1d0', keys: '#8b9dca', pluck: '#cc8b6e', lead: '#d84f2b', drums: '#75b57c', synth: '#a899c7' };
+const palette = { pad: '#dfb64e', bass: '#71a1d0', keys: '#75b57c', pluck: '#e37957', lead: '#e37957', drums: '#75b57c', synth: '#cfd0c7' };
 const names = { pad: 'Seno · armonía', bass: 'Seno · bajo', keys: 'Seno · teclas', pluck: 'Seno · arpegio', lead: 'Seno · melodía', drums: 'Seno · percusión', synth: 'Seno · pista' };
 const fmt = seconds => { const value = Math.max(0, Math.floor(seconds || 0)); return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; };
 const node = (tag, className, value) => { const el = document.createElement(tag); if (className) el.className = className; if (value !== undefined) el.textContent = value; return el; };
@@ -119,6 +207,8 @@ function reuse(job) {
   selectedBenchmarkCase = null;
   ui.prompt.value = job.request.prompt;
   $('#allow-chromatic').checked = job.request.allow_chromatic === true;
+  $('#club-layer-pace').value = job.request.club_layer_pace || 'auto';
+  $('#club-variety').checked = job.request.club_variety === true;
   $('#duration').value = String(job.request.duration_seconds);
   $('#render-mode').value = job.request.ai_sovereign ? 'ai_sovereign' : 'standard';
   proofInput.checked = Boolean(job.request.proof_mode);
@@ -144,6 +234,8 @@ async function resumeAcceptedMidi(job, button) {
     duration_seconds: request.duration_seconds,
     bpm: request.bpm,
     behavior: request.behavior,
+    club_layer_pace: request.club_layer_pace || 'auto',
+    club_variety: request.club_variety === true,
     render_mode: 'ai_sovereign',
     seed: request.seed,
     proof_mode: false,
@@ -499,7 +591,7 @@ async function refresh() {
     const profileLabel = status.musicalProfile === 'connected-discourse'
       ? 'Laboratorio local de fraseo y diálogo conectado'
       : `Perfil editorial local ${status.editorialProfile === 'ai-only-v2' ? 'IA v2' : 'anterior'}`;
-    ui.health.textContent = ready ? `${profileLabel} listo · Escuchar obras guardadas no consume API.` : `Composición no disponible: ${status.workerReady ? '' : 'falta el generador. '}${status.apiKeyConfigured ? '' : 'falta OPENAI_API_KEY en este proceso.'} Las obras guardadas siguen disponibles.`;
+    ui.health.textContent = ready ? '0.1.0 version Beta' : `0.1.0 version Beta · Composición no disponible: ${status.workerReady ? '' : 'falta el generador. '}${status.apiKeyConfigured ? '' : 'falta OPENAI_API_KEY en este proceso.'} Las obras guardadas siguen disponibles.`;
     ui.submit.disabled = Boolean(status.activeJobId) || !ready;
     $('#job-count').textContent = `${jobs.length} OBRAS`;
     if (!jobs.length) {
@@ -534,14 +626,15 @@ async function refresh() {
 }
 ui.form.addEventListener('submit', async event => {
   event.preventDefault(); showNotice(''); ui.submit.disabled = true;
-  const payload = { prompt: ui.prompt.value, allow_chromatic: $('#allow-chromatic').checked, duration_seconds: Number($('#duration').value), bpm: Number($('#bpm').value), behavior: $('#club-mode').checked ? 'club' : $('#behavior').value, render_mode: $('#render-mode').value, seed: $('#seed').value.trim(), proof_mode: proofInput.checked && !proofInput.disabled, first_pass_audition: firstPassInput.checked && !firstPassInput.disabled };
+  const payload = { club_layer_pace: $('#club-layer-pace').value, club_variety: $('#club-variety').checked, prompt: ui.prompt.value, allow_chromatic: $('#allow-chromatic').checked, duration_seconds: Number($('#duration').value), bpm: Number($('#bpm').value), behavior: $('#club-mode').checked ? 'club' : $('#behavior').value, render_mode: $('#render-mode').value, seed: $('#seed').value.trim(), proof_mode: proofInput.checked && !proofInput.disabled, first_pass_audition: firstPassInput.checked && !firstPassInput.disabled };
   if (selectedBenchmarkCase && selectedBenchmarkCase.prompt === payload.prompt.trim() &&
       selectedBenchmarkCase.duration_seconds === payload.duration_seconds &&
       selectedBenchmarkCase.bpm === payload.bpm &&
       selectedBenchmarkCase.behavior === payload.behavior)
     payload.benchmark_case_id = selectedBenchmarkCase.id;
-  try { const result = await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Pulso-Local': '1' }, body: JSON.stringify(payload) }); selectedId = result.job.id; loadedKey = null; previewDiagnostic = false; await refresh(); }
-  catch (error) { showNotice(error.message); ui.submit.disabled = false; }
+  composeError.hidden = true;
+  try { const result = await api('/api/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Pulso-Local': '1' }, body: JSON.stringify(payload) }); selectedId = result.job.id; loadedKey = null; previewDiagnostic = false; saveCompositionDraft(); composeDialog.close(); await refresh(); }
+  catch (error) { showNotice(error.message); composeError.textContent = error.message; composeError.hidden = false; ui.submit.disabled = false; }
 });
 ui.prompt.addEventListener('input', () => {
   $('#prompt-count').textContent = `${ui.prompt.value.length} / 600`;

@@ -50,6 +50,7 @@ describe('Cloud Suite', () => {
   it('sends Club independently of chromatic permission', async () => {
     mock.createCloudJob.mockReset().mockResolvedValue({ ...job, behavior: 'club' })
     render(<Cloud />)
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva composición' }))
     await waitFor(() => expect(screen.getByText(/hasta 2 obras completadas cada 24 horas/i)).toBeInTheDocument())
     fireEvent.change(screen.getByRole('textbox', { name: /Idea musical/i }), { target: { value: 'Progressive house oscuro' } })
     fireEvent.click(screen.getByRole('checkbox', { name: /Club/i }))
@@ -86,10 +87,12 @@ describe('Cloud Suite', () => {
   })
   it('shows the correct daily policy for regular and unlimited accounts', async () => {
     const regular = render(<Cloud />)
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva composición' }))
     await waitFor(() => expect(screen.getByText(/hasta 2 obras completadas cada 24 horas/i)).toBeInTheDocument())
     regular.unmount()
     mock.cloudStatus.mockResolvedValue({ available: true, dailyJobLimit: 2, unlimited: true })
     render(<Cloud />)
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva composición' }))
     await waitFor(() => expect(screen.getByText(/Acceso ilimitado para esta cuenta/i)).toBeInTheDocument())
   })
   it('shows the same useful library details as the local studio', async () => {
@@ -115,6 +118,7 @@ describe('Cloud Suite', () => {
     expect(screen.getByLabelText('Modo de escucha')).toHaveValue('piano')
     expect(screen.getAllByText('Piano MIDI').length).toBeGreaterThan(1)
     expect(screen.getByRole('button', { name: 'WAV 30 s' })).not.toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Seguimiento de la obra' }))
     expect(screen.getByRole('button', { name: /Exportar audio completo · WAV/ })).not.toBeDisabled()
     expect(screen.getByRole('button', { name: /Todas las notas · 1 pista MIDI/ })).not.toBeDisabled()
     expect(screen.queryByLabelText('Sonido de Protagonist lead')).not.toBeInTheDocument()
@@ -128,6 +132,7 @@ describe('Cloud Suite', () => {
 
   it('sends only the musician-facing parameters with a new Cloud request', async () => {
     render(<Cloud />)
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva composición' }))
     fireEvent.change(screen.getByLabelText(/Idea musical/), { target: { value: 'Una obra nueva' } })
     await waitFor(() => expect(screen.getByRole('button', { name: /Componer obra/ })).not.toBeDisabled())
     expect(screen.queryByText(/Dirección avanzada/)).not.toBeInTheDocument()
@@ -142,5 +147,18 @@ describe('Cloud Suite', () => {
     expect(request).not.toHaveProperty('behavior')
     expect(request).not.toHaveProperty('aiSovereign')
     expect(request).not.toHaveProperty('seed')
+  })
+  it('keeps a draft when closing the composition dialog and defaults to dark', async () => {
+    render(<Cloud />)
+    expect(document.querySelector('.cloud-editorial')).toHaveAttribute('data-theme', 'dark')
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva composición' }))
+    fireEvent.change(screen.getByLabelText(/Idea musical/), { target: { value: 'Una idea conservada' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar Nueva composición' }))
+    expect(screen.queryByRole('textbox', { name: /Idea musical/ })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva composición' }))
+    expect(screen.getByLabelText(/Idea musical/)).toHaveValue('Una idea conservada')
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar Nueva composición' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Activar tema claro' }))
+    expect(document.querySelector('.cloud-editorial')).toHaveAttribute('data-theme', 'light')
   })
 })

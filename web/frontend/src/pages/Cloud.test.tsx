@@ -158,7 +158,7 @@ describe('Cloud Suite', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Nueva composición' }))
     expect(screen.getByLabelText(/Idea musical/)).toHaveValue('Una idea conservada')
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar Nueva composición' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Activar tema claro' }))
+    fireEvent.change(screen.getByRole('combobox', { name: 'Apariencia' }), { target: { value: 'light' } })
     expect(document.querySelector('.cloud-editorial')).toHaveAttribute('data-theme', 'light')
   })
 })

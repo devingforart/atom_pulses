@@ -5,6 +5,13 @@
   font-weight: 200 800;
   src: url("@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2") format("woff2-variations");
 }
+/* Four explicit navigation areas keep preference controls on the same row. */
+.nav-wrap{grid-template-columns:minmax(170px,1fr) auto auto auto;gap:24px}
+:root[data-theme=dark] :is(nav a,.brand-caption,.trust-row span){color:var(--muted)}
+:root[data-theme=dark] .hero-visual{background:var(--paper);border-color:var(--line)}
+:root[data-theme=dark] :is(.visual-status,.visual-foot,.visual-foot span){color:var(--muted)}
+@media(max-width:1200px){.nav-wrap{gap:14px;padding-inline:20px}.brand-caption{display:none}nav{gap:18px}}
+@media(max-width:860px){.nav-wrap{height:auto;min-height:76px;padding-block:12px;grid-template-columns:1fr auto}.nav-wrap nav{grid-column:1/-1;grid-row:2;justify-content:center;min-height:30px}.nav-wrap .site-preferences{grid-column:1;grid-row:3;margin:0}.nav-wrap>.button{grid-column:2;grid-row:3}.brand-link{grid-column:1/-1}}
 :root {
   color-scheme: light;
   font-family: "Manrope Variable", "Segoe UI", sans-serif;
@@ -28,6 +35,21 @@
   --mono: "Manrope Variable", "Segoe UI", sans-serif;
   --max: 1420px;
 }
+
+/* Device appearance is the default; user choices override it across all pages. */
+:root[data-theme=dark]{color-scheme:dark;--ink:#f7f6f2;--ink-2:#e5e6dc;--paper:#1c1e1a;--canvas:#181916;--soft:#242720;--muted:#b0b4a6;--line:#42483a;--line-dark:#737d66;--rust-pale:#453024;--rust-dark:#e37957}
+.site-preferences{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.site-preferences select{font:600 11px "Manrope Variable",Manrope,sans-serif;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:9px 8px;max-width:155px;cursor:pointer}
+.site-preferences select:focus-visible{outline:2px solid var(--rust);outline-offset:3px}
+.cloud-editorial .site-preferences select{color:var(--ink);background:var(--suite-paper);border-color:var(--suite-line)}
+:root[data-theme=dark] .site-shell{color:var(--ink);background:var(--canvas)}
+:root[data-theme=dark] :is(.nav-wrap,.auth-card,.price-card,.promotion-panel,.download-card,.subscription-card,.install-steps,.score-card,.product-stage,.midi-stage){background:var(--paper);color:var(--ink);border-color:var(--line)}
+:root[data-theme=dark] .site-shell :is(input,textarea,select){background:var(--canvas);color:var(--ink);border-color:var(--line)}
+:root[data-theme=dark] .site-shell :is(.lead,.pricing-note,.page-hero>p,.auth-card>p,.legal p){color:var(--muted)}
+:root[data-theme=dark] .site-shell .button{background:#d84f2b;color:#fff;border-color:#d84f2b}
+:root[data-theme=dark] .site-shell .button-ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+@media(max-width:1100px){.nav-wrap{flex-wrap:wrap;gap:12px}.nav-wrap .site-preferences{margin-left:auto}}
+@media(max-width:740px){.site-preferences select{font-size:10px;padding:8px;max-width:140px}}
 
 * { box-sizing: border-box; }
 html { overflow-x: hidden; scroll-behavior: smooth; }

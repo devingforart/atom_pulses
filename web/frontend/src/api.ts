@@ -1,3 +1,4 @@
+import { t, useLocale, locale } from './i18n'
 export type User = {
   id: string
   email: string
@@ -58,7 +59,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody
-    throw new ApiError(body.error ?? 'No pudimos completar la solicitud.', response.status)
+    throw new ApiError(t(body.error ?? "No pudimos completar la solicitud."), response.status)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>

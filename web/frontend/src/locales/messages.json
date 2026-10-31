@@ -1,0 +1,1574 @@
+{
+  "Abriendo tu cuenta…": {
+    "en": "Opening your account…",
+    "pt-BR": "Abrindo sua conta…"
+  },
+  "No pudimos abrir el portal.": {
+    "en": "We couldn't open the portal.",
+    "pt-BR": "Não foi possível abrir o portal."
+  },
+  "MI PULSO": {
+    "en": "MY PULSO",
+    "pt-BR": "MEU PULSO"
+  },
+  "Hola,": {
+    "en": "Hello,",
+    "pt-BR": "Olá,"
+  },
+  "Cerrar sesión": {
+    "en": "Sign out",
+    "pt-BR": "Sair"
+  },
+  "ÚLTIMA VERSIÓN": {
+    "en": "LATEST RELEASE",
+    "pt-BR": "ÚLTIMA VERSÃO"
+  },
+  "Versión {p0} lista para Windows.": {
+    "en": "Version {p0} ready for Windows.",
+    "pt-BR": "Versão {p0} disponível para Windows."
+  },
+  "La próxima versión aparecerá aquí al publicarse en GitHub.": {
+    "en": "The next release will appear here when published on GitHub.",
+    "pt-BR": "A próxima versão aparecerá aqui quando for publicada no GitHub."
+  },
+  "Descargar instalador": {
+    "en": "Download installer",
+    "pt-BR": "Baixar instalador"
+  },
+  "Obtener PULSO": {
+    "en": "Get PULSO",
+    "pt-BR": "Obter PULSO"
+  },
+  "MB · Windows x64": {
+    "en": "MB · Windows x64",
+    "pt-BR": "MB · Windows x64"
+  },
+  "LICENCIA": {
+    "en": "LICENSE",
+    "pt-BR": "LICENÇA"
+  },
+  "Tu licencia perpetua está activa{p0}.": {
+    "en": "Your perpetual license is active{p0}.",
+    "pt-BR": "Sua licença perpétua está ativa{p0}."
+  },
+  "Tu acceso a PULSO Cloud está activo.": {
+    "en": "Your PULSO Cloud access is active.",
+    "pt-BR": "Seu acesso ao PULSO Cloud está ativo."
+  },
+  "Obtén Studio o Cloud para descargar PULSO.": {
+    "en": "Get Studio or Cloud to download PULSO.",
+    "pt-BR": "Obtenha Studio ou Cloud para baixar o PULSO."
+  },
+  "Abriendo…": {
+    "en": "Opening…",
+    "pt-BR": "Abrindo…"
+  },
+  "Facturación y comprobantes": {
+    "en": "Billing and receipts",
+    "pt-BR": "Faturamento e comprovantes"
+  },
+  "EMAIL PENDIENTE": {
+    "en": "EMAIL NOT VERIFIED",
+    "pt-BR": "E-MAIL NÃO VERIFICADO"
+  },
+  "Verifica tu email para proteger activaciones y recuperaciones.": {
+    "en": "Verify your email to protect activations and account recovery.",
+    "pt-BR": "Verifique seu e-mail para proteger ativações e recuperações de conta."
+  },
+  "Reenviar verificación": {
+    "en": "Resend verification",
+    "pt-BR": "Reenviar verificação"
+  },
+  "DISPOSITIVOS ACTIVADOS ·": {
+    "en": "ACTIVATED DEVICES ·",
+    "pt-BR": "DISPOSITIVOS ATIVADOS ·"
+  },
+  "Aún no activaste PULSO en un equipo.": {
+    "en": "You haven't activated PULSO on a device yet.",
+    "pt-BR": "Você ainda não ativou o PULSO em um dispositivo."
+  },
+  "Último uso:": {
+    "en": "Last used:",
+    "pt-BR": "Último uso:"
+  },
+  "Revocar": {
+    "en": "Revoke",
+    "pt-BR": "Revogar"
+  },
+  "INSTALACIÓN": {
+    "en": "INSTALLATION",
+    "pt-BR": "INSTALAÇÃO"
+  },
+  "Cierra Ableton Live.": {
+    "en": "Close Ableton Live.",
+    "pt-BR": "Feche o Ableton Live."
+  },
+  "Ejecuta el instalador": {
+    "en": "Run the installer",
+    "pt-BR": "Execute o instalador"
+  },
+  "PULSO-windows-x64-setup.exe": {
+    "en": "PULSO-windows-x64-setup.exe",
+    "pt-BR": "PULSO-windows-x64-setup.exe"
+  },
+  "y sigue el asistente.": {
+    "en": "and follow the wizard.",
+    "pt-BR": "e siga o assistente."
+  },
+  "Abre Live, activa": {
+    "en": "Open Live, enable",
+    "pt-BR": "Abra o Live, ative"
+  },
+  "PulsoDeployRemote": {
+    "en": "PulsoDeployRemote",
+    "pt-BR": "PulsoDeployRemote"
+  },
+  "y vuelve a buscar plugins.": {
+    "en": "and rescan plugins.",
+    "pt-BR": "e faça uma nova busca de plugins."
+  },
+  "No pudimos activar el dispositivo.": {
+    "en": "We couldn't activate the device.",
+    "pt-BR": "Não foi possível ativar o dispositivo."
+  },
+  "ACTIVAR PULSO": {
+    "en": "ACTIVATE PULSO",
+    "pt-BR": "ATIVAR PULSO"
+  },
+  "Dispositivo activado.": {
+    "en": "Device activated.",
+    "pt-BR": "Dispositivo ativado."
+  },
+  "Conecta este equipo.": {
+    "en": "Connect this device.",
+    "pt-BR": "Conecte este dispositivo."
+  },
+  "Código mostrado por PULSO": {
+    "en": "Code shown by PULSO",
+    "pt-BR": "Código exibido pelo PULSO"
+  },
+  "Autorizar dispositivo": {
+    "en": "Authorize device",
+    "pt-BR": "Autorizar dispositivo"
+  },
+  "No pudimos completar el acceso.": {
+    "en": "We couldn't sign you in.",
+    "pt-BR": "Não foi possível concluir o acesso."
+  },
+  "BIENVENIDO DE NUEVO": {
+    "en": "WELCOME BACK",
+    "pt-BR": "BOAS-VINDAS DE VOLTA"
+  },
+  "CREA TU CUENTA": {
+    "en": "CREATE YOUR ACCOUNT",
+    "pt-BR": "CRIE SUA CONTA"
+  },
+  "Volver a PULSO.": {
+    "en": "Back to PULSO.",
+    "pt-BR": "De volta ao PULSO."
+  },
+  "Empieza a componer.": {
+    "en": "Start composing.",
+    "pt-BR": "Comece a compor."
+  },
+  "Nombre": {
+    "en": "Name",
+    "pt-BR": "Nome"
+  },
+  "Email": {
+    "en": "Email",
+    "pt-BR": "E-mail"
+  },
+  "Contraseña": {
+    "en": "Password",
+    "pt-BR": "Senha"
+  },
+  "Mínimo 12 caracteres.": {
+    "en": "At least 12 characters.",
+    "pt-BR": "No mínimo 12 caracteres."
+  },
+  "Procesando…": {
+    "en": "Processing…",
+    "pt-BR": "Processando…"
+  },
+  "Crear cuenta": {
+    "en": "Create account",
+    "pt-BR": "Criar conta"
+  },
+  "¿Todavía no tienes cuenta?": {
+    "en": "Don't have an account yet?",
+    "pt-BR": "Ainda não tem uma conta?"
+  },
+  "Registrarte": {
+    "en": "Sign up",
+    "pt-BR": "Cadastre-se"
+  },
+  "Olvidé mi contraseña": {
+    "en": "Forgot my password",
+    "pt-BR": "Esqueci minha senha"
+  },
+  "¿Ya tienes cuenta?": {
+    "en": "Already have an account?",
+    "pt-BR": "Já tem uma conta?"
+  },
+  "Ingresar": {
+    "en": "Sign in",
+    "pt-BR": "Entrar"
+  },
+  "×": {
+    "en": "×",
+    "pt-BR": "×"
+  },
+  "Esperando turno": {
+    "en": "Waiting in queue",
+    "pt-BR": "Aguardando na fila"
+  },
+  "Preparando la obra": {
+    "en": "Preparing the composition",
+    "pt-BR": "Preparando a composição"
+  },
+  "Diseñando la composición": {
+    "en": "Designing the composition",
+    "pt-BR": "Planejando a composição"
+  },
+  "Escribiendo las pistas": {
+    "en": "Writing the tracks",
+    "pt-BR": "Escrevendo as pistas"
+  },
+  "Afinando pasajes": {
+    "en": "Refining passages",
+    "pt-BR": "Refinando passagens"
+  },
+  "Revisando la obra": {
+    "en": "Reviewing the composition",
+    "pt-BR": "Revisando a composição"
+  },
+  "Preparando los MIDI": {
+    "en": "Preparing MIDI files",
+    "pt-BR": "Preparando os arquivos MIDI"
+  },
+  "Lista para escuchar": {
+    "en": "Ready to listen",
+    "pt-BR": "Pronta para ouvir"
+  },
+  "Interrumpida": {
+    "en": "Interrupted",
+    "pt-BR": "Interrompida"
+  },
+  "La composición no se completó": {
+    "en": "The composition did not complete",
+    "pt-BR": "A composição não foi concluída"
+  },
+  "Seno · armonía": {
+    "en": "Sine · harmony",
+    "pt-BR": "Senoide · harmonia"
+  },
+  "Seno · bajo": {
+    "en": "Sine · bass",
+    "pt-BR": "Senoide · baixo"
+  },
+  "Seno · teclas": {
+    "en": "Sine · keys",
+    "pt-BR": "Senoide · teclas"
+  },
+  "Seno · arpegio": {
+    "en": "Sine · arpeggio",
+    "pt-BR": "Senoide · arpejo"
+  },
+  "Seno · melodía": {
+    "en": "Sine · melody",
+    "pt-BR": "Senoide · melodia"
+  },
+  "Seno · percusión": {
+    "en": "Sine · percussion",
+    "pt-BR": "Senoide · percussão"
+  },
+  "Seno · pista": {
+    "en": "Sine · track",
+    "pt-BR": "Senoide · pista"
+  },
+  "Carga cancelada": {
+    "en": "Loading cancelled",
+    "pt-BR": "Carregamento cancelado"
+  },
+  "Esta obra no tiene pistas MIDI disponibles.": {
+    "en": "This composition has no MIDI tracks available.",
+    "pt-BR": "Esta composição não tem pistas MIDI disponíveis."
+  },
+  "No se pudo abrir {p0} (HTTP {p1}).": {
+    "en": "Could not open {p0} (HTTP {p1}).",
+    "pt-BR": "Não foi possível abrir {p0} (HTTP {p1})."
+  },
+  "La obra no contiene notas reproducibles.": {
+    "en": "The composition contains no playable notes.",
+    "pt-BR": "A composição não contém notas reproduzíveis."
+  },
+  "Exhibición no disponible.": {
+    "en": "Exhibition unavailable.",
+    "pt-BR": "Exibição indisponível."
+  },
+  "No pudimos leer tus obras.": {
+    "en": "We couldn't load your compositions.",
+    "pt-BR": "Não foi possível carregar suas composições."
+  },
+  "No se pudo leer el MIDI.": {
+    "en": "Could not read the MIDI file.",
+    "pt-BR": "Não foi possível ler o arquivo MIDI."
+  },
+  "Abriendo PULSO Cloud…": {
+    "en": "Opening PULSO Cloud…",
+    "pt-BR": "Abrindo o PULSO Cloud…"
+  },
+  "No pudimos comenzar la composición.": {
+    "en": "We couldn't start the composition.",
+    "pt-BR": "Não foi possível iniciar a composição."
+  },
+  "No se pudo iniciar el audio.": {
+    "en": "Could not start audio playback.",
+    "pt-BR": "Não foi possível iniciar a reprodução de áudio."
+  },
+  "No se pudo preparar el audio WAV.": {
+    "en": "Could not prepare the WAV audio.",
+    "pt-BR": "Não foi possível preparar o áudio WAV."
+  },
+  "pulso-{p0}-obra-completa.wav": {
+    "en": "pulso-{p0}-full-composition.wav",
+    "pt-BR": "pulso-{p0}-composicao-completa.wav"
+  },
+  "No se pudo exportar el audio completo.": {
+    "en": "Could not export the full audio.",
+    "pt-BR": "Não foi possível exportar o áudio completo."
+  },
+  "pulso-{p0}-todas-las-notas.mid": {
+    "en": "pulso-{p0}-all-notes.mid",
+    "pt-BR": "pulso-{p0}-todas-as-notas.mid"
+  },
+  "No se pudo crear el MIDI de una pista.": {
+    "en": "Could not create the single-track MIDI.",
+    "pt-BR": "Não foi possível criar o MIDI de uma pista."
+  },
+  "NO COMPLETADA": {
+    "en": "NOT COMPLETED",
+    "pt-BR": "NÃO CONCLUÍDA"
+  },
+  "CANCELADA": {
+    "en": "CANCELLED",
+    "pt-BR": "CANCELADA"
+  },
+  "COMPONIENDO": {
+    "en": "COMPOSING",
+    "pt-BR": "COMPONDO"
+  },
+  "SIN OBRAS": {
+    "en": "NO COMPOSITIONS",
+    "pt-BR": "SEM COMPOSIÇÕES"
+  },
+  "COMPOSITION STUDIO": {
+    "en": "COMPOSITION STUDIO",
+    "pt-BR": "ESTÚDIO DE COMPOSIÇÃO"
+  },
+  "Activar tema claro": {
+    "en": "Switch to light theme",
+    "pt-BR": "Ativar tema claro"
+  },
+  "Activar tema oscuro": {
+    "en": "Switch to dark theme",
+    "pt-BR": "Ativar tema escuro"
+  },
+  "Dark / Light": {
+    "en": "Dark / Light",
+    "pt-BR": "Escuro / Claro"
+  },
+  "Light / Dark": {
+    "en": "Light / Dark",
+    "pt-BR": "Claro / Escuro"
+  },
+  "EXHIBICIÓN COMPARTIDA · SOLO LECTURA": {
+    "en": "SHARED EXHIBITION · READ ONLY",
+    "pt-BR": "EXIBIÇÃO COMPARTILHADA · SOMENTE LEITURA"
+  },
+  "● EN TU CUENTA": {
+    "en": "● YOUR ACCOUNT",
+    "pt-BR": "● NA SUA CONTA"
+  },
+  "Mi cuenta": {
+    "en": "My account",
+    "pt-BR": "Minha conta"
+  },
+  "No se pudo compartir.": {
+    "en": "Could not share the composition.",
+    "pt-BR": "Não foi possível compartilhar a composição."
+  },
+  "Preparando…": {
+    "en": "Preparing…",
+    "pt-BR": "Preparando…"
+  },
+  "Share": {
+    "en": "Share",
+    "pt-BR": "Compartilhar"
+  },
+  "Historial": {
+    "en": "History",
+    "pt-BR": "Histórico"
+  },
+  "Todas las notas en una pista para tocar con un instrumento": {
+    "en": "All notes in one track to play with a single instrument",
+    "pt-BR": "Todas as notas em uma pista para tocar com um instrumento"
+  },
+  "↓ 1 pista MIDI": {
+    "en": "↓ 1 MIDI track",
+    "pt-BR": "↓ 1 pista MIDI"
+  },
+  "Obra original multipista con sus controles expresivos": {
+    "en": "Original multitrack composition with expressive controls",
+    "pt-BR": "Composição multipista original com controles expressivos"
+  },
+  "↓ Multipista": {
+    "en": "↓ Multitrack",
+    "pt-BR": "↓ Multipista"
+  },
+  "0.1.0 version Beta": {
+    "en": "0.1.0 Beta version",
+    "pt-BR": "0.1.0 versão Beta"
+  },
+  "Seguimiento de la obra": {
+    "en": "Composition progress",
+    "pt-BR": "Acompanhamento da composição"
+  },
+  "Herramientas del estudio": {
+    "en": "Studio tools",
+    "pt-BR": "Ferramentas do estúdio"
+  },
+  "Nueva composición": {
+    "en": "New composition",
+    "pt-BR": "Nova composição"
+  },
+  "Explorar biblioteca": {
+    "en": "Explore library",
+    "pt-BR": "Explorar biblioteca"
+  },
+  "01 / DIRECCIÓN MUSICAL": {
+    "en": "01 / MUSICAL DIRECTION",
+    "pt-BR": "01 / DIREÇÃO MUSICAL"
+  },
+  "Tu próxima": {
+    "en": "Your next",
+    "pt-BR": "Sua próxima"
+  },
+  "idea.": {
+    "en": "idea.",
+    "pt-BR": "ideia."
+  },
+  "Imaginá la dirección. Explorá sus voces.": {
+    "en": "Imagine the direction. Explore its voices.",
+    "pt-BR": "Imagine a direção. Explore suas vozes."
+  },
+  "Idea musical": {
+    "en": "Musical idea",
+    "pt-BR": "Ideia musical"
+  },
+  "Una historia electrónica profunda, con armonías que evolucionan y un motivo que regresa transformado…": {
+    "en": "A deep electronic journey, with evolving harmonies and a motif that returns transformed…",
+    "pt-BR": "Uma jornada eletrônica profunda, com harmonias que evoluem e um motivo que retorna transformado…"
+  },
+  "Permitir cromatismos": {
+    "en": "Allow chromatic notes",
+    "pt-BR": "Permitir cromatismos"
+  },
+  "Células reconocibles y evolución de capas a largo plazo, sin cortes obligatorios cada 64 compases.": {
+    "en": "Recognizable cells and long-term layer evolution, without mandatory cuts every 64 bars.",
+    "pt-BR": "Células reconhecíveis e evolução de camadas a longo prazo, sem cortes obrigatórios a cada 64 compassos."
+  },
+  "Club · repetición y evolución": {
+    "en": "Club · repetition and evolution",
+    "pt-BR": "Club · repetição e evolução"
+  },
+  "Sin baterías ni percusiones. Arpegios, stabs y ritmos tonales siguen disponibles. Con cromatismos desactivados, las notas deben pertenecer a la escala declarada.": {
+    "en": "No drums or percussion. Arpeggios, stabs and tonal rhythms remain available. With chromatic notes disabled, notes must belong to the declared scale.",
+    "pt-BR": "Sem bateria ou percussão. Arpejos, stabs e ritmos tonais continuam disponíveis. Com cromatismos desativados, as notas devem pertencer à escala declarada."
+  },
+  "Duración": {
+    "en": "Duration",
+    "pt-BR": "Duração"
+  },
+  "1 minuto": {
+    "en": "1 minute",
+    "pt-BR": "1 minuto"
+  },
+  "2 minutos": {
+    "en": "2 minutes",
+    "pt-BR": "2 minutos"
+  },
+  "3 minutos": {
+    "en": "3 minutes",
+    "pt-BR": "3 minutos"
+  },
+  "5 minutos": {
+    "en": "5 minutes",
+    "pt-BR": "5 minutos"
+  },
+  "6 min 30 s": {
+    "en": "6 min 30 s",
+    "pt-BR": "6 min 30 s"
+  },
+  "10 minutos": {
+    "en": "10 minutes",
+    "pt-BR": "10 minutos"
+  },
+  "15 minutos": {
+    "en": "15 minutes",
+    "pt-BR": "15 minutos"
+  },
+  "Tempo": {
+    "en": "Tempo",
+    "pt-BR": "Tempo"
+  },
+  "BPM": {
+    "en": "BPM",
+    "pt-BR": "BPM"
+  },
+  "Enviando…": {
+    "en": "Submitting…",
+    "pt-BR": "Enviando…"
+  },
+  "✦  Componer obra ↗": {
+    "en": "✦  Compose music ↗",
+    "pt-BR": "✦  Compor obra ↗"
+  },
+  "Acceso ilimitado para esta cuenta. Solo puede haber una composición en curso.": {
+    "en": "Unlimited access for this account. Only one composition can run at a time.",
+    "pt-BR": "Acesso ilimitado para esta conta. Só pode haver uma composição em andamento."
+  },
+  "Hasta {p0} obras completadas cada 24 horas. Los intentos fallidos no cuentan.": {
+    "en": "Up to {p0} completed compositions every 24 hours. Failed attempts do not count.",
+    "pt-BR": "Até {p0} composições concluídas a cada 24 horas. Tentativas com falha não contam."
+  },
+  "Cloud no está habilitado para esta cuenta.": {
+    "en": "Cloud is not enabled for this account.",
+    "pt-BR": "O Cloud não está habilitado para esta conta."
+  },
+  "Escuchar obras guardadas no consume créditos. La composición continúa aunque cierres la página.": {
+    "en": "Listening to saved compositions uses no credits. Composition continues even if you close the page.",
+    "pt-BR": "Ouvir composições salvas não consome créditos. A composição continua mesmo se você fechar a página."
+  },
+  "02 / SESIÓN": {
+    "en": "02 / SESSION",
+    "pt-BR": "02 / SESSÃO"
+  },
+  "OBRAS": {
+    "en": "COMPOSITIONS",
+    "pt-BR": "COMPOSIÇÕES"
+  },
+  "Composición en curso": {
+    "en": "Composition in progress",
+    "pt-BR": "Composição em andamento"
+  },
+  "Componiendo": {
+    "en": "Composing",
+    "pt-BR": "Compondo"
+  },
+  "No se pudo cancelar.": {
+    "en": "Could not cancel.",
+    "pt-BR": "Não foi possível cancelar."
+  },
+  "Cancelar": {
+    "en": "Cancel",
+    "pt-BR": "Cancelar"
+  },
+  "↓ Obra completa MIDI": {
+    "en": "↓ Full composition MIDI",
+    "pt-BR": "↓ Composição completa MIDI"
+  },
+  "pistas ·": {
+    "en": "tracks ·",
+    "pt-BR": "pistas ·"
+  },
+  "La composición no se completó. No se publicó una obra incompleta.": {
+    "en": "The composition did not complete. An unfinished composition was not published.",
+    "pt-BR": "A composição não foi concluída. Uma obra incompleta não foi publicada."
+  },
+  "Tus obras aparecerán aquí cuando empieces a componer.": {
+    "en": "Your compositions will appear here when you start composing.",
+    "pt-BR": "Suas composições aparecerão aqui quando você começar a compor."
+  },
+  "Exportar toda la obra en WAV estéreo con el modo de escucha, volumen y pistas audibles actuales. No consume API.": {
+    "en": "Export the full composition as stereo WAV using the current listening mode, volume and audible tracks. No API usage.",
+    "pt-BR": "Exporte a composição completa em WAV estéreo com o modo de escuta, volume e pistas audíveis atuais. Não utiliza a API."
+  },
+  "↓ Exportar audio completo · WAV": {
+    "en": "↓ Export full audio · WAV",
+    "pt-BR": "↓ Exportar áudio completo · WAV"
+  },
+  "Descargar todas las notas en una sola pista MIDI para probar la obra con un instrumento. El MIDI multipista original no cambia.": {
+    "en": "Download all notes as a single MIDI track to try the composition with one instrument. The original multitrack MIDI remains unchanged.",
+    "pt-BR": "Baixe todas as notas em uma pista MIDI para testar a composição com um instrumento. O MIDI multipista original permanece intacto."
+  },
+  "Preparando MIDI…": {
+    "en": "Preparing MIDI…",
+    "pt-BR": "Preparando MIDI…"
+  },
+  "↓ Todas las notas · 1 pista MIDI": {
+    "en": "↓ All notes · 1 MIDI track",
+    "pt-BR": "↓ Todas as notas · 1 pista MIDI"
+  },
+  "WAV o MIDI de una pista · se generan en este dispositivo": {
+    "en": "WAV or single-track MIDI · generated on this device",
+    "pt-BR": "WAV ou MIDI de uma pista · gerados neste dispositivo"
+  },
+  "Volver al inicio": {
+    "en": "Back to start",
+    "pt-BR": "Voltar ao início"
+  },
+  "Pausar": {
+    "en": "Pause",
+    "pt-BR": "Pausar"
+  },
+  "Reproducir": {
+    "en": "Play",
+    "pt-BR": "Reproduzir"
+  },
+  "Detener": {
+    "en": "Stop",
+    "pt-BR": "Parar"
+  },
+  "Escucha": {
+    "en": "Listening",
+    "pt-BR": "Escuta"
+  },
+  "Modo de escucha": {
+    "en": "Listening mode",
+    "pt-BR": "Modo de escuta"
+  },
+  "No se pudo cargar el piano.": {
+    "en": "Could not load the piano.",
+    "pt-BR": "Não foi possível carregar o piano."
+  },
+  "Piano MIDI": {
+    "en": "MIDI piano",
+    "pt-BR": "Piano MIDI"
+  },
+  "MIDI neutro": {
+    "en": "Neutral MIDI",
+    "pt-BR": "MIDI neutro"
+  },
+  "Descargar 30 segundos de audio WAV desde la posición actual, con el modo de escucha elegido. No consume API.": {
+    "en": "Download 30 seconds of WAV audio from the current position using the selected listening mode. No API usage.",
+    "pt-BR": "Baixe 30 segundos de áudio WAV a partir da posição atual com o modo de escuta selecionado. Não utiliza a API."
+  },
+  "Renderizando…": {
+    "en": "Rendering…",
+    "pt-BR": "Renderizando…"
+  },
+  "WAV 30 s": {
+    "en": "WAV 30 s",
+    "pt-BR": "WAV 30 s"
+  },
+  "WAV completo": {
+    "en": "Full WAV",
+    "pt-BR": "WAV completo"
+  },
+  "Volumen": {
+    "en": "Volume",
+    "pt-BR": "Volume"
+  },
+  "02 / COMPOSICIÓN & EXPLORACIÓN": {
+    "en": "02 / COMPOSITION & EXPLORATION",
+    "pt-BR": "02 / COMPOSIÇÃO E EXPLORAÇÃO"
+  },
+  "Espacio para tu próxima idea.": {
+    "en": "Room for your next idea.",
+    "pt-BR": "Espaço para sua próxima ideia."
+  },
+  "{p0} · {p1} compases · {p2} pistas con notas": {
+    "en": "{p0} · {p1} bars · {p2} tracks with notes",
+    "pt-BR": "{p0} · {p1} compassos · {p2} pistas com notas"
+  },
+  "Preparando las pistas MIDI…": {
+    "en": "Preparing MIDI tracks…",
+    "pt-BR": "Preparando as pistas MIDI…"
+  },
+  "Elige una obra terminada para escuchar su partitura.": {
+    "en": "Choose a completed composition to explore its score.",
+    "pt-BR": "Escolha uma composição concluída para explorar sua partitura."
+  },
+  "{p0} NOTAS · {p1} PISTAS": {
+    "en": "{p0} NOTES · {p1} TRACKS",
+    "pt-BR": "{p0} NOTAS · {p1} PISTAS"
+  },
+  "MIDI REAL · ESCUCHA PULSO": {
+    "en": "REAL MIDI · PULSO LISTENING",
+    "pt-BR": "MIDI REAL · ESCUTA PULSO"
+  },
+  "COMPASES": {
+    "en": "BARS",
+    "pt-BR": "COMPASSOS"
+  },
+  "M": {
+    "en": "M",
+    "pt-BR": "M"
+  },
+  "Escuchar solo {p0}": {
+    "en": "Solo {p0}",
+    "pt-BR": "Ouvir apenas {p0}"
+  },
+  "S": {
+    "en": "S",
+    "pt-BR": "S"
+  },
+  "Cambiar el sonido de {p0} sin alterar su MIDI": {
+    "en": "Change the sound of {p0} without changing its MIDI",
+    "pt-BR": "Mudar o som de {p0} sem alterar seu MIDI"
+  },
+  "Leyendo las notas MIDI…": {
+    "en": "Reading MIDI notes…",
+    "pt-BR": "Lendo as notas MIDI…"
+  },
+  "Una vista para escuchar la composición.": {
+    "en": "A view for listening to the composition.",
+    "pt-BR": "Uma visão para ouvir a composição."
+  },
+  "La obra se carga desde tus archivos Cloud, sin generar una nueva composición.": {
+    "en": "The composition loads from your Cloud files without generating a new one.",
+    "pt-BR": "A composição é carregada dos seus arquivos Cloud, sem gerar uma nova."
+  },
+  "Las notas y silencios aparecerán aquí tal como están en los MIDI exportados.": {
+    "en": "Notes and rests appear here exactly as they are in the exported MIDI files.",
+    "pt-BR": "As notas e pausas aparecem aqui exatamente como estão nos arquivos MIDI exportados."
+  },
+  "Piano MIDI: todas las pistas suenan con el mismo piano. El MIDI no cambia.": {
+    "en": "MIDI piano: every track uses the same piano. The MIDI stays unchanged.",
+    "pt-BR": "Piano MIDI: todas as pistas usam o mesmo piano. O MIDI não muda."
+  },
+  "MIDI neutro: monitor senoidal sin color instrumental. El MIDI no cambia.": {
+    "en": "Neutral MIDI: sine-wave monitoring without instrumental color. The MIDI stays unchanged.",
+    "pt-BR": "MIDI neutro: monitor senoidal sem coloração instrumental. O MIDI não muda."
+  },
+  "Historial de composiciones": {
+    "en": "Composition history",
+    "pt-BR": "Histórico de composições"
+  },
+  "BIBLIOTECA CLOUD": {
+    "en": "CLOUD LIBRARY",
+    "pt-BR": "BIBLIOTECA CLOUD"
+  },
+  "Tus obras": {
+    "en": "Your compositions",
+    "pt-BR": "Suas composições"
+  },
+  "Cerrar historial": {
+    "en": "Close history",
+    "pt-BR": "Fechar histórico"
+  },
+  "No se pudo actualizar la biblioteca.": {
+    "en": "Could not refresh the library.",
+    "pt-BR": "Não foi possível atualizar a biblioteca."
+  },
+  "↻ Actualizar": {
+    "en": "↻ Refresh",
+    "pt-BR": "↻ Atualizar"
+  },
+  "pistas": {
+    "en": "tracks",
+    "pt-BR": "pistas"
+  },
+  "Todavía no hay obras guardadas.": {
+    "en": "No saved compositions yet.",
+    "pt-BR": "Ainda não há composições salvas."
+  },
+  "Comparte tu obra": {
+    "en": "Share your composition",
+    "pt-BR": "Compartilhe sua composição"
+  },
+  "Quien tenga este enlace podrá ver la partitura y escucharla sin registrarse. Tu prompt, biblioteca y registros siguen privados.": {
+    "en": "Anyone with this link can view the score and listen without registering. Your prompt, library and logs remain private.",
+    "pt-BR": "Qualquer pessoa com este link pode ver a partitura e ouvir sem se cadastrar. Seu prompt, biblioteca e registros permanecem privados."
+  },
+  "Enlace de exhibición": {
+    "en": "Exhibition link",
+    "pt-BR": "Link da exibição"
+  },
+  "Enlace copiado.": {
+    "en": "Link copied.",
+    "pt-BR": "Link copiado."
+  },
+  "Selecciona el enlace y cópialo con Ctrl+C o ⌘C.": {
+    "en": "Select the link and copy it with Ctrl+C or ⌘C.",
+    "pt-BR": "Selecione o link e copie com Ctrl+C ou ⌘C."
+  },
+  "Copiar enlace": {
+    "en": "Copy link",
+    "pt-BR": "Copiar link"
+  },
+  "Abrir exhibición": {
+    "en": "Open exhibition",
+    "pt-BR": "Abrir exibição"
+  },
+  "Cerrar": {
+    "en": "Close",
+    "pt-BR": "Fechar"
+  },
+  "No se pudieron desactivar los enlaces. Intenta nuevamente.": {
+    "en": "Could not disable the links. Please try again.",
+    "pt-BR": "Não foi possível desativar os links. Tente novamente."
+  },
+  "Desactivar todos los enlaces de esta obra": {
+    "en": "Disable all links to this composition",
+    "pt-BR": "Desativar todos os links desta composição"
+  },
+  "Describe una intención": {
+    "en": "Describe an intention",
+    "pt-BR": "Descreva uma intenção"
+  },
+  "Duración, clima, tensión y lenguaje musical. Habla de la música como la imaginas.": {
+    "en": "Duration, mood, tension and musical language. Describe the music as you imagine it.",
+    "pt-BR": "Duração, clima, tensão e linguagem musical. Descreva a música como você a imagina."
+  },
+  "PULSO escribe la obra": {
+    "en": "PULSO writes the composition",
+    "pt-BR": "O PULSO escreve a composição"
+  },
+  "Forma, armonía, voces, respiración y desarrollo nacen de una misma dirección.": {
+    "en": "Form, harmony, voices, breathing and development emerge from one direction.",
+    "pt-BR": "Forma, harmonia, vozes, respiração e desenvolvimento nascem de uma mesma direção."
+  },
+  "Termina en Live": {
+    "en": "Finish in Live",
+    "pt-BR": "Finalize no Live"
+  },
+  "Recibe pistas MIDI independientes, editables y listas para producir con tu propio sonido.": {
+    "en": "Get independent, editable MIDI tracks ready to produce with your own sound.",
+    "pt-BR": "Receba pistas MIDI independentes e editáveis para produzir com seu próprio som."
+  },
+  "AI COMPOSITION INSTRUMENT · VST3": {
+    "en": "AI COMPOSITION INSTRUMENT · VST3",
+    "pt-BR": "INSTRUMENTO DE COMPOSIÇÃO COM IA · VST3"
+  },
+  "Dirige una idea.": {
+    "en": "Direct an idea.",
+    "pt-BR": "Dê direção a uma ideia."
+  },
+  "Habita una obra.": {
+    "en": "Inhabit a composition.",
+    "pt-BR": "Habite uma composição."
+  },
+  "PULSO transforma una intención en una canción completa: arco narrativo, lenguaje armónico y voces independientes para producir en Ableton Live.": {
+    "en": "PULSO turns an intention into a complete song: a narrative arc, harmonic language and independent voices to produce in Ableton Live.",
+    "pt-BR": "O PULSO transforma uma intenção em uma música completa: arco narrativo, linguagem harmônica e vozes independentes para produzir no Ableton Live."
+  },
+  "Explorar el instrumento →": {
+    "en": "Explore the instrument →",
+    "pt-BR": "Explore o instrumento →"
+  },
+  "VST3 · WINDOWS": {
+    "en": "VST3 · WINDOWS",
+    "pt-BR": "VST3 · WINDOWS"
+  },
+  "ABLETON LIVE 12": {
+    "en": "ABLETON LIVE 12",
+    "pt-BR": "ABLETON LIVE 12"
+  },
+  "MIDI EDITABLE": {
+    "en": "EDITABLE MIDI",
+    "pt-BR": "MIDI EDITÁVEL"
+  },
+  "COMPOSITION READY": {
+    "en": "COMPOSITION READY",
+    "pt-BR": "COMPOSIÇÃO PRONTA"
+  },
+  "04 VOICES / 01 NARRATIVE": {
+    "en": "04 VOICES / 01 NARRATIVE",
+    "pt-BR": "04 VOZES / 01 NARRATIVA"
+  },
+  "FORM": {
+    "en": "FORM",
+    "pt-BR": "FORMA"
+  },
+  "INTRO → ASCENT → PEAK → RETURN": {
+    "en": "INTRO → ASCENT → PEAK → RETURN",
+    "pt-BR": "INTRO → SUBIDA → CLÍMAX → RETORNO"
+  },
+  "MIDI / EDITABLE": {
+    "en": "MIDI / EDITABLE",
+    "pt-BR": "MIDI / EDITÁVEL"
+  },
+  "COMPOSICIÓN CON MEMORIA": {
+    "en": "COMPOSITION WITH MEMORY",
+    "pt-BR": "COMPOSIÇÃO COM MEMÓRIA"
+  },
+  "Una composición": {
+    "en": "A composition",
+    "pt-BR": "Uma composição"
+  },
+  "recuerda, cambia": {
+    "en": "remembers, changes",
+    "pt-BR": "lembra, muda"
+  },
+  "y encuentra su destino.": {
+    "en": "and finds its destination.",
+    "pt-BR": "e encontra seu destino."
+  },
+  "EL FLUJO": {
+    "en": "THE WORKFLOW",
+    "pt-BR": "O FLUXO"
+  },
+  "De una frase a una arquitectura musical.": {
+    "en": "From a phrase to a musical architecture.",
+    "pt-BR": "De uma frase a uma arquitetura musical."
+  },
+  "COMPOSICIÓN CON DIRECCIÓN": {
+    "en": "COMPOSITION WITH DIRECTION",
+    "pt-BR": "COMPOSIÇÃO COM DIREÇÃO"
+  },
+  "Una arquitectura que se siente viva.": {
+    "en": "An architecture that feels alive.",
+    "pt-BR": "Uma arquitetura que parece viva."
+  },
+  "La IA compone el material y PULSO sostiene tonalidad, identidad, respiración y continuidad para que cada decisión forme parte de una misma historia.": {
+    "en": "AI composes the material while PULSO supports tonality, identity, breathing and continuity so every decision belongs to the same story.",
+    "pt-BR": "A IA compõe o material e o PULSO sustenta tonalidade, identidade, respiração e continuidade para que cada decisão faça parte da mesma história."
+  },
+  "Descubrir PULSO →": {
+    "en": "Discover PULSO →",
+    "pt-BR": "Descubra o PULSO →"
+  },
+  "NARRATIVE ARC": {
+    "en": "NARRATIVE ARC",
+    "pt-BR": "ARCO NARRATIVO"
+  },
+  "INTRO": {
+    "en": "INTRO",
+    "pt-BR": "INTRO"
+  },
+  "ASCENT": {
+    "en": "ASCENT",
+    "pt-BR": "SUBIDA"
+  },
+  "PEAK": {
+    "en": "PEAK",
+    "pt-BR": "CLÍMAX"
+  },
+  "RETURN": {
+    "en": "RETURN",
+    "pt-BR": "RETORNO"
+  },
+  "TU PRÓXIMA PRODUCCIÓN EMPIEZA AQUÍ": {
+    "en": "YOUR NEXT PRODUCTION STARTS HERE",
+    "pt-BR": "SUA PRÓXIMA PRODUÇÃO COMEÇA AQUI"
+  },
+  "Construye algo que llegue a algún lugar.": {
+    "en": "Build something that goes somewhere.",
+    "pt-BR": "Construa algo que chegue a algum lugar."
+  },
+  "Comenzar con PULSO": {
+    "en": "Start with PULSO",
+    "pt-BR": "Comece com PULSO"
+  },
+  "LEGAL · ÚLTIMA ACTUALIZACIÓN 25/09/2026": {
+    "en": "LEGAL · LAST UPDATED 09/25/2026",
+    "pt-BR": "LEGAL · ÚLTIMA ATUALIZAÇÃO 25/09/2026"
+  },
+  "Privacidad": {
+    "en": "Privacy",
+    "pt-BR": "Privacidade"
+  },
+  "PULSO utiliza los datos mínimos necesarios para crear tu cuenta, comprobar el derecho de descarga, prevenir fraude y prestar soporte. No vendemos información personal.": {
+    "en": "PULSO uses the minimum data needed to create your account, verify download access, prevent fraud and provide support. We do not sell personal information.",
+    "pt-BR": "O PULSO utiliza os dados mínimos necessários para criar sua conta, verificar o direito de download, prevenir fraudes e oferecer suporte. Não vendemos informações pessoais."
+  },
+  "Información tratada": {
+    "en": "Information processed",
+    "pt-BR": "Informações tratadas"
+  },
+  "Guardamos email, nombre visible, sesiones, estado de suscripción y registros operativos. Stripe procesa el medio de pago, facturación e impuestos; PULSO no recibe ni almacena números completos de tarjeta.": {
+    "en": "We store your email, display name, sessions, subscription status and operational logs. Stripe processes payments, billing and taxes; PULSO does not receive or store full card numbers.",
+    "pt-BR": "Armazenamos e-mail, nome de exibição, sessões, status da assinatura e registros operacionais. O Stripe processa pagamentos, faturamento e impostos; o PULSO não recebe nem armazena números completos de cartão."
+  },
+  "Composición e IA": {
+    "en": "Composition and AI",
+    "pt-BR": "Composição e IA"
+  },
+  "Cuando utilizas las funciones de IA del plugin, el prompt y el contexto musical requerido se envían al proveedor configurado para generar la composición. PULSO no necesita almacenar tus archivos de proyecto de Ableton en esta web.": {
+    "en": "When you use the plugin's AI features, the prompt and required musical context are sent to the configured provider to generate the composition. PULSO does not need to store your Ableton project files on this website.",
+    "pt-BR": "Ao usar as funções de IA do plugin, o prompt e o contexto musical necessário são enviados ao provedor configurado para gerar a composição. O PULSO não precisa armazenar seus arquivos de projeto do Ableton neste site."
+  },
+  "Conservación y derechos": {
+    "en": "Retention and rights",
+    "pt-BR": "Retenção e direitos"
+  },
+  "Conservamos la cuenta mientras esté activa y los registros exigidos por obligaciones contables o de seguridad. Puedes pedir acceso, corrección o eliminación escribiendo a privacy@pulso.audio. La eliminación no alcanza registros que debamos conservar legalmente.": {
+    "en": "We retain your account while active and records required for accounting or security obligations. You may request access, correction or deletion by emailing privacy@pulso.audio. Deletion does not include records we must legally retain.",
+    "pt-BR": "Mantemos sua conta enquanto estiver ativa e os registros exigidos por obrigações contábeis ou de segurança. Você pode solicitar acesso, correção ou exclusão pelo e-mail privacy@pulso.audio. A exclusão não inclui registros que devemos manter por lei."
+  },
+  "Proveedores y transferencias": {
+    "en": "Providers and transfers",
+    "pt-BR": "Provedores e transferências"
+  },
+  "Stripe procesa pagos, GitHub distribuye releases y el proveedor de infraestructura aloja esta aplicación. Sus ubicaciones pueden implicar transferencias internacionales sujetas a sus contratos y políticas.": {
+    "en": "Stripe processes payments, GitHub distributes releases and the infrastructure provider hosts this application. Their locations may involve international transfers subject to their contracts and policies.",
+    "pt-BR": "O Stripe processa pagamentos, o GitHub distribui versões e o provedor de infraestrutura hospeda esta aplicação. Suas localizações podem envolver transferências internacionais sujeitas aos respectivos contratos e políticas."
+  },
+  "Contacto": {
+    "en": "Contact",
+    "pt-BR": "Contato"
+  },
+  "Antes del lanzamiento comercial, sustituye el email y añade la identidad legal, domicilio, jurisdicción y responsable de datos reales de la empresa.": {
+    "en": "Before commercial launch, replace the email and add the company's actual legal identity, address, jurisdiction and data controller.",
+    "pt-BR": "Antes do lançamento comercial, substitua o e-mail e adicione a identidade jurídica, endereço, jurisdição e responsável pelo tratamento de dados reais da empresa."
+  },
+  "Términos": {
+    "en": "Terms",
+    "pt-BR": "Termos"
+  },
+  "PULSO Studio concede una licencia personal, perpetua y no transferible para la versión adquirida, con doce meses de actualizaciones. PULSO Cloud concede acceso durante el período contratado. Ninguna modalidad transfiere la propiedad del software ni autoriza su redistribución.": {
+    "en": "PULSO Studio grants a personal, perpetual, non-transferable license for the purchased version, with twelve months of updates. PULSO Cloud grants access during the subscribed period. Neither option transfers ownership of the software or authorizes redistribution.",
+    "pt-BR": "O PULSO Studio concede uma licença pessoal, perpétua e intransferível para a versão adquirida, com doze meses de atualizações. O PULSO Cloud concede acesso durante o período contratado. Nenhuma modalidade transfere a propriedade do software ou autoriza sua redistribuição."
+  },
+  "Tus composiciones": {
+    "en": "Your compositions",
+    "pt-BR": "Suas composições"
+  },
+  "Puedes utilizar comercialmente la música que produces con PULSO, sujeta a los derechos que puedan existir sobre material, samples, presets o instrucciones aportados por ti. Eres responsable de revisar el resultado antes de publicarlo.": {
+    "en": "You may commercially use music you produce with PULSO, subject to any rights over material, samples, presets or instructions you provide. You are responsible for reviewing the result before publishing it.",
+    "pt-BR": "Você pode usar comercialmente a música produzida com o PULSO, respeitando eventuais direitos sobre materiais, samples, presets ou instruções fornecidos por você. Você é responsável por revisar o resultado antes de publicá-lo."
+  },
+  "Compra y suscripción": {
+    "en": "Purchases and subscriptions",
+    "pt-BR": "Compra e assinatura"
+  },
+  "Stripe procesa el pago único de Studio y los cobros recurrentes de Cloud. Las suscripciones pueden administrarse o cancelarse desde el portal de cliente; la cancelación se aplica al final del período vigente, salvo que la ley aplicable exija otra cosa.": {
+    "en": "Stripe processes Studio's one-time payment and Cloud's recurring charges. Subscriptions can be managed or cancelled through the customer portal; cancellation takes effect at the end of the current period unless applicable law requires otherwise.",
+    "pt-BR": "O Stripe processa o pagamento único do Studio e as cobranças recorrentes do Cloud. As assinaturas podem ser gerenciadas ou canceladas pelo portal do cliente; o cancelamento vale ao final do período vigente, salvo exigência legal em contrário."
+  },
+  "Uso aceptable": {
+    "en": "Acceptable use",
+    "pt-BR": "Uso aceitável"
+  },
+  "No puedes eludir controles de acceso, compartir credenciales, revender el instalador, descompilar el producto salvo permiso legal irrenunciable ni utilizar el servicio para infringir derechos de terceros.": {
+    "en": "You may not bypass access controls, share credentials, resell the installer, decompile the product except where permitted by mandatory law, or use the service to infringe third-party rights.",
+    "pt-BR": "Você não pode burlar controles de acesso, compartilhar credenciais, revender o instalador, descompilar o produto salvo permissão legal obrigatória, nem utilizar o serviço para violar direitos de terceiros."
+  },
+  "Disponibilidad": {
+    "en": "Availability",
+    "pt-BR": "Disponibilidade"
+  },
+  "Las funciones de IA dependen de servicios externos, conectividad y créditos del proveedor configurado. No garantizamos que una generación concreta satisfaga una intención artística; sí procuramos conservar y auditar el resultado conforme al diseño del producto.": {
+    "en": "AI features depend on external services, connectivity and credits with the configured provider. We do not guarantee that a particular generation will satisfy an artistic intention; we strive to preserve and audit the result according to the product's design.",
+    "pt-BR": "As funções de IA dependem de serviços externos, conectividade e créditos do provedor configurado. Não garantimos que uma geração específica satisfaça uma intenção artística; buscamos preservar e auditar o resultado conforme o projeto do produto."
+  },
+  "Identidad comercial": {
+    "en": "Business identity",
+    "pt-BR": "Identidade comercial"
+  },
+  "Este texto es una base operativa. Antes de vender, debe completarse con la razón social, política de reembolsos, jurisdicción, impuestos y garantías obligatorias aplicables.": {
+    "en": "This text is an operational starting point. Before selling, it must be completed with the legal business name, refund policy, jurisdiction, taxes and applicable mandatory warranties.",
+    "pt-BR": "Este texto é uma base operacional. Antes de vender, deve ser complementado com a razão social, política de reembolso, jurisdição, impostos e garantias obrigatórias aplicáveis."
+  },
+  "No pudimos iniciar el pago.": {
+    "en": "We couldn't start checkout.",
+    "pt-BR": "Não foi possível iniciar o pagamento."
+  },
+  "No pudimos canjear el código.": {
+    "en": "We couldn't redeem the code.",
+    "pt-BR": "Não foi possível resgatar o código."
+  },
+  "DOS FORMAS DE CREAR": {
+    "en": "TWO WAYS TO CREATE",
+    "pt-BR": "DUAS FORMAS DE CRIAR"
+  },
+  "Tu herramienta.": {
+    "en": "Your tool.",
+    "pt-BR": "Sua ferramenta."
+  },
+  "Tu elección.": {
+    "en": "Your choice.",
+    "pt-BR": "Sua escolha."
+  },
+  "Compra PULSO Studio una vez y usa tu propia clave, o suma Cloud cuando quieras consumo administrado.": {
+    "en": "Buy PULSO Studio once and use your own key, or add Cloud when you want managed usage.",
+    "pt-BR": "Compre o PULSO Studio uma vez e use sua própria chave, ou adicione o Cloud quando quiser consumo gerenciado."
+  },
+  "PULSO STUDIO": {
+    "en": "PULSO STUDIO",
+    "pt-BR": "PULSO STUDIO"
+  },
+  "US$120": {
+    "en": "US$120",
+    "pt-BR": "US$120"
+  },
+  "pago único": {
+    "en": "one-time payment",
+    "pt-BR": "pagamento único"
+  },
+  "Licencia perpetua para dos equipos y 12 meses de actualizaciones.": {
+    "en": "Perpetual license for two devices and 12 months of updates.",
+    "pt-BR": "Licença perpétua para dois dispositivos e 12 meses de atualizações."
+  },
+  "✓ Motor completo de composición": {
+    "en": "✓ Complete composition engine",
+    "pt-BR": "✓ Motor completo de composição"
+  },
+  "✓ VST3 + aplicación standalone": {
+    "en": "✓ VST3 + standalone application",
+    "pt-BR": "✓ VST3 + aplicativo standalone"
+  },
+  "✓ Crear en Ableton Live": {
+    "en": "✓ Create in Ableton Live",
+    "pt-BR": "✓ Criar no Ableton Live"
+  },
+  "✓ Tu propia clave de IA, bajo tu control": {
+    "en": "✓ Your own AI key, under your control",
+    "pt-BR": "✓ Sua própria chave de IA, sob seu controle"
+  },
+  "Ya es tuyo": {
+    "en": "Already yours",
+    "pt-BR": "Já é seu"
+  },
+  "Conectando…": {
+    "en": "Connecting…",
+    "pt-BR": "Conectando…"
+  },
+  "Comprar Studio": {
+    "en": "Buy Studio",
+    "pt-BR": "Comprar Studio"
+  },
+  "PULSO CLOUD · PRÓXIMAMENTE": {
+    "en": "PULSO CLOUD · COMING SOON",
+    "pt-BR": "PULSO CLOUD · EM BREVE"
+  },
+  "En desarrollo": {
+    "en": "In development",
+    "pt-BR": "Em desenvolvimento"
+  },
+  "/mes": {
+    "en": "/month",
+    "pt-BR": "/mês"
+  },
+  "Servicio opcional de créditos, modelos administrados y sincronización. Se habilitará cuando el gateway de IA esté auditado.": {
+    "en": "Optional service with credits, managed models and synchronization. It will be enabled once the AI gateway has been audited.",
+    "pt-BR": "Serviço opcional com créditos, modelos gerenciados e sincronização. Será habilitado quando o gateway de IA estiver auditado."
+  },
+  "✓ Todo el flujo de Studio": {
+    "en": "✓ The full Studio workflow",
+    "pt-BR": "✓ Todo o fluxo do Studio"
+  },
+  "✓ Consumo de IA administrado": {
+    "en": "✓ Managed AI usage",
+    "pt-BR": "✓ Consumo de IA gerenciado"
+  },
+  "✓ Límites de costo visibles": {
+    "en": "✓ Visible cost limits",
+    "pt-BR": "✓ Limites de custo visíveis"
+  },
+  "✓ Facturación centralizada": {
+    "en": "✓ Centralized billing",
+    "pt-BR": "✓ Faturamento centralizado"
+  },
+  "Próximamente": {
+    "en": "Coming soon",
+    "pt-BR": "Em breve"
+  },
+  "CÓDIGO DE ACCESO O DESCUENTO": {
+    "en": "ACCESS OR DISCOUNT CODE",
+    "pt-BR": "CÓDIGO DE ACESSO OU DESCONTO"
+  },
+  "Una invitación también abre la puerta.": {
+    "en": "An invitation opens the door too.",
+    "pt-BR": "Um convite também abre a porta."
+  },
+  "Ingresa el código que recibiste. Los descuentos comerciales se aplican de forma segura en Stripe y las invitaciones activan el acceso desde tu cuenta.": {
+    "en": "Enter the code you received. Commercial discounts are securely applied in Stripe, and invitations activate access through your account.",
+    "pt-BR": "Digite o código que você recebeu. Descontos comerciais são aplicados com segurança no Stripe, e convites ativam o acesso pela sua conta."
+  },
+  "Código": {
+    "en": "Code",
+    "pt-BR": "Código"
+  },
+  "Ej. CAB1@4": {
+    "en": "E.g. CAB1@4",
+    "pt-BR": "Ex. CAB1@4"
+  },
+  "Canjeando…": {
+    "en": "Redeeming…",
+    "pt-BR": "Resgatando…"
+  },
+  "Canjear acceso": {
+    "en": "Redeem access",
+    "pt-BR": "Resgatar acesso"
+  },
+  "Aplicar a Studio": {
+    "en": "Apply to Studio",
+    "pt-BR": "Aplicar ao Studio"
+  },
+  "Stripe procesa pagos, impuestos, facturas y medios de pago. PULSO no almacena datos de tarjeta.": {
+    "en": "Stripe processes payments, taxes, invoices and payment methods. PULSO does not store card details.",
+    "pt-BR": "O Stripe processa pagamentos, impostos, faturas e meios de pagamento. O PULSO não armazena dados de cartão."
+  },
+  "Forma completa": {
+    "en": "Complete form",
+    "pt-BR": "Forma completa"
+  },
+  "Piensa en minutos, actos y retornos para desarrollar una obra con dirección.": {
+    "en": "Think in minutes, acts and returns to develop a composition with direction.",
+    "pt-BR": "Pense em minutos, atos e retornos para desenvolver uma composição com direção."
+  },
+  "Orquestación editable": {
+    "en": "Editable orchestration",
+    "pt-BR": "Orquestração editável"
+  },
+  "Entrega cada función musical en una pista MIDI independiente.": {
+    "en": "Each musical function arrives as an independent MIDI track.",
+    "pt-BR": "Cada função musical é entregue em uma pista MIDI independente."
+  },
+  "Armonía consolidada": {
+    "en": "Consolidated harmony",
+    "pt-BR": "Harmonia consolidada"
+  },
+  "La tonalidad es un contrato audible, con tensión y resolución deliberadas.": {
+    "en": "Tonality is an audible contract, with deliberate tension and resolution.",
+    "pt-BR": "A tonalidade é um contrato audível, com tensão e resolução intencionais."
+  },
+  "Voces con propósito": {
+    "en": "Voices with purpose",
+    "pt-BR": "Vozes com propósito"
+  },
+  "Protagonistas, respuestas, colchones y movimiento forman un diálogo musical claro.": {
+    "en": "Protagonists, responses, harmonic beds and movement form a clear musical dialogue.",
+    "pt-BR": "Protagonistas, respostas, camadas harmônicas e movimento formam um diálogo musical claro."
+  },
+  "Respiración estructural": {
+    "en": "Structural breathing",
+    "pt-BR": "Respiração estrutural"
+  },
+  "La respiración define dinámica, expectativa y espacio dentro de la música.": {
+    "en": "Breathing defines dynamics, expectation and space within the music.",
+    "pt-BR": "A respiração define dinâmica, expectativa e espaço dentro da música."
+  },
+  "Auditoría musical": {
+    "en": "Musical review",
+    "pt-BR": "Revisão musical"
+  },
+  "Antes de publicar, PULSO verifica el resultado exacto que llegará a Live.": {
+    "en": "Before publishing, PULSO checks the exact result that will reach Live.",
+    "pt-BR": "Antes de publicar, o PULSO verifica o resultado exato que chegará ao Live."
+  },
+  "PULSO 0.58": {
+    "en": "PULSO 0.58",
+    "pt-BR": "PULSO 0.58"
+  },
+  "Una sala de composición": {
+    "en": "A composition room",
+    "pt-BR": "Uma sala de composição"
+  },
+  "dentro de tu sesión.": {
+    "en": "inside your session.",
+    "pt-BR": "dentro da sua sessão."
+  },
+  "Conservas el control del timbre y la producción. PULSO se ocupa del pensamiento musical que conecta el principio con el final.": {
+    "en": "You keep control of timbre and production. PULSO focuses on the musical thinking that connects the beginning to the end.",
+    "pt-BR": "Você mantém o controle do timbre e da produção. O PULSO cuida do pensamento musical que conecta o início ao fim."
+  },
+  "CAPACIDADES": {
+    "en": "CAPABILITIES",
+    "pt-BR": "RECURSOS"
+  },
+  "Diseñado para construir una identidad musical completa.": {
+    "en": "Designed to build a complete musical identity.",
+    "pt-BR": "Projetado para construir uma identidade musical completa."
+  },
+  "TU SONIDO SIGUE SIENDO TUYO": {
+    "en": "YOUR SOUND STAYS YOURS",
+    "pt-BR": "SEU SOM CONTINUA SEU"
+  },
+  "MIDI limpio y un punto de partida abierto para tu producción.": {
+    "en": "Clean MIDI and an open starting point for your production.",
+    "pt-BR": "MIDI limpo e um ponto de partida aberto para sua produção."
+  },
+  "Crea en Live con una audición transparente y lleva cada parte a tu colección de instrumentos, presets y decisiones de mezcla.": {
+    "en": "Create in Live with transparent auditioning and bring each part to your own instruments, presets and mixing decisions.",
+    "pt-BR": "Crie no Live com uma escuta transparente e leve cada parte para seus instrumentos, presets e decisões de mixagem."
+  },
+  "Empieza por la historia.": {
+    "en": "Start with the story.",
+    "pt-BR": "Comece pela história."
+  },
+  "Termina con tu sonido.": {
+    "en": "Finish with your sound.",
+    "pt-BR": "Finalize com seu som."
+  },
+  "Ver planes": {
+    "en": "View plans",
+    "pt-BR": "Ver planos"
+  },
+  "No pudimos continuar.": {
+    "en": "We couldn't continue.",
+    "pt-BR": "Não foi possível continuar."
+  },
+  "RECUPERAR ACCESO": {
+    "en": "RECOVER ACCESS",
+    "pt-BR": "RECUPERAR ACESSO"
+  },
+  "Si la cuenta existe, enviamos un enlace válido durante 30 minutos.": {
+    "en": "If the account exists, we've sent a link valid for 30 minutes.",
+    "pt-BR": "Se a conta existir, enviamos um link válido por 30 minutos."
+  },
+  "Enviar enlace": {
+    "en": "Send link",
+    "pt-BR": "Enviar link"
+  },
+  "Volver al ingreso": {
+    "en": "Back to sign in",
+    "pt-BR": "Voltar ao login"
+  },
+  "NUEVA CONTRASEÑA": {
+    "en": "NEW PASSWORD",
+    "pt-BR": "NOVA SENHA"
+  },
+  "Protege tu música.": {
+    "en": "Protect your music.",
+    "pt-BR": "Proteja sua música."
+  },
+  "Contraseña actualizada.": {
+    "en": "Password updated.",
+    "pt-BR": "Senha atualizada."
+  },
+  "Ingresa nuevamente.": {
+    "en": "Sign in again.",
+    "pt-BR": "Entre novamente."
+  },
+  "Guardar contraseña": {
+    "en": "Save password",
+    "pt-BR": "Salvar senha"
+  },
+  "Verificando tu email…": {
+    "en": "Verifying your email…",
+    "pt-BR": "Verificando seu e-mail…"
+  },
+  "Email verificado. Ya puedes volver a tu cuenta.": {
+    "en": "Email verified. You can return to your account.",
+    "pt-BR": "E-mail verificado. Você já pode voltar à sua conta."
+  },
+  "No pudimos verificar el enlace.": {
+    "en": "We couldn't verify the link.",
+    "pt-BR": "Não foi possível verificar o link."
+  },
+  "IDENTIDAD": {
+    "en": "IDENTITY",
+    "pt-BR": "IDENTIDADE"
+  },
+  "Ir a mi cuenta": {
+    "en": "Go to my account",
+    "pt-BR": "Ir para minha conta"
+  },
+  "Saltar al contenido": {
+    "en": "Skip to content",
+    "pt-BR": "Pular para o conteúdo"
+  },
+  "Composition system": {
+    "en": "Composition system",
+    "pt-BR": "Sistema de composição"
+  },
+  "Principal": {
+    "en": "Main navigation",
+    "pt-BR": "Navegação principal"
+  },
+  "Producto": {
+    "en": "Product",
+    "pt-BR": "Produto"
+  },
+  "Planes": {
+    "en": "Plans",
+    "pt-BR": "Planos"
+  },
+  "Cloud": {
+    "en": "Cloud",
+    "pt-BR": "Cloud"
+  },
+  "Cómo funciona": {
+    "en": "How it works",
+    "pt-BR": "Como funciona"
+  },
+  "Composición con dirección. MIDI con espacio para producir.": {
+    "en": "Composition with direction. MIDI with room to produce.",
+    "pt-BR": "Composição com direção. MIDI com espaço para produzir."
+  },
+  "Soporte": {
+    "en": "Support",
+    "pt-BR": "Suporte"
+  },
+  "PULSO": {
+    "en": "PULSO",
+    "pt-BR": "PULSO"
+  },
+  "HARMONIC BED": {
+    "en": "HARMONIC BED",
+    "pt-BR": "BASE HARMÔNICA"
+  },
+  "MOTION": {
+    "en": "MOTION",
+    "pt-BR": "MOVIMENTO"
+  },
+  "PROTAGONIST": {
+    "en": "PROTAGONIST",
+    "pt-BR": "PROTAGONISTA"
+  },
+  "ATMOSPHERE": {
+    "en": "ATMOSPHERE",
+    "pt-BR": "ATMOSFERA"
+  },
+  "Vista conceptual de una composición en PULSO": {
+    "en": "Conceptual view of a PULSO composition",
+    "pt-BR": "Visão conceitual de uma composição no PULSO"
+  },
+  "PULSO / ARRANGEMENT": {
+    "en": "PULSO / ARRANGEMENT",
+    "pt-BR": "PULSO / ARRANJO"
+  },
+  "SCORE 01": {
+    "en": "SCORE 01",
+    "pt-BR": "PARTITURA 01"
+  },
+  "F♯ MINOR": {
+    "en": "F♯ MINOR",
+    "pt-BR": "FÁ♯ MENOR"
+  },
+  "128 BPM": {
+    "en": "128 BPM",
+    "pt-BR": "128 BPM"
+  },
+  "Esta página no existe.": {
+    "en": "This page does not exist.",
+    "pt-BR": "Esta página não existe."
+  },
+  "No pudimos completar la solicitud.": {
+    "en": "We couldn't complete the request.",
+    "pt-BR": "Não foi possível concluir a solicitação."
+  },
+  "LISTA": {
+    "en": "READY",
+    "pt-BR": "PRONTA"
+  },
+  " · actualizaciones hasta {p0}": {
+    "en": " · updates until {p0}",
+    "pt-BR": " · atualizações até {p0}"
+  },
+  "Silenciar {p0}": {
+    "en": "Mute {p0}",
+    "pt-BR": "Silenciar {p0}"
+  },
+  "Descargar MIDI de {p0}": {
+    "en": "Download MIDI for {p0}",
+    "pt-BR": "Baixar MIDI de {p0}"
+  },
+  "Cerrar {p0}": {
+    "en": "Close {p0}",
+    "pt-BR": "Fechar {p0}"
+  },
+  "Exportando WAV {p0}%": {
+    "en": "Exporting WAV {p0}%",
+    "pt-BR": "Exportando WAV {p0}%"
+  },
+  "Alcanzaste el cupo de obras completadas de las últimas 24 horas.": {
+    "en": "You've reached the completed-composition limit for the last 24 hours.",
+    "pt-BR": "Você atingiu o limite de composições concluídas nas últimas 24 horas."
+  },
+  "PULSO Cloud no está activo para esta cuenta.": {
+    "en": "PULSO Cloud is not enabled for this account.",
+    "pt-BR": "O PULSO Cloud não está ativo para esta conta."
+  },
+  "active": {
+    "en": "Active",
+    "pt-BR": "Ativa"
+  },
+  "trialing": {
+    "en": "Trial",
+    "pt-BR": "Período de teste"
+  },
+  "none": {
+    "en": "No subscription",
+    "pt-BR": "Sem assinatura"
+  },
+  "past_due": {
+    "en": "Payment overdue",
+    "pt-BR": "Pagamento pendente"
+  },
+  "canceled": {
+    "en": "Cancelled",
+    "pt-BR": "Cancelada"
+  },
+  "Ingresa para continuar.": {
+    "en": "Sign in to continue.",
+    "pt-BR": "Entre para continuar."
+  },
+  "La contraseña debe tener al menos 12 caracteres.": {
+    "en": "Your password must contain at least 12 characters.",
+    "pt-BR": "A senha deve ter pelo menos 12 caracteres."
+  },
+  "Email o contraseña incorrectos.": {
+    "en": "Incorrect email or password.",
+    "pt-BR": "E-mail ou senha incorretos."
+  },
+  "El enlace es inválido o venció.": {
+    "en": "The link is invalid or has expired.",
+    "pt-BR": "O link é inválido ou expirou."
+  },
+  "Stripe no pudo iniciar la operación.": {
+    "en": "Stripe could not start the operation.",
+    "pt-BR": "O Stripe não conseguiu iniciar a operação."
+  },
+  "Stripe no pudo verificar la operación.": {
+    "en": "Stripe could not verify the operation.",
+    "pt-BR": "O Stripe não conseguiu verificar a operação."
+  },
+  "No pudimos validar el código de descuento.": {
+    "en": "We couldn't validate the discount code.",
+    "pt-BR": "Não foi possível validar o código de desconto."
+  },
+  "El código de descuento no es válido o ya venció.": {
+    "en": "The discount code is invalid or expired.",
+    "pt-BR": "O código de desconto é inválido ou expirou."
+  },
+  "Ya tienes una suscripción activa. Adminístrala desde tu cuenta.": {
+    "en": "You already have an active subscription. Manage it from your account.",
+    "pt-BR": "Você já tem uma assinatura ativa. Gerencie-a na sua conta."
+  },
+  "PULSO Cloud estará disponible próximamente.": {
+    "en": "PULSO Cloud will be available soon.",
+    "pt-BR": "O PULSO Cloud estará disponível em breve."
+  },
+  "Período de facturación inválido.": {
+    "en": "Invalid billing period.",
+    "pt-BR": "Período de faturamento inválido."
+  },
+  "El código de descuento tiene un formato inválido.": {
+    "en": "Invalid discount code format.",
+    "pt-BR": "Formato de código de desconto inválido."
+  },
+  "Ingresa un código de invitación válido.": {
+    "en": "Enter a valid invitation code.",
+    "pt-BR": "Digite um código de convite válido."
+  },
+  "El código de invitación no es válido.": {
+    "en": "Invalid invitation code.",
+    "pt-BR": "Código de convite inválido."
+  },
+  "Todavía no existe una cuenta de facturación.": {
+    "en": "No billing account exists yet.",
+    "pt-BR": "Ainda não existe uma conta de faturamento."
+  },
+  "Ya tienes una composición en curso. Espera a que termine o cancélala.": {
+    "en": "A composition is already in progress. Wait for it to finish or cancel it.",
+    "pt-BR": "Você já tem uma composição em andamento. Aguarde a conclusão ou cancele-a."
+  },
+  "Revisa el prompt y los parámetros de la obra.": {
+    "en": "Check the prompt and composition settings.",
+    "pt-BR": "Confira o prompt e os parâmetros da composição."
+  },
+  "Esta clave de solicitud ya pertenece a otra composición.": {
+    "en": "This request key already belongs to another composition.",
+    "pt-BR": "Esta chave de solicitação já pertence a outra composição."
+  },
+  "Esta obra ya terminó o no existe.": {
+    "en": "This composition has finished or does not exist.",
+    "pt-BR": "Esta composição já terminou ou não existe."
+  }
+}

@@ -17,7 +17,6 @@ export function CompositionProgress({stage, completed, total, label}: {stage:str
     <div className="composition-progress-heading"><strong>{label}</strong>{known&&<small>{done} / {total}</small>}</div>
     <progress aria-label={t('Avance de la etapa actual')} max={known?total:1} value={known?done:undefined}/>
     <p>{t(details[stage] || 'La IA continúa trabajando en tu composición.')}</p>
-    <small>{t('El avance corresponde a la etapa actual y puede reiniciarse al pasar a la siguiente.')}</small>
     <p className="composition-wait-note">{t('Algunas composiciones pueden tardar hasta 40 minutos en generarse. El tiempo varía según el encargo y las revisiones, y en ciertos casos puede ser mayor.')}</p>
     <small>{t('La composición continúa aunque cierres la página.')}</small>
   </div>

@@ -1,0 +1,3 @@
+.pulso-wordmark{display:block;width:150px;height:auto;flex:none;overflow:visible}
+.cloud-suite-brand .pulso-wordmark{width:132px}
+@media(max-width:600px){.pulso-wordmark{width:120px}.cloud-suite-brand .pulso-wordmark{width:108px}}

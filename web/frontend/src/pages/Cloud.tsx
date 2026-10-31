@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEven
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { api, type CloudJob, type CloudTrack } from '../api'
 import { useAuth } from '../auth'
-import { Logo } from '../components/Logo'
+import { PulsoWordmark } from '../components/PulsoWordmark'
 import { PulsoSpinner } from '../components/PulsoSpinner'
 import { CompositionProgress } from '../components/CompositionProgress'
 import { CloudRequestDetails } from '../components/CloudRequestDetails'
@@ -296,7 +296,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
 
   return <section data-theme={theme} className={`cloud-suite cloud-editorial${shared ? ' cloud-exhibition' : ''}`}>
     <header className="cloud-suite-bar">
-      <div className="cloud-suite-brand"><a className="cloud-brand-home" href="https://pulso.cargo-core.com/" target="_blank" rel="noopener noreferrer" aria-label={t("Página principal de PULSO")}><Logo /></a><span className="cloud-suite-brand-divider" /><strong>{t("COMPOSITION STUDIO")}</strong></div>
+      <div className="cloud-suite-brand"><a className="cloud-brand-home" href="https://pulso.cargo-core.com/" target="_blank" rel="noopener noreferrer" aria-label={t("Página principal de PULSO")}><PulsoWordmark /></a><span className="cloud-suite-brand-divider" /><strong>{t("COMPOSITION STUDIO")}</strong></div>
       <div className="cloud-suite-global"><Preferences />{shared ? <span className="cloud-exhibition-badge">{t("EXHIBICIÓN COMPARTIDA · SOLO LECTURA")}</span> : <><span className="cloud-suite-online">{t("● EN TU CUENTA")}</span><Link to="/account">{t("Mi cuenta")}</Link><button type="button" disabled={selected?.status !== 'completed' || sharing} onClick={async () => { if (!selected) return; setSharing(true); try { const result = await api.shareCloudJob(selected.id); setShare({ ...result, jobId: selected.id }) } catch (problem) { setError(problem instanceof Error ? problem.message : t("No se pudo compartir.")) } finally { setSharing(false) } }}>{sharing ? t("Preparando…") : t("Share")}</button><button type="button" onClick={() => setHistoryOpen(value => !value)}>{t("Historial")}</button></>}</div>
     </header>
     <div className="cloud-statusbar"><div className="cloud-beta">{t("0.1.0 version Beta")}</div>

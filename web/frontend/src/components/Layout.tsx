@@ -2,6 +2,7 @@ import { t, useLocale, locale, Preferences } from '../i18n'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { Logo } from './Logo'
+import { PulsoWordmark } from './PulsoWordmark'
 
 export function Layout() {
   useLocale();
@@ -11,7 +12,7 @@ export function Layout() {
   return <div className="site-shell">
     <a className="skip-link" href="#content">{t("Saltar al contenido")}</a>
     <header className="nav-wrap">
-      <Link to="/" className="brand-link"><Logo /><span className="brand-caption">{t("Estudio de composición")}</span></Link>
+      <Link to="/" className="brand-link"><PulsoWordmark /><span className="brand-caption">{t("Estudio de composición")}</span></Link>
       <nav aria-label={t("Principal")}>
         <NavLink to="/product">{t("Producto")}</NavLink>
         <NavLink to="/pricing">{t("Planes")}</NavLink>

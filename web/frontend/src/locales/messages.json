@@ -1,31 +1,112 @@
 {
-  "Composición no completada": { "en": "Composition not completed", "pt-BR": "Composição não concluída" },
-  "Composición cancelada": { "en": "Composition cancelled", "pt-BR": "Composição cancelada" },
-  "Composición terminada": { "en": "Composition completed", "pt-BR": "Composição concluída" },
-  "La composición se está generando…": { "en": "Your composition is being generated…", "pt-BR": "A composição está sendo gerada…" },
-  "Página principal de PULSO": { "en": "PULSO home page", "pt-BR": "Página inicial do PULSO" },
-  "Descargar obra": { "en": "Download composition", "pt-BR": "Baixar composição" },
-  "Tu composición, a tu manera.": { "en": "Your composition, your way.", "pt-BR": "Sua composição, do seu jeito." },
-  "1 pista MIDI": { "en": "1 MIDI track", "pt-BR": "1 pista MIDI" },
-  "Full song MIDI": { "en": "Full song MIDI", "pt-BR": "MIDI da composição completa" },
-  "Todas las notas con un instrumento": { "en": "All notes with one instrument", "pt-BR": "Todas as notas com um instrumento" },
-  "Voces separadas · multipista": { "en": "Separate voices · multitrack", "pt-BR": "Vozes separadas · multipista" },
-  "Audio MP3": { "en": "MP3 audio", "pt-BR": "Áudio MP3" },
-  "Audio WAV": { "en": "WAV audio", "pt-BR": "Áudio WAV" },
-  "Obra completa · 192 kbps": { "en": "Full composition · 192 kbps", "pt-BR": "Composição completa · 192 kbps" },
-  "Obra completa · sin compresión": { "en": "Full composition · uncompressed", "pt-BR": "Composição completa · sem compressão" },
-  "El audio usa el sonido y las pistas audibles actuales.": { "en": "Audio uses the current sound and audible tracks.", "pt-BR": "O áudio usa o som e as pistas audíveis atuais." },
-  "Exportando audio {p0}%": { "en": "Exporting audio {p0}%", "pt-BR": "Exportando áudio {p0}%" },
-  "No se pudo exportar el audio MP3.": { "en": "Could not export MP3 audio.", "pt-BR": "Não foi possível exportar o áudio MP3." },
-  "Tu espacio para crear.": { "en": "Your space to create.", "pt-BR": "Seu espaço para criar." },
-  "Volvé a tus composiciones o dale forma a una nueva idea.": { "en": "Return to your compositions or shape a new idea.", "pt-BR": "Volte às suas composições ou dê forma a uma nova ideia." },
-  "Abrir estudio": { "en": "Open studio", "pt-BR": "Abrir estúdio" },
-  "No has generado obras aún.": { "en": "You haven't created any compositions yet.", "pt-BR": "Você ainda não criou nenhuma composição." },
-  "Pulsá el": { "en": "Click the", "pt-BR": "Clique no" },
-  "de la barra lateral para crear tu primera obra.": { "en": "in the sidebar to create your first composition.", "pt-BR": "na barra lateral para criar sua primeira composição." },
-  "Crear tu primera obra": { "en": "Create your first composition", "pt-BR": "Criar sua primeira composição" },
-  "Abriendo tu biblioteca…": { "en": "Opening your library…", "pt-BR": "Abrindo sua biblioteca…" },
-  "compases": { "en": "bars", "pt-BR": "compassos" },
+  "Composición no completada": {
+    "en": "Composition not completed",
+    "pt-BR": "Composição não concluída"
+  },
+  "Composición cancelada": {
+    "en": "Composition cancelled",
+    "pt-BR": "Composição cancelada"
+  },
+  "Composición terminada": {
+    "en": "Composition completed",
+    "pt-BR": "Composição concluída"
+  },
+  "La composición se está generando…": {
+    "en": "Your composition is being generated…",
+    "pt-BR": "A composição está sendo gerada…"
+  },
+  "Página principal de PULSO": {
+    "en": "PULSO home page",
+    "pt-BR": "Página inicial do PULSO"
+  },
+  "Descargar obra": {
+    "en": "Download composition",
+    "pt-BR": "Baixar composição"
+  },
+  "Tu composición, a tu manera.": {
+    "en": "Your composition, your way.",
+    "pt-BR": "Sua composição, do seu jeito."
+  },
+  "1 pista MIDI": {
+    "en": "1 MIDI track",
+    "pt-BR": "1 pista MIDI"
+  },
+  "Full song MIDI": {
+    "en": "Full song MIDI",
+    "pt-BR": "MIDI da composição completa"
+  },
+  "Todas las notas con un instrumento": {
+    "en": "All notes with one instrument",
+    "pt-BR": "Todas as notas com um instrumento"
+  },
+  "Voces separadas · multipista": {
+    "en": "Separate voices · multitrack",
+    "pt-BR": "Vozes separadas · multipista"
+  },
+  "Audio MP3": {
+    "en": "MP3 audio",
+    "pt-BR": "Áudio MP3"
+  },
+  "Audio WAV": {
+    "en": "WAV audio",
+    "pt-BR": "Áudio WAV"
+  },
+  "Obra completa · 192 kbps": {
+    "en": "Full composition · 192 kbps",
+    "pt-BR": "Composição completa · 192 kbps"
+  },
+  "Obra completa · sin compresión": {
+    "en": "Full composition · uncompressed",
+    "pt-BR": "Composição completa · sem compressão"
+  },
+  "El audio usa el sonido y las pistas audibles actuales.": {
+    "en": "Audio uses the current sound and audible tracks.",
+    "pt-BR": "O áudio usa o som e as pistas audíveis atuais."
+  },
+  "Exportando audio {p0}%": {
+    "en": "Exporting audio {p0}%",
+    "pt-BR": "Exportando áudio {p0}%"
+  },
+  "No se pudo exportar el audio MP3.": {
+    "en": "Could not export MP3 audio.",
+    "pt-BR": "Não foi possível exportar o áudio MP3."
+  },
+  "Tu espacio para crear.": {
+    "en": "Your space to create.",
+    "pt-BR": "Seu espaço para criar."
+  },
+  "Volvé a tus composiciones o dale forma a una nueva idea.": {
+    "en": "Return to your compositions or shape a new idea.",
+    "pt-BR": "Volte às suas composições ou dê forma a uma nova ideia."
+  },
+  "Abrir estudio": {
+    "en": "Open studio",
+    "pt-BR": "Abrir estúdio"
+  },
+  "No has generado obras aún.": {
+    "en": "You haven't created any compositions yet.",
+    "pt-BR": "Você ainda não criou nenhuma composição."
+  },
+  "Pulsá el": {
+    "en": "Click the",
+    "pt-BR": "Clique no"
+  },
+  "de la barra lateral para crear tu primera obra.": {
+    "en": "in the sidebar to create your first composition.",
+    "pt-BR": "na barra lateral para criar sua primeira composição."
+  },
+  "Crear tu primera obra": {
+    "en": "Create your first composition",
+    "pt-BR": "Criar sua primeira composição"
+  },
+  "Abriendo tu biblioteca…": {
+    "en": "Opening your library…",
+    "pt-BR": "Abrindo sua biblioteca…"
+  },
+  "compases": {
+    "en": "bars",
+    "pt-BR": "compassos"
+  },
   "Abriendo tu cuenta…": {
     "en": "Opening your account…",
     "pt-BR": "Abrindo sua conta…"
@@ -1597,5 +1678,53 @@
   "Esta obra ya terminó o no existe.": {
     "en": "This composition has finished or does not exist.",
     "pt-BR": "Esta composição já terminou ou não existe."
+  },
+  "Tu solicitud está en la cola de composición.": {
+    "en": "Your request is in the composition queue.",
+    "pt-BR": "Sua solicitação está na fila de composição."
+  },
+  "Preparando el encargo y el contexto musical.": {
+    "en": "Preparing the brief and musical context.",
+    "pt-BR": "Preparando o pedido e o contexto musical."
+  },
+  "Planificando la forma, la armonía y las relaciones entre voces.": {
+    "en": "Planning the form, harmony and relationships between voices.",
+    "pt-BR": "Planejando a forma, a harmonia e as relações entre vozes."
+  },
+  "Escribiendo las notas y desarrollando las partes de la obra.": {
+    "en": "Writing notes and developing the parts of the composition.",
+    "pt-BR": "Escrevendo as notas e desenvolvendo as partes da composição."
+  },
+  "Revisando el material pendiente para continuar la composición.": {
+    "en": "Reviewing pending material to continue the composition.",
+    "pt-BR": "Revisando o material pendente para continuar a composição."
+  },
+  "Comprobando la integridad del material MIDI.": {
+    "en": "Checking MIDI integrity.",
+    "pt-BR": "Verificando a integridade do material MIDI."
+  },
+  "Preparando los archivos MIDI para la escucha y la descarga.": {
+    "en": "Preparing MIDI files for listening and downloading.",
+    "pt-BR": "Preparando os arquivos MIDI para ouvir e baixar."
+  },
+  "La IA continúa trabajando en tu composición.": {
+    "en": "AI is still working on your composition.",
+    "pt-BR": "A IA continua trabalhando na sua composição."
+  },
+  "Avance de la etapa actual": {
+    "en": "Current stage progress",
+    "pt-BR": "Progresso da etapa atual"
+  },
+  "El avance corresponde a la etapa actual y puede reiniciarse al pasar a la siguiente.": {
+    "en": "Progress refers to the current stage and may reset when the next stage begins.",
+    "pt-BR": "O progresso corresponde à etapa atual e pode reiniciar ao passar para a próxima."
+  },
+  "Algunas composiciones pueden tardar hasta 40 minutos en generarse. El tiempo varía según el encargo y las revisiones, y en ciertos casos puede ser mayor.": {
+    "en": "Some compositions can take up to 40 minutes to generate. Timing varies with the brief and revisions, and may take longer in some cases.",
+    "pt-BR": "Algumas composições podem levar até 40 minutos para serem geradas. O tempo varia conforme o pedido e as revisões, e em alguns casos pode ser maior."
+  },
+  "La composición continúa aunque cierres la página.": {
+    "en": "Composition continues even if you close the page.",
+    "pt-BR": "A composição continua mesmo se você fechar a página."
   }
 }

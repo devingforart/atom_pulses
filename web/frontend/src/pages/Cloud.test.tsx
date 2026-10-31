@@ -78,9 +78,11 @@ describe('Cloud Suite', () => {
     await waitFor(() => expect(screen.getByText(/hasta 2 obras completadas cada 24 horas/i)).toBeInTheDocument())
     fireEvent.change(screen.getByRole('textbox', { name: /Idea musical/i }), { target: { value: 'Progressive house oscuro' } })
     fireEvent.click(screen.getByRole('checkbox', { name: /Club/i }))
+    fireEvent.change(screen.getByLabelText('Club: evolución de capas'), { target: { value: '32-64' } })
+    expect(screen.getByRole('checkbox', { name: 'Club: recurso principal libre' })).toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: /Componer obra/i }))
     await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalledWith(expect.objectContaining({
-      club: true, allowChromatic: false, prompt: 'Progressive house oscuro',
+      club: true, clubLayerPace: '32-64', clubVariety: true, allowChromatic: false, prompt: 'Progressive house oscuro',
     })))
   })
   it('opens a public exhibition without authentication, library access or composition requests', async () => {

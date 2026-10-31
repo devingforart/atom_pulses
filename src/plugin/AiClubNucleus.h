@@ -132,6 +132,32 @@ inline juce::String closingBrief(const juce::var& root, const SongPlan& plan,
         "Write every resulting MIDI event yourself; no host copies the planned phrase.\n";
 }
 
+inline juce::String localClubPreferences() {
+    juce::String out;
+    const auto pace = juce::SystemStats::getEnvironmentVariable("PULSO_LOCAL_CLUB_PACE", "auto");
+    if (pace == "8-16" || pace == "16-32" || pace == "32-64")
+        out << "\nLOCAL LAYER-PACE OVERRIDE: Prefer meaningful layer evolution over " << pace
+            << " BARS. This replaces the default 8/16-bar layering preference, not note timing, "
+               "tempo or the short groove cycle. Adapt to the work duration; do not stretch, "
+               "repeat or schedule events algorithmically. Changes may mature earlier or later "
+               "when the musical argument earns them.\n";
+    if (juce::SystemStats::getEnvironmentVariable("PULSO_LOCAL_CLUB_VARIETY", {}) == "1")
+        out << "\nLOCAL CLUB RESOURCE OVERRIDE: Choose the central musical resource for THIS work "
+               "before selecting the cast. Earlier mentions of continuous arpeggio/sequencer "
+               "are examples, NOT required tracks. The regular meter carrier may instead be "
+               "a repeated bass tone, a chord pulse or a restrained pitched ostinato. A "
+               "recognizable groove does not require continuous changing-pitch eighths. "
+               "Choose an appropriate allowed subdivision, including quarters or slower "
+               "attacks. Omit the arp entirely when another resource carries the identity, "
+               "or introduce it only in selected states. Do not rename an uninterrupted arp "
+               "as another instrument. Keep harmonic support and a clear tonal dance pulse. "
+               "In the nucleus include the chosen carrier, not a compulsory sequence. "
+               "Allow expressive non-core responses to use phrase_flexible timing; reserve "
+               "cycle_bound for the truly invariant foundation so independent passages can "
+               "add flavor without moving that foundation. Choose freely, not a random preset.\n";
+    return out;
+}
+
 inline juce::String editorial() {
     return "TONAL CLUB / PRODUCER COMPOSITION v2. Write club music without drums or percussion. "
         "The absence of drums does not turn the arrangement into chamber music: bass, chord stabs "
@@ -165,7 +191,7 @@ inline juce::String editorial() {
         "reveal the groove, sustain it, earn a contrast or arrival, and complete its last phrase "
         "before the final harmonic release. Do not create silence at technical window boundaries. "
         "Every pitch, attack, duration, accent, repeat and rest is written by the AI. No code "
-        "supplies a preset groove, copies a cell into the score, fills a pad or corrects pitches. ";
+        "supplies a preset groove, copies a cell into the score, fills a pad or corrects pitches. " + localClubPreferences();
 }
 
 inline void extendSchema(juce::var& root, const SongPlan* plan) {
@@ -496,7 +522,7 @@ inline juce::String ensembleSentenceBrief(bool planning) {
         "A uniform quarter-beat delay is not humanization: do not shift a whole phrase "
         "because a writing window begins. Deliberate rhythmic variation must have a "
         "clear relationship to the established pulse and a recognizable landing. ";
-    return common + (planning ?
+    return common + localClubPreferences() + (planning ?
         "COMPOSE JOINT PHRASE LANDMARKS in melodic_statement.ensemble_parts: choose "
         "important foreground holds and compose the actual simultaneous support voicings "
         "in their existing owners, plus any answering sentence whose development matters. "

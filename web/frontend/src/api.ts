@@ -33,6 +33,8 @@ export type CloudTrack = {
   }
 }
 export type CloudJob = {
+  clubLayerPace?: string
+  clubVariety?: boolean
   allowChromatic?: boolean
   id: string; prompt: string; durationSeconds: number; bpm: number
   behavior: 'adaptive' | 'hypnotic' | 'narrative'
@@ -97,7 +99,7 @@ export const api = {
   cloudJobs: () => request<CloudJob[]>('/api/cloud/jobs'),
   cloudStatus: () => request<{ available: boolean; dailyJobLimit: number; unlimited: boolean }>('/api/cloud/status'),
   cloudJob: (id: string) => request<CloudJob>(`/api/cloud/jobs/${id}`),
-  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; idempotencyKey: string; allowChromatic: boolean; club?: boolean }) =>
+  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; idempotencyKey: string; allowChromatic: boolean; club?: boolean; clubLayerPace?: string; clubVariety?: boolean }) =>
     request<CloudJob>('/api/cloud/jobs', { method: 'POST', body: JSON.stringify(input) }),
   cancelCloudJob: (id: string) => request<void>(`/api/cloud/jobs/${id}`, { method: 'DELETE' }),
   shareCloudJob: (id: string) => request<{ url: string }>(`/api/cloud/jobs/${id}/share`, { method: 'POST' }),

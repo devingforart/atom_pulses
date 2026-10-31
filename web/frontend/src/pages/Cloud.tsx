@@ -126,6 +126,8 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   const [prompt, setPrompt] = useState('')
   const [allowChromatic, setAllowChromatic] = useState(false)
   const [club, setClub] = useState(false)
+  const [clubLayerPace, setClubLayerPace] = useState('auto')
+  const [clubVariety, setClubVariety] = useState(true)
   const [sharing, setSharing] = useState(false)
   const [share, setShare] = useState<{ url: string; jobId: string } | null>(null)
   const [durationSeconds, setDurationSeconds] = useState(390)
@@ -165,14 +167,16 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
       if (typeof draft.prompt === 'string') setPrompt(draft.prompt.slice(0, 600))
       if ([60,120,180,300,390,600,900].includes(draft.durationSeconds)) setDurationSeconds(draft.durationSeconds)
       if (Number.isFinite(draft.bpm) && draft.bpm >= 60 && draft.bpm <= 180) setBpm(draft.bpm)
+      setClubLayerPace(['auto', '8-16', '16-32', '32-64'].includes(draft.clubLayerPace) ? draft.clubLayerPace : 'auto')
+      setClubVariety(draft.clubVariety !== false)
       setClub(draft.club === true); setAllowChromatic(draft.allowChromatic === true)
     } catch { /* A malformed draft must not block the studio. */ }
     setDraftLoaded(true)
   }, [user?.id, shared])
   useEffect(() => {
     if (!user || shared || !draftLoaded) return
-    try { localStorage.setItem(`pulso-cloud-draft:${user.id}`, JSON.stringify({ prompt, durationSeconds, bpm, club, allowChromatic })) } catch {}
-  }, [user?.id, shared, draftLoaded, prompt, durationSeconds, bpm, club, allowChromatic])
+    try { localStorage.setItem(`pulso-cloud-draft:${user.id}`, JSON.stringify({ prompt, durationSeconds, bpm, club, clubLayerPace, clubVariety, allowChromatic })) } catch {}
+  }, [user?.id, shared, draftLoaded, prompt, durationSeconds, bpm, club, clubLayerPace, clubVariety, allowChromatic])
 
   useEffect(() => { if (user && !shared) void api.cloudStatus().then(setCloudStatus).catch(() => setCloudStatus(null)) }, [user, shared])
   useEffect(() => {
@@ -220,7 +224,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
     event.preventDefault(); setError(''); setBusy(true)
     try {
       const job = await api.createCloudJob({ prompt: prompt.trim(), durationSeconds,
-        bpm, allowChromatic, club, idempotencyKey: crypto.randomUUID() })
+        bpm, allowChromatic, club, clubLayerPace: club ? clubLayerPace : 'auto', clubVariety: club && clubVariety, idempotencyKey: crypto.randomUUID() })
       setJobs(previous => [job, ...previous.filter(item => item.id !== job.id)])
       setSelectedId(job.id); setComposeOpen(false)
     } catch (problem) { setError(problem instanceof Error ? problem.message : t("No pudimos comenzar la composición.")) }
@@ -305,6 +309,16 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
         <textarea id="cloud-prompt" value={prompt} maxLength={600} required rows={5} onChange={event => setPrompt(event.target.value)} placeholder={t("Una historia electrónica profunda, con armonías que evolucionan y un motivo que regresa transformado…")} />
         <label className="cloud-chromatic-option"><input type="checkbox" checked={allowChromatic} onChange={event => setAllowChromatic(event.target.checked)} />{' '}{t("Permitir cromatismos")}</label>
         <label className="cloud-chromatic-option" title={t("Células reconocibles y evolución de capas a largo plazo, sin cortes obligatorios cada 64 compases.")}><input type="checkbox" checked={club} onChange={event => setClub(event.target.checked)} />{' '}{t("Club · repetición y evolución")}</label>
+        {club && <div className="cloud-club-preferences">
+          <label htmlFor="cloud-club-pace">{t("Club: evolución de capas")}</label>
+          <select id="cloud-club-pace" value={clubLayerPace} onChange={event => setClubLayerPace(event.target.value)}>
+            <option value="auto">{t("Automática")}</option>
+            {['8-16', '16-32', '32-64'].map(value => <option key={value} value={value}>{value.replace('-', '–')} {t("compases")}</option>)}
+          </select>
+          <p className="cloud-suite-cost">{t("Una preferencia de desarrollo para la IA, no un calendario obligatorio ni un cambio de tempo.")}</p>
+          <label className="cloud-chromatic-option"><input type="checkbox" checked={clubVariety} onChange={event => setClubVariety(event.target.checked)} />{' '}{t("Club: recurso principal libre")}</label>
+          <p className="cloud-suite-cost">{t("La IA elige el recurso que conduce la obra; el arpegio continuo no es obligatorio.")}</p>
+        </div>}
         <p className="cloud-suite-cost">{t("Sin baterías ni percusiones. Arpegios, stabs y ritmos tonales siguen disponibles. Con cromatismos desactivados, las notas deben pertenecer a la escala declarada.")}</p>
         <div className="cloud-suite-field-pair"><div><label htmlFor="cloud-duration">{t("Duración")}</label><select id="cloud-duration" value={durationSeconds} onChange={event => setDurationSeconds(Number(event.target.value))}>{[[60, t("1 minuto")], [120, t("2 minutos")], [180, t("3 minutos")], [300, t("5 minutos")], [390, t("6 min 30 s")], [600, t("10 minutos")], [900, t("15 minutos")]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
           <div><label htmlFor="cloud-bpm">{t("Tempo")}</label><div className="cloud-suite-unit"><input id="cloud-bpm" type="number" min="60" max="180" value={bpm} onChange={event => setBpm(Number(event.target.value))} /><span>{t("BPM")}</span></div></div></div>

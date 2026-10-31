@@ -54,6 +54,7 @@ describe('Cloud Suite', () => {
     mock.cloudJobs.mockResolvedValue([])
     render(<Cloud />)
     expect(await screen.findByText('No has generado obras aún.')).toBeInTheDocument()
+    expect(screen.queryByText('Descargar obra')).not.toBeInTheDocument()
     expect(document.querySelector('.pulso-loader')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Crear tu primera obra' }))
     expect(screen.getByRole('dialog', { name: 'Nueva composición' })).toBeInTheDocument()

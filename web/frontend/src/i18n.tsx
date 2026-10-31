@@ -72,6 +72,13 @@ export function Preferences() {
   const label = lang === 'en' ? 'Language' : lang === 'pt-BR' ? 'Idioma' : 'Idioma'
   return <div className="site-preferences">
     <select aria-label={label} title={label} value={lang} onChange={e => setLanguage(e.target.value as Language)}><option value="es">Español</option><option value="en">English</option><option value="pt-BR">Português (Brasil)</option></select>
-    <select aria-label={lang === 'en' ? 'Appearance' : lang === 'pt-BR' ? 'Aparência' : 'Apariencia'} value={theme.preference} onChange={e => theme.setTheme(e.target.value as ThemePreference)}><option value="system">{lang === 'en' ? 'System theme' : lang === 'pt-BR' ? 'Tema do sistema' : 'Tema del sistema'}</option><option value="dark">{lang === 'en' ? 'Dark' : lang === 'pt-BR' ? 'Escuro' : 'Oscuro'}</option><option value="light">{lang === 'en' ? 'Light' : 'Claro'}</option></select>
+    <div className="theme-control">
+      <button type="button" className="theme-switch" role="switch" aria-checked={theme.theme === 'dark'} aria-label={lang === 'en' ? 'Dark theme' : lang === 'pt-BR' ? 'Tema escuro' : 'Tema oscuro'} title={theme.theme === 'dark' ? t('Activar tema claro') : t('Activar tema oscuro')} onClick={() => theme.setTheme(theme.theme === 'dark' ? 'light' : 'dark')}>
+        <span className="theme-switch-thumb" aria-hidden="true" />
+        <svg className="theme-sun" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg>
+        <svg className="theme-moon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19.8 15A8.2 8.2 0 0 1 9 4.2 8.2 8.2 0 1 0 19.8 15Z"/></svg>
+      </button>
+      <button type="button" className="theme-system" aria-pressed={theme.preference === 'system'} aria-label={lang === 'en' ? 'Follow system theme' : lang === 'pt-BR' ? 'Seguir tema do sistema' : 'Seguir tema del sistema'} title={lang === 'en' ? 'Follow system theme' : lang === 'pt-BR' ? 'Seguir tema do sistema' : 'Seguir tema del sistema'} onClick={() => theme.setTheme('system')}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg></button>
+    </div>
   </div>
 }

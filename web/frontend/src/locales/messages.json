@@ -1,4 +1,9 @@
 {
+  "No has generado obras aún.": { "en": "You haven't created any compositions yet.", "pt-BR": "Você ainda não criou nenhuma composição." },
+  "Pulsá el": { "en": "Click the", "pt-BR": "Clique no" },
+  "de la barra lateral para crear tu primera obra.": { "en": "in the sidebar to create your first composition.", "pt-BR": "na barra lateral para criar sua primeira composição." },
+  "Crear tu primera obra": { "en": "Create your first composition", "pt-BR": "Criar sua primeira composição" },
+  "Abriendo tu biblioteca…": { "en": "Opening your library…", "pt-BR": "Abrindo sua biblioteca…" },
   "compases": { "en": "bars", "pt-BR": "compassos" },
   "Abriendo tu cuenta…": {
     "en": "Opening your account…",

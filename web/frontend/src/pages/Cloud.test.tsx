@@ -50,6 +50,24 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Cloud Suite', () => {
+  it('invites users with an empty library to create their first composition', async () => {
+    mock.cloudJobs.mockResolvedValue([])
+    render(<Cloud />)
+    expect(await screen.findByText('No has generado obras aún.')).toBeInTheDocument()
+    expect(document.querySelector('.pulso-loader')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Crear tu primera obra' }))
+    expect(screen.getByRole('dialog', { name: 'Nueva composición' })).toBeInTheDocument()
+  })
+  it('shows the branded loader for an active composition, not a failed one', async () => {
+    mock.cloudJobs.mockResolvedValue([{ ...job, status: 'running', stage: 'writing', resultManifest: null }])
+    const view = render(<Cloud />)
+    await waitFor(() => expect(document.querySelector('.pulso-loader')).toHaveTextContent('Escribiendo las pistas'))
+    view.unmount()
+    mock.cloudJobs.mockResolvedValue([{ ...job, status: 'failed', resultManifest: null }])
+    render(<Cloud />)
+    await waitFor(() => expect(document.querySelector('.cloud-suite-timeline-empty')).toHaveTextContent('La composición no se completó'))
+    expect(document.querySelector('.pulso-loader')).not.toBeInTheDocument()
+  })
   it('sends Club independently of chromatic permission', async () => {
     mock.createCloudJob.mockReset().mockResolvedValue({ ...job, behavior: 'club' })
     render(<Cloud />)

@@ -1,6 +1,6 @@
 import { t, useLocale, locale, useTheme, Preferences } from '../i18n'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent } from 'react'
-import { Navigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams } from 'react-router-dom'
 import { api, type CloudJob, type CloudTrack } from '../api'
 import { useAuth } from '../auth'
 import { Logo } from '../components/Logo'
@@ -284,7 +284,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   return <section data-theme={theme} className={`cloud-suite cloud-editorial${shared ? ' cloud-exhibition' : ''}`}>
     <header className="cloud-suite-bar">
       <div className="cloud-suite-brand"><Logo /><span className="cloud-suite-brand-divider" /><strong>{t("COMPOSITION STUDIO")}</strong></div>
-      <div className="cloud-suite-global"><Preferences />{shared ? <span className="cloud-exhibition-badge">{t("EXHIBICIÓN COMPARTIDA · SOLO LECTURA")}</span> : <><span className="cloud-suite-online">{t("● EN TU CUENTA")}</span><a href="/account">{t("Mi cuenta")}</a><button type="button" disabled={selected?.status !== 'completed' || sharing} onClick={async () => { if (!selected) return; setSharing(true); try { const result = await api.shareCloudJob(selected.id); setShare({ ...result, jobId: selected.id }) } catch (problem) { setError(problem instanceof Error ? problem.message : t("No se pudo compartir.")) } finally { setSharing(false) } }}>{sharing ? t("Preparando…") : t("Share")}</button><button type="button" onClick={() => setHistoryOpen(value => !value)}>{t("Historial")}</button><button type="button" className="cloud-suite-export-one" disabled={!activeScore || downloadingSingleMidi} onClick={() => void downloadMergedMidi()} title={t("Todas las notas en una pista para tocar con un instrumento")}>{t("↓ 1 pista MIDI")}</button>
+      <div className="cloud-suite-global"><Preferences />{shared ? <span className="cloud-exhibition-badge">{t("EXHIBICIÓN COMPARTIDA · SOLO LECTURA")}</span> : <><span className="cloud-suite-online">{t("● EN TU CUENTA")}</span><Link to="/account">{t("Mi cuenta")}</Link><button type="button" disabled={selected?.status !== 'completed' || sharing} onClick={async () => { if (!selected) return; setSharing(true); try { const result = await api.shareCloudJob(selected.id); setShare({ ...result, jobId: selected.id }) } catch (problem) { setError(problem instanceof Error ? problem.message : t("No se pudo compartir.")) } finally { setSharing(false) } }}>{sharing ? t("Preparando…") : t("Share")}</button><button type="button" onClick={() => setHistoryOpen(value => !value)}>{t("Historial")}</button><button type="button" className="cloud-suite-export-one" disabled={!activeScore || downloadingSingleMidi} onClick={() => void downloadMergedMidi()} title={t("Todas las notas en una pista para tocar con un instrumento")}>{t("↓ 1 pista MIDI")}</button>
         {selected?.status === 'completed' && selected.resultManifest ? <a className="cloud-suite-export" href={trackUrl(selected.id, selected.resultManifest.fullFile)} title={t("Obra original multipista con sus controles expresivos")}>{t("↓ Multipista")}</a> : <span className="cloud-suite-export disabled">{t("↓ Multipista")}</span>}</>}</div>
     </header>
     <div className="cloud-beta">{t("0.1.0 version Beta")}</div>

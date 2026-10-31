@@ -33,4 +33,11 @@ describe('website localization', () => {
     setAppearance('dark'); expect(document.documentElement.dataset.theme).toBe('dark')
     setAppearance('system'); expect(localStorage.getItem('pulso-studio-theme')).toBe('system')
   })
+  it('restores the latest saved theme when returning through browser history', () => {
+    setAppearance('light')
+    localStorage.setItem('pulso-studio-theme', 'dark')
+    window.dispatchEvent(new Event('pageshow'))
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(localStorage.getItem('pulso-studio-theme')).toBe('dark')
+  })
 })

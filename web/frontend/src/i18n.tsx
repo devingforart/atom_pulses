@@ -41,6 +41,17 @@ window.addEventListener('storage', event => {
   if (event.key === themeKey) themePreference = event.newValue === 'dark' || event.newValue === 'light' ? event.newValue : 'system'
   applyPreferences(); notify()
 })
+// Back/forward cache can restore an older document after another page changed
+// the preference. Re-read persistent choices before displaying that document.
+function restorePreferences() {
+  const savedLanguage = read(languageKey)
+  if (validLanguage(savedLanguage)) language = savedLanguage
+  const savedTheme = read(themeKey)
+  if (savedTheme === 'dark' || savedTheme === 'light' || savedTheme === 'system') themePreference = savedTheme
+  applyPreferences(); notify()
+}
+window.addEventListener('pageshow', restorePreferences)
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') restorePreferences() })
 export function locale(): Language { return language }
 export function setLanguage(value: Language) { language = value; save(languageKey,value); applyPreferences(); notify() }
 export function useLocale() { return useSyncExternalStore(subscribe, locale, () => 'es' as Language) }

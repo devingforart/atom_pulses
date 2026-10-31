@@ -1,4 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render as renderComponent, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import type { ReactElement } from 'react'
+const render = (element: ReactElement) => renderComponent(<MemoryRouter>{element}</MemoryRouter>)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Cloud } from './Cloud'
 

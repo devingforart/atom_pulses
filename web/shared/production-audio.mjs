@@ -25,6 +25,33 @@ export class ProductionAudio extends SuiteAudio {
     super.setSong(midi, tracks);
   }
 
+  // One physical piano key has one attack. Keep independent MIDI voices intact:
+  // merge only exact pitch/onset matches in this audition, never nearby attacks.
+  playEvents(events) {
+    if (this.mode !== 'piano') return super.playEvents(events);
+    const attacks = new Map();
+    const merged = [];
+    for (const event of events) {
+      if (event.instrument === 'drums' || event.note.channel === 9) {
+        merged.push(event);
+        continue;
+      }
+      const key = event.note.startBeat;
+      let pitches = attacks.get(key);
+      if (!pitches) { pitches = new Map(); attacks.set(key, pitches); }
+      const previous = pitches.get(event.note.pitch);
+      if (previous) {
+        previous.seconds = Math.max(previous.seconds, event.seconds);
+        previous.note.velocity = Math.max(previous.note.velocity, event.note.velocity);
+      } else {
+        const copy = { ...event, note: { ...event.note } };
+        pitches.set(event.note.pitch, copy);
+        merged.push(copy);
+      }
+    }
+    super.playEvents(merged);
+  }
+
   async setMode(mode) {
     if (mode !== 'production' && mode !== 'neutral' && mode !== 'piano') throw new Error('Modo de escucha desconocido');
     if (this.mode === mode) return;
@@ -144,6 +171,7 @@ export class ProductionAudio extends SuiteAudio {
     renderer.master.connect(renderer.limiter).connect(context.destination);
     renderer.prepareProduction();
     let scheduled = 0;
+    const events = [];
     for (let index = 0; index < renderer.tracks.length; index++) {
       if (!this.audible(index)) continue;
       const track = renderer.tracks[index];
@@ -154,10 +182,11 @@ export class ProductionAudio extends SuiteAudio {
         if (noteEnd <= renderStart || (track.instrument === 'drums' && noteStart < renderStart)) continue;
         const at = Math.max(0, noteStart - renderStart);
         const remaining = Math.min(noteEnd - Math.max(noteStart, renderStart), renderLength - at);
-        renderer.note(track.instrument, note, at, remaining, track);
+        events.push({ instrument: track.instrument, note, at, seconds: remaining, track });
         if (++scheduled > 12000) throw new Error('Demasiados eventos para renderizar este tramo.');
       }
     }
+    renderer.playEvents(events);
     return context.startRendering();
   }
 

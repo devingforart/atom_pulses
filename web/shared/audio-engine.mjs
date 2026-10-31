@@ -104,6 +104,7 @@ export class SuiteAudio {
   schedule() {
     if (!this.playing) return;
     const now = this.context.currentTime, end = now + 0.14;
+    const events = [];
     for (let index = 0; index < this.tracks.length; index++) {
       const track = this.tracks[index], notes = track.notes;
       let cursor = this.cursors[index] || 0;
@@ -112,25 +113,32 @@ export class SuiteAudio {
         if (when > end) break;
         if (this.audible(index) && when >= now - 0.02) {
           const endAt = this.origin + this.midi.beatToSeconds(note.startBeat + note.durationBeats);
-          this.note(track.instrument, note, Math.max(now, when), Math.max(0.035, endAt - when), track);
+          events.push({ instrument: track.instrument, note, at: Math.max(now, when), seconds: Math.max(0.035, endAt - when), track });
         }
         cursor++;
       }
       this.cursors[index] = cursor;
     }
+    this.playEvents(events);
+  }
+  playEvents(events) {
+    for (const { instrument, note, at, seconds, track } of events)
+      this.note(instrument, note, at, seconds, track);
   }
   scheduleHeldNotes() {
     if (!this.playing || this.position <= 0) return;
     const now = this.context.currentTime;
+    const events = [];
     this.tracks.forEach((track, index) => {
       if (!this.audible(index) || track.instrument === 'drums') return;
       for (const note of track.notes) {
         const start = this.midi.beatToSeconds(note.startBeat);
         if (start >= this.position) break;
         const end = this.midi.beatToSeconds(note.startBeat + note.durationBeats);
-        if (end > this.position + 0.03) this.note(track.instrument, note, now, end - this.position, track);
+        if (end > this.position + 0.03) events.push({ instrument: track.instrument, note, at: now, seconds: end - this.position, track });
       }
     });
+    this.playEvents(events);
   }
   stopVoices() { for (const voice of [...this.voices]) voice.stop(); this.voices.clear(); }
   note(instrument, note, at, seconds) {

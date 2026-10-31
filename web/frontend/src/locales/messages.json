@@ -1,4 +1,7 @@
 {
+  "Repetir ajustes": { "en": "Reuse settings", "pt-BR": "Repetir ajustes" },
+  "Ajustes cargados. Todavía no se envió ninguna solicitud.": { "en": "Settings loaded. No request has been sent yet.", "pt-BR": "Ajustes carregados. Nenhuma solicitação foi enviada ainda." },
+  "Usar semilla nueva": { "en": "Use a new seed", "pt-BR": "Usar nova semente" },
   "Solicitud enviada · ajustes guardados": { "en": "Submitted request · saved settings", "pt-BR": "Solicitação enviada · ajustes salvos" },
   "Parámetros guardados al enviar esta obra, no una medición del resultado musical. La evolución de capas es una preferencia, no un calendario obligatorio.": { "en": "Settings saved when this work was submitted, not a measurement of the musical result. Layer evolution is a preference, not a mandatory schedule.", "pt-BR": "Parâmetros salvos ao enviar esta obra, não uma medição do resultado musical. A evolução de camadas é uma preferência, não um calendário obrigatório." },
   "No registrado": { "en": "Not recorded", "pt-BR": "Não registrado" },

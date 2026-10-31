@@ -50,6 +50,25 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Cloud Suite', () => {
+  it('reuses the saved request and seed without submitting until confirmation', async () => {
+    mock.cloudJobs.mockResolvedValue([{ ...job, behavior: 'club', clubLayerPace: '32-64', clubVariety: true, allowChromatic: true }])
+    render(<Cloud />)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Seguimiento de la obra' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Seguimiento de la obra' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Repetir ajustes' }))
+    expect(screen.getByLabelText(/Idea musical/)).toHaveValue(job.prompt)
+    expect(screen.getByLabelText('Duración')).toHaveValue('60')
+    expect(screen.getByLabelText('Tempo')).toHaveValue(120)
+    expect(screen.getByLabelText('Club: evolución de capas')).toHaveValue('32-64')
+    expect(screen.getByRole('checkbox', { name: 'Club: recurso principal libre' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Permitir cromatismos' })).toBeChecked()
+    expect(mock.createCloudJob).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /Componer obra/ }))
+    await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalledWith(expect.objectContaining({
+      seed: job.seed, prompt: job.prompt, durationSeconds: 60, bpm: 120,
+      club: true, clubLayerPace: '32-64', clubVariety: true, allowChromatic: true,
+    })))
+  })
   it('invites users with an empty library to create their first composition', async () => {
     mock.cloudJobs.mockResolvedValue([])
     render(<Cloud />)

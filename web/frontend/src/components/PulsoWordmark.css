@@ -1,7 +1,8 @@
-.pulso-wordmark{display:block;width:150px;height:auto;flex:none;overflow:visible}
+.pulso-wordmark{display:block;width:140px;height:auto;flex:none;overflow:visible;fill:var(--suite-ink,var(--ink,#181916))}
+.pulso-wordmark .pulso-midi-accent{fill:#d84f2b}
 .pulso-brand-lockup{display:inline-flex;align-items:center;gap:12px;flex:none}
 .pulso-brand-wave{display:block;width:34px;height:24px;flex:none;fill:#d84f2b}
 .pulso-brand-wave path{fill:none;stroke:#d84f2b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 @media(max-width:600px){.pulso-brand-lockup{gap:9px}.pulso-brand-wave{width:28px;height:22px}}
-.cloud-suite-brand .pulso-wordmark{width:132px}
+.cloud-suite-brand .pulso-wordmark{width:125px}
 @media(max-width:600px){.pulso-wordmark{width:120px}.cloud-suite-brand .pulso-wordmark{width:108px}}

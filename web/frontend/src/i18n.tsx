@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useSyncExternalStore, useRef, useEffect } from 'react'
 import messages from './locales/messages.json'
 
 export type Language = 'es' | 'en' | 'pt-BR'
@@ -71,7 +71,7 @@ export function Preferences() {
   const lang = useLocale(); const theme = useTheme()
   const label = lang === 'en' ? 'Language' : lang === 'pt-BR' ? 'Idioma' : 'Idioma'
   return <div className="site-preferences">
-    <select aria-label={label} title={label} value={lang} onChange={e => setLanguage(e.target.value as Language)}><option value="es">Español</option><option value="en">English</option><option value="pt-BR">Português (Brasil)</option></select>
+    <LanguagePicker label={label} />
     <div className="theme-control">
       <button type="button" className="theme-switch" role="switch" aria-checked={theme.theme === 'dark'} aria-label={lang === 'en' ? 'Dark theme' : lang === 'pt-BR' ? 'Tema escuro' : 'Tema oscuro'} title={theme.theme === 'dark' ? t('Activar tema claro') : t('Activar tema oscuro')} onClick={() => theme.setTheme(theme.theme === 'dark' ? 'light' : 'dark')}>
         <span className="theme-switch-thumb" aria-hidden="true" />
@@ -81,4 +81,23 @@ export function Preferences() {
       <button type="button" className="theme-system" aria-pressed={theme.preference === 'system'} aria-label={lang === 'en' ? 'Follow system theme' : lang === 'pt-BR' ? 'Seguir tema do sistema' : 'Seguir tema del sistema'} title={lang === 'en' ? 'Follow system theme' : lang === 'pt-BR' ? 'Seguir tema do sistema' : 'Seguir tema del sistema'} onClick={() => theme.setTheme('system')}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg></button>
     </div>
   </div>
+}
+
+function LanguageFlag({ language }: { language: Language }) {
+  return <svg className="language-flag" viewBox="0 0 30 20" aria-hidden="true">
+    {language === 'es' ? <><path fill="#b92435" d="M0 0h30v20H0z"/><path fill="#f5ca52" d="M0 5h30v10H0z"/><path fill="#b92435" d="M8 8h3v5H8z"/></> : language === 'pt-BR' ? <><path fill="#208747" d="M0 0h30v20H0z"/><path fill="#f8d64d" d="m15 2 12 8-12 8L3 10Z"/><circle cx="15" cy="10" r="5" fill="#26428a"/><path d="M10.3 8.5q5-1 9.4 3" stroke="#fff" strokeWidth="1.1" fill="none"/></> : <><path fill="#223c73" d="M0 0h30v20H0z"/><path d="m0 0 30 20M30 0 0 20" stroke="#fff" strokeWidth="5"/><path d="m0 0 30 20M30 0 0 20" stroke="#c43644" strokeWidth="2"/><path d="M15 0v20M0 10h30" stroke="#fff" strokeWidth="8"/><path d="M15 0v20M0 10h30" stroke="#c43644" strokeWidth="4"/></>}
+  </svg>
+}
+function LanguagePicker({label}: {label: string}) {
+  const lang = useLocale(); const ref = useRef<HTMLDetailsElement>(null)
+  const choices: [Language,string][] = [['es','Español'],['en','English'],['pt-BR','Português (Brasil)']]
+  useEffect(() => {
+    const close = (event: PointerEvent) => { if (event.target instanceof Node && !ref.current?.contains(event.target)) ref.current?.removeAttribute('open') }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [])
+  return <details ref={ref} className="language-picker" onKeyDown={event => { if (event.key === 'Escape') { ref.current?.removeAttribute('open'); ref.current?.querySelector('summary')?.focus() } }}>
+    <summary aria-label={`${label}: ${choices.find(c => c[0] === lang)?.[1]}`} title={label}><LanguageFlag language={lang}/><svg className="language-chevron" viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg></summary>
+    <div className="language-options" role="group" aria-label={label}>{choices.map(([code,name]) => <button key={code} type="button" lang={code} aria-pressed={lang === code} onClick={() => { setLanguage(code); ref.current?.removeAttribute('open'); ref.current?.querySelector('summary')?.focus() }}><LanguageFlag language={code}/><span>{name}</span><span aria-hidden="true">{lang === code ? '✓' : ''}</span></button>)}</div>
+  </details>
 }

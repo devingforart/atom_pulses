@@ -6,6 +6,7 @@ import { useAuth } from '../auth'
 import { Logo } from '../components/Logo'
 import { PulsoSpinner } from '../components/PulsoSpinner'
 import { CompositionProgress } from '../components/CompositionProgress'
+import { CloudRequestDetails } from '../components/CloudRequestDetails'
 import { parseMidi, downloadSingleTrackMidi, type MidiNote, type MidiScore } from '../../../shared/midi.mjs'
 import { instrumentFor, type SuiteTrack } from '../../../shared/audio-engine.mjs'
 import { ProductionAudio } from '../../../shared/production-audio.mjs'
@@ -330,6 +331,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
       <div className="cloud-suite-session"><div className="cloud-suite-kicker"><span>{t("02 / SESIÓN")}</span><span>{jobs.length}{' '}{t("OBRAS")}</span></div>
         {selected ? <><h3>{selected.resultManifest?.title || t(selected.status === 'failed' ? "Composición no completada" : selected.status === 'cancelled' ? "Composición cancelada" : selected.status === 'completed' ? "Composición terminada" : "Composición en curso")}</h3><strong className="cloud-suite-status">{status}</strong><p className="cloud-suite-session-prompt">{selected.prompt}</p>
           <small>{new Date(selected.createdAt * 1000).toLocaleString(locale())} · {fmt(selected.durationSeconds)} · {selected.bpm}{' '}{t("BPM")}</small>
+          <CloudRequestDetails key={selected.id} job={selected} />
           {(selected.status === 'running' || selected.status === 'queued') && <div className="cloud-suite-progress"><progress value={selected.completedSteps} max={Math.max(selected.totalSteps, 1)} /><span>{t(stageText[selected.stage]) || t("Componiendo")} · {selected.completedSteps}/{selected.totalSteps}</span><button type="button" onClick={async () => { try { await api.cancelCloudJob(selected.id); setJobs(await api.cloudJobs()) } catch (problem) { setError(problem instanceof Error ? problem.message : t("No se pudo cancelar.")) } }}>{t("Cancelar")}</button></div>}
           {selected.status === 'completed' && selected.resultManifest && <div className="cloud-suite-session-actions"><a href={trackUrl(selected.id, selected.resultManifest.fullFile)}>{t("↓ Obra completa MIDI")}</a><span>{selected.resultManifest.tracks.length}{' '}{t("pistas ·")}{' '}{selected.resultManifest.key}</span></div>}
           {selected.status === 'failed' && <p className="cloud-suite-error">{t("La composición no se completó. No se publicó una obra incompleta.")}</p>}</> : <p className="cloud-suite-empty-copy">{t("Tus obras aparecerán aquí cuando empieces a componer.")}</p>}</div>

@@ -37,7 +37,7 @@ export type CloudJob = {
   clubVariety?: boolean
   allowChromatic?: boolean
   id: string; prompt: string; durationSeconds: number; bpm: number
-  behavior: 'adaptive' | 'hypnotic' | 'narrative'
+  behavior: 'adaptive' | 'hypnotic' | 'narrative' | 'club'
   aiSovereign: boolean; seed: string
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
   stage: string; completedSteps: number; totalSteps: number

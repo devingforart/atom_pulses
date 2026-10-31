@@ -11,7 +11,7 @@ const glyphs = [
 ]
 export function PulsoWordmark() {
   return <span className="pulso-brand-lockup">
-    <svg className="pulso-brand-wave" viewBox="0 0 34 24" aria-hidden="true" focusable="false">
+    <svg className="pulso-brand-wave" viewBox="0 3 34 18" aria-hidden="true" focusable="false">
       <circle cx="3" cy="12" r="2.2" />
       <path d="M5.5 12h4l2.4-7 4.2 14 4.1-11 3.2 7h4l2.2-3H33" />
     </svg>

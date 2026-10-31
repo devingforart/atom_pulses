@@ -1,4 +1,7 @@
 {
+  "Composición no completada": { "en": "Composition not completed", "pt-BR": "Composição não concluída" },
+  "Composición cancelada": { "en": "Composition cancelled", "pt-BR": "Composição cancelada" },
+  "Composición terminada": { "en": "Composition completed", "pt-BR": "Composição concluída" },
   "La composición se está generando…": { "en": "Your composition is being generated…", "pt-BR": "A composição está sendo gerada…" },
   "Página principal de PULSO": { "en": "PULSO home page", "pt-BR": "Página inicial do PULSO" },
   "Descargar obra": { "en": "Download composition", "pt-BR": "Baixar composição" },

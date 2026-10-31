@@ -68,6 +68,8 @@ describe('Cloud Suite', () => {
     render(<Cloud />)
     await waitFor(() => expect(document.querySelector('.cloud-suite-timeline-empty')).toHaveTextContent('La composición no se completó'))
     expect(document.querySelector('.pulso-loader')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Seguimiento de la obra' }))
+    expect(screen.getByRole('heading', { name: 'Composición no completada' })).toBeInTheDocument()
   })
   it('sends Club independently of chromatic permission', async () => {
     mock.createCloudJob.mockReset().mockResolvedValue({ ...job, behavior: 'club' })

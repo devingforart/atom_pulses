@@ -11,7 +11,7 @@ export function Layout() {
   return <div className="site-shell">
     <a className="skip-link" href="#content">{t("Saltar al contenido")}</a>
     <header className="nav-wrap">
-      <Link to="/" className="brand-link"><Logo /><span className="brand-caption">{t("Composition system")}</span></Link>
+      <Link to="/" className="brand-link"><Logo /><span className="brand-caption">{t("Estudio de composición")}</span></Link>
       <nav aria-label={t("Principal")}>
         <NavLink to="/product">{t("Producto")}</NavLink>
         <NavLink to="/pricing">{t("Planes")}</NavLink>

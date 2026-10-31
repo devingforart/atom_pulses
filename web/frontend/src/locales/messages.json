@@ -1,4 +1,9 @@
 {
+  "Estudio de composición": { "en": "Composition Studio", "pt-BR": "Estúdio de composição" },
+  "CON INTELIGENCIA ARTIFICIAL": { "en": "WITH ARTIFICIAL INTELLIGENCE", "pt-BR": "COM INTELIGÊNCIA ARTIFICIAL" },
+  "Termina en tu DAW": { "en": "Finish in your DAW", "pt-BR": "Finalize na sua DAW" },
+  "Entrada de una idea musical en PULSO": { "en": "Musical idea input in PULSO", "pt-BR": "Entrada de uma ideia musical no PULSO" },
+  "Pistas MIDI independientes en el estudio PULSO": { "en": "Independent MIDI tracks in PULSO Studio", "pt-BR": "Faixas MIDI independentes no estúdio PULSO" },
   "Club: evolución de capas": { "en": "Club: layer evolution", "pt-BR": "Club: evolução de camadas" },
   "Automática": { "en": "Automatic", "pt-BR": "Automática" },
   "Club: recurso principal libre": { "en": "Club: free choice of main resource", "pt-BR": "Club: recurso principal livre" },

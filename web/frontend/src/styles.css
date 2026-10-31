@@ -199,7 +199,7 @@ nav a:hover::after, nav a.active::after { background: var(--rust); }
 .statement::before, .statement::after { position: absolute; top: 22px; color: #761f0e; font: 500 8px var(--mono); letter-spacing: .08em; }
 .statement::before { left: 28px; content: "PULSO / THESIS"; }
 .statement::after { right: 28px; content: "02 — 05"; }
-.statement > p { color: #761f0e; font: 500 10px var(--mono); letter-spacing: .1em; text-decoration: line-through; text-transform: uppercase; }
+.statement > p { color: #761f0e; font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .statement h2 { margin: 0 auto; }
 .statement em { color: #fff4ef; }
 

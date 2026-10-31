@@ -62,7 +62,7 @@ describe('Cloud Suite', () => {
   it('shows the branded loader for an active composition, not a failed one', async () => {
     mock.cloudJobs.mockResolvedValue([{ ...job, status: 'running', stage: 'writing', resultManifest: null }])
     const view = render(<Cloud />)
-    await waitFor(() => expect(document.querySelector('.pulso-loader')).toHaveTextContent('Escribiendo las pistas'))
+    await waitFor(() => expect(document.querySelector('.pulso-loader')).toHaveTextContent('La composición se está generando…'))
     view.unmount()
     mock.cloudJobs.mockResolvedValue([{ ...job, status: 'failed', resultManifest: null }])
     render(<Cloud />)

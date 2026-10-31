@@ -30,7 +30,7 @@ export function Home() {
     <section id="workflow" className="workflow"><div className="section-title"><p className="eyebrow">{t("EL FLUJO")}</p><h2>{t("De una frase a una arquitectura musical.")}</h2></div>
       <div className="workflow-grid">{workflow.map(([n,title,text]) => <article key={n}><span>{n}</span><h3>{t(title)}</h3><p>{t(text)}</p>
         <div className={`workflow-media workflow-media-${n}`}>
-          {n === '02' ? <PulsoSpinner label={t("PULSO escribe la obra")} /> :
+          {n === '02' ? <PulsoSpinner label={t("La composición se está generando…")} /> :
             <img src={n === '01' ? '/images/pulso-prompt.png' : '/images/pulso-midi.png'}
               alt={t(n === '01' ? "Entrada de una idea musical en PULSO" : "Pistas MIDI independientes en el estudio PULSO")}
               loading="lazy" width="1000" height="600" />}

@@ -130,7 +130,8 @@ composeDialog.addEventListener('close', saveCompositionDraft);
 const sessionIndicator = document.createElement('button'); sessionIndicator.type = 'button';
 sessionIndicator.className = 'session-indicator'; sessionIndicator.textContent = 'Seguimiento de la obra ↗';
 sessionIndicator.addEventListener('click', () => sessionDialog.showModal());
-$('#health').after(sessionIndicator);
+const studioStatusbar = document.createElement('div'); studioStatusbar.className = 'studio-statusbar';
+ui.health.before(studioStatusbar); studioStatusbar.append(ui.health, sessionIndicator);
 new MutationObserver(() => {
   const status = ui.session.querySelector('.session-status')?.textContent?.trim();
   const title = ui.session.querySelector('.session-title')?.textContent?.trim();
@@ -503,10 +504,16 @@ async function loadSong(job, diagnostic = false) {
     renderTimeline();
     updateListeningLabels();
     $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
-    $('#song-subtitle').textContent = diagnostic ? `Candidato rechazado · ${tracks.length} pistas con notas · NO aprobado` : job.manifest?.first_pass_audition ? `Primera pasada IA · ${tracks.length} pistas con notas · revisión armónica focalizada` : job.manifest ? `${job.manifest.key || 'Tonalidad no declarada'} · ${job.manifest.bars || Math.ceil(timing.lengthBeats / timing.beatsPerBar)} compases · ${tracks.length} pistas con notas` : `Escucha provisional · ${tracks.length} pistas con notas · sin aprobación musical final`;
+    $('#song-subtitle').classList.add('score-facts');
+    $('#song-subtitle').replaceChildren(
+      node('strong', '', job.manifest?.key || 'MIDI provisional'),
+      node('span', '', `${job.manifest?.bars || Math.ceil(timing.lengthBeats / timing.beatsPerBar)} compases`),
+      node('span', '', fmt(audio.duration)),
+      node('span', '', `${Math.round(job.manifest?.bpm || 60e6 / timing.tempos[0].microseconds)} BPM`),
+      node('span', '', `${tracks.length} pistas`));
     $('#song-bpm').textContent = `${Math.round(job.manifest?.bpm || 60e6 / timing.tempos[0].microseconds)} BPM`;
     $('#song-key').textContent = job.manifest?.key || 'MIDI provisional';
-    $('#song-stat').textContent = `${number(tracks.reduce((sum, track) => sum + track.notes.length, 0))} NOTAS · ${tracks.length} PISTAS`;
+    $('#song-stat').textContent = '';
     $('#track-summary').textContent = `${tracks.length} pistas · ${fmt(audio.duration)}`;
     ui.play.disabled = false;
     $('#preview-wav').disabled = false;

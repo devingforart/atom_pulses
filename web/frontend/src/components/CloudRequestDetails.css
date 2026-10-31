@@ -4,4 +4,7 @@
 .cloud-request-details dl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr);gap:12px 18px;font-size:13px;line-height:1.6}
 .cloud-request-details dt{color:var(--suite-muted,var(--muted))}
 .cloud-request-details dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+.cloud-editorial .cloud-suite-session .cloud-repeat-settings{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:11px 18px;border:1px solid #a8381d;border-radius:7px;background:#a8381d;color:#fff;font-size:13px;font-weight:650;line-height:1.3;cursor:pointer;box-shadow:none;transition:background .15s,border-color .15s}
+.cloud-editorial .cloud-suite-session .cloud-repeat-settings:hover{background:#8c2e18;border-color:#8c2e18;color:#fff}
+.cloud-editorial .cloud-suite-session .cloud-repeat-settings:focus-visible{outline:2px solid var(--suite-rust,#d84f2b);outline-offset:3px}
 @media(max-width:540px){.cloud-request-details dl{grid-template-columns:1fr;gap:4px}.cloud-request-details dd{margin-bottom:10px}}

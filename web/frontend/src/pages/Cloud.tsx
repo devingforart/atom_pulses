@@ -335,7 +335,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
         {selected ? <><h3>{selected.resultManifest?.title || t(selected.status === 'failed' ? "Composición no completada" : selected.status === 'cancelled' ? "Composición cancelada" : selected.status === 'completed' ? "Composición terminada" : "Composición en curso")}</h3><strong className="cloud-suite-status">{status}</strong><p className="cloud-suite-session-prompt">{selected.prompt}</p>
           <small>{new Date(selected.createdAt * 1000).toLocaleString(locale())} · {fmt(selected.durationSeconds)} · {selected.bpm}{' '}{t("BPM")}</small>
           <CloudRequestDetails key={selected.id} job={selected} />
-          <div className="cloud-suite-session-actions"><button type="button" className="button button-small" onClick={() => {
+          <div className="cloud-suite-session-actions"><button type="button" className="cloud-repeat-settings" onClick={() => {
             setPrompt(selected.prompt); setDurationSeconds(selected.durationSeconds); setBpm(selected.bpm)
             setClub(selected.behavior === 'club'); setAllowChromatic(selected.allowChromatic === true)
             setClubLayerPace(selected.clubLayerPace || 'auto'); setClubVariety(selected.clubVariety === true)

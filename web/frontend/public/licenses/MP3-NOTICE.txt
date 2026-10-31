@@ -1,0 +1,7 @@
+PULSO browser MP3 export uses @breezystack/lamejs 1.2.7, an unmodified
+JavaScript LAME encoder fork, licensed under LGPL-3.0.
+Upstream source: https://github.com/shijinyu/lamejs
+Exact distributed package and source: https://registry.npmjs.org/@breezystack/lamejs/-/lamejs-1.2.7.tgz
+License information: /licenses/lamejs-LICENSE.txt
+LGPL-3.0 text: https://www.gnu.org/licenses/lgpl-3.0.html
+The library is bundled in a separate MP3 Web Worker and is only loaded for export.

@@ -1,6 +1,8 @@
 export function blueprintRequestMatchesSource(source, request, allowEditorialChange = false) {
   return Boolean(source && ['prompt', 'duration_seconds', 'bpm', 'behavior', 'seed',
     'ai_sovereign', 'phrase_architecture_experiment', 'allow_chromatic', 'pitched_only'].every(field => source[field] === request[field]) &&
+    (source.club_layer_pace || 'auto') === (request.club_layer_pace || 'auto') &&
+    Boolean(source.club_variety) === Boolean(request.club_variety) &&
     (source.first_pass_audition === request.first_pass_audition || allowEditorialChange));
 }
 

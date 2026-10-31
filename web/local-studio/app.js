@@ -285,11 +285,50 @@ async function reviewFirstPass(job, button) {
   } catch (error) { showNotice(error.message); }
   finally { button.disabled = false; }
 }
+function requestDetails(request) {
+  const recorded = value => typeof value === 'boolean' ? (value ? 'Activado' : 'Desactivado') : 'No registrado';
+  const club = request.behavior === 'club';
+  const approaches = { adaptive: 'Adaptativo', hypnotic: 'Hipnótico', narrative: 'Narrativo', club: 'Club' };
+  const pace = request.club_layer_pace;
+  const horizon = ['8-16', '16-32', '32-64'].includes(pace)
+    ? pace.replace('-', '–') + ' compases'
+    : pace === 'auto' ? 'Automática · sin intervalo elegido' : 'No registrado';
+  const rows = [
+    ['Enfoque solicitado', approaches[request.behavior] || request.behavior || 'No registrado'],
+    ['Evolución de capas Club', club ? horizon + '. Preferencia, no cambios obligatorios.' : 'No aplica · Club desactivado'],
+    ['Club: recurso principal libre', club ? recorded(request.club_variety) : 'No aplica · Club desactivado'],
+    ['Cromatismos', recorded(request.allow_chromatic)],
+    ['Sin baterías ni percusiones', recorded(request.pitched_only)],
+    ['Primera pasada sin revisión global', recorded(request.first_pass_audition)],
+    ['Plan de frases entre voces', recorded(request.phrase_architecture_experiment)],
+    ['Prueba corta de coherencia', recorded(request.proof_mode)],
+    ['Autoría solicitada', typeof request.ai_sovereign === 'boolean'
+      ? (request.ai_sovereign ? 'IA soberana' : 'Motor anterior · referencia A/B') : 'No registrado'],
+  ];
+  for (const [field, label] of [
+    ['resume_from_job', 'Reanudación desde'], ['review_from_job', 'Revisión de'],
+    ['blueprint_from_job', 'Plan reutilizado de'], ['reference_from_job', 'Referencia de'],
+  ]) if (request[field]) rows.push([label, String(request[field])]);
+  return rows;
+}
+const requestExpansionByJob = new Map();
+let sessionRenderKey = null;
+let renderedSessionJobId = null;
 function renderSession(job) {
   if (!job) return;
   const articulation = job.manifest?.articulationReview;
   const articulationRevision = !articulation && jobs.find(candidate =>
     candidate.manifest?.articulationReview?.sourceJobId === job.id);
+  const renderKey = JSON.stringify([job, evaluationsByJob.get(job.id), articulationRevision?.id]);
+  if (sessionRenderKey === renderKey && !['running', 'queued'].includes(job.state)) return;
+  if (renderedSessionJobId) {
+    const previous = ui.session.querySelector('.session-request-details');
+    if (previous) requestExpansionByJob.set(renderedSessionJobId, previous.open);
+  }
+  const scrollTop = sessionDialog.scrollTop;
+  const sameJob = renderedSessionJobId === job.id;
+  sessionRenderKey = renderKey;
+  renderedSessionJobId = job.id;
   ui.session.replaceChildren();
   ui.session.append(node('h3', 'session-title', job.manifest?.title || 'Composición en curso'));
   ui.session.append(node('div', `session-status ${job.state}`,
@@ -322,7 +361,18 @@ function renderSession(job) {
       `Articulación revisada por IA: ${articulation.changedNotes} duraciones de ${job.manifest.all_midi_notes} notas. Alturas, entradas, velocidades y otras pistas intactas.`));
   }
   if (job.request.editorial_profile === 'ai-only-v2') ui.session.append(node('p', 'session-note', 'Perfil editorial local IA v2 · cada nota es autoría IA.'));
-  if (job.request.behavior === 'club') ui.session.append(node('p', 'session-note', 'Club · células reconocibles y evolución de capas. Horizonte aproximado de 64 compases, sin cambios obligatorios.'));
+  const requestBox = node('details', 'session-request-details');
+  requestBox.open = requestExpansionByJob.get(job.id) === true;
+  requestBox.addEventListener('toggle', () => {
+    if (requestBox.isConnected) requestExpansionByJob.set(job.id, requestBox.open);
+  });
+  requestBox.append(node('summary', '', 'Solicitud enviada · ajustes guardados'));
+  requestBox.append(node('p', 'session-note', 'Estos son los parámetros enviados, no una medición de lo que finalmente compuso la IA. El prompt, la duración, el tempo y la semilla figuran arriba.'));
+  const requestList = node('dl', 'session-request-list');
+  for (const [label, value] of requestDetails(job.request))
+    requestList.append(node('dt', '', label), node('dd', '', value));
+  requestBox.append(requestList);
+  ui.session.append(requestBox);
   if (job.request.first_pass_audition && !articulation) ui.session.append(node('p', 'session-note', 'Primera pasada IA: sin revisión global. Solo se revisan huecos armónicos medidos si contradicen el plan.'));
   if (job.request.review_from_job && !articulation) {
     const pair = node('p', 'session-note');
@@ -428,8 +478,20 @@ function renderSession(job) {
     stats.append(grid); ui.session.append(stats);
     if (t.pricedCalls) ui.session.append(node('p', 'session-note', 'Costo orientativo; puede excluir llamadas sin uso reportado.'));
   }
+  if (sameJob) sessionDialog.scrollTop = scrollTop;
 }
+let historyRenderKey = null;
 function renderHistory() {
+  const renderKey = JSON.stringify([historyCategory, selectedId, jobs.map(job => [
+    job.id, job.origin, job.state, job.request.prompt, job.request.created_at,
+    job.request.duration_seconds, job.manifest?.title, job.manifest?.tracks?.length,
+    job.manifest?.articulationReview, job.manifest?.review_audition,
+    job.manifest?.first_pass_audition, job.checkpoint?.parts,
+  ])]);
+  if (historyRenderKey === renderKey) return;
+  historyRenderKey = renderKey;
+  const scrollTop = ui.jobs.scrollTop;
+  const panelScrollTop = ui.history.scrollTop;
   ui.jobs.replaceChildren();
   const personal = jobs.filter(job => job.origin !== 'auto');
   const auto = jobs.filter(job => job.origin === 'auto');
@@ -455,6 +517,8 @@ function renderHistory() {
     button.addEventListener('click', () => { selectedId = job.id; loadedKey = null; previewDiagnostic = false; ui.history.hidden = true; showSelected(); renderHistory(); });
     ui.jobs.append(button);
   }
+  ui.jobs.scrollTop = scrollTop;
+  ui.history.scrollTop = panelScrollTop;
 }
 async function readMidi(job, filename) {
   const response = await fetch(fileUrl(job, filename), { cache: 'no-store' });
@@ -593,6 +657,14 @@ async function refresh() {
   try {
     const [status, listing] = await Promise.all([api('/api/status'), api('/api/jobs')]);
     jobs = listing.jobs;
+    for (const control of [$('#club-layer-pace'), $('#club-variety')]) {
+      control.disabled = status.clubPreferencesSupported === false;
+      if (control.disabled) {
+        control.title = 'No disponible en el motor recuperado 8efb42a. Se conserva su dirección musical original.';
+        if (control.tagName === 'SELECT') control.value = 'auto';
+        else control.checked = false;
+      }
+    }
     const ready = status.workerReady && status.apiKeyConfigured;
     ui.health.className = `health ${ready ? '' : 'warn'}`;
     const profileLabel = status.musicalProfile === 'connected-discourse'

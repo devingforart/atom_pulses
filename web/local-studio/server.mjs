@@ -21,7 +21,7 @@ import { referencePrompt } from './reference-anchor.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
 const shared = path.resolve(here, '..', 'shared');
-const worker = process.env.PULSO_LOCAL_WORKER_PATH || path.join(root, 'build-cloud', 'Release', 'pulso_cloud_worker.exe');
+const worker = process.env.PULSO_LOCAL_WORKER_PATH || path.join(root, 'build', 'recovered-club-controls-build', 'Release', 'pulso_cloud_worker.exe');
 const port = Number(process.env.PULSO_LOCAL_PORT || 4177);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PULSO_LOCAL_PORT');
 mkdirSync(jobsRoot, { recursive: true });
@@ -183,6 +183,10 @@ function validate(input) {
   const policySourceId = input.resume_from_job || input.blueprint_from_job || input.review_from_job;
   const policySource = typeof policySourceId === 'string' ? readJson(path.join(jobDirectory(policySourceId) || dataRoot, 'job.json')) : null;
   const allowChromatic = input.allow_chromatic ?? policySource?.allow_chromatic ?? false;
+  const clubPace = input.club_layer_pace ?? policySource?.club_layer_pace ?? 'auto';
+  const clubVariety = input.club_variety ?? policySource?.club_variety ?? false;
+  if (!['auto', '8-16', '16-32', '32-64'].includes(clubPace) || typeof clubVariety !== 'boolean')
+    throw new InputError('Configuración Club inválida.');
   const { firstPass: firstPassAudition,
     phraseArchitecture: phraseArchitectureExperiment } =
     defaultEditorialSettings(input, proofMode, renderMode);
@@ -227,7 +231,7 @@ function validate(input) {
   if (referenceFromJob !== null && (!experimentalProfile || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(referenceFromJob) ||
       resumeFromJob || blueprintFromJob || reviewFromJob || proofMode || renderMode !== 'ai_sovereign'))
     throw new InputError('La extensión MIDI es solo experimental y requiere una obra de referencia válida.');
-  return { allow_chromatic: allowChromatic, pitched_only: true, prompt, duration_seconds: duration, bpm, behavior, benchmark_case_id: benchmarkCaseId, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, first_pass_audition: firstPassAudition, phrase_architecture_experiment: phraseArchitectureExperiment, replan_phrases: replanPhrases, compare_editorial_modes: compareEditorialModes, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, review_from_job: reviewFromJob, reference_from_job: referenceFromJob, created_at: new Date().toISOString() };
+  return { club_layer_pace: clubPace, club_variety: clubVariety, allow_chromatic: allowChromatic, pitched_only: true, prompt, duration_seconds: duration, bpm, behavior, benchmark_case_id: benchmarkCaseId, seed, ai_sovereign: renderMode === 'ai_sovereign', editorial_profile: renderMode === 'ai_sovereign' ? 'ai-only-v2' : 'standard', proof_mode: proofMode, first_pass_audition: firstPassAudition, phrase_architecture_experiment: phraseArchitectureExperiment, replan_phrases: replanPhrases, compare_editorial_modes: compareEditorialModes, resume_from_job: resumeFromJob, blueprint_from_job: blueprintFromJob, review_from_job: reviewFromJob, reference_from_job: referenceFromJob, created_at: new Date().toISOString() };
 }
 
 function blueprintOnlyScoreFromJob(request) {
@@ -292,6 +296,8 @@ function resumeScoreFromJob(request, controlledReview = false) {
   const same = ['prompt', 'duration_seconds', 'bpm', 'behavior', 'seed', 'ai_sovereign']
     .every(field => previous?.[field] === request[field]) &&
     previous?.allow_chromatic === request.allow_chromatic &&
+    (previous?.club_layer_pace || 'auto') === (request.club_layer_pace || 'auto') &&
+    Boolean(previous?.club_variety) === Boolean(request.club_variety) &&
     previous?.pitched_only === request.pitched_only &&
     Boolean(previous?.phrase_architecture_experiment) === Boolean(request.phrase_architecture_experiment) &&
     (controlledReview ? previous?.first_pass_audition === true && request.first_pass_audition === false :
@@ -368,7 +374,9 @@ function childEnvironment(dir) {
   const automatic = (job?.automatic_recovery_attempt || 0) > 0;
   return { ...workerEnvironmentFor(process.env, dir, dataRoot, automatic, experimentalProfile,
     job?.first_pass_audition === true, typeof job?.review_from_job === 'string',
-    job?.phrase_architecture_experiment === true), PULSO_AI_PITCHED_ONLY: '1' };
+    job?.phrase_architecture_experiment === true), PULSO_AI_PITCHED_ONLY: '1',
+    PULSO_LOCAL_CLUB_PACE: job?.behavior === 'club' ? (job.club_layer_pace || 'auto') : 'auto',
+    PULSO_LOCAL_CLUB_VARIETY: job?.behavior === 'club' && job.club_variety === true ? '1' : '0' };
 }
 
 function startAutomaticRecovery(sourceId) {
@@ -446,6 +454,8 @@ const server = http.createServer(async (req, res) => {
   const pathname = url.pathname;
   try {
     if (req.method === 'GET' && pathname === '/api/status') return json(res, 200, { workerReady: existsSync(worker), apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY), activeJobId: active?.id || null, localOnly: true, pitchedOnly: true, editorialProfile: 'ai-only-v2', composerProfile: composerProfile.name, experimentalProfile,
+      engineRevision: '8efb42ab1ea158e93c26427a2035db1830e61859',
+      clubPreferencesSupported: true,
       musicalProfile: experimentalProfile && process.env.PULSO_AI_CLUB_NUCLEUS_V2 === '1' ? 'tonal-club-nucleus-v2' :
         experimentalProfile && process.env.PULSO_AI_MELODIC_DISCOURSE_EXPERIMENT === '1' ? 'connected-discourse' : 'shared-default' });
     if (req.method === 'GET' && pathname === '/api/jobs') return json(res, 200, { jobs: listJobs() });

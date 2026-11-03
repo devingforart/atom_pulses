@@ -6,6 +6,7 @@
 #include "plugin/AiMelodicDiscourse.h"
 #include "plugin/AiClubPolicy.h"
 #include "plugin/AiClubProductionPlan.h"
+#include "plugin/AiClubNucleus.h"
 #include "plugin/AiNoteAddress.h"
 #include "plugin/JointWindowRecovery.h"
 #include "core/SovereignScoreRenderer.h"
@@ -88,6 +89,79 @@ int main() {
                 "chromatic permission must not demand chromatic notes");
             setPolicy("PULSO_AI_ALLOW_CHROMATIC", originalPitch);
             setPolicy("PULSO_AI_PITCHED_ONLY", originalCast);
+        }
+        {
+            SongPlan nucleusPlan;
+            nucleusPlan.rootPitchClass = 0;
+            nucleusPlan.scale = ScaleKind::Major;
+            InstrumentAssignment sequence;
+            sequence.id = "sequence_response";
+            sequence.minimumPitch = 64;
+            sequence.maximumPitch = 82;
+            InstrumentAssignment bed;
+            bed.id = "bed";
+            bed.minimumPitch = 48;
+            bed.maximumPitch = 72;
+            nucleusPlan.instruments = {sequence, bed};
+            nucleusPlan.chordPalette = {HarmonicChord{}};
+            const juce::String invalidNucleus = R"json({"tonal_nucleus":{
+              "reference_chord_id":"tonic","cycle_beats":4,
+              "meter_carrier_id":"sequence_response","carrier_subdivision_beats":0.5,
+              "audible_relationship":"the sequence answers the bed",
+              "lanes":[
+                {"instrument_id":"sequence_response","repeat_intent":"steady answer",
+                 "notes":[
+                  {"beat":0,"duration":0.25,"pitch":72,"velocity":58},
+                  {"beat":0.5,"duration":0.25,"pitch":74,"velocity":58},
+                  {"beat":1,"duration":0.25,"pitch":76,"velocity":58},
+                  {"beat":1.5,"duration":0.25,"pitch":84,"velocity":58},
+                  {"beat":2,"duration":0.25,"pitch":72,"velocity":58},
+                  {"beat":2.5,"duration":0.25,"pitch":74,"velocity":58},
+                  {"beat":3,"duration":0.25,"pitch":76,"velocity":58},
+                  {"beat":3.5,"duration":0.25,"pitch":79,"velocity":58}]},
+                {"instrument_id":"bed","repeat_intent":"hold the floor",
+                 "notes":[{"beat":0,"duration":4,"pitch":60,"velocity":48}]}
+              ]}})json";
+            juce::String nucleusError;
+            check(!club::nucleus::validate(juce::JSON::parse(invalidNucleus),
+                       nucleusPlan, nucleusError) &&
+                  club::nucleus::repairableLaneId(nucleusError, nucleusPlan) ==
+                      "sequence_response",
+                  "out-of-register AI nucleus must identify only the invalid lane");
+            const auto repairSchema = juce::JSON::parse(club::nucleus::laneNotesRepairSchema(
+                nucleusPlan, "sequence_response", 4));
+            const auto pitches = repairSchema.getProperty("properties", {})
+                .getProperty("notes", {}).getProperty("items", {})
+                .getProperty("properties", {}).getProperty("pitch", {})
+                .getProperty("enum", {});
+            check(pitches.getArray() != nullptr && pitches.getArray()->contains(72) &&
+                  !pitches.getArray()->contains(84),
+                  "focused repair schema must exclude pitches outside the owner's register");
+            const auto original = juce::JSON::parse(invalidNucleus);
+            const auto oldLanes = original.getProperty("tonal_nucleus", {})
+                .getProperty("lanes", {});
+            juce::String repaired;
+            const juce::String corrected = R"json({"notes":[
+              {"beat":0,"duration":0.25,"pitch":72,"velocity":58},
+              {"beat":0.5,"duration":0.25,"pitch":74,"velocity":58},
+              {"beat":1,"duration":0.25,"pitch":76,"velocity":58},
+              {"beat":1.5,"duration":0.25,"pitch":72,"velocity":58},
+              {"beat":2,"duration":0.25,"pitch":72,"velocity":58},
+              {"beat":2.5,"duration":0.25,"pitch":74,"velocity":58},
+              {"beat":3,"duration":0.25,"pitch":76,"velocity":58},
+              {"beat":3.5,"duration":0.25,"pitch":79,"velocity":58}]})json";
+            check(club::nucleus::replaceLaneNotes(invalidNucleus, "sequence_response",
+                      corrected, repaired) &&
+                  club::nucleus::validate(juce::JSON::parse(repaired), nucleusPlan,
+                      nucleusError),
+                  "a focused AI correction must pass the complete nucleus validator");
+            const auto newLanes = juce::JSON::parse(repaired)
+                .getProperty("tonal_nucleus", {}).getProperty("lanes", {});
+            check(juce::JSON::toString(oldLanes[1]) ==
+                  juce::JSON::toString(newLanes[1]),
+                  "focused repair must preserve all other AI-authored lanes exactly");
+            check(club::nucleus::repairableLaneId("unrelated plan failure", nucleusPlan).isEmpty(),
+                  "unrelated validation failures must not trigger a lane rewrite");
         }
         SongPlan orderPlan;
         const auto part = [](std::string id, VoiceId voice, std::string function = {}) {
@@ -236,6 +310,42 @@ int main() {
         auto productionJson = juce::JSON::toString(clubProduction);
         check(AiPhraseArchitecture::validate(productionJson, clubPlan, phraseError),
               "Club must accept an exact-cast production plan without a required melodic speaker");
+        {
+            auto duplicateStatePlan = juce::JSON::parse(productionJson);
+            auto* duplicateLayers = duplicateStatePlan.getProperty("layers", {}).getArray();
+            auto* duplicatedStates = duplicateLayers->getReference(0)
+                .getProperty("states", {}).getArray();
+            duplicatedStates->getReference(1).getDynamicObject()->setProperty("section_index", 0);
+            const auto invalid = juce::JSON::toString(duplicateStatePlan);
+            const auto invalidOwner = juce::String::fromUTF8(clubPlan.instruments[0].id.c_str());
+            check(!club::production::validate(invalid, clubPlan, phraseError) &&
+                  club::production::repairableStateLayerId(phraseError, clubPlan) == invalidOwner,
+                  "duplicate Club section states must identify one repairable layer");
+            const auto narrow = juce::JSON::parse(club::production::layerStatesRepairSchema(
+                clubPlan, invalidOwner));
+            const auto statesSchema = narrow.getProperty("properties", {}).getProperty("states", {});
+            check(static_cast<int>(statesSchema.getProperty("minItems", 0)) ==
+                      static_cast<int>(clubPlan.sections.size()) &&
+                  static_cast<int>(statesSchema.getProperty("maxItems", 0)) ==
+                      static_cast<int>(clubPlan.sections.size()),
+                  "state repair must request the exact section count, not a new complete plan");
+            auto correctedStates = juce::var(new juce::DynamicObject());
+            correctedStates.getDynamicObject()->setProperty("states",
+                clubProduction.getProperty("layers", {})[0].getProperty("states", {}));
+            juce::String mergedStates;
+            check(club::production::replaceLayerStates(invalid, invalidOwner,
+                      juce::JSON::toString(correctedStates), mergedStates) &&
+                  club::production::validate(mergedStates, clubPlan, phraseError),
+                  "AI-authored state correction must validate the entire Club plan");
+            const auto originalLayers = clubProduction.getProperty("layers", {});
+            const auto repairedLayers = juce::JSON::parse(mergedStates).getProperty("layers", {});
+            check(juce::JSON::toString(originalLayers[1]) ==
+                      juce::JSON::toString(repairedLayers[1]),
+                  "state correction must preserve every other instrument layer");
+            check(club::production::repairableStateLayerId(
+                      "unrelated production plan error", clubPlan).isEmpty(),
+                  "unrelated plan errors must not rewrite section states");
+        }
         auto developedProduction = juce::JSON::parse(productionJson);
         auto arc = juce::JSON::parse(R"({"start_bar":0,"bars":16,"foreground_id":"",
           "subject":"a complete rising phrase","continuation":"retain contour and answer its descent",

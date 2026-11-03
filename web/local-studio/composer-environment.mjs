@@ -60,6 +60,6 @@ export function workerEnvironmentFor(source, directory, dataRoot, automatic = fa
       { PULSO_AI_NARRATIVE_FOCUS: source.PULSO_AI_NARRATIVE_FOCUS } : {}),
     ...(experimental && !firstPassAudition && source.PULSO_AI_DISABLE_RESPONSE_CACHE !== '1' ? { PULSO_AI_RESPONSE_CACHE_DIR: path.join(dataRoot, 'validated-response-cache') } : {}),
     ...(experimental && source.PULSO_AI_EXPERIMENT_EFFORT === 'low' ? { PULSO_AI_EXPERIMENT_EFFORT: 'low' } : {}),
-    ...(experimental && ['gpt-6.1-sol', 'gpt-6-luna'].includes(source.PULSO_AI_EXPERIMENT_MODEL) ? { PULSO_AI_EXPERIMENT_MODEL: source.PULSO_AI_EXPERIMENT_MODEL } : {}),
+    ...(experimental && ['gpt-5.6-sol', 'gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna'].includes(source.PULSO_AI_EXPERIMENT_MODEL) ? { PULSO_AI_EXPERIMENT_MODEL: source.PULSO_AI_EXPERIMENT_MODEL } : {}),
     ...(automatic ? { PULSO_AUTO_RECOVERY_MAX_SECONDS: String(AUTOMATIC_RECOVERY_MAX_SECONDS), PULSO_AUTO_RECOVERY_MAX_USD: String(AUTOMATIC_RECOVERY_MAX_USD) } : {}) };
 }

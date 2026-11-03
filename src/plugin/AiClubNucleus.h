@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AiChromaticPolicy.h"
+#include "AiClubDramaturgy.h"
 #include <set>
 #include <cmath>
 
@@ -76,7 +77,7 @@ inline juce::String editorial() {
         "reveal the groove, sustain it, earn a contrast or arrival, and complete its last phrase "
         "before the final harmonic release. Do not create silence at technical window boundaries. "
         "Every pitch, attack, duration, accent, repeat and rest is written by the AI. No code "
-        "supplies a preset groove, copies a cell into the score, fills a pad or corrects pitches. " + localClubPreferences();
+        "supplies a preset groove, copies a cell into the score, fills a pad or corrects pitches. " + localClubPreferences() + dramaturgy::brief();
 }
 
 inline void extendSchema(juce::var& root, const SongPlan* plan) {
@@ -158,7 +159,7 @@ inline juce::String planningBrief() {
         "hole at a chord/section boundary. phrase_flexible does not mean late or syncopated. "
         "Plan the tonal_nucleus and layer states together; neither should contradict the "
         "other. The later AI receives the exact sketch but must author the actual score "
-        "and its development itself. The host never tiles this sketch into MIDI.\n" + localClubPreferences();
+        "and its development itself. The host never tiles this sketch into MIDI.\n" + localClubPreferences() + dramaturgy::brief();
 }
 
 inline bool validate(const juce::var& root, const SongPlan& plan, juce::String& error) {
@@ -232,6 +233,68 @@ inline bool validate(const juce::var& root, const SongPlan& plan, juce::String& 
     return true;
 }
 
+// A musical-plan validation error identifies one AI-authored lane. Recovery
+// may rewrite only that lane's notes; no host-generated pitch or timing is
+// substituted, and the full plan is validated again after the edit.
+inline juce::String repairableLaneId(const juce::String& error, const SongPlan& plan) {
+    const juce::String invalidPrefix = "Tonal nucleus has invalid timing/register/scale in ";
+    const juce::String carrierPrefix = "Tonal nucleus carrier ";
+    juce::String id;
+    if (error.startsWith(invalidPrefix))
+        id = error.fromFirstOccurrenceOf(invalidPrefix, false, false)
+                  .upToFirstOccurrenceOf(":", false, false).trim();
+    else if (error.startsWith(carrierPrefix))
+        id = error.fromFirstOccurrenceOf(carrierPrefix, false, false)
+                  .upToFirstOccurrenceOf(" declares", false, false).trim();
+    if (id.isEmpty()) return {};
+    const auto known = std::any_of(plan.instruments.begin(), plan.instruments.end(),
+        [&](const auto& owner) { return id == juce::String::fromUTF8(owner.id.c_str()); });
+    return known ? id : juce::String{};
+}
+
+inline juce::String laneNotesRepairSchema(const SongPlan& plan, const juce::String& id,
+                                          double cycle) {
+    const auto owner = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+        [&](const auto& part) { return id == juce::String::fromUTF8(part.id.c_str()); });
+    if (owner == plan.instruments.end() || (cycle != 4 && cycle != 8 && cycle != 16)) return {};
+    auto schema = juce::JSON::parse(R"json({"type":"object","additionalProperties":false,
+      "required":["notes"],"properties":{"notes":{"type":"array","minItems":1,"maxItems":128,
+      "items":{"type":"object","additionalProperties":false,
+      "required":["beat","duration","pitch","velocity"],"properties":{
+        "beat":{"type":"number","minimum":0,"multipleOf":0.25},
+        "duration":{"type":"number","minimum":0.25,"multipleOf":0.25},
+        "pitch":{"type":"integer"},
+        "velocity":{"type":"integer","minimum":1,"maximum":127}
+      }}}}})json");
+    auto properties = schema.getProperty("properties", {}).getProperty("notes", {})
+        .getProperty("items", {}).getProperty("properties", {});
+    properties.getProperty("beat", {}).getDynamicObject()->setProperty("maximum", cycle - .25);
+    properties.getProperty("duration", {}).getDynamicObject()->setProperty("maximum", cycle);
+    juce::Array<juce::var> permitted;
+    for (int pitch = std::max(0, owner->minimumPitch);
+         pitch <= std::min(127, owner->maximumPitch); ++pitch)
+        if (AiChromaticPolicy::allows(plan, pitch)) permitted.add(pitch);
+    if (permitted.isEmpty()) return {};
+    properties.getProperty("pitch", {}).getDynamicObject()->setProperty("enum", permitted);
+    return juce::JSON::toString(schema);
+}
+
+inline bool replaceLaneNotes(const juce::String& draft, const juce::String& id,
+                             const juce::String& replacement, juce::String& merged) {
+    auto original = juce::JSON::parse(draft);
+    const auto repair = juce::JSON::parse(replacement);
+    auto* lanes = original.getProperty("tonal_nucleus", {}).getProperty("lanes", {}).getArray();
+    const auto* notes = repair.getProperty("notes", {}).getArray();
+    if (!lanes || !notes || notes->isEmpty() || notes->size() > 128) return false;
+    for (auto& lane : *lanes)
+        if (lane.getProperty("instrument_id", {}).toString() == id) {
+            lane.getDynamicObject()->setProperty("notes", repair.getProperty("notes", {}));
+            merged = juce::JSON::toString(original);
+            return true;
+        }
+    return false;
+}
+
 // Translate the immutable harmony into the SAME time coordinates as the note
 // response. This only describes context: it does not constrain/rewrite pitches.
 inline juce::String harmonyWindow(const SongPlan& plan, double begin, double end) {
@@ -277,7 +340,7 @@ inline juce::String writerBrief(const juce::var& root) {
         "At local beat zero, if a sustained harmonic role continues, continue its harmonic "
         "support immediately; do not invent a 0.25-beat collective delay. Musical offbeats "
         "remain welcome when part of the declared groove, not as a workaround for boundaries. "
-        "No code copies, transposes or expands this sketch. Write every score event explicitly.\n" + localClubPreferences();
+        "No code copies, transposes or expands this sketch. Write every score event explicitly.\n" + localClubPreferences() + dramaturgy::brief();
 }
 
 } // namespace pulso::plugin::club::nucleus

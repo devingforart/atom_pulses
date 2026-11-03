@@ -100,12 +100,12 @@ inline juce::String schema(const juce::String& direction = {}, const SongPlan* p
         "identity":{"type":"string"},"focus_owner_id":{"type":"string"},
         "shared_pulse":{"type":"string"},
         "groove_core_ids":{"type":"array","minItems":1,"maxItems":4,"items":{"type":"string"}},
-        "musical_arcs":{"type":"array","minItems":1,"maxItems":12,"items":{
+        "musical_arcs":{"type":"array","description":"Actual connected musical statements, not section summaries. Include the developed secondary thought when the ensemble needs one; an arc may give a secondary owner temporary foreground without changing the global protagonist. Preserve intentional hypnotic plateaus and solo requests.","minItems":1,"maxItems":12,"items":{
           "type":"object","additionalProperties":false,
           "required":["start_bar","bars","foreground_id","subject","continuation","arrival","support_response"],
           "properties":{"start_bar":{"type":"integer","minimum":0},"bars":{"type":"integer","minimum":1},
-            "foreground_id":{"type":"string"},"subject":{"type":"string"},
-            "continuation":{"type":"string"},"arrival":{"type":"string"},"support_response":{"type":"string"}}
+            "foreground_id":{"type":"string","description":"Existing cast owner of THIS statement; may be a secondary voice, not necessarily focus_owner_id."},"subject":{"type":"string","description":"Concrete recognizable opening contour, rhythm and register, not just an energy adjective."},
+            "continuation":{"type":"string","description":"How this owner's actual phrase develops its opening and relates to an earlier statement if returning."},"arrival":{"type":"string","description":"Perceptible melodic/harmonic destination and its metric placement within this arc."},"support_response":{"type":"string","description":"Identify the partner and its audible response or sustained support; explain how the established groove leaves this statement intelligible."}}
         }},
         "energy_trajectory":{"type":"array","minItems":1,"maxItems":20,"items":{
           "type":"object","additionalProperties":false,
@@ -649,6 +649,66 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
         }
     }
     return nucleus::validate(root, plan, error);
+}
+
+// A semantic state error can be repaired without asking the model to rewrite
+// the accepted form, harmony, nucleus or the other instrument layers.
+inline juce::String repairableStateLayerId(const juce::String& error,
+                                           const SongPlan& plan) {
+    const bool targeted =
+        error.startsWith("Club layer has invalid or duplicate section state: ") ||
+        error.startsWith("Club layer must declare every section state: ") ||
+        error.startsWith("Club layer has invalid section-local entry/release: ") ||
+        error.startsWith("Club layer activated outside its cast permission: ");
+    if (!targeted) return {};
+    const auto id = error.fromFirstOccurrenceOf(": ", false, false)
+        .upToFirstOccurrenceOf(" |", false, false).trim();
+    const auto known = std::any_of(plan.instruments.begin(), plan.instruments.end(),
+        [&](const auto& owner) { return id == juce::String::fromUTF8(owner.id.c_str()); });
+    return known ? id : juce::String{};
+}
+
+inline juce::String layerStatesRepairSchema(const SongPlan& plan, const juce::String& id) {
+    if (plan.sections.empty() || plan.sections.size() > 64) return {};
+    const auto full = juce::JSON::parse(schema({}, &plan));
+    const auto choices = full.getProperty("properties", {})
+        .getProperty("layers", {}).getProperty("items", {})
+        .getProperty("anyOf", {});
+    const auto* layers = choices.getArray();
+    if (!layers) return {};
+    for (const auto& layer : *layers) {
+        const auto ownerIds = layer.getProperty("properties", {})
+            .getProperty("instrument_id", {}).getProperty("enum", {});
+        if (ownerIds.size() != 1 || ownerIds[0].toString() != id) continue;
+        auto states = juce::JSON::parse(juce::JSON::toString(
+            layer.getProperty("properties", {}).getProperty("states", {})));
+        if (auto* object = states.getDynamicObject()) {
+            object->setProperty("minItems", static_cast<int>(plan.sections.size()));
+            object->setProperty("maxItems", static_cast<int>(plan.sections.size()));
+        } else return {};
+        auto narrow = juce::JSON::parse(R"json({"type":"object",
+          "additionalProperties":false,"required":["states"],
+          "properties":{"states":{"type":"array"}}})json");
+        narrow.getProperty("properties", {}).getDynamicObject()->setProperty("states", states);
+        return juce::JSON::toString(narrow);
+    }
+    return {};
+}
+
+inline bool replaceLayerStates(const juce::String& draft, const juce::String& id,
+                               const juce::String& replacement, juce::String& merged) {
+    auto original = juce::JSON::parse(draft);
+    const auto repair = juce::JSON::parse(replacement);
+    auto* layers = original.getProperty("layers", {}).getArray();
+    const auto* states = repair.getProperty("states", {}).getArray();
+    if (!layers || !states || states->isEmpty() || states->size() > 64) return false;
+    for (auto& layer : *layers)
+        if (layer.getProperty("instrument_id", {}).toString() == id) {
+            layer.getDynamicObject()->setProperty("states", repair.getProperty("states", {}));
+            merged = juce::JSON::toString(original);
+            return true;
+        }
+    return false;
 }
 
 inline juce::String windowBrief(const juce::String& json, std::size_t sectionIndex) {

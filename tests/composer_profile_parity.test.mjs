@@ -48,6 +48,14 @@ test('local production worker uses exactly the shared Cloud composer profile', (
   assert.equal(env.PULSO_AI_FIRST_PASS_AUDITION, undefined);
 });
 
+test('Sol medium trial is allowed only in the explicit local experiment', () => {
+  const source = { PULSO_AI_EXPERIMENT_MODEL: 'gpt-5.6-sol' };
+  const production = workerEnvironmentFor(source, '/jobs/production', '/data', false, false);
+  const experimental = workerEnvironmentFor(source, '/jobs/sol-trial', '/data', false, true);
+  assert.equal(production.PULSO_AI_EXPERIMENT_MODEL, undefined);
+  assert.equal(experimental.PULSO_AI_EXPERIMENT_MODEL, 'gpt-5.6-sol');
+});
+
 test('focused harmonic-phrase replay is available only to the explicit local experiment', () => {
   const source = { PULSO_AI_HARMONIC_PHRASE_ONLY: '1' };
   const normal = workerEnvironmentFor(source, '/jobs/normal', '/data', false, false);

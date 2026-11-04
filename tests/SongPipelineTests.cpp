@@ -8,6 +8,7 @@
 #include "plugin/AiClubProductionPlan.h"
 #include "plugin/AiClubNucleus.h"
 #include "plugin/AiNoteAddress.h"
+#include "plugin/AiScoreMemory.h"
 #include "plugin/JointWindowRecovery.h"
 #include "core/SovereignScoreRenderer.h"
 #include "core/NarrativeScore.h"
@@ -46,6 +47,55 @@ int main() {
     try {
         using namespace pulso;
         using namespace pulso::plugin;
+        {
+            SongPlan plan;
+            plan.instruments.resize(2);
+            plan.instruments[0].id = "lead";
+            plan.instruments[1].id = "pad";
+            plan.phraseArchitectureJson = R"({"musical_arcs":[{"foreground_id":"lead","start_bar":4,"bars":4}]})";
+            Pattern midi;
+            for (const auto beat : {0.0, 16.0, 17.0, 28.0, 40.0}) {
+                NoteEvent n; n.partId = 1; n.startBeat = beat; n.pitch = 64;
+                n.durationBeats = 1; midi.notes.push_back(n);
+            }
+            NoteEvent held; held.partId = 2; held.startBeat = 0;
+            held.durationBeats = 64; held.pitch = 60; midi.notes.push_back(held);
+            const auto original = midi.notes;
+            const auto evidence = scoreMemory::evidence(plan, midi, 32, 40, {0});
+            check(midi.notes == original, "memory changed accepted MIDI");
+            const auto voices = evidence.getProperty("voices", {});
+            check(voices.size() == 2, "memory omitted known owners");
+            check(static_cast<int>(voices[0].getProperty("history_notes", 0)) == 4,
+                "memory leaked future notes");
+            check(voices[0].getProperty("excerpts", {})[0].getProperty("source", {}).toString() ==
+                "planned_arc_opening_realized_notes", "memory lost arc antecedent");
+            check(evidence.getProperty("sounding_at_window_start_partId_beat_pitch_duration_velocity", {}).size() == 1,
+                "memory lost a long carried-in pad");
+            check(scoreMemory::evidence(plan, midi, 40, 32, {}).getProperty("invalid_window", false),
+                "memory accepted reversed interval");
+            const auto empty = scoreMemory::evidence(plan, Pattern{}, 0, 8, {0});
+            check(static_cast<int>(empty.getProperty("voices", {})[0].getProperty("history_notes", -1)) == 0,
+                "memory fabricated opening history");
+            plan.instruments.resize(24);
+            for (std::size_t i = 0; i < plan.instruments.size(); ++i) plan.instruments[i].id = "owner" + std::to_string(i);
+            midi.notes.clear();
+            for (int owner = 1; owner <= 24; ++owner) for (int tick = 0; tick < 128; ++tick) {
+                NoteEvent n; n.partId = static_cast<std::uint16_t>(owner);
+                n.startBeat = tick / 4.0; n.durationBeats = 1; midi.notes.push_back(n);
+            }
+            const auto dense = scoreMemory::evidence(plan, midi, 32, 40, {23});
+            check(dense.getProperty("voices", {})[0].getProperty("owner", {}).toString() == "owner23",
+                "memory did not prioritize requested owner");
+            check(static_cast<int>(dense.getProperty("omitted_owners", 0)) == 8,
+                "memory did not disclose owner cap");
+            int retained = 0, omitted = 0;
+            for (const auto& voice : *dense.getProperty("voices", {}).getArray())
+                for (const auto& excerpt : *voice.getProperty("excerpts", {}).getArray()) {
+                    retained += excerpt.getProperty("notes", {}).size();
+                    omitted += static_cast<int>(excerpt.getProperty("omitted_notes", 0));
+                }
+            check(retained <= 384 && omitted > 0, "memory exceeded budget or hid truncation");
+        }
         {
             const auto originalPitch = juce::SystemStats::getEnvironmentVariable("PULSO_AI_ALLOW_CHROMATIC", {});
             const auto originalCast = juce::SystemStats::getEnvironmentVariable("PULSO_AI_PITCHED_ONLY", {});
@@ -362,6 +412,67 @@ int main() {
                   club::production::windowBrief(juce::JSON::toString(developedProduction), 0)
                     .contains("NEXT ENERGY STATE"),
               "AI musical arguments and energy trajectory must survive technical windows without restarting");
+        auto route = juce::JSON::parse(R"([{"from_bar":0,"bars":4,"action":"statement","material":"rising thought","consequence":"open fifth"},
+          {"from_bar":4,"bars":8,"action":"continuation","material":"related descending answer","consequence":"prepare home"},
+          {"from_bar":12,"bars":4,"action":"breath","material":"pad carries the destination","consequence":"retain expectation"}])");
+        arc.getDynamicObject()->setProperty("phrase_route", route);
+        check(club::delivery::validate(arc, phraseError), "AI phrase route may include long deliberate breaths without note quotas");
+        auto phraseDeliveryPlan = clubPlan;
+        phraseDeliveryPlan.phraseArchitectureJson = juce::JSON::toString(developedProduction).toStdString();
+        Pattern deliveryNotes;
+        deliveryNotes.notes.push_back({0, 8, 60, 70, 1, VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
+        deliveryNotes.notes.push_back({48, 4, 62, 70, 1, VoiceId::HarmonicFoundation, 1, true, NoteOrigin::AiAuthored});
+        const auto deliveryContext = club::delivery::context(phraseDeliveryPlan, deliveryNotes, 16, 32, {0});
+        check(deliveryContext.contains("prior_attacks=1") && deliveryContext.contains("PAST_IMMUTABLE") &&
+                  deliveryContext.contains("WRITE_CURRENT_INTERSECTION") && deliveryContext.contains("FUTURE_DO_NOT_WRITE") &&
+                  !deliveryContext.contains("latest_release=52") && deliveryNotes.notes.size() == 2,
+              "delivery evidence distinguishes past/current/future without leaking future notes or mutating MIDI");
+        route.getArray()->getReference(1).getDynamicObject()->setProperty("from_bar", 5);
+        check(!club::delivery::validate(arc, phraseError), "overlapping or gapped phrase routes are invalid metadata");
+        arc.getDynamicObject()->removeProperty("phrase_route");
+        check(club::delivery::validate(arc, phraseError), "legacy plans do not require a phrase route");
+        auto reference = juce::JSON::parse(R"({"beats":8,"development":"answer the actual opening with a held arrival",
+          "notes":[{"beat":0,"duration":2,"pitch":60,"velocity":80}]})");
+        reference.getProperty("notes", {}).getArray()->getReference(0).getDynamicObject()->setProperty(
+            "pitch", clubPlan.instruments[0].minimumPitch);
+        arc.getDynamicObject()->setProperty("phrase_reference", reference);
+        check(club::production::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError) &&
+                  club::production::developmentBrief(juce::JSON::toString(developedProduction), 0, 32, 4)
+                    .contains("answer the actual opening"),
+              "AI phrase references must reach writing context without being rendered");
+        reference.getProperty("notes", {}).getArray()->getReference(0).getDynamicObject()->setProperty("duration", 9);
+        check(!club::production::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError),
+              "phrase references cannot release beyond their declared reference span");
+        reference.getProperty("notes", {}).getArray()->getReference(0).getDynamicObject()->setProperty("duration", 2);
+        reference.getProperty("notes", {}).getArray()->getReference(0).getDynamicObject()->setProperty("pitch", 128);
+        check(!club::production::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError),
+              "phrase references cannot exceed their owner's register");
+        arc.getDynamicObject()->removeProperty("phrase_reference");
+        auto responseReference = juce::JSON::parse(R"({"beats":32,"development":"a complete answering sentence",
+          "notes":[{"beat":24,"duration":8,"pitch":60,"velocity":80}]})");
+        responseReference.getProperty("notes", {}).getArray()->getReference(0).getDynamicObject()->setProperty(
+            "pitch", clubPlan.instruments[0].minimumPitch);
+        arc.getDynamicObject()->setProperty("response_reference", responseReference);
+        check(club::production::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError) &&
+                  club::production::developmentBrief(juce::JSON::toString(developedProduction), 0, 32, 4)
+                    .contains("a complete answering sentence"),
+              "long answering references reach writing without being stretched or rendered");
+        responseReference.getProperty("notes", {}).getArray()->getReference(0).getDynamicObject()->setProperty("duration", 9);
+        check(!club::production::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError),
+              "answering references obey the same timing safety as opening references");
+        arc.getDynamicObject()->setProperty("response_reference", juce::var());
+        check(club::production::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError),
+              "a deliberately open arc can omit an answering sentence");
+        auto sourceRoute = juce::JSON::parse(R"([{"from_bar":0,"bars":16,"action":"continuation",
+          "material":"answer","consequence":"land","material_source":"response_reference"}])");
+        arc.getDynamicObject()->setProperty("phrase_route", sourceRoute);
+        check(!club::delivery::validate(arc, phraseError), "a route cannot select a null answering reference");
+        sourceRoute.getArray()->getReference(0).getDynamicObject()->setProperty("material_source", "free_continuation");
+        check(club::delivery::validate(arc, phraseError), "free AI continuations remain possible without a preset phrase");
+        arc.getDynamicObject()->removeProperty("phrase_route");
+        arc.getDynamicObject()->removeProperty("response_reference");
+        check(club::production::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError),
+              "historical Club plans without concrete phrase references remain valid");
         developedProduction.getDynamicObject()->getProperty("musical_arcs").getArray()->getReference(0)
             .getDynamicObject()->setProperty("foreground_id", "nonexistent");
         check(!AiPhraseArchitecture::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError),

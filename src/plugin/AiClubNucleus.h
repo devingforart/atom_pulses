@@ -324,8 +324,14 @@ inline juce::String writerBrief(const juce::var& root) {
     return "\nYOUR CONCRETE TONAL NUCLEUS (reference-cycle-local beats, NOT song time): " +
         juce::JSON::toString(root.getProperty("tonal_nucleus", {}), true) +
         "\nTreat this AI-composed groove as the identity to realize, not an optional adjective. "
-        "At full-body states retain the recurring attacks, accents and interlock while YOU "
-        "adapt actual pitches/voicings to the current harmonic map. During intro/withdrawal "
+        "At full-body states retain the meter carrier's subdivision and the core's permitted "
+        "attack grammar, but do not freeze every lane's accents, gates and voicing for the song. "
+        "Develop the harmonic pulse's top voice, spacing and phrase-end articulation where "
+        "the planned melodic argument changes its meaning; retain recognizable identity "
+        "between those events. A non-carrier core may omit a permitted attack to articulate "
+        "an answer; it may not invent an off-grid or unplanned core attack. Phrase-flexible "
+        "owners may form connected sentences rather than obey the short reference cycle. "
+        "YOU adapt actual pitches/voicings to the current harmonic map. During intro/withdrawal "
         "reveal or remove the planned lanes without replacing their surviving rhythm. "
         "Maintain the continuous sequence through complete cycles; do not randomly omit "
         "half its notes to make space. Separate the hook using register and melodic rests. "

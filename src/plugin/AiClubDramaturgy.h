@@ -1,5 +1,7 @@
 #pragma once
 
+#include "AiClubTemporalRelations.h"
+
 namespace pulso::plugin::club::dramaturgy {
 
 // Compositional guidance only: no MIDI mutation, density quotas or extra API calls.
@@ -90,7 +92,7 @@ inline juce::String brief() {
         "Judge the passage with its accompaniment mentally removed: the secondary idea "
         "should still have a beginning, continuation and arrival, not only a label. "
         "Then hear it with the accompaniment and resolve competing accents, repeated-pitch "
-        "collisions and unintended held-note clashes in your own written score.\n";
+        "collisions and unintended held-note clashes in your own written score.\n" + temporal::brief();
 }
 
 } // namespace pulso::plugin::club::dramaturgy

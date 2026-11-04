@@ -6,6 +6,7 @@
 #include "AiClubPolicy.h"
 #include "AiClubProductionPlan.h"
 #include "AiNoteAddress.h"
+#include "AiScoreMemory.h"
 
 #include "core/Scale.h"
 #include "core/CoherentProofGate.h"
@@ -3332,6 +3333,23 @@ juce::String jointWindowPrompt(const juce::String& direction, const SongPlan& pl
             "silence or a final cadence from a technical window boundary.\n";
         out << club::production::windowBrief(productionJson, sectionIndex);
         out << club::production::developmentBrief(productionJson, start, end, plan.beatsPerBar);
+        out << "MELODIC MATERIAL: An arc's phrase_reference and response_reference are concrete AI-composed sentences, "
+            "not a loop, not absolute song time and not a complete transcription of that arc. "
+            "The route's material_source identifies which sentence is being developed now. "
+            "Preserve its recognizable rhythmic groups at their natural tempo; do not "
+            "spread a handful of reference notes across an entire long span. Realize the "
+            "answer as actual connected music, not a single sustained target in place of "
+            "its argument. Do not compensate for an unfinished melody with extra arpeggios. "
+            "Use its pitch-and-rhythm identity to author a connected sentence, continuation "
+            "and destination across the arc. Compare with accepted notes before continuing. "
+            "Do not scatter single reference notes across long silences and call that a phrase. "
+            "Do not tile the sketch, fit a fresh miniature melody to every window, or reduce "
+            "a secondary statement to cue notes. Preserve sustained expressive notes, chosen "
+            "breaths and lucid metric groups. A later return should recall something heard "
+            "and make its changed consequence audible. The support's planned response must "
+            "be audible in actual voicing/articulation, not only in track occupancy. "
+            "A deliberate hypnotic plateau can stay unchanged; development is not perpetual "
+            "novelty or maximum density. Every final note remains authored here by the AI.\n";
         out << "ARRANGEMENT LIMITS: entry_beat/release_beat in each state are SECTION-LOCAL, "
             "not window-local. Finish this layer's gesture before its release; leave its "
             "planned absence empty. Do not manufacture a final note by clipping a continuing "
@@ -3360,7 +3378,8 @@ juce::String jointWindowPrompt(const juce::String& direction, const SongPlan& pl
                 << juce::String::fromUTF8(part.role.c_str()) << " | MIDI "
                 << part.minimumPitch << ".." << part.maximumPitch << "\n";
         }
-        out << AiMelodicDiscourse::actualVoiceMemory(plan, accepted, start);
+        out << scoreMemory::brief(plan, accepted, start, end, owners);
+        out << club::delivery::context(plan, accepted, start, end, owners);
         out << "ACCEPTED NOTES SOUNDING IN THIS WINDOW (immutable, absolute beat/pitch/duration):\n";
         for (const auto& note : accepted.notes) if (note.startBeat < end && note.endBeat() > start)
             out << "owner=" << note.partId << " " << note.startBeat << "/" << note.pitch << "/" << note.durationBeats << "\n";
@@ -12085,8 +12104,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     // lanes to the critic instead of limiting it to the first
                     // call-response label in the cast.
                     for (std::size_t index = 0; index < result.instruments.size(); ++index)
-                        if (isVoiceInFamily(result.instruments[index].sourceVoice,
-                                VoiceFamily::Melodic) &&
+                        if ((behavior == CompositionBehavior::Club ||
+                             isVoiceInFamily(result.instruments[index].sourceVoice,
+                                VoiceFamily::Melodic)) &&
                             std::find(narrativeOwners.begin(), narrativeOwners.end(),
                                 index) == narrativeOwners.end())
                             narrativeOwners.push_back(index);
@@ -12209,11 +12229,38 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         result.narrativeSpine.harmonicDebt.c_str()) << "\n";
                 if (narrativeFocus.isNotEmpty())
                     criticPrompt << "INDEPENDENT REVIEW FOCUS: " << narrativeFocus << "\n";
+                if (behavior == CompositionBehavior::Club) {
+                    criticPrompt << "CLUB PLAN-TO-SCORE REVIEW: Diagnose realized commitments, "
+                        "not novelty. A repeated bass or chord pattern is not a defect by itself. "
+                        "Compare the actual notes against the planned secondary phrase, support "
+                        "response and harmonic destination. Select zero to three existing owner "
+                        "windows only for demonstrated discrepancies. Cite owner, absolute beat, "
+                        "pitch/duration and the exact planned event; distinguish intentional "
+                        "tension with resolution from an unrelated sustained chord. A scale-valid "
+                        "voicing does not necessarily realize the chord at that time. Preserve "
+                        "successful phrases, identity and timing; request the smallest musical "
+                        "correction, not a new melody or mandatory extra notes. Do not target "
+                        "a window merely because it is sparse or unchanged. Carried-in notes "
+                        "have negative local onset: target their original onset window if they "
+                        "need changing, never duplicate or retrigger them here.\nCHORD PALETTE:\n";
+                    for (const auto& chord : result.chordPalette) {
+                        criticPrompt << juce::String(chord.id) << " pitch_classes=";
+                        for (const auto pitchClass : chord.pitchClasses)
+                            criticPrompt << pitchClass << ",";
+                        criticPrompt << "\n";
+                    }
+                    const auto clubPlan = juce::JSON::parse(
+                        juce::String::fromUTF8(result.phraseArchitectureJson.c_str()));
+                    criticPrompt << "PLANNED MUSICAL ARCS (absolute zero-based bars): "
+                        << juce::JSON::toString(clubPlan.getProperty("musical_arcs", {}), true)
+                        << "\n";
+                }
                 for (std::size_t sectionIndex = 0;
                      sectionIndex < result.sections.size(); ++sectionIndex) {
                     const auto& section = result.sections[sectionIndex];
                     criticPrompt << "SCENE " << static_cast<int>(sectionIndex)
                         << " " << juce::String::fromUTF8(section.name.c_str())
+                        << " absolute_start_bar=" << section.startBar
                         << " bars=" << section.bars << " form="
                         << juce::String::fromUTF8(section.function.c_str())
                         << " motif_treatment=" <<
@@ -12274,7 +12321,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             juce::String excerpt;
                             for (const auto& note : currentMidi.notes) {
                                 if (note.partId != narrativeOwner + 1 ||
-                                    note.startBeat < start - .001 ||
+                                    (behavior == CompositionBehavior::Club
+                                        ? note.endBeat() <= start + .001
+                                        : note.startBeat < start - .001) ||
                                     note.startBeat >= end - .001) continue;
                                 excerpt << juce::String(note.startBeat - start, 2)
                                     << ":" << note.pitch << "/"
@@ -12561,7 +12610,24 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         auto rewritePrompt = jointWindowPrompt(direction, result,
                             immutable, {editOwner}, static_cast<std::size_t>(sectionIndex),
                             firstBar, bars, {}, false);
-                        if (globalNarrativeExperiment)
+                        if (behavior == CompositionBehavior::Club)
+                            rewritePrompt << scoreMemory::brief(result, currentMidi,
+                                start, end, {editOwner});
+                        if (globalNarrativeExperiment && behavior == CompositionBehavior::Club)
+                            rewritePrompt << "\nFOCUSED CLUB REALIZATION REPAIR: " << editorialArc
+                                << "\nAI-selected discrepancies: " << globalTargetMap
+                                << "\nEarlier accepted corrections: " << acceptedNarrativeDecisions
+                                << "\nCorrect only the selected owner's demonstrated mismatch "
+                                   "in this window. Preserve useful contour, rhythmic identity "
+                                   "and all unaffected notes in the selected phrase; the rest "
+                                   "of the score is immutable. For a wrong harmonic voicing "
+                                   "prefer the needed pitch/voice-leading correction, retaining "
+                                   "its intended onsets and durations. For a missing planned "
+                                   "answer realize that answer without replacing the protagonist "
+                                   "or manufacturing fills. Respect the actual chord map and "
+                                   "other held notes, not scale membership alone. A complete "
+                                   "unchanged phrase is valid if no safe improvement is possible.\n";
+                        else if (globalNarrativeExperiment)
                             rewritePrompt << "\nGLOBAL MIDI-GROUNDED NARRATIVE ARC: "
                                 << editorialArc << "\nPLANNED CONNECTED SCENE DECISIONS: "
                                 << globalTargetMap <<
@@ -12840,6 +12906,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                 "->" + juce::String(after.narrative.causalNarrative, 3) +
                                 " review=" + juce::String(
                                     SelectiveRepair::reviewFinalScore(candidate, revisedMidi).ready ? 1 : 0));
+                            if (behavior == CompositionBehavior::Club && unchangedElsewhere && !genuinelyRevised) {
+                                OperationalJournal::write("INFO", "MELODIC_EDITORIAL",
+                                    "AI kept the original Club phrase; no forced novelty retry");
+                                break;
+                            }
                             if (melodicAttempt == 0 && unchangedElsewhere) {
                                 rewritePrompt << "\nYOUR FIRST ALTERNATIVE WAS NOT ACCEPTED. ";
                                 if (!genuinelyRevised)

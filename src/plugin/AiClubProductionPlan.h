@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AiClubPolicy.h"
+#include "AiClubPhraseDelivery.h"
 #include <algorithm>
 #include <set>
 
@@ -234,6 +235,35 @@ inline juce::String schema(const juce::String& direction = {}, const SongPlan* p
         properties.getProperty("energy_trajectory", {}).getDynamicObject()->setProperty(
             "items", trajectoryItems);
     }
+    if (nucleus::enabled()) {
+        // Melodic arguments receive concrete AI-authored material, just like the
+        // groove nucleus. This is reference evidence, never rendered or tiled.
+        auto arc = result.getProperty("properties", {}).getProperty("musical_arcs", {}).getProperty("items", {});
+        arc.getProperty("required", {}).getArray()->add("phrase_reference");
+        delivery::extend(arc);
+        arc.getProperty("properties", {}).getDynamicObject()->setProperty("phrase_reference",
+            juce::JSON::parse(R"json({"type":"object","additionalProperties":false,
+              "required":["beats","notes","development"],"properties":{
+                "beats":{"type":"number","enum":[4,8,16,32]},
+                "notes":{"type":"array","minItems":1,"maxItems":48,"items":{
+                  "type":"object","additionalProperties":false,
+                  "required":["beat","duration","pitch","velocity"],"properties":{
+                    "beat":{"type":"number","minimum":0,"maximum":31.75,"multipleOf":0.25},
+                    "duration":{"type":"number","minimum":0.25,"maximum":32,"multipleOf":0.25},
+                    "pitch":{"type":"integer","minimum":0,"maximum":127},
+                    "velocity":{"type":"integer","minimum":1,"maximum":127}}}},
+                "development":{"type":"string","description":"Explain the audible relationship to prior actual phrase references and how this statement develops beyond its opening, with a destination. Not a command to tile the reference."}
+              }})json"));
+        arc.getProperty("required", {}).getArray()->add("response_reference");
+        auto response = juce::JSON::parse(juce::JSON::toString(
+            arc.getProperty("properties", {}).getProperty("phrase_reference", {})));
+        response.getDynamicObject()->setProperty("description",
+            "A complete related answering/continuing phrase, with actual notes. Null only when an explicitly minimal, open or sustained arc needs no second phrase; explain that choice in the route.");
+        juce::var responseChoice(new juce::DynamicObject());
+        responseChoice.getDynamicObject()->setProperty("anyOf", juce::Array<juce::var>{
+            response, juce::JSON::parse(R"({"type":"null"})")});
+        arc.getProperty("properties", {}).getDynamicObject()->setProperty("response_reference", responseChoice);
+    }
     nucleus::extendSchema(result, plan);
     return juce::JSON::toString(result, true);
 }
@@ -378,7 +408,7 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
     if (nucleus::enabled()) {
         // Use a dedicated contract rather than stacking another instruction on
         // the legacy dialogue/omission brief. Shared schema semantics stay exact.
-        out = brief() + nucleus::planningBrief();
+        out = brief() + nucleus::planningBrief() + delivery::planning();
         out << "\nOUTPUT CONTRACT: one layer per cast owner, one state per section for each layer, "
             "one energy_trajectory entry per section. Use full_arrangement for a song and "
             "continuous_section for a requested loop. Keep sustained pads and a recurrent "
@@ -397,6 +427,26 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
             "names what remains from the nucleus and what changes over the long phrase. "
             "musical_arcs use absolute zero-based bars within the work; these describe "
             "long developments, not an obligation to tell a new story every window. "
+            "For each arc compose phrase_reference: a playable 4/8/16/32-beat melodic sentence "
+            "owned by foreground_id, with actual pitches, expressive durations, an opening "
+            "and a related continuation/landing. Beats are REFERENCE-LOCAL; every release "
+            "must fit its beats length and pitches its owner's register and tonal policy. "
+            "Its chosen length is its natural speaking time, not a few pitches to stretch "
+            "over the entire arc. Compose response_reference as a second concrete sentence "
+            "that continues or answers the opening: retain a recognizable clue while "
+            "changing its consequence, contour, grouping or destination. Develop actual "
+            "notes instead of adding a sequencer to conceal an undeveloped foreground. "
+            "Use null only for an intentionally minimal/open/sustained arc that does not "
+            "need a second phrase, and explain why in the route. Both references belong "
+            "to foreground_id, are reference-local, and must fit its register and the "
+            "intended harmony. A different owner's answer gets its own arc. Use MIDI "
+            "pitch numbers consistently (60=C4), not contradictory octave labels in prose. "
+            "It is not a quota, a full-arc transcription or a loop to repeat. On returning "
+            "arcs refer to the earlier actual notes and develop their consequence. Secondary "
+            "owners deserve equally concrete thoughts, not tiny decorative placeholders. "
+            "Choose the few arcs needed for a compelling piece; do not multiply sketches. "
+            "In state evolution, specify how chord voicing/top-line, articulation or phrase "
+            "ending responds to these thoughts while the meter carrier retains the pulse. "
             "If groove_interlock is requested: bass_owner_id and chord_owner_id must be "
             "distinct core owners; foreground_owner_id must be a third actual owner equal "
             "to focus_owner_id. shared_landings are absolute beat positions permitted "
@@ -618,6 +668,7 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
         const auto* arcs = root.getProperty("musical_arcs", {}).getArray();
         if (!arcs || arcs->isEmpty() || arcs->size() > 12) { error = "Club musical arcs are missing"; return false; }
         for (const auto& arc : *arcs) {
+            if (!delivery::validate(arc, error)) return false;
             double start{}, bars{};
             if (!grid(arc.getProperty("start_bar", {}), start) || start != std::floor(start) || start < 0 ||
                 !grid(arc.getProperty("bars", {}), bars) || bars != std::floor(bars) || bars < 1 ||
@@ -629,6 +680,29 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
                 if (arc.getProperty(key, {}).toString().trim().isEmpty()) {
                     error = "Club musical arc omits its " + juce::String(key); return false;
                 }
+            for (const auto* referenceKey : {"phrase_reference", "response_reference"}) {
+                if (!arc.hasProperty(referenceKey) || arc.getProperty(referenceKey, {}).isVoid()) continue;
+                const auto reference = arc.getProperty(referenceKey, {});
+                const auto length = static_cast<double>(reference.getProperty("beats", 0));
+                const auto* notes = reference.getProperty("notes", {}).getArray();
+                const auto ownerId = arc.getProperty("foreground_id", {}).toString().toStdString();
+                const auto owner = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+                    [&](const auto& instrument) { return instrument.id == ownerId; });
+                if ((length != 4 && length != 8 && length != 16 && length != 32) || !notes || notes->isEmpty() || notes->size() > 48 ||
+                    owner == plan.instruments.end() || reference.getProperty("development", {}).toString().trim().isEmpty()) {
+                    error = "Club phrase reference has invalid length, owner or development"; return false;
+                }
+                for (const auto& note : *notes) {
+                    double beat{}, duration{}, pitch{}, velocity{};
+                    if (!grid(note.getProperty("beat", {}), beat) || beat < 0 ||
+                        !grid(note.getProperty("duration", {}), duration) || duration <= 0 || beat + duration > length + .001 ||
+                        !grid(note.getProperty("pitch", {}), pitch) || pitch != std::floor(pitch) ||
+                        pitch < owner->minimumPitch || pitch > owner->maximumPitch ||
+                        !grid(note.getProperty("velocity", {}), velocity) || velocity != std::floor(velocity) || velocity < 1 || velocity > 127) {
+                        error = "Club phrase reference has invalid timing or register: " + juce::String(ownerId); return false;
+                    }
+                }
+            }
         }
     }
     if (root.hasProperty("groove_core_ids")) {
@@ -812,6 +886,7 @@ inline juce::String developmentBrief(const juce::String& json, double begin, dou
             out << "\nCONTINUING MUSICAL ARGUMENT (absolute beat " << start << ".." << stop << "): "
                 << juce::JSON::toString(arc, true) << "\n";
     }
+    if (nucleus::enabled()) out << temporal::context(root, begin, end, beatsPerBar);
     return out;
 }
 

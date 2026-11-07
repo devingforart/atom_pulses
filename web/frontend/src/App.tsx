@@ -11,6 +11,7 @@ import { Product } from './pages/Product'
 import { Activate } from './pages/Activate'
 import { ForgotPassword, ResetPassword, VerifyEmail } from './pages/Recovery'
 import { Cloud, SharedCloud } from './pages/Cloud'
+import { DemoFeedback } from './pages/DemoFeedback'
 
 export function App() {
   useLocale()
@@ -21,6 +22,7 @@ export function App() {
     <Route path="verify-email" element={<VerifyEmail />} /><Route path="activate" element={<Activate />} />
     <Route path="account" element={<Account />} /><Route path="privacy" element={<Privacy />} /><Route path="terms" element={<Terms />} />
     <Route path="cloud" element={<Cloud />} />
+    <Route path="admin/demo-feedback" element={<DemoFeedback />} />
     <Route path="*" element={<section className="page-hero"><h1>404</h1><p>{t("Esta página no existe.")}</p></section>} />
   </Route></Routes></AuthProvider></BrowserRouter>
 }

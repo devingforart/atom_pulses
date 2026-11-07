@@ -28,10 +28,10 @@ fn now() -> i64 {
 }
 
 #[derive(Deserialize)]
-struct StripeCreated {
-    id: String,
+pub(crate) struct StripeCreated {
+    pub(crate) id: String,
     #[serde(default)]
-    url: Option<String>,
+    pub(crate) url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -57,7 +57,7 @@ struct StripePromotionCode {
     active: bool,
 }
 
-async fn stripe_post(
+pub(crate) async fn stripe_post(
     state: &AppState,
     path: &str,
     fields: Vec<(&str, String)>,
@@ -102,7 +102,7 @@ async fn stripe_price(state: &AppState, price_id: &str) -> ApiResult<StripePrice
     Ok(response.json().await?)
 }
 
-async fn stripe_get_value(
+pub(crate) async fn stripe_get_value(
     state: &AppState,
     path: &str,
     query: &[(&str, &str)],
@@ -188,7 +188,10 @@ pub async fn plans(State(state): State<AppState>) -> ApiResult<Json<Value>> {
         None => None,
     };
     Ok(Json(
-        json!({ "studio": public(studio), "monthly": monthly, "annual": annual }),
+        json!({ "studio": public(studio), "monthly": monthly, "annual": annual,
+            "creditPlan": {"amount": crate::credits::BASIC_MONTHLY_USD_CENTS,
+                "currency": "USD", "monthlyCredits": crate::credits::BASIC_MONTHLY_CREDITS,
+                "perWork": crate::credits::cost(), "enabled": crate::credits::enabled()} }),
     ))
 }
 
@@ -229,6 +232,7 @@ pub async fn checkout(
     headers: HeaderMap,
     Json(input): Json<CheckoutInput>,
 ) -> ApiResult<Json<Value>> {
+    if state.config.demo_lab { return Err(ApiError::public(StatusCode::FORBIDDEN,"Pagos desactivados en el laboratorio local.")); }
     let user = require_user(&state, &headers).await?;
     if !user.email_verified {
         return Err(ApiError::public(
@@ -281,6 +285,17 @@ pub async fn checkout(
             ));
         }
     };
+    if input.plan == "cloud_annual" && crate::credits::enabled() {
+        return Err(ApiError::public(StatusCode::SERVICE_UNAVAILABLE,
+            "El plan anual de Cloud no incluye créditos todavía. Elige el plan mensual."));
+    }
+    if input.plan == "cloud_monthly" {
+        let actual = stripe_price(&state, &price).await?;
+        if actual.currency != "usd" || actual.unit_amount != Some(crate::credits::BASIC_MONTHLY_USD_CENTS)
+            || actual.recurring.as_ref().map(|recurring| recurring.interval.as_str()) != Some("month") {
+            return Err(ApiError::internal("Configured Cloud monthly Stripe price does not match the basic plan"));
+        }
+    }
     let customer = ensure_customer(
         &state,
         user.id,
@@ -398,22 +413,26 @@ pub async fn redeem_promo(
     let timestamp = now();
     let updates_until = timestamp + state.config.promotion_updates_days * 24 * 60 * 60;
     let campaign = "southatoms";
+    let mut tx = state.db.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1::text))")
+        .bind(user.id.to_string()).execute(&mut *tx).await?;
     let result = sqlx::query(
         "INSERT INTO promotion_redemptions(user_id,campaign,redeemed_at) VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
     )
     .bind(user.id)
     .bind(campaign)
     .bind(timestamp)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await?;
 
     sqlx::query("INSERT INTO entitlements(user_id,product,status,updates_until,source,created_at,updated_at) VALUES($1,'studio','active',$2,'promotion:southatoms',$3,$3) ON CONFLICT(user_id) DO UPDATE SET status='active',updates_until=GREATEST(COALESCE(entitlements.updates_until,0),EXCLUDED.updates_until),source=CASE WHEN entitlements.source='stripe' THEN entitlements.source ELSE EXCLUDED.source END,updated_at=EXCLUDED.updated_at")
         .bind(user.id)
         .bind(updates_until)
         .bind(timestamp)
-        .execute(&state.db)
+        .execute(&mut *tx)
         .await?;
 
+    tx.commit().await?;
     tracing::info!(user_id = %user.id, campaign, new_redemption = result.rows_affected() == 1, "promotion entitlement granted");
     Ok(Json(json!({
         "granted": true,
@@ -684,6 +703,9 @@ pub async fn webhook(
     let event_id = text(&event, "/id")
         .ok_or_else(|| ApiError::public(StatusCode::BAD_REQUEST, "Evento sin identificador."))?;
     let event_type = text(&event, "/type").unwrap_or("unknown");
+    if matches!(event_type, "charge.refunded" | "charge.dispute.created") {
+        crate::credits::payment_reversed(&state, &event["data"]["object"]).await?;
+    }
     let already_processed: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM stripe_events WHERE event_id=$1)")
             .bind(event_id)
@@ -709,7 +731,9 @@ pub async fn webhook(
         "checkout.session.completed" | "checkout.session.async_payment_succeeded"
     ) {
         if let Some(session_id) = text(&event["data"]["object"], "/id") {
-            process_studio_session(&state, session_id).await?;
+            if !crate::credits::fulfill(&state, session_id).await? {
+                process_studio_session(&state, session_id).await?;
+            }
         }
     } else if matches!(
         event_type,
@@ -749,6 +773,9 @@ pub async fn webhook(
             event_type == "invoice.paid",
         )
         .await?;
+        if event_type == "invoice.paid" {
+            crate::credits::grant_paid_monthly_invoice(&state, &event["data"]["object"]).await?;
+        }
     }
     // Record the event only after its side effects succeed. Stripe can safely retry a
     // transient database failure; concurrent duplicates remain harmless because the

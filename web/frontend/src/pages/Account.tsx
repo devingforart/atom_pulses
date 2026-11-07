@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { api, Device, Release } from '../api'
 import { useAuth } from '../auth'
+import { CreditWallet } from '../components/CreditWallet'
 
 export function Account() {
   useLocale();
@@ -28,6 +29,7 @@ export function Account() {
       {entitled ? <a className={`button ${!release?.available ? 'disabled' : ''}`} aria-disabled={!release?.available} href={release?.available ? '/api/downloads/latest/windows' : undefined}>{t("Descargar instalador")}</a> : <a className="button" href="/pricing">{t("Obtener PULSO")}</a>}
       {release?.sizeBytes && <small>{(release.sizeBytes / 1_048_576).toFixed(1)}{' '}{t("MB · Windows x64")}</small>}</article>
       <article className="subscription-card"><p className="eyebrow">{t("LICENCIA")}</p><span className={`status status-${user.subscription}`}>{user.studioOwned ? 'studio' : t(user.subscription)}</span><p>{user.studioOwned ? t("Tu licencia perpetua está activa{p0}.", {p0: user.studioUpdatesUntil ? t(" · actualizaciones hasta {p0}", {p0: new Date(user.studioUpdatesUntil*1000).toLocaleDateString(locale())}) : ''}) : entitled ? t("Tu acceso a PULSO Cloud está activo.") : t("Obtén Studio o Cloud para descargar PULSO.")}</p>{(user.studioOwned || user.subscription !== 'none') && <button className="button button-ghost" disabled={portalBusy} onClick={portal}>{portalBusy ? t("Abriendo…") : t("Facturación y comprobantes")}</button>}</article></div>
+    <CreditWallet />
     {error && <p className="form-error" role="alert">{error}</p>}
     {!user.emailVerified && <section className="install-steps"><p className="eyebrow">{t("EMAIL PENDIENTE")}</p><p>{t("Verifica tu email para proteger activaciones y recuperaciones.")}</p><button className="button button-ghost" onClick={()=>void api.resendVerification()}>{t("Reenviar verificación")}</button></section>}
     <div className="account-lower-grid"><section className="install-steps"><p className="eyebrow">{t("DISPOSITIVOS ACTIVADOS ·")}{' '}{devices.length}/2</p>{devices.length === 0 ? <p>{t("Aún no activaste PULSO en un equipo.")}</p> : <ul className="device-list">{devices.map(device=><li key={device.id}><span><strong>{device.name}</strong><small>{t("Último uso:")}{' '}{new Date(device.lastSeenAt*1000).toLocaleDateString(locale())}</small></span><button className="text-button" onClick={async()=>{ await api.revokeDevice(device.id); setDevices(items=>items.filter(item=>item.id!==device.id)) }}>{t("Revocar")}</button></li>)}</ul>}</section>

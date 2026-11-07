@@ -1,4 +1,5 @@
 {
+  "Demo: 3 obras cada 24 horas, 7 cada 7 días y 12 cada 30 días. Las fallidas no cuentan.": {"en":"Demo: 3 works every 24 hours, 7 every 7 days and 12 every 30 days. Failed works do not count.","pt-BR":"Demo: 3 obras a cada 24 horas, 7 a cada 7 dias e 12 a cada 30 dias. Falhas não contam."},
   "Repetir ajustes": { "en": "Reuse settings", "pt-BR": "Repetir ajustes" },
   "Ajustes cargados. Todavía no se envió ninguna solicitud.": { "en": "Settings loaded. No request has been sent yet.", "pt-BR": "Ajustes carregados. Nenhuma solicitação foi enviada ainda." },
   "Usar semilla nueva": { "en": "Use a new seed", "pt-BR": "Usar nova semente" },

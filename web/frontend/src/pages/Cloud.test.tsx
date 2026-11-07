@@ -33,7 +33,7 @@ const job = {
 
 beforeEach(() => {
   mock.user = { id: 'user-1', email: 'test@example.com' }
-  mock.shareCloudJob.mockReset().mockResolvedValue({ url: 'https://pulso.cargo-core.com/share/private-token' })
+  mock.shareCloudJob.mockReset().mockResolvedValue({ url: 'https://pulso-audio.com/share/private-token' })
   mock.revokeCloudShare.mockReset().mockResolvedValue(undefined)
   mock.sharedCloudJob.mockReset().mockResolvedValue({ ...job, prompt: '' })
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.setAttribute('open', '') } })
@@ -125,7 +125,7 @@ describe('Cloud Suite', () => {
     fireEvent.click(button)
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(mock.shareCloudJob).toHaveBeenCalledWith(job.id)
-    expect(screen.getByLabelText('Enlace de exhibición')).toHaveValue('https://pulso.cargo-core.com/share/private-token')
+    expect(screen.getByLabelText('Enlace de exhibición')).toHaveValue('https://pulso-audio.com/share/private-token')
     fireEvent.click(screen.getByRole('button', { name: 'Desactivar todos los enlaces de esta obra' }))
     await waitFor(() => expect(mock.revokeCloudShare).toHaveBeenCalledWith(job.id))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())

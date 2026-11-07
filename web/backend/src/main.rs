@@ -3,6 +3,8 @@ mod billing;
 mod cloud;
 mod config;
 mod crypto;
+mod credits;
+mod demo;
 mod error;
 mod exhibitions;
 mod licenses;
@@ -58,8 +60,13 @@ fn router(state: AppState) -> Router {
         .route("/billing/plans", get(billing::plans))
         .route("/billing/portal", post(billing::portal))
         .route("/billing/webhook", post(billing::webhook))
+        .route("/billing/credits", get(credits::wallet))
+        .route("/billing/credits/checkout", post(credits::checkout))
         .route("/cloud/jobs", post(cloud::create).get(cloud::list))
         .route("/cloud/status", get(cloud::status))
+        .route("/demo/feedback", post(demo::submit))
+        .route("/demo/feedback/snooze", post(demo::snooze))
+        .route("/admin/demo-feedback", get(demo::review))
         .route("/cloud/jobs/{id}", get(cloud::get).delete(cloud::cancel))
         .route("/cloud/jobs/{id}/tracks/{filename}", get(cloud::track))
         .route(
@@ -148,7 +155,7 @@ async fn main() -> ApiResult<()> {
         config: config.clone(),
         release_cache: Arc::new(RwLock::new(None)),
     };
-    if config.cloud_worker_path.is_some() {
+    if config.cloud_worker_path.is_some() && !config.demo_lab {
         tokio::spawn(cloud::worker_loop(state.clone()));
     }
     let listener = tokio::net::TcpListener::bind(config.bind)

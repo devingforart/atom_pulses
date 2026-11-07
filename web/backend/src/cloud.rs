@@ -105,17 +105,17 @@ fn valid_request(input: &CreateJob) -> bool {
 }
 
 fn available(state: &AppState, user: &crate::models::AuthenticatedUser) -> bool {
-    state
+    (state.config.demo_lab || (state
         .config
         .cloud_worker_path
         .as_ref()
         .is_some_and(|path| path.is_file())
-        && std::env::var("OPENAI_API_KEY").is_ok_and(|key| !key.trim().is_empty())
+        && std::env::var("OPENAI_API_KEY").is_ok_and(|key| !key.trim().is_empty())))
         && license_allows_cloud(user, &state.config.cloud_beta_emails)
 }
 
 fn license_allows_cloud(user: &crate::models::AuthenticatedUser, beta_emails: &[String]) -> bool {
-    user.studio_owned
+    crate::demo::owner(&user.email) || user.studio_owned
         || matches!(user.subscription.as_str(), "active" | "trialing")
         || beta_emails
             .iter()
@@ -123,7 +123,7 @@ fn license_allows_cloud(user: &crate::models::AuthenticatedUser, beta_emails: &[
 }
 
 fn unlimited_for(email: &str, allowlist: &[String]) -> bool {
-    allowlist
+    crate::demo::owner(email) || allowlist
         .iter()
         .any(|allowed| allowed.eq_ignore_ascii_case(email.trim()))
 }
@@ -196,11 +196,21 @@ pub async fn create(
     .bind(user.id)
     .fetch_one(&mut *tx)
     .await?;
+    let is_demo = crate::demo::eligible(&mut tx, &user).await?;
+    let unlimited = !is_demo && unlimited_for(&user.email, &state.config.cloud_unlimited_emails);
+    if is_demo {
+        let usage = crate::demo::access(&mut tx, user.id, unix_time()).await?;
+        if !usage.can_compose {
+            return Err(ApiError::public(StatusCode::TOO_MANY_REQUESTS,
+                if active > 0 { "Ya tienes una composición en curso." }
+                else { "Alcanzaste el cupo demo: 3 obras cada 24 horas, 7 cada 7 días y 12 cada 30 días. Las fallidas no cuentan." }));
+        }
+    }
     if let Some(problem) = quota_problem(
         daily_completed,
         active,
         state.config.cloud_daily_jobs,
-        unlimited_for(&user.email, &state.config.cloud_unlimited_emails),
+        is_demo || crate::credits::enabled() || unlimited,
     ) {
         return Err(ApiError::public(StatusCode::TOO_MANY_REQUESTS, problem));
     }
@@ -217,6 +227,10 @@ pub async fn create(
         .bind(id).bind(user.id).bind(&input.idempotency_key).bind(input.prompt.trim())
         .bind(input.duration_seconds).bind(input.bpm).bind(if input.club { "club" } else { CLOUD_BEHAVIOR }).bind(seed).bind(CLOUD_AI_SOVEREIGN)
         .bind(now).bind(input.allow_chromatic).bind(&input.club_layer_pace).bind(input.club_variety).execute(&mut *tx).await?;
+    if crate::credits::enabled() && !is_demo && !unlimited {
+        crate::credits::reserve(&mut tx, user.id, id,
+            crate::credits::cost()).await?;
+    }
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -256,10 +270,18 @@ pub async fn list(
 
 pub async fn status(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let user = require_user(&state, &headers).await?;
+    let mut conn = state.db.acquire().await?;
+    let demo = if crate::demo::eligible(&mut conn, &user).await? {
+        Some(crate::demo::access(&mut conn, user.id, unix_time()).await?)
+    } else { None };
+    let unlimited = demo.is_none() && unlimited_for(&user.email, &state.config.cloud_unlimited_emails);
     Ok(Json(serde_json::json!({
         "available": user.email_verified && available(&state, &user),
         "dailyJobLimit": state.config.cloud_daily_jobs,
-        "unlimited": unlimited_for(&user.email, &state.config.cloud_unlimited_emails),
+        "creditsEnabled": crate::credits::enabled() && demo.is_none() && !unlimited,
+        "unlimited": unlimited,
+        "demo": demo,
+        "demoLab": state.config.demo_lab,
         "composerProfile": composer_profile()["name"],
     })))
 }
@@ -337,6 +359,9 @@ pub async fn cancel(
     UrlPath(id): UrlPath<Uuid>,
 ) -> ApiResult<StatusCode> {
     let user = require_user(&state, &headers).await?;
+    if crate::credits::enabled() {
+        return Err(ApiError::public(StatusCode::CONFLICT, "Las composiciones no se pueden cancelar una vez enviadas."));
+    }
     let updated = sqlx::query("UPDATE cloud_jobs SET cancel_requested=TRUE,status=CASE WHEN status='queued' THEN 'cancelled' ELSE status END,updated_at=$3 WHERE id=$1 AND user_id=$2 AND status IN ('queued','running')")
         .bind(id).bind(user.id).bind(unix_time()).execute(&state.db).await?;
     if updated.rows_affected() == 0 {

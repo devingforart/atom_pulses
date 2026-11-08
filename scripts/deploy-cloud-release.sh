@@ -35,7 +35,7 @@ docker create --name "$engine_container" "$image" >/dev/null
 docker cp "$engine_container:/app/pulso_cloud_worker" "$release/pulso_cloud_worker-v1.1"
 docker rm "$engine_container" >/dev/null
 engine_hash=$(sha256sum "$release/pulso_cloud_worker-v1.1" | cut -d ' ' -f 1)
-docker cp "$release/pulso_cloud_worker-v1.1" pulso-app-1:/tmp/pulso-engine-candidate
+docker exec -i -u 0 pulso-app-1 sh -eu -c 'cat > /tmp/pulso-engine-candidate' < "$release/pulso_cloud_worker-v1.1"
 docker exec -u 0 -e EXPECTED_ENGINE_HASH="$engine_hash" pulso-app-1 sh -eu -c '
   target="$PULSO_CLOUD_OUTPUT_DIR/engines/v1.1/pulso_cloud_worker"
   if [ -f "$target" ]; then

@@ -189,6 +189,7 @@ pub async fn plans(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     };
     Ok(Json(
         json!({ "studio": public(studio), "monthly": monthly, "annual": annual,
+            "testMode": state.config.stripe_secret_key.starts_with("sk_test_"),
             "creditPlan": {"amount": crate::credits::BASIC_MONTHLY_USD_CENTS,
                 "currency": "USD", "monthlyCredits": crate::credits::BASIC_MONTHLY_CREDITS,
                 "perWork": crate::credits::cost(), "enabled": crate::credits::enabled()} }),

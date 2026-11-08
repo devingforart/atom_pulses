@@ -1,4 +1,7 @@
 {
+  "Probar suscripción": {"en":"Try subscription","pt-BR":"Testar assinatura"},
+  "Suscribirme": {"en":"Subscribe","pt-BR":"Assinar"},
+  "Modo prueba: no se realizan cargos reales.": {"en":"Test mode: no real charges are made.","pt-BR":"Modo de teste: nenhuma cobrança real é feita."},
   "Motor": {"en":"Engine","pt-BR":"Motor"},
   "Parámetros guardados al enviar esta obra, no una medición del resultado musical.": {"en":"Settings saved when submitting this work, not a measurement of its musical result.","pt-BR":"Parâmetros salvos ao enviar esta obra, não uma medição do resultado musical."},
   "Demo: 3 obras cada 24 horas, 7 cada 7 días y 12 cada 30 días. Las fallidas no cuentan.": {"en":"Demo: 3 works every 24 hours, 7 every 7 days and 12 every 30 days. Failed works do not count.","pt-BR":"Demo: 3 obras a cada 24 horas, 7 a cada 7 dias e 12 a cada 30 dias. Falhas não contam."},

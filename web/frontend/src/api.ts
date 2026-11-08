@@ -18,6 +18,7 @@ export type Release = {
 }
 
 export type BillingPlans = {
+  testMode?: boolean
   studio: { amount: number; currency: string; interval: string }
   monthly: { amount: number; currency: string; interval: string } | null
   annual: { amount: number; currency: string; interval: string } | null

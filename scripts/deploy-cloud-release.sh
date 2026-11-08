@@ -11,7 +11,48 @@ revision=${2:?source revision required}
 [[ -f "$release/web/Dockerfile" && -f /www/Pulso/.env ]] || exit 2
 cd "$release"
 image="pulso-web:$revision"
+
+# This release's v1.1 must be built from the saved engine, not a later experiment.
+(cd "$release" && sha256sum -c web/shared/engine-v1.1-sources.sha256)
 docker build --build-arg "PULSO_SOURCE_REVISION=$revision" -f web/Dockerfile -t "$image" .
+
+# Versioned engines live in persistent composition storage, not in the mutable
+# app executable path. v1 is the exact binary currently deployed; v1.1 comes
+# from saved_1.1. Never silently replace an already published engine version.
+expected_v1=040c4fe0915be8eb3340f30e0aa3891093f1a317f0227142fc2ce0dcaa34ac32
+docker exec -u 0 pulso-app-1 sh -eu -c '
+  root="$PULSO_CLOUD_OUTPUT_DIR/engines"
+  mkdir -p "$root/v1" "$root/v1.1"
+  if [ ! -f "$root/v1/pulso_cloud_worker" ]; then
+    test "$(sha256sum /app/pulso_cloud_worker | cut -d " " -f 1)" = "040c4fe0915be8eb3340f30e0aa3891093f1a317f0227142fc2ce0dcaa34ac32"
+    cp /app/pulso_cloud_worker "$root/v1/pulso_cloud_worker"
+  fi
+  test "$(sha256sum "$root/v1/pulso_cloud_worker" | cut -d " " -f 1)" = "040c4fe0915be8eb3340f30e0aa3891093f1a317f0227142fc2ce0dcaa34ac32"
+  chmod 755 "$root/v1/pulso_cloud_worker"
+'
+engine_container="pulso-engines-${revision:0:12}"
+docker create --name "$engine_container" "$image" >/dev/null
+docker cp "$engine_container:/app/pulso_cloud_worker" "$release/pulso_cloud_worker-v1.1"
+docker rm "$engine_container" >/dev/null
+engine_hash=$(sha256sum "$release/pulso_cloud_worker-v1.1" | cut -d ' ' -f 1)
+docker cp "$release/pulso_cloud_worker-v1.1" pulso-app-1:/tmp/pulso-engine-candidate
+docker exec -u 0 -e EXPECTED_ENGINE_HASH="$engine_hash" pulso-app-1 sh -eu -c '
+  target="$PULSO_CLOUD_OUTPUT_DIR/engines/v1.1/pulso_cloud_worker"
+  if [ -f "$target" ]; then
+    test "$(sha256sum "$target" | cut -d " " -f 1)" = "$EXPECTED_ENGINE_HASH"
+  else
+    cp /tmp/pulso-engine-candidate "$target"
+  fi
+  chmod 755 "$target"
+  chown -R 10001:10001 "$PULSO_CLOUD_OUTPUT_DIR/engines"
+  test -x "$target"
+'
+docker exec -u 0 -e RELEASE_REVISION="$revision" pulso-app-1 sh -eu -c '
+  root="$PULSO_CLOUD_OUTPUT_DIR/engines"
+  if [ ! -f "$root/v1/source-revision" ]; then printf "%s\n" ef945acd4daf2d3d61b84c732a5d3ab8e810588b > "$root/v1/source-revision"; fi
+  if [ ! -f "$root/v1.1/source-revision" ]; then printf "%s\n" 80f896ce75b0c905258d50b29cb18caa1ec7c717 > "$root/v1.1/source-revision"; fi
+'
+printf 'ENGINE v1 %s\nENGINE v1.1 %s\n' "$expected_v1" "$engine_hash"
 
 # Building can take time: check again immediately before replacing the API.
 active=$(docker exec pulso-postgres-1 psql -U pulso -d pulso -Atc \

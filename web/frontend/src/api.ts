@@ -34,6 +34,7 @@ export type CloudTrack = {
   }
 }
 export type CloudJob = {
+  engineVersion?: 'v1' | 'v1.1'
   clubLayerPace?: string
   clubVariety?: boolean
   allowChromatic?: boolean
@@ -107,7 +108,7 @@ export const api = {
   snoozeDemoFeedback: () => request<void>('/api/demo/feedback/snooze', {method:'POST'}),
   reviewDemoFeedback: (offset=0) => request<{items:DemoFeedback[];total:number}>(`/api/admin/demo-feedback?offset=${offset}`),
   cloudJob: (id: string) => request<CloudJob>(`/api/cloud/jobs/${id}`),
-  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; idempotencyKey: string; allowChromatic: boolean; club?: boolean; clubLayerPace?: string; clubVariety?: boolean; seed?: string }) =>
+  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; idempotencyKey: string; allowChromatic: boolean; engineVersion?: 'v1' | 'v1.1'; club?: boolean; clubLayerPace?: string; clubVariety?: boolean; seed?: string }) =>
     request<CloudJob>('/api/cloud/jobs', { method: 'POST', body: JSON.stringify(input) }),
   cancelCloudJob: (id: string) => request<void>(`/api/cloud/jobs/${id}`, { method: 'DELETE' }),
   shareCloudJob: (id: string) => request<{ url: string }>(`/api/cloud/jobs/${id}/share`, { method: 'POST' }),

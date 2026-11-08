@@ -566,9 +566,10 @@ FinalScoreReview SelectiveRepair::reviewFinalScore(
             declaredEnding.find("unresolved") != std::string::npos ||
             declaredEnding.find("abiert") != std::string::npos;
         const auto minimumResolution = deliberatelyOpen ? .45 : .58;
-        if (!narrative.terminalPhraseReady ||
-            narrative.resolutionScore < minimumResolution ||
-            narrative.causalNarrative < .62) {
+        const auto contextualEndingAccepted = NarrativeScoreGate::reviewedEndingApplies(pattern, plan);
+        if (contextualEndingAccepted) review.terminalPhraseReady = true;
+        if (!contextualEndingAccepted && !NarrativeScoreGate::resolved(narrative,
+                plan.compositionBehavior == CompositionBehavior::Club, minimumResolution)) {
             review.ready = false;
             review.deficit += std::max(0.0, minimumResolution -
                 narrative.resolutionScore) +

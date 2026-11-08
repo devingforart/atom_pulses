@@ -6,6 +6,8 @@
 #include "AiClubPolicy.h"
 #include "AiClubProductionPlan.h"
 #include "AiNoteAddress.h"
+#include "AiScoreMemory.h"
+#include "AiArrivalReview.h"
 
 #include "core/Scale.h"
 #include "core/CoherentProofGate.h"
@@ -60,7 +62,8 @@ const juce::String model = [] {
     const auto candidate = juce::SystemStats::getEnvironmentVariable(
         "PULSO_AI_EXPERIMENT_MODEL", {});
     return juce::SystemStats::getEnvironmentVariable("PULSO_LOCAL_EDITORIAL_V2", {}) == "1" &&
-        (candidate == "gpt-6.1-sol" || candidate == "gpt-6-luna")
+        (candidate == "gpt-5.6-sol" || candidate == "gpt-6-astra" || candidate == "gpt-6.1-sol" ||
+         candidate == "gpt-6-luna")
         ? candidate : juce::String(ai_config::model);
 }();
 constexpr auto reasoningEffort = ai_config::reasoningEffort;
@@ -2628,6 +2631,8 @@ HttpResponse performRequest(juce::String body, const juce::String& apiKey,
             const auto responseModel = root == nullptr ? juce::String{} :
                 root->getProperty("model").toString();
             if (usage != nullptr && (responseModel == "gpt-5.6-terra" ||
+                                     responseModel == "gpt-5.6-sol" ||
+                                     responseModel == "gpt-6-astra" ||
                                      responseModel == "gpt-6.1-sol" ||
                                      responseModel == "gpt-6-luna")) {
                 const auto* details = usage->getProperty("input_tokens_details")
@@ -2642,14 +2647,16 @@ HttpResponse performRequest(juce::String body, const juce::String& apiKey,
                 const auto longContext = input > 272000.0;
                 const auto serviceTier = root->getProperty("service_tier").toString();
                 const auto fast = serviceTier == "priority" || serviceTier == "fast";
-                const auto sol = responseModel == "gpt-6.1-sol";
+                const auto sol56 = responseModel == "gpt-5.6-sol";
+                const auto astra = responseModel == "gpt-6-astra";
+                const auto sol61 = responseModel == "gpt-6.1-sol";
                 const auto luna = responseModel == "gpt-6-luna";
                 const auto multiplier = fast ? 2.0 : 1.0;
-                recoveryEstimatedUsd.fetch_add(((ordinary * (luna ? .1 : 2.0) +
-                    cached * (luna ? .01 : (sol ? .1 : .2)) +
-                    writes * (luna ? .125 : 2.5)) * multiplier *
+                recoveryEstimatedUsd.fetch_add(((ordinary * (luna ? .1 : (astra ? 10.0 : (sol56 ? 4.0 : 2.0))) +
+                    cached * (luna ? .01 : (astra ? 1.0 : (sol56 ? .4 : (sol61 ? .1 : .2)))) +
+                    writes * (luna ? .125 : (astra ? 12.5 : (sol56 ? 5.0 : 2.5)))) * multiplier *
                     (longContext ? 2.0 : 1.0) + output *
-                    (luna ? .5 : (sol ? 10.0 : 12.0)) * multiplier *
+                    (luna ? .5 : (astra ? 50.0 : (sol56 ? 20.0 : (sol61 ? 10.0 : 12.0)))) * multiplier *
                     (longContext ? 1.5 : 1.0)) / 1000000.0);
             }
         }
@@ -3296,7 +3303,30 @@ juce::String jointWindowPrompt(const juce::String& direction, const SongPlan& pl
         const auto corePass = std::any_of(owners.begin(), owners.end(), [&](const auto owner) {
             return owner < plan.instruments.size() && club::production::coreLayer(productionJson, plan.instruments[owner].id);
         });
-        out << (corePass ? "\nFOUNDATION AND FOCUS PASS: Author the shared groove together with "
+        const auto discourseGroups = club::production::discourseFirstGroups(plan);
+        const auto discoursePass = club::production::discourseFirst(plan) && discourseGroups.size() == 2;
+        const auto foregroundPass = discoursePass && std::all_of(owners.begin(), owners.end(), [&](auto owner) {
+            return std::find(discourseGroups[0].begin(), discourseGroups[0].end(), owner) != discourseGroups[0].end();
+        });
+        if (club::scenes::active(plan)) out << club::scenes::context(plan, sectionIndex);
+        else if (discoursePass) out << (foregroundPass ?
+            "\nMELODIC SCORE FIRST: You are writing the complete protagonist and responding "
+            "voices through the work BEFORE any accompaniment is scored. The harmonic map, "
+            "Club pulse and nucleus remain context, not pre-existing background MIDI. "
+            "Compose connected sentences that remain intelligible when these voices alone "
+            "are heard. Give the protagonist a rhythmic identity, continuation, returns "
+            "and destination rather than isolated decorative cues. Let the responding "
+            "voice contribute an audible argument. Do not add accompaniment notes or "
+            "rewrite the cast. Respect planned breaths and the Club meter; this is not "
+            "permission for perpetual solos or compulsory density.\n" :
+            "\nACCOMPANY THE COMPLETED DISCOURSE: Every foreground window has already been "
+            "written. Its actual MIDI is immutable in this pass. Write only the requested "
+            "support: voice harmony against these notes, place bass/stab accents to sustain "
+            "their phrasing, and prepare or release their arrivals. The nucleus preserves "
+            "metric identity, not a requirement for the same intensity everywhere. Do not "
+            "duplicate the melody or fill every breath. Resolve conflicts by your own "
+            "accompaniment decisions, not by moving the accepted foreground.\n");
+        else out << (corePass ? "\nFOUNDATION AND FOCUS PASS: Author the shared groove together with "
             "the AI-chosen focus/protagonist owners requested in this call. They must form one "
             "recognizable musical proposition with an audible phrase, not a groove followed "
             "by unrelated decorative notes. The declared cycle attacks bind ONLY owners named "
@@ -3327,6 +3357,29 @@ juce::String jointWindowPrompt(const juce::String& direction, const SongPlan& pl
             "silence or a final cadence from a technical window boundary.\n";
         out << club::production::windowBrief(productionJson, sectionIndex);
         out << club::production::developmentBrief(productionJson, start, end, plan.beatsPerBar);
+        out << "MELODIC MATERIAL: An arc's phrase_reference and response_reference are concrete AI-composed sentences, "
+            "not a loop, not absolute song time and not a complete transcription of that arc. "
+            "The route's material_source identifies which sentence is being developed now. "
+            "Preserve its recognizable rhythmic groups at their natural tempo; do not "
+            "spread a handful of reference notes across an entire long span. Realize the "
+            "answer as actual connected music, not a single sustained target in place of "
+            "its argument. Do not compensate for an unfinished melody with extra arpeggios. "
+            "Inspect successive melodic attacks as a playable line: a held pitch followed "
+            "by the same pitch is an intentional rearticulation or a continuation, not "
+            "accidentally overlapping near-identical attacks. Keep deliberate ornaments "
+            "and repetitions when their metric gesture is clear. Register excursions "
+            "should develop a heard contour; a late short octave spike is not a substitute "
+            "for an earned climax. There is no blanket ban on leaps or syncopation. "
+            "Use its pitch-and-rhythm identity to author a connected sentence, continuation "
+            "and destination across the arc. Compare with accepted notes before continuing. "
+            "Do not scatter single reference notes across long silences and call that a phrase. "
+            "Do not tile the sketch, fit a fresh miniature melody to every window, or reduce "
+            "a secondary statement to cue notes. Preserve sustained expressive notes, chosen "
+            "breaths and lucid metric groups. A later return should recall something heard "
+            "and make its changed consequence audible. The support's planned response must "
+            "be audible in actual voicing/articulation, not only in track occupancy. "
+            "A deliberate hypnotic plateau can stay unchanged; development is not perpetual "
+            "novelty or maximum density. Every final note remains authored here by the AI.\n";
         out << "ARRANGEMENT LIMITS: entry_beat/release_beat in each state are SECTION-LOCAL, "
             "not window-local. Finish this layer's gesture before its release; leave its "
             "planned absence empty. Do not manufacture a final note by clipping a continuing "
@@ -3355,7 +3408,23 @@ juce::String jointWindowPrompt(const juce::String& direction, const SongPlan& pl
                 << juce::String::fromUTF8(part.role.c_str()) << " | MIDI "
                 << part.minimumPitch << ".." << part.maximumPitch << "\n";
         }
-        out << AiMelodicDiscourse::actualVoiceMemory(plan, accepted, start);
+        out << scoreMemory::brief(plan, accepted, start, end, owners);
+        if (club::scenes::active(plan)) {
+            if (sectionIndex > 0)
+                out << "\nPRECEDING SCENE ACTUAL PHRASE EVIDENCE: "
+                    << juce::JSON::toString(scoreMemory::sceneEvidence(plan, accepted, sectionIndex - 1, start), true);
+            out << "\nCURRENT SCENE PHRASES ALREADY WRITTEN: "
+                << juce::JSON::toString(scoreMemory::sceneEvidence(plan, accepted, sectionIndex, start), true)
+                << "\nMatch the promised statement and continuation to this actual evidence. "
+                   "latest_preceding_notes retains the owner's last actual notes even after "
+                   "a long absence; it is a bounded excerpt, not a complete inferred phrase. "
+                   "Use its identity and destination with the scene's musical_decision to "
+                   "choose a connected continuation or purposeful return. Do not copy it "
+                   "automatically or infer rests from omitted notes. "
+                   "Continue unfinished thoughts in the requested window; never overwrite "
+                   "the past or cram a late response into an arbitrary technical boundary.\n";
+        }
+        out << club::delivery::context(plan, accepted, start, end, owners);
         out << "ACCEPTED NOTES SOUNDING IN THIS WINDOW (immutable, absolute beat/pitch/duration):\n";
         for (const auto& note : accepted.notes) if (note.startBeat < end && note.endBeat() > start)
             out << "owner=" << note.partId << " " << note.startBeat << "/" << note.pitch << "/" << note.durationBeats << "\n";
@@ -8598,7 +8667,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     // The first macro normally needs roughly a minute of background work. A
     // 30-second budget cancelled it on every local long-form run and paid the
     // latency of a fresh recovery request before the cast could even begin.
-    constexpr auto architectureBudget = std::chrono::seconds(120);
+    // Astra can take longer than the ordinary planning window. Keep polling
+    // the same background response instead of cancelling it at 120 seconds
+    // and paying for a second equivalent blueprint.
+    const auto architectureBudget = model == "gpt-6-astra"
+        ? std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::minutes(8))
+        : std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::seconds(120));
     if (progress) progress({AiSongStage::Blueprint, 0, 2, 1, "macro form, harmony and narrative"});
     auto http = performRequest(body, apiKey, token, architectureBudget);
     auto usedMacroRecovery = false;
@@ -8610,7 +8684,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         return !http.connected || http.timedOut || http.status == 408 || http.status == 409 ||
             http.status == 429 || http.status >= 500 || incomplete;
     };
-    if (!token.stop_requested() && transientBlueprintFailure()) {
+    if (!token.stop_requested() && transientBlueprintFailure() &&
+        !(model == "gpt-6-astra" && http.timedOut)) {
         if (progress) progress({AiSongStage::Recovery, 0, 1, 2,
                                 "blueprint transport recovery"});
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -9634,9 +9709,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     ",\"text\":{\"format\":{\"type\":\"json_schema\","
                     "\"name\":\"pulso_phrase_architecture\",\"strict\":true,\"schema\":" +
                     AiPhraseArchitecture::schema(result, direction) + "}}}";
+                const auto phraseBudget = model == "gpt-6-astra"
+                    ? std::chrono::seconds(8 * 60)
+                    : std::chrono::seconds(AiMelodicDiscourse::enabled() ? 180 : 100);
                 const auto response = performRequest(body, apiKey, token,
-                    std::min(remaining, std::chrono::seconds(
-                        AiMelodicDiscourse::enabled() ? 180 : 100)));
+                    std::min(remaining, phraseBudget));
                 const auto draft = extractOutputText(juce::JSON::parse(response.body));
                 if (response.connected && response.status >= 200 && response.status < 300 &&
                     draft.isNotEmpty() &&
@@ -9647,12 +9724,171 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             "AI-authored phrase architecture accepted before MIDI writing");
                     break;
                 }
+                // Preserve the complete AI plan when a concrete Club lane or
+                // layer state violates its contract. Only the invalid fragment
+                // is re-authored; all other fields remain unchanged in value.
+                const auto initialLane = club::nucleus::repairableLaneId(lastError, result);
+                const auto initialStates = club::production::repairableStateLayerId(lastError, result);
+                const auto initialReference = club::production::repairableReferenceArc(lastError);
+                if (response.connected && response.status >= 200 && response.status < 300 &&
+                    draft.isNotEmpty() && (initialLane.isNotEmpty() || initialStates.isNotEmpty() || initialReference >= 0)) {
+                    auto candidate = draft;
+                    constexpr int maximumFocusedPlanRepairs = 2;
+                    for (int repairAttempt = 1; repairAttempt <= maximumFocusedPlanRepairs;
+                         ++repairAttempt) {
+                        const auto laneId = club::nucleus::repairableLaneId(lastError, result);
+                        const auto stateId = club::production::repairableStateLayerId(lastError, result);
+                        const auto referenceIndex = club::production::repairableReferenceArc(lastError);
+                        const auto referenceKey = club::production::repairableReferenceKey(lastError);
+                        const auto referenceRepair = referenceIndex >= 0 && referenceKey.isNotEmpty();
+                        const auto stateRepair = !referenceRepair && laneId.isEmpty();
+                        const auto rhythmRepair = stateRepair && club::production::rhythmRepairError(lastError);
+                        const auto currentPlan = juce::JSON::parse(candidate);
+                        const auto ownerId = referenceRepair ? currentPlan.getProperty("musical_arcs", {})[referenceIndex]
+                            .getProperty("foreground_id", {}).toString() : stateRepair ? stateId : laneId;
+                        if (ownerId.isEmpty()) break;
+                        const auto sketch = currentPlan.getProperty("tonal_nucleus", {});
+                        const auto cycle = static_cast<double>(sketch.getProperty("cycle_beats", 0));
+                        const auto repairSchema = referenceRepair
+                            ? club::production::referenceNotesRepairSchema(candidate, result, referenceIndex, referenceKey)
+                            : rhythmRepair ? club::production::rhythmRepairSchema() : stateRepair
+                            ? club::production::layerStatesRepairSchema(result, ownerId)
+                            : club::nucleus::laneNotesRepairSchema(result, ownerId, cycle);
+                        const auto repairRemaining = std::chrono::duration_cast<std::chrono::seconds>(
+                            aiStarted + totalAiBudget - std::chrono::steady_clock::now());
+                        if (repairSchema.isEmpty() || repairRemaining < std::chrono::seconds(35)) break;
+                        if (progress) progress({AiSongStage::Recovery, 1, 2, repairAttempt,
+                            referenceRepair ? "AI correcting one melodic reference without replanning the work" :
+                            rhythmRepair ? "AI correcting one layer's rhythm declaration" : stateRepair ? "AI correcting one layer's section states" :
+                                "AI correcting one invalid musical-plan voice"});
+                        juce::String repairPrompt;
+                        if (referenceRepair) {
+                            repairPrompt << "Correct ONLY the notes of " << referenceKey << " in arc " << referenceIndex
+                                << " for " << ownerId << ". Keep its musical identity, all valid gestures and intended "
+                                "articulation. Repair the reported timing/register defect with the smallest musical "
+                                "change you choose. Return only notes. Reference length, development, route, other "
+                                "reference, form, harmony and all other arcs are immutable. Every note must fit the "
+                                "reference length and owner register; retain declared tonal policy. The host does "
+                                "not transpose, shorten or generate notes.\nERROR: " << lastError
+                                << "\nARC: " << juce::JSON::toString(currentPlan.getProperty("musical_arcs", {})[referenceIndex], true)
+                                << "\nKEY: " << juce::String(result.key) << "\nCHORD PALETTE: ";
+                            for (const auto& chord : result.chordPalette) {
+                                repairPrompt << juce::String(chord.id) << " pitch_classes=";
+                                for (const auto pc : chord.pitchClasses) repairPrompt << pc << ",";
+                                repairPrompt << "\n";
+                            }
+                        } else if (rhythmRepair) {
+                            juce::var layer;
+                            for (const auto& entry : *currentPlan.getProperty("layers", {}).getArray())
+                                if (entry.getProperty("instrument_id", {}).toString() == ownerId) layer = entry;
+                            repairPrompt << "Correct ONLY rhythm_cell for layer " << ownerId
+                                << ". This is a set of possible attack offsets, not polyphonic note events. "
+                                "Use unique numeric quarter-note beat offsets on the quarter-beat grid, "
+                                "0 <= offset < cycle_beats. Zero-based means coordinates start at 0, "
+                                "not that an attack on 0 is mandatory. A cycle-end attack belongs to the next cycle. "
+                                "Keep the musical rhythm and choose the correction yourself. Do not change cycle, "
+                                "states, register, pitches, harmony or other layers. Return only rhythm_cell.\nERROR: "
+                                << lastError << "\nLAYER: " << juce::JSON::toString(layer, true);
+                        } else if (stateRepair) {
+                            juce::var layer;
+                            if (const auto* layers = currentPlan.getProperty("layers", {}).getArray())
+                                for (const auto& entry : *layers)
+                                    if (entry.getProperty("instrument_id", {}).toString() == ownerId)
+                                        layer = entry;
+                            repairPrompt << "Correct ONLY the section states of Club layer "
+                                << ownerId << ". Return exactly one state for EACH section index "
+                                "0 through " << juce::String(static_cast<int>(result.sections.size()) - 1)
+                                << ", with no duplicates or omissions. Preserve its production role, "
+                                "rhythm, register, other layers, tonal nucleus and all musical form. "
+                                "Choose the corrected states yourself; the host will not invent "
+                                "or reorder musical states. Respect section-local entry/release "
+                                "beats and the cast's allowed active sections. For absent sections "
+                                "use mode=absent, minimum_sounding_fraction=0, entry_beat=0 and "
+                                "release_beat=0.\nVALIDATION ERROR: " << lastError
+                                << "\nORIGINAL LAYER: " << juce::JSON::toString(layer, true)
+                                << "\nSECTIONS:\n";
+                            for (std::size_t index = 0; index < result.sections.size(); ++index)
+                                repairPrompt << juce::String(static_cast<int>(index)) << " | "
+                                    << juce::String::fromUTF8(result.sections[index].name.c_str())
+                                    << " | local beats 0.."
+                                    << juce::String(result.sections[index].bars * result.beatsPerBar, 2)
+                                    << "\n";
+                        } else {
+                            repairPrompt << "Correct ONLY the AI-authored note list for instrument "
+                                << ownerId << " in this accepted Club tonal nucleus. "
+                                "The entire form, cast, harmony, other lanes, meter carrier and "
+                                "their notes are immutable. Return ONLY notes and repeat_intent "
+                                "for this one lane. If this declared groove-core lane is missing, "
+                                "compose its reference notes now, coordinated with the existing nucleus; "
+                                "do not remove its core declaration or modify other lanes. "
+                                "Keep its recognizable rhythm and relationship "
+                                "to the other voices unless the validation error requires a change. "
+                                "Write every beat, duration, pitch and velocity yourself; the host "
+                                "will not invent, quantize, transpose or delete notes. Respect the "
+                                "owner register, declared scale, quarter-beat grid, cycle end, and "
+                                "carrier spacing if this lane carries the meter.\n"
+                                "VALIDATION ERROR: " << lastError << "\n"
+                                "ACCEPTED TONAL NUCLEUS: " << juce::JSON::toString(sketch, true)
+                                << "\nLAYER CONTEXT: " << juce::JSON::toString(currentPlan.getProperty("layers", {}), true);
+                        }
+                        const auto repairBody = juce::String("{\"model\":\"") + model +
+                            "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
+                            realizationReasoningEffort +
+                            "\"},\"max_output_tokens\":" +
+                            juce::String(stateRepair ? 5000 : 6000) + ",\"input\":" +
+                            juce::JSON::toString(juce::var(repairPrompt)) +
+                            ",\"text\":{\"format\":{\"type\":\"json_schema\","
+                            "\"name\":\"" +
+                            juce::String(referenceRepair ? "pulso_phrase_reference_repair" : stateRepair ? "pulso_layer_states_repair" :
+                                "pulso_phrase_lane_repair") +
+                            "\",\"strict\":true,\"schema\":" +
+                            repairSchema + "}}}";
+                        const auto repaired = performRequest(repairBody, apiKey, token,
+                            std::min(repairRemaining, std::chrono::seconds(120)));
+                        if (!repaired.connected || repaired.status < 200 || repaired.status >= 300 ||
+                            repaired.cancelled || repaired.timedOut) {
+                            lastError = apiErrorMessage(repaired);
+                            break;
+                        }
+                        const auto revisedFragment = extractOutputText(juce::JSON::parse(repaired.body));
+                        juce::String merged;
+                        const auto applied = referenceRepair
+                            ? club::production::replaceReferenceNotes(candidate, referenceIndex, referenceKey, revisedFragment, merged)
+                            : rhythmRepair ? club::production::replaceLayerRhythm(candidate, ownerId, revisedFragment, merged) : stateRepair
+                            ? club::production::replaceLayerStates(candidate, ownerId,
+                                revisedFragment, merged)
+                            : club::nucleus::replaceLaneNotes(candidate, ownerId,
+                                revisedFragment, merged);
+                        if (revisedFragment.isEmpty() || !applied) {
+                            lastError = "AI returned no usable focused Club-plan correction";
+                            break;
+                        }
+                        candidate = merged;
+                        lastError.clear();
+                        if (AiPhraseArchitecture::validate(candidate, result, lastError)) {
+                            result.phraseArchitectureJson = candidate.toStdString();
+                            OperationalJournal::write("OK", "PHRASE_PLAN",
+                                "accepted focused AI repair for Club plan fragment " + ownerId +
+                                "; all other musical-plan fields preserved");
+                            break;
+                        }
+                    }
+                    if (!result.phraseArchitectureJson.empty()) break;
+                    OperationalJournal::write("WARN", "PHRASE_PLAN",
+                        "focused AI repair did not validate; accepted macro and cast remain checkpointed | " +
+                        lastError);
+                    break; // Never pay for a complete re-plan of a valid draft.
+                }
                 if (lastError.isEmpty())
                     lastError = structuredResponseError(response.body,
                         "AI phrase architecture response was incomplete");
                 OperationalJournal::write("WARN", "PHRASE_PLAN",
                     "attempt " + juce::String(attempt) + " rejected | text_chars=" +
                     juce::String(draft.length()) + " | " + lastError);
+                // A timed-out Astra background response has already consumed
+                // its entire planning window. Do not issue an identical second
+                // create call merely because the first was still in_progress.
+                if (model == "gpt-6-astra" && response.timedOut) break;
                 phrasePrompt << "\nPrevious phrase plan was invalid: " << lastError
                              << ". Return a complete corrected plan for every section.";
             }
@@ -9849,10 +10085,27 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 juce::String(static_cast<int>(targetSeconds)) + " seconds | " +
                 juce::String(static_cast<int>(jointOwners.size())) +
                 " AI-authored tracks | one coordinated group per window");
+        // Persist the scheduling version in the plan: checkpoints must resume
+        // with the same pass ordering, regardless of later environment changes.
+        if (behavior == CompositionBehavior::Club && !club::scenes::active(result) && (!resume || resume->blueprintOnly) &&
+            juce::SystemStats::getEnvironmentVariable("PULSO_AI_CLUB_MELODY_FIRST", {}) == "1" &&
+            club::production::discourseFirstGroups(result).size() == 2) {
+            auto architecture = juce::JSON::parse(juce::String(result.phraseArchitectureJson));
+            architecture.getDynamicObject()->setProperty("score_writing_order", "foreground_first_v1");
+            result.phraseArchitectureJson = juce::JSON::toString(architecture).toStdString();
+        }
+        const auto discourseGroups = club::production::discourseFirst(result)
+            ? club::production::discourseFirstGroups(result) : std::vector<std::vector<std::size_t>>{};
+        const auto discoursePasses = discourseGroups.size() == 2 ? std::size_t{2} : std::size_t{1};
+        if (club::scenes::active(result) && jointOwners.size() <= 12) {
+            writingGroups = {jointOwners};
+            OperationalJournal::write("INFO", "DISCOURSE", "Joint scene writing: foreground, answers and harmony composed together");
+        }
         std::size_t windowCount = 0;
         for (const auto& section : result.sections)
             windowCount += static_cast<std::size_t>(
                 (section.bars + barsPerWindow - 1) / barsPerWindow);
+        windowCount *= discoursePasses;
         PerformanceScore score;
         std::vector<double> sectionLengths;
         for (const auto& section : result.sections)
@@ -9958,6 +10211,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         }
         const auto restoredWindows = completedWindows;
         auto windowOrdinal = std::size_t{};
+        for (std::size_t discoursePass = 0; discoursePass < discoursePasses; ++discoursePass) {
+        const auto passGroups = discoursePasses == 2
+            ? std::vector<std::vector<std::size_t>>{discourseGroups[discoursePass]} : writingGroups;
+        if (discoursePasses == 2) OperationalJournal::write("INFO", "DISCOURSE",
+            discoursePass == 0 ? "Writing the complete melodic discourse before accompaniment" :
+                "Writing accompaniment against the completed immutable melodic discourse");
         for (std::size_t sectionIndex = 0; sectionIndex < result.sections.size(); ++sectionIndex) {
             const auto& section = result.sections[sectionIndex];
             for (auto firstBar = 0; firstBar < section.bars; firstBar += barsPerWindow) {
@@ -9967,17 +10226,19 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 const auto localEnd = (firstBar + bars) * result.beatsPerBar;
                 const auto absoluteStart = (section.startBar + firstBar) * result.beatsPerBar;
                 const auto absoluteEnd = absoluteStart + bars * result.beatsPerBar;
-                const auto windowWritingGroups = club::production::windowGroups(result, writingGroups,
+                auto windowWritingGroups = club::production::windowGroups(result, passGroups,
                     sectionIndex, firstBar, bars);
-                for (std::size_t groupIndex = 0; groupIndex < windowWritingGroups.size(); ++groupIndex) {
-                const auto& stageOwners = windowWritingGroups[groupIndex];
+                for (std::size_t groupIndex = 0; groupIndex < windowWritingGroups.size();) {
+                const auto stageOwners = windowWritingGroups[groupIndex];
                 if (club::production::silentWindow(result, stageOwners, sectionIndex, firstBar, bars)) {
                     OperationalJournal::write("INFO", "CLUB_ARRANGEMENT",
                         "AI-planned group withdrawal; no note generation or recovery required");
+                    ++groupIndex;
                     continue;
                 }
                 juce::String feedback;
                 auto accepted = false;
+                auto outputCapacityExceeded = false;
                 PerformanceScore bestRejectedScore;
                 auto bestRejectedRisk = std::numeric_limits<int>::max();
                 juce::String bestRejectedFeedback;
@@ -10060,7 +10321,18 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         reportWindowFailure(attempt);
                         continue;
                     }
-                    const auto output = extractOutputText(juce::JSON::parse(response.body));
+                    const auto remote = juce::JSON::parse(response.body);
+                    if (const auto* envelope = remote.getDynamicObject()) {
+                        const auto* details = envelope->getProperty("incomplete_details").getDynamicObject();
+                        if (envelope->getProperty("status").toString() == "incomplete" &&
+                            details != nullptr && details->getProperty("reason").toString() == "max_output_tokens") {
+                            outputCapacityExceeded = true;
+                            feedback = "AI response reached its output limit; narrowing only this window's instrument group";
+                            reportWindowFailure(attempt);
+                            break;
+                        }
+                    }
+                    const auto output = extractOutputText(remote);
                     PerformanceScore passage;
                     if (output.isEmpty() || !parseDirectWindow(
                             output, result, requestedOwners, sectionIndex, firstBar, bars,
@@ -10125,10 +10397,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     }
                     const auto windowNotes = std::count_if(rendered.notes.begin(),
                         rendered.notes.end(), [&](const auto& note) {
-                            return note.startBeat >= absoluteStart - .001 &&
+                            return note.endBeat() > absoluteStart + .001 &&
                                 note.startBeat < absoluteEnd - .001;
                         });
-                    if (windowNotes == 0) {
+                    if (windowNotes == 0 && !club::production::silentWindow(
+                            result, requestedOwners, sectionIndex, firstBar, bars)) {
                         feedback = "The window rendered no audible MIDI notes";
                         reportWindowFailure(attempt);
                         continue;
@@ -10642,6 +10915,25 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         " | rendered window notes=" +
                         juce::String(windowNotes));
                 }
+                if (!accepted && outputCapacityExceeded && stageOwners.size() > 1) {
+                    // Keep every accepted note intact. Re-scope the same musical
+                    // window, preferring the AI's core/support grouping; each
+                    // later group hears the actual accepted MIDI from the first.
+                    auto smaller = AiMelodicDiscourse::writingGroups(result, stageOwners);
+                    if (smaller.size() < 2) {
+                        const auto middle = stageOwners.size() / 2;
+                        smaller = {std::vector<std::size_t>(stageOwners.begin(), stageOwners.begin() + middle),
+                                   std::vector<std::size_t>(stageOwners.begin() + middle, stageOwners.end())};
+                    }
+                    windowWritingGroups.erase(windowWritingGroups.begin() + static_cast<std::ptrdiff_t>(groupIndex));
+                    windowWritingGroups.insert(windowWritingGroups.begin() + static_cast<std::ptrdiff_t>(groupIndex),
+                        smaller.begin(), smaller.end());
+                    OperationalJournal::write("WARN", "JOINT_WINDOW",
+                        "AI output limit reached; retrying the same window as " +
+                        juce::String(static_cast<int>(smaller.size())) +
+                        " complementary AI-written groups, without changing accepted MIDI");
+                    continue;
+                }
                 if (!accepted && thematicFallback.has_value() &&
                     !token.stop_requested()) {
                     score = std::move(*thematicFallback);
@@ -10885,6 +11177,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         juce::String(static_cast<int>(windowWritingGroups.size())) + ": " + feedback;
                     return {};
                 }
+                ++groupIndex;
                 }
                 ++completedWindows;
                 if (checkpoint) {
@@ -10901,6 +11194,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     }
                 }
             }
+        }
         }
         if (juce::SystemStats::getEnvironmentVariable(
                 "PULSO_AI_HARMONIC_PHRASE_REVIEW", {}) == "1" &&
@@ -10958,6 +11252,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             // underdeveloped score; a controlled review must still reach the
             // narrative editor in that case.
             if (beforeReview.ready && !needsScoreLevelReview &&
+                juce::SystemStats::getEnvironmentVariable("PULSO_AI_REVIEW_AUDITION", {}) != "1" &&
                 reviewingCompleteCheckpoint) {
                 OperationalJournal::write("OK", "AI_FINALE",
                     "complete Club checkpoint passes final review; no unrelated musical edits requested");
@@ -10990,6 +11285,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             clubFinaleOnly = club::production::requiresFinaleReview(result,
                 afterReview.terminalPhraseReady, afterReview.ensembleReleaseReady);
             if (!clubFinaleOnly &&
+                juce::SystemStats::getEnvironmentVariable("PULSO_AI_REVIEW_AUDITION", {}) != "1" &&
                 SelectiveRepair::publicationReady(afterRender)) {
                 result.performanceScore = std::move(score);
                 error.clear();
@@ -11595,6 +11891,19 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             std::find(revisionOwners.begin(), revisionOwners.end(), owner) ==
                                 revisionOwners.end())
                             revisionOwners.push_back(owner);
+                // A requested Club A/B must let the AI coordinate the terminal
+                // groove with its melodic destination, not edit a solo against
+                // an immutable bass/stab pattern that still promises another cycle.
+                if (behavior == CompositionBehavior::Club && completeScoreResume &&
+                    juce::SystemStats::getEnvironmentVariable("PULSO_AI_REVIEW_AUDITION", {}) == "1") {
+                    revisionOwners.clear();
+                    for (std::size_t owner = 0; owner < result.instruments.size(); ++owner) {
+                        const auto [entry, release] = club::production::activitySpan(
+                            result, result.instruments[owner].id, sectionIndex);
+                        if (entry < absoluteEnd && release > absoluteStart)
+                            revisionOwners.push_back(owner);
+                    }
+                }
                 {
                 auto base = score;
                 // Edit only owners with an isolated direct window. Shared cells
@@ -11634,6 +11943,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         "stable final harmony. Honour the original musical direction "
                         "and preserve every earlier note and every untargeted instrument exactly. "
                         "A rest can be more expressive than another decorative note.\n";
+                    if (behavior == CompositionBehavior::Club)
+                        editorialPrompt << club::dramaturgy::brief()
+                            << "This is the final phrase, not a full-body plateau. "
+                            "The recurring nucleus defines recognizable rhythm WHEN a lane "
+                            "plays, not compulsory attacks until the file edge. Coordinate "
+                            "the listed bass, pulse, sustained and melodic owners together. "
+                            "Keep all earlier windows unchanged.\n";
                     if (retryFeedback.isNotEmpty())
                         editorialPrompt << "PREVIOUS ENDING ATTEMPT WAS REJECTED: "
                             << retryFeedback << " Write a newly coordinated ending "
@@ -11646,7 +11962,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         juce::JSON::toString(juce::var(editorialPrompt)) +
                         ",\"text\":{\"format\":{\"type\":\"json_schema\","
                         "\"name\":\"pulso_direct_window\",\"strict\":true,\"schema\":" +
-                        directWindowSchema(result, revisionOwners) + "}}}";
+                        directWindowSchema(result, revisionOwners, sectionIndex, bars, firstBar) + "}}}";
                     if (progress) progress({AiSongStage::Recovery, windowCount,
                         windowCount, finaleAttempt,
                         "AI reviewing the final narrative passage"});
@@ -11793,6 +12109,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                       "introduced harmonic or narrative defects. "
                                     : "The sustained owners still stopped too close "
                                       "together to hear a real withdrawal. ";
+                                retryFeedback << " Actual checks: technical="
+                                    << (EditorialSafety::technicallySafeAiScore(performance, after) ? "pass" : "fail")
+                                    << ", harmonic=" << (harmonicSafe ? "pass" : "fail")
+                                    << ", narrative_progress=" << (narrativeImproved ? "pass" : "fail")
+                                    << ", protected_notes=" << (otherMidiPreserved ? "pass" : "fail")
+                                    << ". Resolution " << juce::String(before.narrative.resolutionScore, 3)
+                                    << " -> " << juce::String(after.narrative.resolutionScore, 3)
+                                    << ". Reconsider the musical consequence, not merely velocities. ";
                                 auto listed = 0;
                                 for (const auto& issue : after.finalTonalPass.after.issues) {
                                     if (issue.beat < absoluteStart - .001 ||
@@ -11826,6 +12150,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                 }
                             }
                         }
+                    }
+                    if (editorialError.isNotEmpty()) {
+                        retryFeedback = editorialError;
+                        OperationalJournal::write("WARN", "AI_EDITORIAL",
+                            "final-window response could not be applied | " + editorialError);
                     }
                     if (retryFeedback.isEmpty())
                         retryFeedback = "The response did not produce a valid, "
@@ -11887,8 +12216,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     // lanes to the critic instead of limiting it to the first
                     // call-response label in the cast.
                     for (std::size_t index = 0; index < result.instruments.size(); ++index)
-                        if (isVoiceInFamily(result.instruments[index].sourceVoice,
-                                VoiceFamily::Melodic) &&
+                        if ((behavior == CompositionBehavior::Club ||
+                             isVoiceInFamily(result.instruments[index].sourceVoice,
+                                VoiceFamily::Melodic)) &&
                             std::find(narrativeOwners.begin(), narrativeOwners.end(),
                                 index) == narrativeOwners.end())
                             narrativeOwners.push_back(index);
@@ -12011,11 +12341,60 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         result.narrativeSpine.harmonicDebt.c_str()) << "\n";
                 if (narrativeFocus.isNotEmpty())
                     criticPrompt << "INDEPENDENT REVIEW FOCUS: " << narrativeFocus << "\n";
+                if (behavior == CompositionBehavior::Club) {
+                    criticPrompt << "CLUB PLAN-TO-SCORE REVIEW: Diagnose realized commitments, "
+                        "not novelty. A repeated bass or chord pattern is not a defect by itself. "
+                        "Compare the actual notes against the planned secondary phrase, support "
+                        "response and harmonic destination. Select zero to three existing owner "
+                        "windows only for demonstrated discrepancies. Cite owner, absolute beat, "
+                        "pitch/duration and the exact planned event; distinguish intentional "
+                        "tension with resolution from an unrelated sustained chord. A scale-valid "
+                        "voicing does not necessarily realize the chord at that time. Preserve "
+                        "successful phrases, identity and timing; request the smallest musical "
+                        "correction, not a new melody or mandatory extra notes. Do not target "
+                        "a window merely because it is sparse or unchanged. Carried-in notes "
+                        "have negative local onset: target their original onset window if they "
+                        "need changing, never duplicate or retrigger them here.\nCHORD PALETTE:\n";
+                    for (const auto& chord : result.chordPalette) {
+                        criticPrompt << juce::String(chord.id) << " pitch_classes=";
+                        for (const auto pitchClass : chord.pitchClasses)
+                            criticPrompt << pitchClass << ",";
+                        criticPrompt << "\n";
+                    }
+                    const auto clubPlan = juce::JSON::parse(
+                        juce::String::fromUTF8(result.phraseArchitectureJson.c_str()));
+                    criticPrompt << "PLANNED MUSICAL ARCS (absolute zero-based bars): "
+                        << juce::JSON::toString(clubPlan.getProperty("musical_arcs", {}), true)
+                        << "\n";
+                    if (club::scenes::active(result))
+                        criticPrompt << "ENSEMBLE PHRASE COMMITMENTS: "
+                            << juce::JSON::toString(clubPlan.getProperty("ensemble_scenes", {}), true)
+                            << "\nCompare each melodic statement, continuation and arrival with "
+                               "the actual owner notes below. A cue is sufficient only when it "
+                               "fulfills the planned role; an announced independent response "
+                               "that never develops is an unrealized commitment, even if every "
+                               "pitch is tonal. Cite the exact missing or disconnected consequence "
+                               "and its antecedent. Select only the relevant owner/window for "
+                               "AI revision, preserving functioning accompaniment and groove. "
+                               "Do not infer defects from note count, silence or unchanging pads. "
+                               "Do not demand a new theme, maximum density or changes in every section.\n";
+                    criticPrompt << "MELODIC ARTICULATION OBSERVATIONS: "
+                        << juce::JSON::toString(scoreMemory::articulationEvidence(result, currentMidi), true)
+                        << "\nThese candidates are not automatic defects. Inspect the surrounding "
+                        "phrase and intended polyphony. Distinguish a repeated-note gesture or "
+                        "deliberate register accent from an accidental overlapping reattack or "
+                        "unrelated short spike. When warranted, preserve the phrase, rhythmic "
+                        "identity and useful counterline; choose the smallest contextual AI "
+                        "rewrite. Do not flatten the melody into a scale, forbid leaps, or "
+                        "shorten every held note. Judge whether the protagonist's rhythmic "
+                        "grouping and continuation give its contour identity, not note count.\n";
+                }
                 for (std::size_t sectionIndex = 0;
                      sectionIndex < result.sections.size(); ++sectionIndex) {
                     const auto& section = result.sections[sectionIndex];
                     criticPrompt << "SCENE " << static_cast<int>(sectionIndex)
                         << " " << juce::String::fromUTF8(section.name.c_str())
+                        << " absolute_start_bar=" << section.startBar
                         << " bars=" << section.bars << " form="
                         << juce::String::fromUTF8(section.function.c_str())
                         << " motif_treatment=" <<
@@ -12067,11 +12446,18 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             result.beatsPerBar;
                         const auto end = start + bars * result.beatsPerBar;
                         for (const auto narrativeOwner : narrativeOwners) {
+                            if (behavior == CompositionBehavior::Club) {
+                                const auto [entry, release] = club::production::activitySpan(
+                                    result, result.instruments[narrativeOwner].id, sectionIndex);
+                                if (entry >= end || release <= start) continue;
+                            }
                             auto notes = 0;
                             juce::String excerpt;
                             for (const auto& note : currentMidi.notes) {
                                 if (note.partId != narrativeOwner + 1 ||
-                                    note.startBeat < start - .001 ||
+                                    (behavior == CompositionBehavior::Club
+                                        ? note.endBeat() <= start + .001
+                                        : note.startBeat < start - .001) ||
                                     note.startBeat >= end - .001) continue;
                                 excerpt << juce::String(note.startBeat - start, 2)
                                     << ":" << note.pitch << "/"
@@ -12273,6 +12659,16 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         const auto start = (result.sections[sectionIndex].startBar +
                             firstBar) * result.beatsPerBar;
                         const auto end = start + bars * result.beatsPerBar;
+                        if (behavior == CompositionBehavior::Club) {
+                            const auto [entry, release] = club::production::activitySpan(
+                                result, result.instruments[editOwner].id,
+                                static_cast<std::size_t>(sectionIndex));
+                            if (entry >= end || release <= start) {
+                                OperationalJournal::write("INFO", "MELODIC_EDITORIAL",
+                                    "skipped target outside its authored activity span; no paid rewrite requested");
+                                continue;
+                            }
+                        }
                         const auto meaningfulProgress = [&](const Pattern& nextMidi,
                             const CompositionRenderReport& next) {
                             if (next.trackViability.tokenTracks >
@@ -12348,7 +12744,24 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         auto rewritePrompt = jointWindowPrompt(direction, result,
                             immutable, {editOwner}, static_cast<std::size_t>(sectionIndex),
                             firstBar, bars, {}, false);
-                        if (globalNarrativeExperiment)
+                        if (behavior == CompositionBehavior::Club)
+                            rewritePrompt << scoreMemory::brief(result, currentMidi,
+                                start, end, {editOwner});
+                        if (globalNarrativeExperiment && behavior == CompositionBehavior::Club)
+                            rewritePrompt << "\nFOCUSED CLUB REALIZATION REPAIR: " << editorialArc
+                                << "\nAI-selected discrepancies: " << globalTargetMap
+                                << "\nEarlier accepted corrections: " << acceptedNarrativeDecisions
+                                << "\nCorrect only the selected owner's demonstrated mismatch "
+                                   "in this window. Preserve useful contour, rhythmic identity "
+                                   "and all unaffected notes in the selected phrase; the rest "
+                                   "of the score is immutable. For a wrong harmonic voicing "
+                                   "prefer the needed pitch/voice-leading correction, retaining "
+                                   "its intended onsets and durations. For a missing planned "
+                                   "answer realize that answer without replacing the protagonist "
+                                   "or manufacturing fills. Respect the actual chord map and "
+                                   "other held notes, not scale membership alone. A complete "
+                                   "unchanged phrase is valid if no safe improvement is possible.\n";
+                        else if (globalNarrativeExperiment)
                             rewritePrompt << "\nGLOBAL MIDI-GROUNDED NARRATIVE ARC: "
                                 << editorialArc << "\nPLANNED CONNECTED SCENE DECISIONS: "
                                 << globalTargetMap <<
@@ -12627,6 +13040,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                 "->" + juce::String(after.narrative.causalNarrative, 3) +
                                 " review=" + juce::String(
                                     SelectiveRepair::reviewFinalScore(candidate, revisedMidi).ready ? 1 : 0));
+                            if (behavior == CompositionBehavior::Club && unchangedElsewhere && !genuinelyRevised) {
+                                OperationalJournal::write("INFO", "MELODIC_EDITORIAL",
+                                    "AI kept the original Club phrase; no forced novelty retry");
+                                break;
+                            }
                             if (melodicAttempt == 0 && unchangedElsewhere) {
                                 rewritePrompt << "\nYOUR FIRST ALTERNATIVE WAS NOT ACCEPTED. ";
                                 if (!genuinelyRevised)
@@ -12713,6 +13131,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 baselinePlan, finaleContext, {}, &baselineReport);
             const auto baselineReview = SelectiveRepair::reviewFinalScore(
                 baselinePlan, baselineMidi);
+            const auto requireArrivalComparison = terminalCriticExperiment || club::scenes::active(result);
             const auto remainingForFinale = std::chrono::duration_cast<
                 std::chrono::seconds>(aiStarted + totalAiBudget -
                     std::chrono::steady_clock::now());
@@ -12840,7 +13259,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 const auto hasPlannedHandoff = terminalSpeakerBar >=
                         finalSection.startBar && terminalSpeakerBar <
                         finalSection.startBar + finalSection.bars;
-                const auto firstBar = hasPlannedHandoff ?
+                const auto firstBar = !baselineReview.ready ? 0 : hasPlannedHandoff ?
                     std::max(0, terminalSpeakerBar - finalSection.startBar - 1) :
                     std::max(0, finalSection.bars - barsPerWindow);
                 const auto bars = finalSection.bars - firstBar;
@@ -12886,7 +13305,15 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             addOwner(phrase->getProperty("speaker_id").toString().toStdString());
                             addOwner(phrase->getProperty("response_id").toString().toStdString());
                         }
-                if (phraseOwners.size() > 5) phraseOwners.resize(5);
+                // A failed ensemble ending cannot be repaired reliably while
+                // sustained or answering voices in that same scene are frozen.
+                // Scope is the AI-authored final scene, never earlier scenes.
+                if (!baselineReview.ready) {
+                    for (const auto& note : baselineMidi.notes)
+                        if (note.endBeat() > start && note.startBeat < end &&
+                            note.partId > 0 && note.partId <= result.instruments.size())
+                            addOwner(result.instruments[note.partId - 1].id);
+                } else if (phraseOwners.size() > 5) phraseOwners.resize(5);
                 auto isolatedScore = score;
                 const auto editableOwners = phraseOwners;
                 for (const auto owner : editableOwners)
@@ -12931,13 +13358,32 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         "voice are immutable. The following AI note-off stage will "
                         "coordinate the remaining ensemble release; concentrate "
                         "this response on the phrase, harmony and audible answer.\n";
+                    if (club::scenes::active(result))
+                        prompt << club::scenes::connectedArrival();
                     if (independentFinding.isNotEmpty())
                         prompt << "INDEPENDENT MUSICAL FINDING: " <<
                             independentFinding << "\nMUSICAL GOAL: " <<
                             independentGoal << "\n";
+                    if (requireArrivalComparison)
+                        prompt << arrivalReview::context(result, baselineMidi)
+                            << "Preserve any already successful destination while repairing "
+                               "its demonstrated weakness. Do not replace a connected ending "
+                               "with a new unrelated excursion.\n";
                     for (const auto& issue : baselineReview.issues)
                         prompt << "AUDIBLE FINDING: " <<
                             juce::String::fromUTF8(issue.c_str()) << "\n";
+                    prompt << "\nIMMUTABLE DESTINATION HARMONY: ";
+                    for (const auto& chord : result.chordPalette) {
+                        prompt << "\n" << juce::String(chord.id) << " pitch_classes=";
+                        for (const auto pc : chord.pitchClasses) prompt << pc << ",";
+                    }
+                    prompt << "\nACTUAL ENSEMBLE ENDING BEFORE REVISION:\n";
+                    for (const auto& note : baselineMidi.notes)
+                        if (note.endBeat() > start && note.startBeat < end &&
+                            note.partId > 0 && note.partId <= result.instruments.size())
+                            prompt << juce::String(result.instruments[note.partId - 1].id)
+                                << " beat=" << note.startBeat << " pitch=" << note.pitch
+                                << " duration=" << note.durationBeats << "\n";
                     if (clubFinaleOnly) {
                         prompt << "\nCLUB ENDING CONTEXT: retain the established groove and planned "
                             "cyclic phases. Resolve through thematic recall and supported harmonic "
@@ -13051,15 +13497,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             }
                         }
                     }
-                    const auto safe = candidateReview.ready &&
-                        EditorialSafety::technicallySafeAiScore(
-                            candidateMidi, candidateReport) &&
+                    const auto technicalIntegrity = EditorialSafety::technicallySafeAiScore(candidateMidi, candidateReport);
+                    const auto earlierScenesPreserved = preservesOutsideEditedWindow(baselineMidi, candidateMidi,
+                        mutableOwners, start, end);
+                    const auto qualityPreserved = technicalIntegrity && earlierScenesPreserved &&
                         candidateReport.soundscape.score + .01 >=
                             baselineReport.soundscape.score &&
                         candidateReport.trackViability.score + .01 >=
                             baselineReport.trackViability.score &&
-                        candidateReport.narrative.resolutionScore + .01 >=
-                            baselineReport.narrative.resolutionScore &&
                         candidateReport.finalTonalPass.after.unintendedHarshOverlaps <=
                             baselineReport.finalTonalPass.after.unintendedHarshOverlaps &&
                         candidateReport.finalTonalPass.after.unsupportedChromaticNotes <=
@@ -13067,12 +13512,12 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         candidateReview.developedVoices >=
                             baselineReview.developedVoices &&
                         candidateReview.harmonicContinuity + .01 >=
-                            baselineReview.harmonicContinuity &&
-                        preservesOutsideEditedWindow(baselineMidi, candidateMidi,
-                            mutableOwners, start, end);
-                    auto musicallyPreferred = !terminalCriticExperiment;
+                            baselineReview.harmonicContinuity;
+                    auto safe = qualityPreserved && candidateReview.ready &&
+                        candidateReport.narrative.resolutionScore + .01 >= baselineReport.narrative.resolutionScore;
+                    auto musicallyPreferred = !requireArrivalComparison;
                     juce::String comparisonFeedback;
-                    if (safe && terminalCriticExperiment) {
+                    if (arrivalReview::mayCompare(technicalIntegrity, earlierScenesPreserved, requireArrivalComparison)) {
                         const auto excerpt = [&](const Pattern& midi) {
                             juce::String notes;
                             for (std::size_t owner = 0; owner < result.instruments.size();
@@ -13080,7 +13525,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                 juce::String partNotes;
                                 for (const auto& note : midi.notes) {
                                     if (note.partId != owner + 1 ||
-                                        note.startBeat < start - .001 ||
+                                        note.endBeat() <= start + .001 ||
                                         note.startBeat >= end - .001) continue;
                                     partNotes << juce::String(note.startBeat, 2) << ":" <<
                                         note.pitch << "/" <<
@@ -13113,7 +13558,16 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                 "\nINTENDED IMPROVEMENT: " << independentGoal <<
                                 "\nORIGINAL FINAL SCENE:\n" << beforeNotes <<
                                 "CANDIDATE FINAL SCENE:\n" << afterNotes;
-                            const auto comparisonSchema = juce::String(R"json({
+                            if (club::scenes::active(result))
+                                comparison << arrivalReview::context(result, baselineMidi)
+                                    << "For each verdict cite exact owner/onset/pitch/duration "
+                                       "in evidence. original_goal_realized and candidate_goal_realized "
+                                       "refer to the planned arrival, not global scale membership. "
+                                       "existing_arrival_preserved means the successful musical "
+                                       "destination and its intelligible preparation survived, not "
+                                       "necessarily literal notes. Prefer the original if the revision "
+                                       "loses that achievement, even if another structural metric rises.\n";
+                            const auto comparisonSchema = club::scenes::active(result) ? arrivalReview::schema() : juce::String(R"json({
                               "type":"object","properties":{
                                 "prefer_candidate":{"type":"boolean"},
                                 "reason":{"type":"string"}},
@@ -13131,6 +13585,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                 std::chrono::seconds>(aiStarted + totalAiBudget -
                                     std::chrono::steady_clock::now());
                             if (compareBudget > std::chrono::seconds(40)) {
+                                if (progress) progress({AiSongStage::Recovery, windowCount,
+                                    windowCount, attempt, "AI comparing original and revised melodic arrival"});
                                 const auto response = performRequest(comparisonBody,
                                     apiKey, token, std::min(compareBudget,
                                         std::chrono::seconds(90)));
@@ -13138,11 +13594,24 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                                     response.status == 200 ? extractOutputText(
                                         juce::JSON::parse(response.body)) : juce::String{};
                                 const auto parsed = juce::JSON::parse(output);
+                                if (club::scenes::active(result) && arrivalReview::preferred(parsed)) {
+                                    candidatePlan.reviewedEndingMidi = NarrativeScoreGate::endingSignature(candidateMidi, candidatePlan);
+                                    candidatePlan.reviewedEndingEvidence = parsed.getProperty("evidence", {}).toString().toStdString();
+                                    candidateReview = SelectiveRepair::reviewFinalScore(candidatePlan, candidateMidi);
+                                    safe = qualityPreserved && candidateReview.ready;
+                                }
+                                if (club::scenes::active(result) && arrivalReview::originalValidated(parsed) &&
+                                    EditorialSafety::technicallySafeAiScore(baselineMidi, baselineReport)) {
+                                    result.reviewedEndingMidi = NarrativeScoreGate::endingSignature(baselineMidi, result);
+                                    result.reviewedEndingEvidence = parsed.getProperty("evidence", {}).toString().toStdString();
+                                }
                                 if (const auto* verdict = parsed.getDynamicObject()) {
-                                    musicallyPreferred = static_cast<bool>(
+                                    musicallyPreferred = club::scenes::active(result) ? arrivalReview::preferred(parsed) : static_cast<bool>(
                                         verdict->getProperty("prefer_candidate"));
                                     comparisonFeedback = verdict->getProperty(
                                         "reason").toString();
+                                    if (club::scenes::active(result))
+                                        comparisonFeedback << " | evidence: " << verdict->getProperty("evidence").toString();
                                 }
                             }
                         }
@@ -13151,7 +13620,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             juce::String(musicallyPreferred ? "candidate" : "original") +
                             " | " + comparisonFeedback);
                     }
+                    if (!musicallyPreferred && NarrativeScoreGate::reviewedEndingApplies(baselineMidi, result)) {
+                        OperationalJournal::write("OK", "AI_FINALE",
+                            "AI validated the exact original ending in context; accepted MIDI preserved");
+                        break;
+                    }
                     if (safe && musicallyPreferred) {
+                        result.reviewedEndingMidi = candidatePlan.reviewedEndingMidi;
+                        result.reviewedEndingEvidence = candidatePlan.reviewedEndingEvidence;
                         score = std::move(candidateScore);
                         OperationalJournal::write("OK", "AI_FINALE",
                             "AI-authored terminal phrase and coordinated ensemble "

@@ -128,7 +128,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   const [prompt, setPrompt] = useState('')
   const [allowChromatic, setAllowChromatic] = useState(false)
   const [club, setClub] = useState(false)
-  const [clubLayerPace, setClubLayerPace] = useState('auto')
+  const [engineVersion, setEngineVersion] = useState<'v1' | 'v1.1'>('v1')
   const [clubVariety, setClubVariety] = useState(true)
   const [repeatSeed, setRepeatSeed] = useState<string | null>(null)
   const [sharing, setSharing] = useState(false)
@@ -170,7 +170,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
       if (typeof draft.prompt === 'string') setPrompt(draft.prompt.slice(0, 600))
       if ([60,120,180,300,390,600,900].includes(draft.durationSeconds)) setDurationSeconds(draft.durationSeconds)
       if (Number.isFinite(draft.bpm) && draft.bpm >= 60 && draft.bpm <= 180) setBpm(draft.bpm)
-      setClubLayerPace(['auto', '8-16', '16-32', '32-64'].includes(draft.clubLayerPace) ? draft.clubLayerPace : 'auto')
+      setEngineVersion(draft.engineVersion === 'v1.1' ? 'v1.1' : 'v1')
       setClubVariety(draft.clubVariety !== false)
       setRepeatSeed(typeof draft.repeatSeed === 'string' && /^[1-9][0-9]*$/.test(draft.repeatSeed) ? draft.repeatSeed : null)
       setClub(draft.club === true); setAllowChromatic(draft.allowChromatic === true)
@@ -179,8 +179,8 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   }, [user?.id, shared])
   useEffect(() => {
     if (!user || shared || !draftLoaded) return
-    try { localStorage.setItem(`pulso-cloud-draft:${user.id}`, JSON.stringify({ prompt, durationSeconds, bpm, club, clubLayerPace, clubVariety, allowChromatic, repeatSeed })) } catch {}
-  }, [user?.id, shared, draftLoaded, prompt, durationSeconds, bpm, club, clubLayerPace, clubVariety, allowChromatic, repeatSeed])
+    try { localStorage.setItem(`pulso-cloud-draft:${user.id}`, JSON.stringify({ prompt, durationSeconds, bpm, club, engineVersion, clubVariety, allowChromatic, repeatSeed })) } catch {}
+  }, [user?.id, shared, draftLoaded, prompt, durationSeconds, bpm, club, engineVersion, clubVariety, allowChromatic, repeatSeed])
 
   useEffect(() => { if (user && !shared) void api.cloudStatus().then(setCloudStatus).catch(() => setCloudStatus(null)) }, [user, shared])
   useEffect(() => {
@@ -228,7 +228,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
     event.preventDefault(); setError(''); setBusy(true)
     try {
       const job = await api.createCloudJob({ prompt: prompt.trim(), durationSeconds,
-        bpm, allowChromatic, club, clubLayerPace: club ? clubLayerPace : 'auto', clubVariety: club && clubVariety, ...(repeatSeed ? { seed: repeatSeed } : {}), idempotencyKey: crypto.randomUUID() })
+        bpm, allowChromatic, club, engineVersion, clubLayerPace: 'auto', clubVariety: club && clubVariety, ...(repeatSeed ? { seed: repeatSeed } : {}), idempotencyKey: crypto.randomUUID() })
       setJobs(previous => [job, ...previous.filter(item => item.id !== job.id)])
       setSelectedId(job.id); setComposeOpen(false)
     } catch (problem) { setError(problem instanceof Error ? problem.message : t("No pudimos comenzar la composición.")) }
@@ -316,14 +316,12 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
         <textarea id="cloud-prompt" value={prompt} maxLength={600} required rows={5} onChange={event => setPrompt(event.target.value)} placeholder={t("Una historia electrónica profunda, con armonías que evolucionan y un motivo que regresa transformado…")} />
         {repeatSeed && <p className="cloud-suite-cost" role="status">{t("Ajustes cargados. Todavía no se envió ninguna solicitud.")}{' '}{t("Semilla")}: {repeatSeed}.{' '}<button type="button" className="text-button" onClick={() => setRepeatSeed(null)}>{t("Usar semilla nueva")}</button></p>}
         <label className="cloud-chromatic-option"><input type="checkbox" checked={allowChromatic} onChange={event => setAllowChromatic(event.target.checked)} />{' '}{t("Permitir cromatismos")}</label>
+        <label htmlFor="cloud-engine">{t("Motor")}</label>
+        <select id="cloud-engine" value={engineVersion} onChange={event => setEngineVersion(event.target.value === 'v1.1' ? 'v1.1' : 'v1')}>
+          <option value="v1">v1</option><option value="v1.1">v1.1</option>
+        </select>
         <label className="cloud-chromatic-option" title={t("Células reconocibles y evolución de capas a largo plazo, sin cortes obligatorios cada 64 compases.")}><input type="checkbox" checked={club} onChange={event => setClub(event.target.checked)} />{' '}{t("Club · repetición y evolución")}</label>
         {club && <div className="cloud-club-preferences">
-          <label htmlFor="cloud-club-pace">{t("Club: evolución de capas")}</label>
-          <select id="cloud-club-pace" value={clubLayerPace} onChange={event => setClubLayerPace(event.target.value)}>
-            <option value="auto">{t("Automática")}</option>
-            {['8-16', '16-32', '32-64'].map(value => <option key={value} value={value}>{value.replace('-', '–')} {t("compases")}</option>)}
-          </select>
-          <p className="cloud-suite-cost">{t("Una preferencia de desarrollo para la IA, no un calendario obligatorio ni un cambio de tempo.")}</p>
           <label className="cloud-chromatic-option"><input type="checkbox" checked={clubVariety} onChange={event => setClubVariety(event.target.checked)} />{' '}{t("Club: recurso principal libre")}</label>
           <p className="cloud-suite-cost">{t("La IA elige el recurso que conduce la obra; el arpegio continuo no es obligatorio.")}</p>
         </div>}
@@ -343,7 +341,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
           <div className="cloud-suite-session-actions"><button type="button" className="cloud-repeat-settings" onClick={() => {
             setPrompt(selected.prompt); setDurationSeconds(selected.durationSeconds); setBpm(selected.bpm)
             setClub(selected.behavior === 'club'); setAllowChromatic(selected.allowChromatic === true)
-            setClubLayerPace(selected.clubLayerPace || 'auto'); setClubVariety(selected.clubVariety === true)
+            setEngineVersion(selected.engineVersion === 'v1.1' ? 'v1.1' : 'v1'); setClubVariety(selected.clubVariety === true)
             setRepeatSeed(selected.seed); setError(''); setSessionOpen(false); setHistoryOpen(false); setComposeOpen(true)
           }}>{t("Repetir ajustes")}</button></div>
           {(selected.status === 'running' || selected.status === 'queued') && <div className="cloud-suite-progress"><progress value={selected.completedSteps} max={Math.max(selected.totalSteps, 1)} /><span>{t(stageText[selected.stage]) || t("Componiendo")} · {selected.completedSteps}/{selected.totalSteps}</span></div>}

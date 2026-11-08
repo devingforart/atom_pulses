@@ -51,7 +51,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Cloud Suite', () => {
   it('reuses the saved request and seed without submitting until confirmation', async () => {
-    mock.cloudJobs.mockResolvedValue([{ ...job, behavior: 'club', clubLayerPace: '32-64', clubVariety: true, allowChromatic: true }])
+    mock.cloudJobs.mockResolvedValue([{ ...job, engineVersion: 'v1.1', behavior: 'club', clubLayerPace: '32-64', clubVariety: true, allowChromatic: true }])
     render(<Cloud />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Seguimiento de la obra' })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Seguimiento de la obra' }))
@@ -59,14 +59,15 @@ describe('Cloud Suite', () => {
     expect(screen.getByLabelText(/Idea musical/)).toHaveValue(job.prompt)
     expect(screen.getByLabelText('Duración')).toHaveValue('60')
     expect(screen.getByLabelText('Tempo')).toHaveValue(120)
-    expect(screen.getByLabelText('Club: evolución de capas')).toHaveValue('32-64')
+    expect(screen.queryByLabelText('Club: evolución de capas')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Motor')).toHaveValue('v1.1')
     expect(screen.getByRole('checkbox', { name: 'Club: recurso principal libre' })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: 'Permitir cromatismos' })).toBeChecked()
     expect(mock.createCloudJob).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Componer obra/ }))
     await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalledWith(expect.objectContaining({
       seed: job.seed, prompt: job.prompt, durationSeconds: 60, bpm: 120,
-      club: true, clubLayerPace: '32-64', clubVariety: true, allowChromatic: true,
+      engineVersion: 'v1.1', club: true, clubLayerPace: 'auto', clubVariety: true, allowChromatic: true,
     })))
   })
   it('invites users with an empty library to create their first composition', async () => {
@@ -97,11 +98,12 @@ describe('Cloud Suite', () => {
     await waitFor(() => expect(screen.getByText(/hasta 2 obras completadas cada 24 horas/i)).toBeInTheDocument())
     fireEvent.change(screen.getByRole('textbox', { name: /Idea musical/i }), { target: { value: 'Progressive house oscuro' } })
     fireEvent.click(screen.getByRole('checkbox', { name: /Club/i }))
-    fireEvent.change(screen.getByLabelText('Club: evolución de capas'), { target: { value: '32-64' } })
+    expect(screen.queryByLabelText('Club: evolución de capas')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Motor')).toHaveValue('v1')
     expect(screen.getByRole('checkbox', { name: 'Club: recurso principal libre' })).toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: /Componer obra/i }))
     await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalledWith(expect.objectContaining({
-      club: true, clubLayerPace: '32-64', clubVariety: true, allowChromatic: false, prompt: 'Progressive house oscuro',
+      engineVersion: 'v1', club: true, clubLayerPace: 'auto', clubVariety: true, allowChromatic: false, prompt: 'Progressive house oscuro',
     })))
   })
   it('opens a public exhibition without authentication, library access or composition requests', async () => {

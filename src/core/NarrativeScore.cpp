@@ -12,6 +12,9 @@
 #include <set>
 #include <string_view>
 #include <tuple>
+#include <sstream>
+#include <iomanip>
+#include <locale>
 
 namespace pulso {
 namespace {
@@ -684,6 +687,25 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
                     lateTheme.begin() + index + motifNotes);
                 report.motifClosure = std::max(report.motifClosure, contourClosure(premiseTheme, recalled));
             }
+        // A connected answer can reverse a recognizable fragment of the
+        // subject. Requiring five notes made a four-note retrograde score zero
+        // before its intervals were even inspected. Recognize exact interval
+        // retrogrades (including transposition), not arbitrary descents. This
+        // is evidence only: no pitches, durations or MIDI events are changed.
+        const auto fragmentSize = std::min({std::size_t{5}, premiseTheme.size(),
+            lateTheme.size() - phraseStart});
+        if (fragmentSize >= 4)
+            for (std::size_t source = 0; source + fragmentSize <= std::min(premiseTheme.size(), std::size_t{5}); ++source)
+                for (auto target = phraseStart; target + fragmentSize <= lateTheme.size(); ++target) {
+                    auto retrograde = true;
+                    for (std::size_t step = 1; step < fragmentSize; ++step) {
+                        const auto expected = premiseTheme[source + fragmentSize - 1 - step]->pitch -
+                            premiseTheme[source + fragmentSize - step]->pitch;
+                        const auto actual = lateTheme[target + step]->pitch - lateTheme[target + step - 1]->pitch;
+                        retrograde = retrograde && expected == actual;
+                    }
+                    if (retrograde) report.motifClosure = std::max(report.motifClosure, 1.0);
+                }
         const auto homeArrival = stableTerminal && terminalClasses.size() >= 3 &&
             terminalClasses.contains(positiveModulo(plan.rootPitchClass, 12));
         report.tonalClosure = homeArrival ? 1.0 : 0.0;
@@ -692,12 +714,46 @@ void auditNarrativeSpine(const Pattern& pattern, const SongPlan& plan,
     }
     report.resolutionScore = report.motifClosure * .30 + report.tonalClosure * .35 +
         report.registerRelease * .20 + report.densityRelease * .15;
-    report.narrativeSpineReady = report.causalNarrative >= .62 && report.resolutionScore >= .58 &&
+    report.narrativeSpineReady = NarrativeScoreGate::resolved(report,
+        plan.compositionBehavior == CompositionBehavior::Club) &&
         premise != nullptr && climax != nullptr && resolution != nullptr &&
         premise->audible && climax->audible && resolution->audible && report.terminalPhraseReady;
 }
 
 } // namespace
+
+std::string NarrativeScoreGate::endingSignature(const Pattern& pattern, const SongPlan& plan) {
+    std::vector<std::string> notes;
+    for (const auto& note : pattern.notes) {
+        std::ostringstream row;
+        row.imbue(std::locale::classic());
+        row << std::hexfloat << note.startBeat << ':' << note.durationBeats << ':'
+            << note.pitch << ':' << static_cast<int>(note.velocity) << ':' << note.partId
+            << ':' << static_cast<int>(note.voice);
+        notes.push_back(row.str());
+    }
+    std::sort(notes.begin(), notes.end());
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out << plan.rootPitchClass << ':' << plan.totalBars << ':' << plan.beatsPerBar
+        << ':' << plan.phraseArchitectureJson << ':' << plan.narrativeSpine.resolution;
+    for (const auto& part : plan.instruments) out << '\n' << part.id;
+    for (const auto& chord : plan.chordPalette) {
+        out << '\n' << chord.id << ':' << chord.rootPitchClass << ':' << chord.bassPitchClass;
+        for (const auto pc : chord.pitchClasses) out << ':' << pc;
+    }
+    for (const auto& section : plan.sections) {
+        out << '\n' << section.name << ':' << section.startBar << ':' << section.bars;
+        for (const auto& event : section.harmonicEvents)
+            out << ':' << event.chordId << ':' << event.barOffset << ':' << std::hexfloat << event.beatOffset;
+    }
+    for (const auto& note : notes) out << '\n' << note;
+    return out.str();
+}
+bool NarrativeScoreGate::reviewedEndingApplies(const Pattern& pattern, const SongPlan& plan) {
+    return !plan.reviewedEndingEvidence.empty() && !plan.reviewedEndingMidi.empty() &&
+        plan.reviewedEndingMidi == endingSignature(pattern, plan);
+}
 
 NarrativeScoreReport NarrativeScoreGate::audit(const Pattern& pattern, const SongPlan& plan) {
     NarrativeScoreReport report;

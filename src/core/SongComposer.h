@@ -147,6 +147,9 @@ struct SongPlan {
     // Optional local experiment: an AI-authored phrase/voice-relations plan.
     // It guides the sovereign note writer; the renderer never converts it to notes.
     std::string phraseArchitectureJson;
+    // Runtime-only AI adjudication: never restored from an unverified checkpoint.
+    std::string reviewedEndingMidi;
+    std::string reviewedEndingEvidence;
     // Explicit user constraint propagated independently of genre classification. A
     // percussion-free electronic piece must not be graded as a failed club track.
     bool percussionFreeIntent{};

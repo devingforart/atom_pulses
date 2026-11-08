@@ -34,6 +34,8 @@ const RECOVERY_CALL_USD: u64 = 20;
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateJob {
+    #[serde(default = "default_engine_version")]
+    engine_version: String,
     #[serde(default)]
     club: bool,
     #[serde(default = "default_club_layer_pace")]
@@ -50,6 +52,22 @@ pub struct CreateJob {
 }
 
 fn default_club_layer_pace() -> String { "auto".into() }
+fn default_engine_version() -> String { "v1".into() }
+fn supported_engine(version: &str) -> bool { matches!(version, "v1" | "v1.1") }
+fn engine_path(root: &Path, version: &str) -> ApiResult<std::path::PathBuf> {
+    if !supported_engine(version) { return Err(ApiError::configuration("unknown Cloud engine")); }
+    Ok(root.join("engines").join(version).join("pulso_cloud_worker"))
+}
+fn engine_profile(version: &str) -> Value {
+    // Frozen Cloud baseline: local experiments cannot silently alter v1.
+    let mut profile: Value = serde_json::from_str(include_str!("../../shared/cloud-engine-profile.json")).unwrap();
+    if version == "v1.1" {
+        profile["defaultFirstPass"] = false.into();
+        profile["clubDefaultFirstPass"] = false.into();
+        profile["workerEnvironment"]["PULSO_AI_CLUB_ENSEMBLE_SCENES"] = "1".into();
+    }
+    profile
+}
 
 fn apply_club_preferences(command: &mut Command, behavior: &str, pace: &str, variety: bool) {
     command.env("PULSO_LOCAL_CLUB_PACE", if behavior == "club" { pace } else { "auto" });
@@ -64,6 +82,7 @@ fn composer_profile() -> Value {
 #[derive(Debug, FromRow, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudJob {
+    engine_version: String,
     club_layer_pace: String,
     club_variety: bool,
     allow_chromatic: bool,
@@ -85,7 +104,8 @@ pub struct CloudJob {
 }
 
 fn valid_request(input: &CreateJob) -> bool {
-    ["auto", "8-16", "16-32", "32-64"].contains(&input.club_layer_pace.as_str())
+    supported_engine(&input.engine_version)
+        && ["auto", "8-16", "16-32", "32-64"].contains(&input.club_layer_pace.as_str())
         && !input.prompt.trim().is_empty()
         && input.prompt.chars().count() <= 600
         && (30..=900).contains(&input.duration_seconds)
@@ -146,7 +166,7 @@ fn quota_problem(
 pub async fn create(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(input): Json<CreateJob>,
+    Json(mut input): Json<CreateJob>,
 ) -> ApiResult<(StatusCode, Json<CloudJob>)> {
     let user = require_user(&state, &headers).await?;
     if !user.email_verified || !available(&state, &user) {
@@ -161,6 +181,11 @@ pub async fn create(
             "Revisa el prompt y los parámetros de la obra.",
         ));
     }
+    // Cloud no longer exposes layer pace. Old clients/drafts cannot re-enable it.
+    input.club_layer_pace = default_club_layer_pace();
+    if !state.config.demo_lab && !engine_path(&state.config.cloud_output_dir, &input.engine_version)?.is_file() {
+        return Err(ApiError::public(StatusCode::SERVICE_UNAVAILABLE, "El motor seleccionado no está disponible. Intenta más tarde."));
+    }
     let mut tx = state.db.begin().await?;
     // Serialize quota checks per account, even when requests reach different API replicas.
     sqlx::query("SELECT pg_advisory_xact_lock(hashtext($1::text))")
@@ -168,9 +193,9 @@ pub async fn create(
         .execute(&mut *tx)
         .await?;
     if let Some(existing) = sqlx::query_as::<_, CloudJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at,allow_chromatic,club_layer_pace,club_variety FROM cloud_jobs WHERE user_id=$1 AND idempotency_key=$2")
+        "SELECT engine_version,id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at,allow_chromatic,club_layer_pace,club_variety FROM cloud_jobs WHERE user_id=$1 AND idempotency_key=$2")
         .bind(user.id).bind(&input.idempotency_key).fetch_optional(&mut *tx).await? {
-        if existing.prompt != input.prompt.trim()
+        if existing.engine_version != input.engine_version || existing.prompt != input.prompt.trim()
             || existing.behavior != if input.club { "club" } else { CLOUD_BEHAVIOR }
             || existing.allow_chromatic != input.allow_chromatic
             || existing.club_layer_pace != input.club_layer_pace
@@ -223,10 +248,10 @@ pub async fn create(
         .unwrap_or_else(|| (i64::from_le_bytes(seed_bytes) & i64::MAX).max(1));
     let id = Uuid::new_v4();
     let now = unix_time();
-    sqlx::query("INSERT INTO cloud_jobs(id,user_id,idempotency_key,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign,status,stage,created_at,updated_at,allow_chromatic,club_layer_pace,club_variety) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued','queued',$10,$10,$11,$12,$13)")
+    sqlx::query("INSERT INTO cloud_jobs(id,user_id,idempotency_key,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign,status,stage,created_at,updated_at,allow_chromatic,club_layer_pace,club_variety,engine_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued','queued',$10,$10,$11,$12,$13,$14)")
         .bind(id).bind(user.id).bind(&input.idempotency_key).bind(input.prompt.trim())
         .bind(input.duration_seconds).bind(input.bpm).bind(if input.club { "club" } else { CLOUD_BEHAVIOR }).bind(seed).bind(CLOUD_AI_SOVEREIGN)
-        .bind(now).bind(input.allow_chromatic).bind(&input.club_layer_pace).bind(input.club_variety).execute(&mut *tx).await?;
+        .bind(now).bind(input.allow_chromatic).bind(&input.club_layer_pace).bind(input.club_variety).bind(&input.engine_version).execute(&mut *tx).await?;
     if crate::credits::enabled() && !is_demo && !unlimited {
         crate::credits::reserve(&mut tx, user.id, id,
             crate::credits::cost()).await?;
@@ -235,6 +260,7 @@ pub async fn create(
     Ok((
         StatusCode::CREATED,
         Json(CloudJob {
+            engine_version: input.engine_version,
             allow_chromatic: input.allow_chromatic,
             club_layer_pace: input.club_layer_pace,
             club_variety: input.club_variety,
@@ -263,7 +289,7 @@ pub async fn list(
 ) -> ApiResult<Json<Vec<CloudJob>>> {
     let user = require_user(&state, &headers).await?;
     let jobs = sqlx::query_as::<_, CloudJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at,allow_chromatic,club_layer_pace,club_variety FROM cloud_jobs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 30")
+        "SELECT engine_version,id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at,allow_chromatic,club_layer_pace,club_variety FROM cloud_jobs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 30")
         .bind(user.id).fetch_all(&state.db).await?;
     Ok(Json(jobs))
 }
@@ -293,7 +319,7 @@ pub async fn get(
 ) -> ApiResult<Json<CloudJob>> {
     let user = require_user(&state, &headers).await?;
     let mut job = sqlx::query_as::<_, CloudJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at,allow_chromatic,club_layer_pace,club_variety FROM cloud_jobs WHERE user_id=$1 AND id=$2")
+        "SELECT engine_version,id,prompt,duration_seconds,bpm,behavior,ai_sovereign,seed::text AS seed,status,stage,completed_steps,total_steps,result_manifest,error_code,created_at,updated_at,allow_chromatic,club_layer_pace,club_variety FROM cloud_jobs WHERE user_id=$1 AND id=$2")
         .bind(user.id).bind(id).fetch_optional(&state.db).await?
         .ok_or_else(|| ApiError::public(StatusCode::NOT_FOUND, "Obra no encontrada."))?;
     enrich_instruments(&state, &mut job).await;
@@ -421,6 +447,7 @@ pub async fn track(
 
 #[derive(FromRow)]
 struct ClaimedJob {
+    engine_version: String,
     club_layer_pace: String,
     club_variety: bool,
     allow_chromatic: bool,
@@ -436,7 +463,7 @@ struct ClaimedJob {
 async fn claim(state: &AppState) -> ApiResult<Option<ClaimedJob>> {
     let mut tx = state.db.begin().await?;
     let job = sqlx::query_as::<_, ClaimedJob>(
-        "SELECT id,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign,allow_chromatic,club_layer_pace,club_variety FROM cloud_jobs WHERE status='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED")
+        "SELECT engine_version,id,prompt,duration_seconds,bpm,behavior,seed,ai_sovereign,allow_chromatic,club_layer_pace,club_variety FROM cloud_jobs WHERE status='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED")
         .fetch_optional(&mut *tx).await?;
     if let Some(job) = &job {
         sqlx::query("UPDATE cloud_jobs SET status='running',stage='starting',attempt=attempt+1,lease_until=$2,updated_at=$3 WHERE id=$1")
@@ -453,6 +480,7 @@ fn worker_command(
     directory: &Path,
     output_root: &Path,
     recovery: bool,
+    engine_version: &str,
 ) -> Command {
     let mut command = Command::new(worker);
     command
@@ -466,16 +494,16 @@ fn worker_command(
         .kill_on_drop(true);
     // Local Studio reads this same versioned profile. A single file prevents
     // silent musical-path drift when one surface gains an editorial flag.
-    for (key, value) in composer_profile()["workerEnvironment"]
+    for (key, value) in engine_profile(engine_version)["workerEnvironment"]
         .as_object()
         .expect("composer profile needs workerEnvironment")
     {
         command.env(key, value.as_str().expect("profile values must be strings"));
     }
-    if composer_profile()["defaultFirstPass"].as_bool() == Some(true) {
+    if engine_profile(engine_version)["defaultFirstPass"].as_bool() == Some(true) {
         command.env("PULSO_AI_FIRST_PASS_AUDITION", "1");
     }
-    if composer_profile()["defaultPhraseArchitecture"].as_bool() == Some(true) {
+    if engine_profile(engine_version)["defaultPhraseArchitecture"].as_bool() == Some(true) {
         command.env("PULSO_AI_PHRASE_ARCHITECTURE_EXPERIMENT", "1");
     }
     if recovery {
@@ -550,16 +578,13 @@ async fn run_one(state: &AppState, job: ClaimedJob) -> ApiResult<()> {
         "club_layer_pace": job.club_layer_pace,
         "club_variety": job.club_variety,
         "pitched_only": true,
+        "engine_version": job.engine_version,
         "prompt": job.prompt, "duration_seconds": job.duration_seconds,
         "bpm": job.bpm, "behavior": job.behavior, "seed": job.seed.to_string(),
         "ai_sovereign": job.ai_sovereign,
-        "first_pass_audition": composer_profile()[if job.behavior == "club" { "clubDefaultFirstPass" } else { "defaultFirstPass" }].as_bool() == Some(true),
+        "first_pass_audition": engine_profile(&job.engine_version)[if job.behavior == "club" { "clubDefaultFirstPass" } else { "defaultFirstPass" }].as_bool() == Some(true),
     });
-    let worker = state
-        .config
-        .cloud_worker_path
-        .as_ref()
-        .ok_or_else(|| ApiError::configuration("missing PULSO_CLOUD_WORKER_PATH"))?;
+    let worker = engine_path(&state.config.cloud_output_dir, &job.engine_version)?;
     // The composer needs the OpenAI key, but must not inherit the API server's
     // Stripe, database, mail or signing credentials.
     let openai_key = std::env::var("OPENAI_API_KEY")
@@ -587,12 +612,13 @@ async fn run_one(state: &AppState, job: ClaimedJob) -> ApiResult<()> {
         )
         .await?;
         let mut command = worker_command(
-            worker,
+            &worker,
             &openai_key,
             &input,
             &directory,
             &state.config.cloud_output_dir,
             recovery_count > 0,
+            &job.engine_version,
         );
         apply_club_preferences(&mut command, &job.behavior, &job.club_layer_pace, job.club_variety);
         let mut child = command
@@ -793,6 +819,7 @@ mod tests {
             Path::new("jobs/work"),
             Path::new("jobs"),
             false,
+            "v1",
         );
         let env: std::collections::HashMap<_, _> = command
             .as_std()
@@ -876,6 +903,7 @@ mod tests {
             Path::new("jobs/work"),
             Path::new("jobs"),
             true,
+            "v1",
         );
         let retry_env: std::collections::HashMap<_, _> = retry
             .as_std()
@@ -905,6 +933,7 @@ mod tests {
     #[test]
     fn input_boundaries_and_idempotency_key() {
         let valid = CreateJob {
+            engine_version: default_engine_version(),
             club: false,
             club_layer_pace: default_club_layer_pace(),
             club_variety: false,
@@ -916,6 +945,8 @@ mod tests {
             seed: None,
         };
         assert!(valid_request(&valid));
+        assert!(valid_request(&CreateJob { engine_version: "v1.1".into(), ..valid.clone() }));
+        assert!(!valid_request(&CreateJob { engine_version: "../../worker".into(), ..valid.clone() }));
         for pace in ["auto", "8-16", "16-32", "32-64"] {
             assert!(valid_request(&CreateJob { club_layer_pace: pace.into(), club_variety: true, ..valid.clone() }));
         }
@@ -948,6 +979,21 @@ mod tests {
             seed: Some("9223372036854775808".into()),
             ..valid
         }));
+    }
+
+    #[test]
+    fn engine_versions_are_isolated_and_recoveries_keep_their_profile() {
+        assert!(engine_path(Path::new("jobs"), "future").is_err());
+        assert_ne!(engine_path(Path::new("jobs"), "v1").unwrap(), engine_path(Path::new("jobs"), "v1.1").unwrap());
+        assert_eq!(engine_profile("v1")["defaultFirstPass"], true);
+        assert!(engine_profile("v1")["workerEnvironment"]["PULSO_AI_CLUB_ENSEMBLE_SCENES"].is_null());
+        for recovery in [false, true] {
+            let command = worker_command(Path::new("worker"), "test", Path::new("job.json"), Path::new("dir"), Path::new("jobs"), recovery, "v1.1");
+            let env: std::collections::HashMap<_, _> = command.as_std().get_envs().filter_map(|(k,v)| v.map(|v| (k.to_string_lossy().into_owned(),v.to_string_lossy().into_owned()))).collect();
+            assert_eq!(env.get("PULSO_AI_CLUB_ENSEMBLE_SCENES").map(String::as_str), Some("1"));
+            assert!(!env.contains_key("PULSO_AI_FIRST_PASS_AUDITION"));
+            assert_eq!(engine_profile("v1.1")["clubDefaultFirstPass"], false);
+        }
     }
 
     #[test]

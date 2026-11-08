@@ -12,7 +12,8 @@ const job: CloudJob = {
 }
 it('shows saved request values, not a fixed horizon or current form draft', () => {
   render(<CloudRequestDetails job={job} />)
-  expect(screen.getByText('8–16 compases')).toBeInTheDocument()
+  expect(screen.queryByText('8–16 compases')).not.toBeInTheDocument()
+  expect(screen.getByText('v1')).toBeInTheDocument()
   expect(screen.getByText(job.seed)).toBeInTheDocument()
   expect(screen.getByText('Progressive house oscuro')).toBeInTheDocument()
   expect(screen.queryByText('64 compases')).not.toBeInTheDocument()
@@ -27,7 +28,7 @@ it('keeps the disclosure open when progress updates', () => {
 })
 it('does not invent options for legacy jobs or non-Club requests', () => {
   const view = render(<CloudRequestDetails job={{ ...job, clubLayerPace: undefined, clubVariety: undefined }} />)
-  expect(screen.getAllByText('No registrado')).toHaveLength(2)
+  expect(screen.getAllByText('No registrado')).toHaveLength(1)
   view.rerender(<CloudRequestDetails job={{ ...job, behavior: 'adaptive' }} />)
-  expect(screen.getAllByText('No aplica · Club desactivado')).toHaveLength(2)
+  expect(screen.getAllByText('No aplica · Club desactivado')).toHaveLength(1)
 })

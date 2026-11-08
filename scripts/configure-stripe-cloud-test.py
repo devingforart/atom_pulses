@@ -14,6 +14,7 @@ container = json.loads(subprocess.check_output(['docker', 'inspect', 'pulso-app-
 env = dict(item.split('=', 1) for item in container['Config']['Env'])
 key = env['STRIPE_SECRET_KEY']
 assert key.startswith('sk_test_'), 'Refusing to provision a live account'
+public_url = 'https://pulso-audio.com'
 
 def stripe(path, fields=None, idempotency=None):
     headers = {'Authorization': 'Bearer ' + key}
@@ -47,7 +48,7 @@ if not any(item['active'] and item.get('is_default') for item in portal):
         'features[payment_method_update][enabled]': 'true',
         'features[subscription_cancel][enabled]': 'true',
         'features[subscription_cancel][mode]': 'at_period_end',
-        'default_return_url': 'https://pulso.cargo-core.com/account',
+        'default_return_url': public_url + '/account',
     }, 'pulso-cloud-test-portal-v1')
 
 # Verify that the existing Checkout tax/address options are accepted by Stripe.
@@ -58,17 +59,32 @@ try:
         'automatic_tax[enabled]': 'true', 'billing_address_collection': 'required',
         'tax_id_collection[enabled]': 'true', 'customer_update[address]': 'auto',
         'customer_update[name]': 'auto',
-        'success_url': 'https://pulso.cargo-core.com/account?checkout=success',
-        'cancel_url': 'https://pulso.cargo-core.com/pricing?checkout=canceled'})
+        'success_url': public_url + '/account?checkout=success',
+        'cancel_url': public_url + '/pricing?checkout=canceled'})
     stripe('checkout/sessions/' + session['id'] + '/expire', {})
 finally:
     request = urllib.request.Request('https://api.stripe.com/v1/customers/' + customer['id'],
         method='DELETE', headers={'Authorization': 'Bearer ' + key})
     urllib.request.urlopen(request, timeout=30).close()
 
+# Use a direct canonical webhook URL; redirects fail Stripe delivery.
+endpoints = stripe('webhook_endpoints?limit=100')['data']
+matching = [endpoint for endpoint in endpoints if endpoint['url'] in (
+    public_url + '/api/billing/webhook',
+    'https://pulso.cargo-core.com/api/billing/webhook')]
+assert len(matching) == 1, 'Expected one PULSO webhook; inspect before changing anything'
+endpoint = matching[0]
+assert endpoint['status'] == 'enabled' and not endpoint['livemode']
+stripe('webhook_endpoints/' + endpoint['id'], {'url': public_url + '/api/billing/webhook'})
+for portal_config in portal:
+    if portal_config['active'] and portal_config.get('is_default'):
+        stripe('billing_portal/configurations/' + portal_config['id'],
+               {'default_return_url': public_url + '/account'})
+
 path = Path('/www/Pulso/.env')
 before = path.read_text()
-updates = {'STRIPE_MONTHLY_PRICE_ID': price['id'], 'PULSO_CREDITS_ENABLED': 'true'}
+updates = {'STRIPE_MONTHLY_PRICE_ID': price['id'], 'PULSO_CREDITS_ENABLED': 'true',
+           'PUBLIC_URL': public_url}
 lines = before.splitlines()
 for name, value in updates.items():
     lines = [line for line in lines if not line.startswith(name + '=')]

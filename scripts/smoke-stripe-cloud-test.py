@@ -15,6 +15,7 @@ config = json.loads(subprocess.check_output(['docker', 'inspect', 'pulso-app-1']
 env = dict(item.split('=', 1) for item in config['Config']['Env'])
 assert env['STRIPE_SECRET_KEY'].startswith('sk_test_')
 assert env.get('PULSO_CREDITS_ENABLED') == 'true'
+public_url = env['PUBLIC_URL'].rstrip('/')
 uid, token = str(uuid.uuid4()), secrets.token_hex(32)
 subscription = None
 customer = None
@@ -28,10 +29,10 @@ def stripe(path, fields=None, method=None):
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.load(response)
 def api(path, body=None):
-    request = urllib.request.Request('http://127.0.0.1:8188/api/' + path,
+    request = urllib.request.Request(public_url + '/api/' + path,
         data=json.dumps(body).encode() if body is not None else None,
         headers={'Cookie': 'pulso_session=' + token, 'Content-Type': 'application/json',
-                 'Origin': 'https://pulso.cargo-core.com'})
+                 'Origin': public_url})
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.load(response)
 try:

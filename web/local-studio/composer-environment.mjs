@@ -45,6 +45,8 @@ export function workerEnvironmentFor(source, directory, dataRoot, automatic = fa
     'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData'];
   return { ...Object.fromEntries(systemKeys.filter(key => source[key]).map(key => [key, source[key]])),
     ...composerProfile.workerEnvironment,
+    ...(source.PULSO_AI_CLUB_MELODY_FIRST === '1' ? { PULSO_AI_CLUB_MELODY_FIRST: '1' } : {}),
+    ...(source.PULSO_AI_CLUB_ENSEMBLE_SCENES === '1' ? { PULSO_AI_CLUB_ENSEMBLE_SCENES: '1' } : {}),
     // Local A/B only: retain the accepted Club plan and groove contract while
     // letting the AI write the core argument before its supporting layers.
     // Production parity stays unchanged until a listener validates the result.

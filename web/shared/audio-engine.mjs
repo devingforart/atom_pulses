@@ -1,5 +1,29 @@
 // Shared neutral sine-wave audition. Sound categories only identify percussion; every
 // pitched part uses the same oscillator/envelope, without timbral presets.
+// Wake scheduling from the audio graph, not background-throttled JS timers.
+// The silent buffer is a transport clock, and exists only during playback.
+export function startAudioClock(context, tick) {
+  const buffer = context.createBuffer(1, Math.ceil(context.sampleRate * .05), context.sampleRate);
+  let source, stopped = false;
+  const arm = () => {
+    if (stopped) return;
+    source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    source.onended = () => {
+      source.disconnect();
+      if (stopped) return;
+      tick();
+      arm();
+    };
+    source.start();
+  };
+  arm();
+  return () => {
+    stopped = true;
+    if (source) { source.onended = null; try { source.stop(); } catch {} source.disconnect(); }
+  };
+}
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const frequency = pitch => 440 * 2 ** ((pitch - 69) / 12);
 
@@ -27,6 +51,30 @@ export class SuiteAudio {
     this.masterVolume = 0.68;
   }
   setSong(midi, tracks) { this.stop(); this.midi = midi; this.tracks = tracks; this.muted.clear(); this.soloed.clear(); this.position = 0; this.onPosition?.(0); }
+  // Refresh the same score without stopping voices or replaying the scheduler's
+  // lookahead. Edits behind this frontier become audible on the next playback.
+  updateSong(midi, tracks) {
+    const position = this.currentPosition();
+    const key = track => track.id || track.name;
+    const muted = new Set(this.tracks.filter((_, i) => this.muted.has(i)).map(key));
+    const soloed = new Set(this.tracks.filter((_, i) => this.soloed.has(i)).map(key));
+    const oldTracks = new Map(this.tracks.map(track => [key(track), track]));
+    for (const track of tracks) {
+      const previous = oldTracks.get(key(track));
+      if (previous?.patchId) track.patchId = previous.patchId;
+    }
+    this.midi = midi;
+    this.tracks = tracks;
+    this.muted = new Set(tracks.flatMap((track, i) => muted.has(key(track)) ? [i] : []));
+    this.soloed = new Set(tracks.flatMap((track, i) => soloed.has(key(track)) ? [i] : []));
+    this.position = clamp(position, 0, this.duration);
+    if (this.playing) {
+      const frontier = Math.max(this.context.currentTime, this.scheduledUntil ?? this.context.currentTime) - this.origin;
+      this.cursors = tracks.map(track => this.firstAfter(track.notes, frontier + 0.0011));
+      this.schedule();
+    }
+    this.onPosition?.(this.currentPosition());
+  }
   async ensureAudio() {
     if (!this.context) {
       this.context = new AudioContext({ latencyHint: 'interactive' });
@@ -64,14 +112,15 @@ export class SuiteAudio {
     this.playing = true;
     this.scheduleHeldNotes();
     this.schedule();
-    this.timer = setInterval(() => this.schedule(), 25);
+    if (!this.playing) return;
+    this.stopClock = startAudioClock(this.context, () => this.schedule());
     this.frame = requestAnimationFrame(() => this.animate());
   }
   pause() {
     if (!this.playing) return;
     this.position = this.currentPosition();
     this.playing = false;
-    clearInterval(this.timer);
+    this.stopClock?.(); this.stopClock = undefined;
     cancelAnimationFrame(this.frame);
     this.stopVoices();
     this.onPosition?.(this.position);
@@ -103,6 +152,11 @@ export class SuiteAudio {
   }
   schedule() {
     if (!this.playing) return;
+    // End transport even when the UI's animation frames are suspended.
+    if (this.context.currentTime - this.origin >= this.duration + (this.playbackTailSeconds || 0) - 0.005) {
+      this.stop();
+      return;
+    }
     const now = this.context.currentTime, end = now + 0.14;
     const events = [];
     for (let index = 0; index < this.tracks.length; index++) {
@@ -120,6 +174,7 @@ export class SuiteAudio {
       this.cursors[index] = cursor;
     }
     this.playEvents(events);
+    this.scheduledUntil = end;
   }
   playEvents(events) {
     for (const { instrument, note, at, seconds, track } of events)

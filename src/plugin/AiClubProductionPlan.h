@@ -2,6 +2,7 @@
 
 #include "AiClubPolicy.h"
 #include "AiClubPhraseDelivery.h"
+#include "AiClubEnsembleScenes.h"
 #include <algorithm>
 #include <set>
 
@@ -43,6 +44,27 @@ inline bool cycleBoundLayer(const juce::String& json, const std::string& id) {
             if (layer.getProperty("instrument_id", {}).toString().toStdString() == id)
                 return layer.getProperty("timing_mode", {}).toString() == "cycle_bound";
     return false; // Legacy non-core layers remain free, not silently retimed.
+}
+
+// Ordered ownership only; this never authors or rearranges MIDI notes.
+inline std::vector<std::vector<std::size_t>> discourseFirstGroups(const SongPlan& plan) {
+    const auto root = juce::JSON::parse(juce::String(plan.phraseArchitectureJson));
+    std::set<std::string> speakers;
+    if (!plan.narrativeSpine.protagonistInstrumentId.empty())
+        speakers.insert(plan.narrativeSpine.protagonistInstrumentId);
+    if (const auto* arcs = root.getProperty("musical_arcs", {}).getArray())
+        for (const auto& arc : *arcs) speakers.insert(arc.getProperty("foreground_id", {}).toString().toStdString());
+    std::vector<std::size_t> foreground, support;
+    for (std::size_t i = 0; i < plan.instruments.size(); ++i)
+        (speakers.contains(plan.instruments[i].id) ? foreground : support).push_back(i);
+    if (foreground.empty() || support.empty()) return {};
+    return {foreground, support};
+}
+
+inline bool discourseFirst(const SongPlan& plan) {
+    return plan.compositionBehavior == CompositionBehavior::Club && !scenes::active(plan) &&
+        juce::JSON::parse(juce::String(plan.phraseArchitectureJson))
+            .getProperty("score_writing_order", {}).toString() == "foreground_first_v1";
 }
 
 // Membership in an AI-authored cycle, not quantisation or an onset generator.
@@ -263,8 +285,30 @@ inline juce::String schema(const juce::String& direction = {}, const SongPlan* p
         responseChoice.getDynamicObject()->setProperty("anyOf", juce::Array<juce::var>{
             response, juce::JSON::parse(R"({"type":"null"})")});
         arc.getProperty("properties", {}).getDynamicObject()->setProperty("response_reference", responseChoice);
+        if (plan && !plan->instruments.empty()) {
+            juce::Array<juce::var> choices;
+            for (const auto& owner : plan->instruments) {
+                auto choice = juce::JSON::parse(juce::JSON::toString(arc));
+                auto props = choice.getProperty("properties", {});
+                props.getProperty("foreground_id", {}).getDynamicObject()->setProperty("enum",
+                    juce::Array<juce::var>{juce::String(owner.id)});
+                for (auto reference : {props.getProperty("phrase_reference", {}),
+                    props.getProperty("response_reference", {}).getProperty("anyOf", {})[0]}) {
+                    auto pitch = reference.getProperty("properties", {}).getProperty("notes", {})
+                        .getProperty("items", {}).getProperty("properties", {}).getProperty("pitch", {});
+                    pitch.getDynamicObject()->setProperty("minimum", owner.minimumPitch);
+                    pitch.getDynamicObject()->setProperty("maximum", owner.maximumPitch);
+                }
+                choices.add(choice);
+            }
+            juce::var items(new juce::DynamicObject());
+            items.getDynamicObject()->setProperty("anyOf", choices);
+            result.getProperty("properties", {}).getProperty("musical_arcs", {})
+                .getDynamicObject()->setProperty("items", items);
+        }
     }
     nucleus::extendSchema(result, plan);
+    scenes::extend(result, plan);
     return juce::JSON::toString(result, true);
 }
 
@@ -485,6 +529,16 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
             out << " chord " << juce::String::fromUTF8(event.chordId.c_str())
                 << " local bar " << event.barOffset << " beat " << event.beatOffset << "\n";
     }
+    if (scenes::requested()) out << scenes::brief();
+    else if (juce::SystemStats::getEnvironmentVariable("PULSO_AI_CLUB_MELODY_FIRST", {}) == "1")
+        out << "\nDISCOURSE-FIRST EXPERIMENT: Actual foreground notes will be written for the "
+            "whole work before accompaniment notes. Plan a coherent audible thread that "
+            "the accompaniment can respond to, not a backing track punctuated by cues. "
+            "A withheld final resolution is useful only if the listener first hears an "
+            "identifiable argument. Develop actual sentences and meaningful returns; do "
+            "not reserve almost all thematic substance for the ending. Preserve the Club "
+            "pulse and intentional breathing. Do not compensate by mandating more voices, "
+            "nonstop soloing, arpeggios or a new harmonic progression.\n";
     return out;
 }
 
@@ -535,7 +589,8 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
         for (const auto& beat : *rhythm) {
             double value{};
             if (!grid(beat, value) || value < 0 || value >= cycle || !onsets.insert(value).second) {
-                error = "Club rhythm offset must be unique, zero-based and inside its cycle: " + juce::String(id); return false;
+                error = "Club rhythm offset must be unique, zero-based and inside its cycle: " + juce::String(id) +
+                    " | value=" + juce::JSON::toString(beat) + " | cycle=" + juce::String(cycle); return false;
             }
         }
         if (timing == "cycle_bound" && rhythm->isEmpty()) {
@@ -667,7 +722,8 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
     if (root.hasProperty("musical_arcs")) {
         const auto* arcs = root.getProperty("musical_arcs", {}).getArray();
         if (!arcs || arcs->isEmpty() || arcs->size() > 12) { error = "Club musical arcs are missing"; return false; }
-        for (const auto& arc : *arcs) {
+        for (int arcIndex = 0; arcIndex < arcs->size(); ++arcIndex) {
+            const auto& arc = (*arcs)[arcIndex];
             if (!delivery::validate(arc, error)) return false;
             double start{}, bars{};
             if (!grid(arc.getProperty("start_bar", {}), start) || start != std::floor(start) || start < 0 ||
@@ -692,14 +748,22 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
                     owner == plan.instruments.end() || reference.getProperty("development", {}).toString().trim().isEmpty()) {
                     error = "Club phrase reference has invalid length, owner or development"; return false;
                 }
-                for (const auto& note : *notes) {
+                for (int noteIndex = 0; noteIndex < notes->size(); ++noteIndex) {
+                    const auto& note = (*notes)[noteIndex];
                     double beat{}, duration{}, pitch{}, velocity{};
                     if (!grid(note.getProperty("beat", {}), beat) || beat < 0 ||
                         !grid(note.getProperty("duration", {}), duration) || duration <= 0 || beat + duration > length + .001 ||
                         !grid(note.getProperty("pitch", {}), pitch) || pitch != std::floor(pitch) ||
                         pitch < owner->minimumPitch || pitch > owner->maximumPitch ||
                         !grid(note.getProperty("velocity", {}), velocity) || velocity != std::floor(velocity) || velocity < 1 || velocity > 127) {
-                        error = "Club phrase reference has invalid timing or register: " + juce::String(ownerId); return false;
+                        error = "Club phrase reference note invalid | arc=" + juce::String(arcIndex) +
+                            " | reference=" + juce::String(referenceKey) + " | owner=" + juce::String(ownerId) +
+                            " | note=" + juce::String(noteIndex) + " | value=" + juce::JSON::toString(note, true) +
+                            " | length=" + juce::String(length) + " register=" + juce::String(owner->minimumPitch) +
+                            ".." + juce::String(owner->maximumPitch) +
+                            " | invalid=" + juce::String(beat < 0 || duration <= 0 || beat + duration > length + .001 ?
+                                "timing" : pitch < owner->minimumPitch || pitch > owner->maximumPitch ? "register" : "grid_or_value");
+                        return false;
                     }
                 }
             }
@@ -722,24 +786,103 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
             }
         }
     }
-    return nucleus::validate(root, plan, error);
+    return scenes::validate(root, plan, error) && nucleus::validate(root, plan, error);
+}
+
+// A semantic state error can be repaired without asking the model to rewrite
+inline int repairableReferenceArc(const juce::String& error) {
+    if (!error.startsWith("Club phrase reference note invalid | arc=")) return -1;
+    return error.fromFirstOccurrenceOf("arc=", false, false).upToFirstOccurrenceOf(" |", false, false).getIntValue();
+}
+
+inline juce::String repairableReferenceKey(const juce::String& error) {
+    const auto key = error.fromFirstOccurrenceOf("reference=", false, false).upToFirstOccurrenceOf(" |", false, false);
+    return key == "phrase_reference" || key == "response_reference" ? key : juce::String{};
+}
+
+inline juce::String referenceNotesRepairSchema(const juce::String& draft, const SongPlan& plan,
+    int index, const juce::String& key) {
+    const auto root = juce::JSON::parse(draft);
+    const auto arcs = root.getProperty("musical_arcs", {});
+    if (index < 0 || index >= arcs.size() || (key != "phrase_reference" && key != "response_reference")) return {};
+    const auto arc = arcs[index];
+    const auto length = static_cast<double>(arc.getProperty(juce::Identifier(key), {}).getProperty("beats", 0));
+    if (length != 4 && length != 8 && length != 16 && length != 32) return {};
+    const auto id = arc.getProperty("foreground_id", {}).toString();
+    const auto owner = std::find_if(plan.instruments.begin(), plan.instruments.end(),
+        [&](const auto& instrument) { return juce::String(instrument.id) == id; });
+    if (owner == plan.instruments.end()) return {};
+    auto noteSchema = boundedNoteSchema(length);
+    for (auto& choice : *noteSchema.getProperty("anyOf", {}).getArray()) {
+        auto pitch = juce::JSON::parse(R"({"type":"integer"})");
+        pitch.getDynamicObject()->setProperty("minimum", owner->minimumPitch);
+        pitch.getDynamicObject()->setProperty("maximum", owner->maximumPitch);
+        choice.getProperty("properties", {}).getDynamicObject()->setProperty("pitch", pitch);
+    }
+    auto schema = juce::JSON::parse(R"({"type":"object","additionalProperties":false,"required":["notes"],
+      "properties":{"notes":{"type":"array","minItems":1,"maxItems":48}}})");
+    schema.getProperty("properties", {}).getProperty("notes", {}).getDynamicObject()->setProperty("items", noteSchema);
+    return juce::JSON::toString(schema);
+}
+
+inline bool replaceReferenceNotes(const juce::String& draft, int index, const juce::String& key,
+    const juce::String& replacement, juce::String& merged) {
+    auto root = juce::JSON::parse(draft);
+    auto arcs = root.getProperty("musical_arcs", {});
+    const auto notes = juce::JSON::parse(replacement).getProperty("notes", {});
+    if (index < 0 || index >= arcs.size() || (key != "phrase_reference" && key != "response_reference") ||
+        !notes.isArray() || notes.size() < 1 || notes.size() > 48) return false;
+    auto reference = arcs[index].getProperty(juce::Identifier(key), {});
+    if (!reference.isObject()) return false;
+    reference.getDynamicObject()->setProperty("notes", notes);
+    merged = juce::JSON::toString(root);
+    return true;
 }
 
 // A semantic state error can be repaired without asking the model to rewrite
 // the accepted form, harmony, nucleus or the other instrument layers.
+inline bool rhythmRepairError(const juce::String& error) {
+    return error.startsWith("Club rhythm offset must be unique, zero-based and inside its cycle: ");
+}
+
 inline juce::String repairableStateLayerId(const juce::String& error,
                                            const SongPlan& plan) {
     const bool targeted =
         error.startsWith("Club layer has invalid or duplicate section state: ") ||
         error.startsWith("Club layer must declare every section state: ") ||
         error.startsWith("Club layer has invalid section-local entry/release: ") ||
-        error.startsWith("Club layer activated outside its cast permission: ");
+        error.startsWith("Club layer activated outside its cast permission: ") || rhythmRepairError(error);
     if (!targeted) return {};
     const auto id = error.fromFirstOccurrenceOf(": ", false, false)
         .upToFirstOccurrenceOf(" |", false, false).trim();
     const auto known = std::any_of(plan.instruments.begin(), plan.instruments.end(),
         [&](const auto& owner) { return id == juce::String::fromUTF8(owner.id.c_str()); });
     return known ? id : juce::String{};
+}
+
+inline juce::String rhythmRepairSchema() {
+    return R"({"type":"object","additionalProperties":false,"required":["rhythm_cell"],"properties":{"rhythm_cell":{"type":"array","minItems":1,"maxItems":128,"items":{"type":"number","minimum":0}}}})";
+}
+
+inline bool replaceLayerRhythm(const juce::String& draft, const juce::String& id,
+                              const juce::String& replacement, juce::String& merged) {
+    auto original = juce::JSON::parse(draft);
+    const auto repair = juce::JSON::parse(replacement);
+    auto* layers = original.getProperty("layers", {}).getArray();
+    const auto* beats = repair.getProperty("rhythm_cell", {}).getArray();
+    if (!layers || !beats || beats->isEmpty() || beats->size() > 128) return false;
+    for (auto& layer : *layers) if (layer.getProperty("instrument_id", {}).toString() == id) {
+        const auto cycle = static_cast<double>(layer.getProperty("cycle_beats", 0));
+        std::set<double> unique;
+        for (const auto& beat : *beats) {
+            double value{};
+            if (!grid(beat, value) || value < 0 || value >= cycle || !unique.insert(value).second) return false;
+        }
+        layer.getDynamicObject()->setProperty("rhythm_cell", repair.getProperty("rhythm_cell", {}));
+        merged = juce::JSON::toString(original);
+        return true;
+    }
+    return false;
 }
 
 inline juce::String layerStatesRepairSchema(const SongPlan& plan, const juce::String& id) {
@@ -886,6 +1029,33 @@ inline juce::String developmentBrief(const juce::String& json, double begin, dou
             out << "\nCONTINUING MUSICAL ARGUMENT (absolute beat " << start << ".." << stop << "): "
                 << juce::JSON::toString(arc, true) << "\n";
     }
+    // Keep a returning voice's concrete source after its original arc ends.
+    // Only the latest completed arc per owner is retained, and only in scene mode.
+    // This is context, never an instruction to replay notes or activate a voice.
+    if (root.hasProperty("ensemble_scenes"))
+      if (const auto* arcs = root.getProperty("musical_arcs", {}).getArray())
+        for (int i = 0; i < arcs->size(); ++i) {
+            const auto& arc = (*arcs)[i];
+            const auto owner = arc.getProperty("foreground_id", {}).toString();
+            const auto start = static_cast<double>(arc.getProperty("start_bar", 0)) * beatsPerBar;
+            const auto stop = start + static_cast<double>(arc.getProperty("bars", 0)) * beatsPerBar;
+            if (owner.isEmpty() || stop > begin) continue;
+            bool latest = true;
+            for (int j = 0; j < arcs->size(); ++j) {
+                const auto& other = (*arcs)[j];
+                if (other.getProperty("foreground_id", {}).toString() != owner) continue;
+                const auto a = static_cast<double>(other.getProperty("start_bar", 0)) * beatsPerBar;
+                const auto b = a + static_cast<double>(other.getProperty("bars", 0)) * beatsPerBar;
+                if ((a < end && b > begin) ||
+                    (b <= begin && (a > start || (a == start && j > i)))) latest = false;
+            }
+            if (latest) out << "\nEARLIER MELODIC SOURCE FOR " << owner << ": "
+                << juce::JSON::toString(arc, true)
+                << "\nReference only, not current activity or notes to copy. Compare it with actual "
+                   "accepted MIDI and this scene's continuation. Recall or develop its musical "
+                   "identity when the voice speaks; respect declared absences. Do not replay "
+                   "its old route or transpose its timestamps into this window.\n";
+        }
     if (nucleus::enabled()) out << temporal::context(root, begin, end, beatsPerBar);
     return out;
 }
@@ -920,6 +1090,34 @@ inline std::pair<double, double> activitySpan(const SongPlan& plan, const std::s
     return {start, start + section.bars * plan.beatsPerBar};
 }
 
+// A route's explicit breath may occupy part of an otherwise active layer state.
+// Only use this in the persisted discourse-first experiment. Ambiguity is not silence.
+inline bool explicitBreath(const SongPlan& plan, const std::string& id, double start, double end) {
+    if ((!discourseFirst(plan) && !scenes::active(plan)) || end <= start) return false;
+    const auto root = juce::JSON::parse(juce::String(plan.phraseArchitectureJson));
+    const auto* arcs = root.getProperty("musical_arcs", {}).getArray();
+    if (!arcs) return false;
+    std::vector<std::pair<double,double>> breaths;
+    for (const auto& arc : *arcs) {
+        if (arc.getProperty("foreground_id", {}).toString() != juce::String(id)) continue;
+        const auto origin = static_cast<double>(arc.getProperty("start_bar", 0)) * plan.beatsPerBar;
+        if (const auto* route = arc.getProperty("phrase_route", {}).getArray()) for (const auto& span : *route) {
+            const auto a = origin + static_cast<double>(span.getProperty("from_bar", 0)) * plan.beatsPerBar;
+            const auto b = a + static_cast<double>(span.getProperty("bars", 0)) * plan.beatsPerBar;
+            if (a >= end || b <= start) continue;
+            if (span.getProperty("action", {}).toString() != "breath") return false;
+            breaths.emplace_back(std::max(a,start),std::min(b,end));
+        }
+    }
+    std::sort(breaths.begin(), breaths.end());
+    auto covered = start;
+    for (const auto& [a,b] : breaths) {
+        if (a > covered + .001) return false;
+        covered = std::max(covered,b);
+    }
+    return covered >= end - .001;
+}
+
 inline bool silentWindow(const SongPlan& plan, const std::vector<std::size_t>& owners,
                          std::size_t sectionIndex, int firstBar, int bars) {
     if (plan.compositionBehavior != CompositionBehavior::Club ||
@@ -929,7 +1127,8 @@ inline bool silentWindow(const SongPlan& plan, const std::vector<std::size_t>& o
     return std::all_of(owners.begin(), owners.end(), [&](const auto owner) {
         if (owner >= plan.instruments.size()) return false;
         const auto [entry, release] = activitySpan(plan, plan.instruments[owner].id, sectionIndex);
-        return release <= start + .001 || entry >= end - .001;
+        return release <= start + .001 || entry >= end - .001 ||
+            explicitBreath(plan, plan.instruments[owner].id, std::max(start,entry), std::min(end,release));
     });
 }
 
@@ -940,6 +1139,7 @@ inline std::vector<std::vector<std::size_t>> windowGroups(const SongPlan& plan,
     const std::vector<std::vector<std::size_t>>& groups, std::size_t sectionIndex,
     int firstBar, int bars) {
     if (plan.compositionBehavior != CompositionBehavior::Club || sectionIndex >= plan.sections.size()) return groups;
+    if (scenes::active(plan)) return groups; // Keep the scene's co-writing groups together.
     const auto json = juce::String::fromUTF8(plan.phraseArchitectureJson.c_str());
     const auto start = (plan.sections[sectionIndex].startBar + firstBar) * plan.beatsPerBar;
     const auto end = start + bars * plan.beatsPerBar;
@@ -995,8 +1195,9 @@ inline std::vector<std::string> missingLayers(const juce::String& json, const So
             // A density estimate is not a musical correctness threshold. Only
             // a completely omitted promised layer is due for automatic recovery;
             // partial coverage goes to read-only evidence and musical listening.
+            const auto plannedBreath = explicitBreath(plan, id, std::max(begin,entry), std::min(end,release));
             const auto needsCoverage = mode != "absent" && completeCycle &&
-                required > 0 && spans.empty();
+                required > 0 && spans.empty() && !plannedBreath;
             const auto needsPolyphony = mode != "absent" && completeCycle && !spans.empty() &&
                 static_cast<bool>(layer.getProperty("polyphonic", false)) && !polyphonic;
             if (needsCoverage || needsPolyphony || (mode == "absent" && !spans.empty())) {

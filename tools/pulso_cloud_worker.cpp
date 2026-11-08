@@ -1,4 +1,5 @@
 #include "plugin/AiComposer.h"
+#include "core/NarrativeScore.h"
 #include "plugin/AiInstrumentationPolicy.h"
 #include "plugin/AiChromaticPolicy.h"
 #include "plugin/AiClubProductionPlan.h"
@@ -612,6 +613,8 @@ int main(int argc, char** argv) {
         evidence->setProperty("climax_contrast", review.climaxContrast);
         evidence->setProperty("resolution_score", review.resolutionScore);
         evidence->setProperty("terminal_phrase_ready", review.terminalPhraseReady);
+        evidence->setProperty("contextual_ending_accepted", pulso::NarrativeScoreGate::reviewedEndingApplies(song, plan));
+        evidence->setProperty("contextual_ending_evidence", juce::String(plan.reviewedEndingEvidence));
         evidence->setProperty("ensemble_release_ready", review.ensembleReleaseReady);
         evidence->setProperty("simultaneous_terminal_owners",
             static_cast<int>(review.simultaneousTerminalOwners));

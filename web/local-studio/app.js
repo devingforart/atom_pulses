@@ -197,7 +197,10 @@ function updatePosition(seconds) {
   $('#time-display').textContent = `${fmt(seconds)} / ${fmt(audio.duration)}`;
   if (playhead && current) {
     const beat = current.midi.secondsToBeat(seconds);
-    const x = 205 + beat / current.midi.beatsPerBar * barPx;
+    // Follow the actual note origin, not a header width from an older design.
+    // offsetLeft is in timeline-content coordinates and is unaffected by scrolling.
+    const origin = ui.timeline.querySelector('.ruler-canvas')?.offsetLeft || 0;
+    const x = origin + beat / current.midi.beatsPerBar * barPx;
     playhead.style.left = `${x}px`;
     if (audio.playing && x - ui.timeline.scrollLeft > ui.timeline.clientWidth - 70)
       ui.timeline.scrollLeft = Math.max(0, x - Math.max(280, ui.timeline.clientWidth * 0.55));
@@ -529,16 +532,45 @@ function mergedMidi(parts, manifest) {
   const timing = parts[0].midi;
   return { ...timing, lengthBeats: Math.max(Number(manifest?.bars || 0) * timing.beatsPerBar, ...parts.map(part => part.midi.lengthBeats)) };
 }
+function renderPendingScore(job) {
+  const active = ['queued', 'running'].includes(job.state);
+  let panel = ui.timeline.querySelector('.score-generation');
+  if (!active) {
+    ui.timeline.replaceChildren(node('div', 'timeline-empty', job.error || 'Esta sesión todavía no tiene MIDI para escuchar.'));
+    $('#song-subtitle').textContent = states[job.state] || 'Esperando una obra.';
+    return;
+  }
+  if (!panel) {
+    panel = node('div', 'timeline-empty score-generation');
+    panel.setAttribute('role', 'status');
+    panel.setAttribute('aria-live', 'polite');
+    const symbol = node('div', 'score-generation-symbol');
+    symbol.setAttribute('aria-hidden', 'true');
+    // Static brand artwork, never generated content or request HTML.
+    symbol.innerHTML = '<svg class="score-generation-orbit" viewBox="0 0 80 80"><circle cx="40" cy="40" r="35"/><circle class="score-generation-arc" cx="40" cy="40" r="35"/></svg><svg class="score-generation-mark" viewBox="0 0 34 24"><circle cx="3" cy="12" r="2.2"/><path d="M5.5 12h4l2.4-7 4.2 14 4.1-11 3.2 7h4l2.2-3H33"/></svg>';
+    panel.append(symbol, node('strong', '', 'La composición se está generando…'), node('p', 'score-generation-stage'), node('small', '', 'Algunas composiciones pueden tardar hasta 40 minutos. Puedes cerrar la página y volver después.'));
+    ui.timeline.replaceChildren(panel);
+  }
+  const stage = job.state === 'queued' ? 'Solicitud recibida · esperando al motor' : job.stage || 'La IA está componiendo tus pistas';
+  panel.querySelector('.score-generation-stage').textContent = stage;
+  $('#song-title').textContent = 'Tu composición está en camino';
+  $('#song-subtitle').classList.remove('score-facts');
+  $('#song-subtitle').textContent = stage;
+}
 async function loadSong(job, diagnostic = false) {
   const version = ++loadVersion;
-  audio.stop(); current = null; playhead = null;
+  const updating = Boolean(current && current.job.id === job.id && !diagnostic && !current.diagnostic);
+  if (!updating) { audio.stop(); current = null; playhead = null; }
   ui.share.disabled = true;
-  ui.play.disabled = true; ui.exportOne.disabled = true; $('#preview-wav').disabled = true; $('#full-wav').disabled = true;
+  if (!updating) ui.play.disabled = true;
+  ui.exportOne.disabled = true; $('#preview-wav').disabled = true; $('#full-wav').disabled = true;
+  if (!updating) {
   ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Leyendo las notas MIDI de esta obra…'));
   $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
   $('#song-subtitle').textContent = 'Preparando partitura y monitor senoidal…';
+  }
   const sourceTracks = diagnostic && job.diagnostic?.file ? [{ filename: job.diagnostic.file, name: 'MIDI rechazado' }] : job.manifest?.tracks?.length ? job.manifest.tracks : job.checkpoint?.file ? [{ filename: job.checkpoint.file, name: 'MIDI provisional' }] : [];
-  if (!sourceTracks.length) { ui.timeline.replaceChildren(node('div', 'timeline-empty', 'Esta sesión todavía no tiene MIDI para escuchar.')); $('#song-subtitle').textContent = job.stage || job.error || 'Esperando una obra.'; setExport(job, null); return; }
+  if (!sourceTracks.length) { if (!updating) renderPendingScore(job); setExport(job, null); return; }
   try {
     const parts = [];
     // Bounded batches keep large orchestras responsive without flooding the local server.
@@ -563,8 +595,9 @@ async function loadSong(job, diagnostic = false) {
       }
     }
     if (!tracks.length) throw new Error('El MIDI no contiene notas reproducibles.');
-    current = { job, midi: timing, tracks };
-    audio.setSong(timing, tracks);
+    current = { job, midi: timing, tracks, diagnostic };
+    if (updating) audio.updateSong(timing, tracks);
+    else audio.setSong(timing, tracks);
     renderTimeline();
     updateListeningLabels();
     $('#song-title').textContent = diagnostic ? 'MIDI rechazado - diagnóstico' : job.manifest?.title || 'MIDI provisional';
@@ -583,9 +616,14 @@ async function loadSong(job, diagnostic = false) {
     $('#preview-wav').disabled = false;
     $('#full-wav').disabled = !job.manifest || diagnostic;
     setExport(job, diagnostic ? job.diagnostic?.file : job.manifest?.fullFile || job.checkpoint?.file);
-    updatePosition(0);
+    updatePosition(audio.currentPosition());
   } catch (error) {
     if (version !== loadVersion) return;
+    if (updating) {
+      loadedKey = null; // Retry on the next poll; keep the playable snapshot intact.
+      showNotice('No se pudo actualizar el fragmento. La escucha actual continúa; se reintentará automáticamente.');
+      return;
+    }
     ui.timeline.replaceChildren(node('div', 'timeline-empty', `No se pudo abrir el MIDI: ${error.message}`));
     $('#song-subtitle').textContent = 'La exportación MIDI sigue disponible si el archivo existe.';
     setExport(job, diagnostic ? job.diagnostic?.file : job.manifest?.fullFile || job.checkpoint?.file);
@@ -595,7 +633,7 @@ function renderTimeline() {
   const { midi, tracks, job } = current;
   const bars = Math.ceil(midi.lengthBeats / midi.beatsPerBar), width = Math.max(620, bars * barPx);
   ui.timeline.classList.remove('empty-timeline'); ui.timeline.replaceChildren();
-  const content = node('div', 'timeline-content'); content.style.width = `${205 + width}px`;
+  const content = node('div', 'timeline-content'); content.style.width = 'max-content';
   const ruler = node('div', 'ruler-row'), rulerLabel = node('div', 'ruler-label', `${bars} COMPASES`), rulerCanvas = node('div', 'ruler-canvas'); rulerCanvas.style.width = `${width}px`;
   const interval = bars > 240 ? 16 : bars > 80 ? 8 : 4;
   for (let bar = 0; bar <= bars; bar += interval) { const mark = node('span', 'ruler-mark', String(bar + 1)); mark.style.left = `${bar * barPx}px`; rulerCanvas.append(mark); }
@@ -606,6 +644,10 @@ function renderTimeline() {
     const row = node('div', 'track-row'), label = node('div', 'track-label'); label.style.setProperty('--track-color', color);
     const name = node('div', 'track-name'), dot = node('span', 'track-dot'), title = node('b', '', track.name); title.title = track.name; name.append(dot, title);
     const bottom = node('div', 'track-bottom'), mute = actionButton('M', () => { const value = !audio.muted.has(index); audio.setMute(index, value); mute.classList.toggle('active', value); mute.setAttribute('aria-pressed', String(value)); }), solo = actionButton('S', () => { const value = !audio.soloed.has(index); audio.setSolo(index, value); solo.classList.toggle('active', value); solo.setAttribute('aria-pressed', String(value)); });
+    mute.classList.toggle('active', audio.muted.has(index));
+    mute.setAttribute('aria-pressed', String(audio.muted.has(index)));
+    solo.classList.toggle('active', audio.soloed.has(index));
+    solo.setAttribute('aria-pressed', String(audio.soloed.has(index)));
     mute.title = `Silenciar ${track.name}`; solo.title = `Escuchar solo ${track.name}`; mute.setAttribute('aria-label', mute.title); solo.setAttribute('aria-label', solo.title); mute.setAttribute('aria-pressed', 'false'); solo.setAttribute('aria-pressed', 'false');
     const soundLabel = node('small', 'sound-label', audio.mode === 'piano' ? 'Piano MIDI' : audio.mode === 'production' ? PATCHES[track.patchId]?.label || 'Sonido PULSO' : names[track.instrument] || names.synth);
     const patchSelect = node('select', 'sound-select');
@@ -642,8 +684,9 @@ function renderTimeline() {
     lane.addEventListener('click', event => { const rect = lane.getBoundingClientRect(); audio.seek(midi.beatToSeconds((event.clientX - rect.left) / barPx * midi.beatsPerBar)); });
     row.append(label, lane); content.append(row);
   });
-  playhead = node('div', 'playhead'); playhead.style.left = '205px'; content.append(playhead);
+  playhead = node('div', 'playhead'); content.append(playhead);
   ui.timeline.append(content);
+  updatePosition(audio.currentPosition());
 }
 function showSelected() {
   const job = jobs.find(item => item.id === selectedId);
@@ -651,6 +694,7 @@ function showSelected() {
   renderSession(job);
   const key = `${job.id}:${previewDiagnostic && job.diagnostic?.file ? job.diagnostic.file : job.manifest?.fullFile || job.checkpoint?.file || job.state}`;
   if (key !== loadedKey) { loadedKey = key; loadSong(job, previewDiagnostic && Boolean(job.diagnostic?.file)); }
+  else if (!job.manifest?.tracks?.length && !job.checkpoint?.file && !previewDiagnostic) renderPendingScore(job);
 }
 async function refresh() {
   if (exhibitionMode) return loadExhibition();
@@ -777,7 +821,9 @@ $('#full-wav').addEventListener('click', async () => {
   } catch (error) { showNotice(`No se pudo exportar el audio completo: ${error.message}`); }
   finally { button.textContent = 'WAV completo'; button.disabled = !current?.job.manifest; }
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden && audio.playing) { audio.pause(); ui.play.textContent = '▶'; } });
+// Keep audition playing when the listener switches tabs. The audio clock is
+// independent of visual updates; showing the page only refreshes its playhead.
+document.addEventListener('visibilitychange', () => { if (!document.hidden && audio.playing) updatePosition(audio.currentPosition()); });
 if (exhibitionMode) configureExhibition();
 refresh().then(() => {
   if (!exhibitionMode && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(comparisonId || ''))

@@ -8,6 +8,9 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $anchorSource = Join-Path $projectRoot 'build\anchor-harmonic-review-source'
 $anchorWorker = Join-Path $projectRoot 'build\anchor-harmonic-review-build\Release\pulso_cloud_worker.exe'
 if ($Engine -eq 'Recovered') {
+    # saved_1.1 local baseline: persist joint-scene writing across machine restarts.
+    # Cloud and the shared composer profile remain unchanged.
+    $env:PULSO_AI_CLUB_ENSEMBLE_SCENES = '1'
     $serverPath = Join-Path $projectRoot 'web\local-studio\server.mjs'
     $workerPath = Join-Path $projectRoot 'build\recovered-club-controls-build\Release\pulso_cloud_worker.exe'
     $env:PULSO_LOCAL_EXPERIMENTAL = '0'

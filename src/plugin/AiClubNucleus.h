@@ -246,6 +246,8 @@ inline juce::String repairableLaneId(const juce::String& error, const SongPlan& 
     else if (error.startsWith(carrierPrefix))
         id = error.fromFirstOccurrenceOf(carrierPrefix, false, false)
                   .upToFirstOccurrenceOf(" declares", false, false).trim();
+    else if (error.startsWith("Tonal nucleus omitted a declared groove core owner: "))
+        id = error.fromFirstOccurrenceOf(": ", false, false).trim();
     if (id.isEmpty()) return {};
     const auto known = std::any_of(plan.instruments.begin(), plan.instruments.end(),
         [&](const auto& owner) { return id == juce::String::fromUTF8(owner.id.c_str()); });
@@ -258,7 +260,7 @@ inline juce::String laneNotesRepairSchema(const SongPlan& plan, const juce::Stri
         [&](const auto& part) { return id == juce::String::fromUTF8(part.id.c_str()); });
     if (owner == plan.instruments.end() || (cycle != 4 && cycle != 8 && cycle != 16)) return {};
     auto schema = juce::JSON::parse(R"json({"type":"object","additionalProperties":false,
-      "required":["notes"],"properties":{"notes":{"type":"array","minItems":1,"maxItems":128,
+      "required":["notes","repeat_intent"],"properties":{"repeat_intent":{"type":"string"},"notes":{"type":"array","minItems":1,"maxItems":128,
       "items":{"type":"object","additionalProperties":false,
       "required":["beat","duration","pitch","velocity"],"properties":{
         "beat":{"type":"number","minimum":0,"multipleOf":0.25},
@@ -292,7 +294,19 @@ inline bool replaceLaneNotes(const juce::String& draft, const juce::String& id,
             merged = juce::JSON::toString(original);
             return true;
         }
-    return false;
+    // Only a declared core owner can be added. The AI authors every note and
+    // its repeat intent; existing voices and all plan decisions stay intact.
+    const auto* core = original.getProperty("groove_core_ids", {}).getArray();
+    const auto intent = repair.getProperty("repeat_intent", {}).toString().trim();
+    if (!core || intent.isEmpty() || lanes->size() >= 12 ||
+        std::none_of(core->begin(), core->end(), [&](const auto& owner) { return owner.toString() == id; })) return false;
+    auto lane = juce::var(new juce::DynamicObject());
+    lane.getDynamicObject()->setProperty("instrument_id", id);
+    lane.getDynamicObject()->setProperty("repeat_intent", intent);
+    lane.getDynamicObject()->setProperty("notes", repair.getProperty("notes", {}));
+    lanes->add(lane);
+    merged = juce::JSON::toString(original);
+    return true;
 }
 
 // Translate the immutable harmony into the SAME time coordinates as the note

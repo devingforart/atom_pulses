@@ -9,6 +9,7 @@
 #include "plugin/AiClubNucleus.h"
 #include "plugin/AiNoteAddress.h"
 #include "plugin/AiScoreMemory.h"
+#include "plugin/AiArrivalReview.h"
 #include "plugin/JointWindowRecovery.h"
 #include "core/SovereignScoreRenderer.h"
 #include "core/NarrativeScore.h"
@@ -48,6 +49,128 @@ int main() {
         using namespace pulso;
         using namespace pulso::plugin;
         {
+            auto verdict = juce::JSON::parse(R"({"prefer_candidate":true,
+                "original_goal_realized":true,"candidate_goal_realized":true,
+                "existing_arrival_preserved":false,"evidence":"lead 340:74/3.75 versus 346.5:76/1",
+                "reason":"candidate loses the planned arrival"})");
+            check(!arrivalReview::preferred(verdict), "aggregate preference must not erase a successful arrival");
+            verdict.getDynamicObject()->setProperty("existing_arrival_preserved", true);
+            check(arrivalReview::preferred(verdict), "AI-supported preserved arrival rejected");
+            verdict.getDynamicObject()->setProperty("original_goal_realized", false);
+            verdict.getDynamicObject()->setProperty("existing_arrival_preserved", false);
+            check(arrivalReview::preferred(verdict), "genuinely failed original cannot forbid an AI-chosen new destination");
+            verdict.getDynamicObject()->setProperty("candidate_goal_realized", false);
+            check(!arrivalReview::preferred(verdict), "unrealized candidate goal accepted");
+            verdict.getDynamicObject()->setProperty("candidate_goal_realized", "true");
+            check(!arrivalReview::preferred(verdict), "malformed AI verdict must retain checkpoint");
+            check(!arrivalReview::preferred(juce::var{}), "missing comparison must retain checkpoint");
+            SongPlan plan;
+            plan.instruments.resize(1); plan.instruments[0].id = "lead";
+            plan.narrativeSpine.protagonistInstrumentId = "lead";
+            Pattern midi;
+            NoteEvent n; n.partId = 1; n.startBeat = 72; n.pitch = 74; n.durationBeats = 3.75;
+            midi.notes.push_back(n);
+            const auto before = midi.notes;
+            const auto context = arrivalReview::context(plan, midi);
+            check(context.contains("72:74/3.75"), "late subject entry must reach arrival judge");
+            check(midi.notes == before, "arrival review must never modify notes");
+            check(juce::JSON::parse(arrivalReview::schema()).isObject(), "invalid arrival judge schema");
+        }
+        {
+            SongPlan plan;
+            plan.compositionBehavior = CompositionBehavior::Club;
+            plan.sections.resize(1);
+            plan.instruments.resize(2);
+            plan.instruments[0].id = "lead";
+            plan.instruments[1].id = "answer";
+            auto root = juce::JSON::parse(R"({"ensemble_scenes":[{"section_index":0,
+                "inherited_material":"opening question","foreground_id":"lead",
+                "voices":[{"owner_id":"answer","material":"falling response",
+                "relationship":"answers lead","speaking_span":"second phrase"}],
+                "transition":"held common tone","consequence":"question resolves"}]})");
+            juce::String error;
+            check(club::scenes::validate(root, plan, error), "valid ensemble scene rejected");
+            root.getDynamicObject()->setProperty("score_writing_order", "foreground_first_v1");
+            plan.phraseArchitectureJson = juce::JSON::toString(root).toStdString();
+            check(club::scenes::active(plan) && !club::production::discourseFirst(plan),
+                "joint scenes must not accidentally schedule two separate passes");
+            check(club::scenes::context(plan, 0).contains("falling response"), "writer lost scene material");
+            check(club::scenes::brief().contains("FOREGROUND AND SUPPORT RESPONSIBILITY") &&
+                club::scenes::context(plan, 0).contains("FOREGROUND AND SUPPORT RESPONSIBILITY"),
+                "planning and MIDI writing must share the foreground/support contract");
+            check(club::scenes::brief().contains("FINISHED TRACK, NOT AN ACCOMPANIMENT STUDY") &&
+                club::scenes::context(plan, 0).contains("FINISHED TRACK, NOT AN ACCOMPANIMENT STUDY"),
+                "complete focal statements must guide both planning and concrete MIDI writing");
+            check(club::scenes::brief().contains(club::scenes::connectedArrival()) &&
+                club::scenes::context(plan, 0).contains(club::scenes::connectedArrival()),
+                "dialogue and connected arrival must guide both the plan and MIDI realization");
+            check(club::scenes::brief().contains(club::scenes::musicalStandard()) &&
+                club::scenes::context(plan, 0).contains(club::scenes::musicalStandard()),
+                "planning and writing must share the full contextual musical standard");
+            auto decisionScene = root.getProperty("ensemble_scenes", {})[0];
+            decisionScene.getDynamicObject()->setProperty("musical_decision", juce::JSON::parse(R"({
+                "retained_identity":"offbeat tonic gesture", "development":"bass answers the held upper third",
+                "relationship":"answer takes focus while lead sustains", "audible_payoff":"connected return to tonic"})"));
+            check(club::scenes::validate(root, plan, error), "complete musical decision rejected");
+            decisionScene.getProperty("musical_decision", {}).getDynamicObject()->setProperty("development", "");
+            check(!club::scenes::validate(root, plan, error), "empty musical decision accepted");
+            decisionScene.getProperty("musical_decision", {}).getDynamicObject()->setProperty("development", "deliberate plateau retains expectation");
+            check(club::scenes::validate(root, plan, error), "intentional plateau must not require forced development");
+            const auto sourcePlan = juce::String(R"({"ensemble_scenes":[],"musical_arcs":[
+                {"foreground_id":"lead","start_bar":0,"bars":4,"identity":"old_source"},
+                {"foreground_id":"lead","start_bar":8,"bars":4,"identity":"latest_source"},
+                {"foreground_id":"lead","start_bar":24,"bars":4,"identity":"future_source"},
+                {"foreground_id":"answer","start_bar":2,"bars":2,"identity":"answer_source"}]})");
+            const auto sourceContext = club::production::developmentBrief(sourcePlan, 64, 80, 4);
+            check(sourceContext.contains("latest_source") && sourceContext.contains("answer_source") &&
+                !sourceContext.contains("old_source") && !sourceContext.contains("future_source"),
+                "return context must keep only the latest completed reference per voice, never future material");
+            const auto activeContext = club::production::developmentBrief(sourcePlan, 32, 40, 4);
+            check(activeContext.contains("CONTINUING MUSICAL ARGUMENT") &&
+                !activeContext.contains("EARLIER MELODIC SOURCE FOR lead"),
+                "an active concrete arc must not be obscured by a redundant older source");
+            check(club::scenes::brief().contains("MIDDLE-PHRASE CONTINUATION") &&
+                club::scenes::context(plan, 0).contains("MIDDLE-PHRASE CONTINUATION"),
+                "planning and writing must share the continuation rather than sustain-only brief");
+            plan.sections[0].startBar = 0;
+            plan.sections[0].bars = 16;
+            Pattern observed;
+            for (int i = 0; i < 40; ++i) {
+                NoteEvent n; n.partId = 2; n.startBeat = i; n.durationBeats = 1;
+                n.pitch = 60 + i % 7; n.velocity = 80; observed.notes.push_back(n);
+            }
+            const auto original = observed.notes;
+            auto evidence = scoreMemory::sceneEvidence(plan, observed, 0, 32);
+            const auto voice = evidence.getProperty("voices", {})[0];
+            const auto excerpt = voice.getProperty("opening_and_latest_notes", {});
+            check(excerpt.size() == 24 && static_cast<int>(voice.getProperty("omitted_notes", 0)) == 8,
+                "scene memory must explicitly bound rather than silently truncate evidence");
+            check(static_cast<double>(excerpt[0][0]) == 0 && static_cast<double>(excerpt[23][0]) == 31,
+                "scene memory lost opening or continuation, or leaked future notes");
+            check(observed.notes == original, "scene evidence changed MIDI");
+            plan.sections[0].startBar = 32;
+            const auto returning = scoreMemory::sceneEvidence(plan, observed, 0, 128);
+            const auto returningVoice = returning.getProperty("voices", {})[0];
+            const auto priorTail = returningVoice.getProperty("latest_preceding_notes", {});
+            check(priorTail.size() == 12 && static_cast<double>(priorTail[0][0]) == 28 &&
+                static_cast<double>(priorTail[11][0]) == 39 &&
+                static_cast<int>(returningVoice.getProperty("omitted_preceding_notes", -1)) == 28,
+                "returning voice must retain bounded actual history across a silent scene");
+            check(returningVoice.getProperty("opening_and_latest_notes", {}).size() == 0 && observed.notes == original,
+                "remembering an absent voice must not fabricate current notes or edit MIDI");
+            plan.sections[0].startBar = 0;
+            auto commitment = root.getProperty("ensemble_scenes", {})[0].getProperty("voices", {})[0];
+            commitment.getDynamicObject()->setProperty("statement", "descending third on beat one");
+            check(!club::scenes::validate(root, plan, error), "partial phrase commitment accepted");
+            commitment.getDynamicObject()->setProperty("continuation", "answer the lead with a sustained second");
+            commitment.getDynamicObject()->setProperty("arrival", "resolve to D in the final phrase");
+            check(club::scenes::validate(root, plan, error), "complete phrase commitment rejected");
+            root.getProperty("ensemble_scenes", {})[0].getProperty("voices", {})[0]
+                .getDynamicObject()->setProperty("owner_id", "unknown");
+            check(!club::scenes::validate(root, plan, error), "unknown scene owner accepted");
+            check(club::scenes::validate(juce::JSON::parse("{}"), plan, error), "legacy scene-free plan rejected");
+        }
+        {
             SongPlan plan;
             plan.instruments.resize(2);
             plan.instruments[0].id = "lead";
@@ -61,6 +184,33 @@ int main() {
             NoteEvent held; held.partId = 2; held.startBeat = 0;
             held.durationBeats = 64; held.pitch = 60; midi.notes.push_back(held);
             const auto original = midi.notes;
+            auto orderedPlan = plan;
+            orderedPlan.compositionBehavior = CompositionBehavior::Club;
+            const auto orderedGroups = club::production::discourseFirstGroups(orderedPlan);
+            check(orderedGroups.size() == 2 && orderedGroups[0] == std::vector<std::size_t>{0} &&
+                  orderedGroups[1] == std::vector<std::size_t>{1} && midi.notes == original,
+                "discourse-first partitions AI-selected speakers before support without changing MIDI");
+            check(!club::production::discourseFirst(orderedPlan), "legacy checkpoint keeps its original ordering");
+            auto orderedJson = juce::JSON::parse(juce::String(orderedPlan.phraseArchitectureJson));
+            orderedJson.getDynamicObject()->setProperty("score_writing_order", "foreground_first_v1");
+            orderedPlan.phraseArchitectureJson = juce::JSON::toString(orderedJson).toStdString();
+            check(club::production::discourseFirst(orderedPlan), "checkpoint persists discourse-first scheduling");
+            orderedJson.getProperty("musical_arcs", {})[0].getDynamicObject()->setProperty("phrase_route",
+                juce::JSON::parse(R"([{"from_bar":0,"bars":2,"action":"breath"},
+                  {"from_bar":2,"bars":2,"action":"continuation"}])"));
+            orderedPlan.phraseArchitectureJson = juce::JSON::toString(orderedJson).toStdString();
+            check(club::production::explicitBreath(orderedPlan, "lead", 16, 24) &&
+                  !club::production::explicitBreath(orderedPlan, "lead", 16, 28) &&
+                  !club::production::explicitBreath(orderedPlan, "lead", 8, 24) &&
+                  !club::production::explicitBreath(orderedPlan, "pad", 16, 24),
+                "only fully covered explicit breath spans permit silence; promises and gaps remain checked");
+            auto historicalBreath = orderedPlan;
+            orderedJson.getDynamicObject()->removeProperty("score_writing_order");
+            historicalBreath.phraseArchitectureJson = juce::JSON::toString(orderedJson).toStdString();
+            check(!club::production::explicitBreath(historicalBreath, "lead", 16, 24),
+                "historical checkpoint validation is not silently relaxed");
+            orderedPlan.instruments.resize(1);
+            check(club::production::discourseFirstGroups(orderedPlan).empty(), "solo work needs no empty accompaniment pass");
             const auto evidence = scoreMemory::evidence(plan, midi, 32, 40, {0});
             check(midi.notes == original, "memory changed accepted MIDI");
             const auto voices = evidence.getProperty("voices", {});
@@ -77,6 +227,24 @@ int main() {
             check(static_cast<int>(empty.getProperty("voices", {})[0].getProperty("history_notes", -1)) == 0,
                 "memory fabricated opening history");
             plan.instruments.resize(24);
+            Pattern articulation;
+            for (const auto beat : {0.0, .25}) {
+                NoteEvent n; n.partId = 1; n.pitch = 76; n.startBeat = beat;
+                n.durationBeats = 4; articulation.notes.push_back(n);
+            }
+            NoteEvent spike; spike.partId = 1; spike.pitch = 91;
+            spike.startBeat = 1; spike.durationBeats = .75; articulation.notes.push_back(spike);
+            const auto articulationBefore = articulation.notes;
+            const auto observed = scoreMemory::articulationEvidence(plan, articulation);
+            check(observed.getProperty("candidates", {}).size() == 2 && articulation.notes == articulationBefore,
+                "articulation observations must expose overlap and leap without editing notes");
+            for (auto& n : articulation.notes) n.partId = 2;
+            check(scoreMemory::articulationEvidence(plan, articulation).getProperty("candidates", {}).size() == 0,
+                "background chord owners must not be judged as melodic solo attacks");
+            for (auto& n : articulation.notes) n.partId = 1;
+            articulation.notes[0].durationBeats = .25;
+            check(scoreMemory::articulationEvidence(plan, articulation).getProperty("candidates", {}).size() == 1,
+                "separated same-pitch articulations are not overlapping reattacks");
             for (std::size_t i = 0; i < plan.instruments.size(); ++i) plan.instruments[i].id = "owner" + std::to_string(i);
             midi.notes.clear();
             for (int owner = 1; owner <= 24; ++owner) for (int tick = 0; tick < 128; ++tick) {
@@ -358,6 +526,84 @@ int main() {
             clubProduction.getDynamicObject()->getProperty("layers").getArray()->add(layer);
         }
         auto productionJson = juce::JSON::toString(clubProduction);
+        check(arrivalReview::mayCompare(true, true, true),
+            "contextual ending review must not depend on a passing narrative heuristic");
+        check(!arrivalReview::mayCompare(false, true, true) && !arrivalReview::mayCompare(true, false, true),
+            "contextual review must not bypass technical integrity or earlier-scene preservation");
+        {
+            auto reviewedPlan = clubPlan;
+            Pattern reviewedMidi;
+            reviewedMidi.notes.push_back({0, 4, 60, 80, 1, VoiceId::Lead, 1, true, NoteOrigin::AiAuthored});
+            reviewedPlan.reviewedEndingMidi = NarrativeScoreGate::endingSignature(reviewedMidi, reviewedPlan);
+            reviewedPlan.reviewedEndingEvidence = "Explicit AI evidence about this ending";
+            check(NarrativeScoreGate::reviewedEndingApplies(reviewedMidi, reviewedPlan), "exact reviewed MIDI must match");
+            reviewedMidi.notes[0].pitch = 61;
+            check(!NarrativeScoreGate::reviewedEndingApplies(reviewedMidi, reviewedPlan), "changed MIDI must invalidate contextual approval");
+            reviewedMidi.notes[0].pitch = 60;
+            reviewedPlan.rootPitchClass = (reviewedPlan.rootPitchClass + 1) % 12;
+            check(!NarrativeScoreGate::reviewedEndingApplies(reviewedMidi, reviewedPlan), "changed harmonic context must invalidate approval");
+            auto verdict = juce::JSON::parse(R"({"prefer_candidate":false,"original_goal_realized":true,"candidate_goal_realized":true,"existing_arrival_preserved":false,"evidence":"Exact notes and harmony","reason":"Original realizes its intended arrival"})");
+            check(arrivalReview::originalValidated(verdict), "explicit contextual original approval must be recognized");
+            verdict.getDynamicObject()->setProperty("original_goal_realized", false);
+            check(!arrivalReview::originalValidated(verdict), "mere preference cannot approve an unresolved original");
+        }
+        {
+            NarrativeScoreReport closure;
+            closure.terminalPhraseReady = true;
+            closure.terminalHandoffHonored = true;
+            closure.motifClosure = .6;
+            closure.tonalClosure = 1;
+            closure.causalNarrative = 1;
+            closure.resolutionScore = .53;
+            check(NarrativeScoreGate::resolved(closure, true),
+                "Club can resolve without compulsory thinning or register descent");
+            check(!NarrativeScoreGate::resolved(closure, false),
+                "Club closure policy must not relax Adaptive resolution scoring");
+            closure.terminalHandoffHonored = false;
+            check(!NarrativeScoreGate::resolved(closure, true),
+                "a final speaker handoff violation still blocks Club publication");
+            closure.terminalHandoffHonored = true;
+            closure.tonalClosure = 0;
+            check(!NarrativeScoreGate::resolved(closure, true),
+                "retained Club energy cannot excuse unresolved harmony");
+        }
+        {
+            const auto owner = juce::String(clubPlan.instruments[0].id);
+            check(club::nucleus::repairableLaneId(
+                "Tonal nucleus omitted a declared groove core owner: " + owner, clubPlan) == owner,
+                "missing declared core voice must be repairable by the AI");
+            auto draft = juce::JSON::parse(R"({"groove_core_ids":[],"tonal_nucleus":{"lanes":[]}})");
+            draft.getProperty("groove_core_ids", {}).getArray()->add(owner);
+            juce::String merged;
+            const auto repair = R"({"repeat_intent":"AI sustained anchor","notes":[{"beat":0,"duration":4,"pitch":48,"velocity":70}]})";
+            check(club::nucleus::replaceLaneNotes(juce::JSON::toString(draft), owner, repair, merged),
+                "AI can supply the omitted declared lane without rewriting the nucleus");
+            check(juce::JSON::parse(merged).getProperty("tonal_nucleus", {}).getProperty("lanes", {}).size() == 1,
+                "missing lane repair adds exactly one voice");
+            check(!club::nucleus::replaceLaneNotes(juce::JSON::toString(draft), "unknown", repair, merged),
+                "missing lane repair must never invent an undeclared core owner");
+        }
+        {
+            const auto owner = clubProduction.getProperty("layers", {})[0].getProperty("instrument_id", {}).toString();
+            auto broken = juce::JSON::parse(productionJson);
+            broken.getProperty("layers", {})[0].getDynamicObject()->setProperty("rhythm_cell", juce::JSON::parse("[0,0]"));
+            const auto draft = juce::JSON::toString(broken);
+            check(!club::production::validate(draft, clubPlan, phraseError) &&
+                club::production::rhythmRepairError(phraseError) &&
+                club::production::repairableStateLayerId(phraseError, clubPlan) == owner,
+                "duplicate rhythm attacks must identify the targeted layer");
+            juce::String merged;
+            check(!club::production::replaceLayerRhythm(draft, owner, R"({"rhythm_cell":[0,0]})", merged),
+                "rhythm repair cannot silently deduplicate AI attacks");
+            check(!club::production::replaceLayerRhythm(draft, owner, R"({"rhythm_cell":[-1]})", merged),
+                "negative rhythm offsets remain invalid");
+            check(club::production::replaceLayerRhythm(draft, owner, R"({"rhythm_cell":[0]})", merged),
+                "valid AI-authored rhythm repair applies");
+            auto repaired = juce::JSON::parse(merged);
+            repaired.getProperty("layers", {})[0].getDynamicObject()->setProperty("rhythm_cell", juce::JSON::parse("[0,0]"));
+            check(juce::JSON::toString(repaired) == draft,
+                "rhythm correction preserves all other plan fields");
+        }
         check(AiPhraseArchitecture::validate(productionJson, clubPlan, phraseError),
               "Club must accept an exact-cast production plan without a required melodic speaker");
         {
@@ -447,6 +693,32 @@ int main() {
         reference.getProperty("notes", {}).getArray()->getReference(0).getDynamicObject()->setProperty("pitch", 128);
         check(!club::production::validate(juce::JSON::toString(developedProduction), clubPlan, phraseError),
               "phrase references cannot exceed their owner's register");
+        check(club::production::repairableReferenceArc(phraseError) == 0 &&
+                  club::production::repairableReferenceKey(phraseError) == "phrase_reference" &&
+                  phraseError.contains("invalid=register") && phraseError.contains("note=0"),
+              "reference diagnostics identify the exact arc, field, note and constraint");
+        const auto brokenReferencePlan = juce::JSON::toString(developedProduction);
+        const auto narrowReference = juce::JSON::parse(club::production::referenceNotesRepairSchema(
+            brokenReferencePlan, clubPlan, 0, "phrase_reference"));
+        const auto noteChoices = narrowReference.getProperty("properties", {}).getProperty("notes", {})
+            .getProperty("items", {}).getProperty("anyOf", {});
+        check(noteChoices.size() == 32 &&
+                  static_cast<double>(noteChoices[31].getProperty("properties", {}).getProperty("duration", {}).getProperty("maximum", 0)) == .25 &&
+                  static_cast<int>(noteChoices[0].getProperty("properties", {}).getProperty("pitch", {}).getProperty("maximum", 0)) == clubPlan.instruments[0].maximumPitch,
+              "focused reference schema binds each onset to remaining duration and actual owner register");
+        auto referenceRepair = juce::JSON::parse(R"({"notes":[{"beat":0,"duration":2,"pitch":60,"velocity":80}]})");
+        referenceRepair.getProperty("notes", {}).getArray()->getReference(0).getDynamicObject()->setProperty("pitch", clubPlan.instruments[0].minimumPitch);
+        juce::String repairedReferencePlan;
+        check(club::production::replaceReferenceNotes(brokenReferencePlan, 0, "phrase_reference",
+                  juce::JSON::toString(referenceRepair), repairedReferencePlan) &&
+                  club::production::validate(repairedReferencePlan, clubPlan, phraseError),
+              "AI reference repair replaces only one note list and validates the full plan");
+        auto expectedReferencePlan = juce::JSON::parse(brokenReferencePlan);
+        expectedReferencePlan.getProperty("musical_arcs", {})[0].getProperty("phrase_reference", {})
+            .getDynamicObject()->setProperty("notes", referenceRepair.getProperty("notes", {}));
+        check(juce::JSON::toString(expectedReferencePlan) == repairedReferencePlan &&
+                  club::production::repairableReferenceArc("unrelated error") == -1,
+              "focused repair preserves every other musical field and ignores unrelated errors");
         arc.getDynamicObject()->removeProperty("phrase_reference");
         auto responseReference = juce::JSON::parse(R"({"beats":32,"development":"a complete answering sentence",
           "notes":[{"beat":24,"duration":8,"pitch":60,"velocity":80}]})");
@@ -829,6 +1101,30 @@ int main() {
         check(NarrativeScoreGate::audit(outroMidi, clubOutro).terminalPhraseReady,
               "a recalled Club theme can yield its final word to a stable sustained tonic outro");
         auto unstableOutro = outroMidi;
+        {
+            auto answer = outroMidi;
+            answer.notes.erase(std::remove_if(answer.notes.begin(), answer.notes.end(),
+                [](const auto& note) { return note.voice == VoiceId::Lead; }), answer.notes.end());
+            double beat = 0;
+            for (const auto pitch : {74, 76, 77, 79, 76}) {
+                answer.notes.push_back({beat, 3.75, pitch, 80, 4, VoiceId::Lead, 4, true, NoteOrigin::AiAuthored});
+                beat += 4;
+            }
+            beat = 64;
+            for (const auto pitch : {79, 77, 76, 74}) {
+                answer.notes.push_back({beat, 3.75, pitch, 80, 4, VoiceId::Lead, 4, true, NoteOrigin::AiAuthored});
+                beat += 4;
+            }
+            check(NarrativeScoreGate::audit(answer, clubOutro).terminalPhraseReady,
+                "a connected exact retrograde fragment can answer a five-note Club subject");
+            answer.notes.back().pitch = 73;
+            check(!NarrativeScoreGate::audit(answer, clubOutro).terminalPhraseReady,
+                "an unrelated final interval must not qualify as the retrograde answer");
+            answer.notes.back().pitch = 74;
+            answer.notes.back().startBeat = 90;
+            check(!NarrativeScoreGate::audit(answer, clubOutro).terminalPhraseReady,
+                "an isolated final tag cannot borrow retrograde evidence across a long gap");
+        }
         unstableOutro.notes.back().pitch = 56;
         check(!NarrativeScoreGate::audit(unstableOutro, clubOutro).terminalPhraseReady,
               "Club ending assessment must still reject a foreign unresolved terminal pitch");

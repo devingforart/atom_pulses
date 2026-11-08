@@ -72,6 +72,17 @@ struct NarrativeScoreReport {
 
 class NarrativeScoreGate final {
 public:
+    [[nodiscard]] static std::string endingSignature(const Pattern&, const SongPlan&);
+    [[nodiscard]] static bool reviewedEndingApplies(const Pattern&, const SongPlan&);
+    // Cadential realization and arrangement thinning are separate dimensions.
+    // Club may resolve while retaining register/density for a DJ transition.
+    [[nodiscard]] static bool resolved(const NarrativeScoreReport& report,
+        bool club, double minimum = .58) noexcept {
+        return report.terminalPhraseReady && report.terminalHandoffHonored &&
+            report.causalNarrative >= .62 && (club
+                ? report.motifClosure >= .55 && report.tonalClosure >= .99
+                : report.resolutionScore >= minimum);
+    }
     [[nodiscard]] static NarrativeScoreReport audit(const Pattern&, const SongPlan&);
     static void stamp(Pattern&, const NarrativeScoreReport&);
 };

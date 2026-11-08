@@ -25,6 +25,11 @@ export class ProductionAudio extends SuiteAudio {
     super.setSong(midi, tracks);
   }
 
+  updateSong(midi, tracks) {
+    for (const track of tracks) track.patchId ||= patchForTrack(track);
+    super.updateSong(midi, tracks);
+  }
+
   // One physical piano key has one attack. Keep independent MIDI voices intact:
   // merge only exact pitch/onset matches in this audition, never nearby attacks.
   playEvents(events) {

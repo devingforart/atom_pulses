@@ -45,10 +45,10 @@ try:
     stripe('checkout/sessions/' + sessions[0]['id'] + '/expire', {})
     print('PASS: authenticated application Checkout returns a test Stripe session', flush=True)
     # Use Stripe's documented test payment method, not browser/card automation.
-    stripe('payment_methods/pm_card_visa/attach', {'customer': customer})
+    payment_method = stripe('payment_methods/pm_card_visa/attach', {'customer': customer})
     subscription = stripe('subscriptions', {'customer': customer,
         'items[0][price]': env['STRIPE_MONTHLY_PRICE_ID'],
-        'default_payment_method': 'pm_card_visa',
+        'default_payment_method': payment_method['id'],
         'metadata[pulso_user_id]': uid, 'metadata[pulso_plan]': 'cloud_monthly'})
     assert subscription['status'] == 'active' and subscription['livemode'] is False
     for attempt in range(30):

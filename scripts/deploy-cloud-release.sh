@@ -14,7 +14,9 @@ image="pulso-web:$revision"
 
 # This release's v1.1 must be built from the saved engine, not a later experiment.
 (cd "$release" && sha256sum -c web/shared/engine-v1.1-sources.sha256)
-docker build --build-arg "PULSO_SOURCE_REVISION=$revision" -f web/Dockerfile -t "$image" .
+dockerfile=${PULSO_WEB_DOCKERFILE:-web/Dockerfile}
+[[ "$dockerfile" == web/Dockerfile || "$dockerfile" == web/Dockerfile.invitation-release ]] || exit 2
+docker build --build-arg "PULSO_SOURCE_REVISION=$revision" -f "$dockerfile" -t "$image" .
 
 # Versioned engines live in persistent composition storage, not in the mutable
 # app executable path. v1 is the exact binary currently deployed; v1.1 comes

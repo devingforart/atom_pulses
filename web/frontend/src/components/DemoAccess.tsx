@@ -28,6 +28,7 @@ export function DemoAccess({access,canPrompt,onRefresh}:{access:Access;canPrompt
   }
   return <aside className="demo-access" aria-label={copy.demo}>
     <strong>{copy.demo}</strong><div className="demo-counters">{access.windows.map(w=><span key={w.days}><b>{w.remaining}/{w.limit}</b> {copy.left} · {w.days===1?copy.daily:w.days===7?copy.week:copy.month}</span>)}</div>
+    {access.credits!=null&&<small>{lang==='en'?'Invitation credits':lang==='pt-BR'?'Créditos do convite':'Créditos de la invitación'}: <b>{access.creditsRemaining}/{access.credits}</b> · {lang==='en'?'3 per completed work':lang==='pt-BR'?'3 por obra concluída':'3 por obra completada'}</small>}
     <small>{copy.failures}</small>
     {access.nextAvailableAt && <small>{copy.next}: {new Date(access.nextAvailableAt*1000).toLocaleString(lang)}</small>}
     {access.completedWorks>0 && <button type="button" onClick={()=>{setSaved(false);setError('');setRequestKey(crypto.randomUUID());setOpen(true)}}>{copy.feedback}</button>}

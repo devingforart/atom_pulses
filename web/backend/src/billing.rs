@@ -405,10 +405,7 @@ pub async fn redeem_promo(
         )
     })?;
     if !code.eq_ignore_ascii_case(&state.config.southatoms_promo_code) {
-        return Err(ApiError::public(
-            StatusCode::BAD_REQUEST,
-            "El código de invitación no es válido.",
-        ));
+        return crate::invitations::redeem(&state, &headers, &code).await;
     }
 
     let timestamp = now();

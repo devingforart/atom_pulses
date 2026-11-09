@@ -7,6 +7,7 @@ mod credits;
 mod demo;
 mod error;
 mod exhibitions;
+mod invitations;
 mod licenses;
 mod mail;
 mod models;
@@ -67,6 +68,8 @@ fn router(state: AppState) -> Router {
         .route("/demo/feedback", post(demo::submit))
         .route("/demo/feedback/snooze", post(demo::snooze))
         .route("/admin/demo-feedback", get(demo::review))
+        .route("/growth/invitations", get(invitations::list).post(invitations::create))
+        .route("/growth/invitations/{id}/revoke", post(invitations::revoke))
         .route("/cloud/jobs/{id}", get(cloud::get).delete(cloud::cancel))
         .route("/cloud/jobs/{id}/tracks/{filename}", get(cloud::track))
         .route(

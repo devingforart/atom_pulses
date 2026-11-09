@@ -11,15 +11,20 @@ pub fn owner(email: &str) -> bool { email.trim().eq_ignore_ascii_case("devingfor
 pub async fn eligible(conn: &mut PgConnection, user: &AuthenticatedUser) -> ApiResult<bool> {
     if owner(&user.email) { return Ok(false); }
     // Redeeming a campaign must not downgrade an already-paid account.
-    Ok(sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM entitlements e WHERE e.user_id=$1 AND e.status='active' AND e.source LIKE 'promotion:%') AND NOT EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=$1 AND s.status IN ('active','trialing'))")
-        .bind(user.id).fetch_one(conn).await?)
+    let invited = crate::invitations::grant(conn,user.id).await?.is_some();
+    let (legacy,paid):(bool,bool) = sqlx::query_as("SELECT EXISTS(SELECT 1 FROM entitlements e WHERE e.user_id=$1 AND e.status='active' AND e.source LIKE 'promotion:%'), (EXISTS(SELECT 1 FROM subscriptions s WHERE s.user_id=$1 AND s.status IN ('active','trialing')) OR EXISTS(SELECT 1 FROM entitlements e WHERE e.user_id=$1 AND e.status='active' AND e.source='stripe'))")
+        .bind(user.id).fetch_one(conn).await?;
+    Ok((invited || legacy) && !paid)
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all="camelCase")]
 pub struct Window { pub days: i64, pub limit: i64, pub completed: i64, pub remaining: i64, pub resets_at: Option<i64> }
 pub fn windows(completions: &[i64], active: i64, now: i64) -> Vec<Window> {
-    [(1,3),(7,7),(30,12)].into_iter().map(|(days,limit)| {
+    policy_windows(completions,active,now,[3,7,12])
+}
+fn policy_windows(completions: &[i64], active: i64, now: i64, limits:[i64;3]) -> Vec<Window> {
+    [1,7,30].into_iter().zip(limits).map(|(days,limit)| {
         let mut within: Vec<_> = completions.iter().copied().filter(|at| *at > now-days*86400 && *at <= now).collect();
         within.sort_unstable_by(|a,b| b.cmp(a));
         let completed=within.len() as i64;
@@ -30,11 +35,12 @@ pub fn windows(completions: &[i64], active: i64, now: i64) -> Vec<Window> {
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all="camelCase")]
-pub struct Access { pub windows: Vec<Window>, pub can_compose: bool, pub next_available_at: Option<i64>, pub survey_due: bool, pub completed_works: i64 }
+pub struct Access { pub windows: Vec<Window>, pub can_compose: bool, pub next_available_at: Option<i64>, pub survey_due: bool, pub completed_works: i64, pub credits:Option<i64>, pub credits_remaining:Option<i64> }
 pub fn survey_due(total:i64, last:Option<(i64,i64)>, snooze:i64, now:i64) -> bool {
     total>0 && now>=snooze && last.is_none_or(|(at,count)| now>=at+7*86400 && total>=count+3)
 }
 pub async fn access(conn: &mut PgConnection, user: Uuid, now:i64) -> ApiResult<Access> {
+    let grant=crate::invitations::grant(conn,user).await?;
     // One MVCC snapshot: a running->completed transition must never disappear
     // between separate active and completion queries during admission.
     let (completions,active,total):(Vec<i64>,i64,i64)=sqlx::query_as("SELECT COALESCE(array_agg(updated_at) FILTER (WHERE status='completed' AND updated_at>$2),ARRAY[]::bigint[]), COUNT(*) FILTER (WHERE status IN ('queued','running')),COUNT(*) FILTER (WHERE status='completed') FROM cloud_jobs WHERE user_id=$1")
@@ -43,9 +49,16 @@ pub async fn access(conn: &mut PgConnection, user: Uuid, now:i64) -> ApiResult<A
         .bind(user).fetch_optional(&mut *conn).await?;
     let snooze:Option<i64>=sqlx::query_scalar("SELECT until_at FROM demo_feedback_snooze WHERE user_id=$1")
         .bind(user).fetch_optional(&mut *conn).await?;
-    let windows=windows(&completions,active,now);
+    let windows=if let Some(g)=&grant { policy_windows(&completions,active,now,[g.daily_limit,g.weekly_limit,g.monthly_limit]) }
+        else { windows(&completions,active,now) };
+    let used:i64=if let Some(g)=&grant {
+        sqlx::query_scalar("SELECT count(*) FROM cloud_jobs WHERE user_id=$1 AND status='completed' AND invitation_id=$2")
+            .bind(user).bind(g.id).fetch_one(&mut *conn).await?
+    } else { 0 };
+    let credits=grant.as_ref().map(|g|g.credits);
+    let credits_remaining=credits.map(|n|(n-(used+active)*crate::credits::cost()).max(0));
     let next_available_at=windows.iter().filter_map(|w|w.resets_at).max();
-    Ok(Access{can_compose:active==0 && windows.iter().all(|w|w.remaining>0),windows,next_available_at,
+    Ok(Access{can_compose:active==0 && windows.iter().all(|w|w.remaining>0) && credits_remaining.is_none_or(|n|n>=crate::credits::cost()),windows,next_available_at,credits,credits_remaining,
         survey_due:survey_due(total,last,snooze.unwrap_or(0),now),completed_works:total})
 }
 

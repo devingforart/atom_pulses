@@ -49,7 +49,7 @@ export type CloudJob = {
 }
 
 type ApiErrorBody = { error?: string }
-export type DemoAccess = { windows: {days: number; limit: number; completed: number; remaining: number; resetsAt: number | null}[]; canCompose: boolean; nextAvailableAt: number | null; surveyDue: boolean; completedWorks: number }
+export type DemoAccess = { windows: {days: number; limit: number; completed: number; remaining: number; resetsAt: number | null}[]; canCompose: boolean; nextAvailableAt: number | null; surveyDue: boolean; completedWorks: number; credits?:number|null; creditsRemaining?:number|null }
 export type CloudStatus = { available: boolean; dailyJobLimit: number; unlimited: boolean; creditsEnabled?: boolean; demo?: DemoAccess | null; demoLab?: boolean }
 export type DemoFeedbackInput = { requestKey: string; overall: number; musicality: number; easeOfUse: number; strengths: string; improvements: string; locale: string }
 export type DemoFeedback = Omit<DemoFeedbackInput, 'requestKey'> & {id:string;email:string;displayName:string;version:number;completedWorks:number;lastJobId:string|null;createdAt:number}

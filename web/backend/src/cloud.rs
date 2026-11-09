@@ -124,14 +124,15 @@ fn valid_request(input: &CreateJob) -> bool {
         })
 }
 
-fn available(state: &AppState, user: &crate::models::AuthenticatedUser) -> bool {
-    (state.config.demo_lab || (state
+async fn available(state: &AppState, user: &crate::models::AuthenticatedUser) -> ApiResult<bool> {
+    Ok((state.config.demo_lab || (state
         .config
         .cloud_worker_path
         .as_ref()
         .is_some_and(|path| path.is_file())
         && std::env::var("OPENAI_API_KEY").is_ok_and(|key| !key.trim().is_empty())))
-        && license_allows_cloud(user, &state.config.cloud_beta_emails)
+        && (license_allows_cloud(user, &state.config.cloud_beta_emails)
+            || crate::invitations::has_access(state,user.id).await?))
 }
 
 fn license_allows_cloud(user: &crate::models::AuthenticatedUser, beta_emails: &[String]) -> bool {
@@ -169,7 +170,7 @@ pub async fn create(
     Json(mut input): Json<CreateJob>,
 ) -> ApiResult<(StatusCode, Json<CloudJob>)> {
     let user = require_user(&state, &headers).await?;
-    if !user.email_verified || !available(&state, &user) {
+    if !user.email_verified || !available(&state, &user).await? {
         return Err(ApiError::public(
             StatusCode::FORBIDDEN,
             "PULSO Cloud no está activo para esta cuenta.",
@@ -228,7 +229,7 @@ pub async fn create(
         if !usage.can_compose {
             return Err(ApiError::public(StatusCode::TOO_MANY_REQUESTS,
                 if active > 0 { "Ya tienes una composición en curso." }
-                else { "Alcanzaste el cupo demo: 3 obras cada 24 horas, 7 cada 7 días y 12 cada 30 días. Las fallidas no cuentan." }));
+                else { "Alcanzaste el cupo o los créditos de tu invitación. Consulta tus límites de acceso. Las fallidas no cuentan." }));
         }
     }
     if let Some(problem) = quota_problem(
@@ -252,6 +253,12 @@ pub async fn create(
         .bind(id).bind(user.id).bind(&input.idempotency_key).bind(input.prompt.trim())
         .bind(input.duration_seconds).bind(input.bpm).bind(if input.club { "club" } else { CLOUD_BEHAVIOR }).bind(seed).bind(CLOUD_AI_SOVEREIGN)
         .bind(now).bind(input.allow_chromatic).bind(&input.club_layer_pace).bind(input.club_variety).bind(&input.engine_version).execute(&mut *tx).await?;
+    if is_demo {
+        if let Some(grant) = crate::invitations::grant(&mut tx,user.id).await? {
+            sqlx::query("UPDATE cloud_jobs SET invitation_id=$2 WHERE id=$1")
+                .bind(id).bind(grant.id).execute(&mut *tx).await?;
+        }
+    }
     if crate::credits::enabled() && !is_demo && !unlimited {
         crate::credits::reserve(&mut tx, user.id, id,
             crate::credits::cost()).await?;
@@ -302,7 +309,7 @@ pub async fn status(State(state): State<AppState>, headers: HeaderMap) -> ApiRes
     } else { None };
     let unlimited = demo.is_none() && unlimited_for(&user.email, &state.config.cloud_unlimited_emails);
     Ok(Json(serde_json::json!({
-        "available": user.email_verified && available(&state, &user),
+        "available": user.email_verified && available(&state, &user).await?,
         "dailyJobLimit": state.config.cloud_daily_jobs,
         "creditsEnabled": crate::credits::enabled() && demo.is_none() && !unlimited,
         "unlimited": unlimited,

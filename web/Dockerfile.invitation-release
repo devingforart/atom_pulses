@@ -1,0 +1,26 @@
+# The invitation release deliberately reuses the deployed musical executables.
+FROM node:24-bookworm-slim AS frontend
+WORKDIR /source/frontend
+COPY web/frontend/package*.json ./
+RUN npm ci
+COPY web/frontend/ ./
+COPY web/shared/ /source/shared/
+RUN npm run build
+
+FROM rust:1-bookworm AS backend
+WORKDIR /source/backend
+COPY web/backend/Cargo.toml web/backend/Cargo.lock ./
+COPY web/backend/build.rs ./
+COPY web/backend/migrations ./migrations
+COPY web/backend/src ./src
+COPY web/shared/ /source/shared/
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/source/backend/target \
+    cargo build --release --locked && cp target/release/pulso-web-api /tmp/pulso-web-api
+
+FROM pulso-web:eef37d59f37dd9dd08d04582ef7a6a2ce5d2354a
+ARG PULSO_SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.revision=$PULSO_SOURCE_REVISION
+COPY --from=backend /tmp/pulso-web-api /app/pulso-web-api
+COPY --from=frontend /source/frontend/dist /app/frontend

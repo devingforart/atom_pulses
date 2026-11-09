@@ -19,7 +19,7 @@ inline void extend(juce::var& root, const SongPlan* plan) {
           "required":["retained_identity","development","relationship","audible_payoff"],"properties":{
             "retained_identity":{"type":"string"},"development":{"type":"string"},
             "relationship":{"type":"string"},"audible_payoff":{"type":"string"}}},
-        "voices":{"type":"array","minItems":1,"maxItems":12,"items":{"type":"object","additionalProperties":false,
+        "voices":{"type":"array","minItems":1,"maxItems":24,"items":{"type":"object","additionalProperties":false,
           "required":["owner_id","material","relationship","speaking_span","statement","continuation","arrival"],"properties":{
             "owner_id":{"type":"string"},"material":{"type":"string"},
             "relationship":{"type":"string"},"speaking_span":{"type":"string"},
@@ -221,7 +221,7 @@ inline bool validate(const juce::var& root, const SongPlan& plan, juce::String& 
         }
         const auto* voices=scene.getProperty("voices", {}).getArray();
         std::set<std::string> owners;
-        if (!voices || voices->isEmpty() || voices->size()>12) {error="Club ensemble scene has invalid voices";return false;}
+        if (!voices || voices->isEmpty() || voices->size()>24) {error="Club ensemble scene has invalid voices";return false;}
         for (const auto& voice:*voices) {
             const auto id=voice.getProperty("owner_id", {}).toString().toStdString();
             if (!known.contains(id) || !owners.insert(id).second) {error="Club ensemble scene has unknown or repeated owner";return false;}

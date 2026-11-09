@@ -44,6 +44,39 @@ void samePattern(const pulso::Pattern& left, const pulso::Pattern& right) {
 } // namespace
 
 int main() {
+    for (const auto count : {16, 24}) {
+        pulso::SongPlan plan;
+        std::vector<std::size_t> owners;
+        for (int i = 0; i < count; ++i) {
+            plan.instruments.emplace_back();
+            plan.instruments.back().id = "voice_" + std::to_string(i);
+            owners.push_back(static_cast<std::size_t>(i));
+        }
+        const auto schema = juce::JSON::parse(
+            pulso::plugin::AiComposer::directWindowSchemaFor(plan, owners));
+        check(schema.getProperty("required", {}).size() == count,
+            "expanded ensemble must request every independent owner");
+        check(schema.getProperty("properties", {}).getDynamicObject()->getProperties().size() == count,
+            "expanded ensemble must not drop or merge MIDI owners");
+        plan.sections.resize(1);
+        auto sceneRoot = juce::JSON::parse(R"({"ensemble_scenes":[{
+            "section_index":0,"foreground_id":"voice_0","inherited_material":"opening",
+            "transition":"answer","consequence":"arrival","voices":[]}]})");
+        auto* voices = sceneRoot.getProperty("ensemble_scenes", {})[0]
+            .getProperty("voices", {}).getArray();
+        for (const auto& instrument : plan.instruments) {
+            auto voice = juce::JSON::parse(R"({"material":"independent thought",
+                "relationship":"answers foreground","speaking_span":"chosen phrase"})");
+            voice.getDynamicObject()->setProperty("owner_id", juce::String(instrument.id));
+            voices->add(voice);
+        }
+        juce::String error;
+        check(pulso::plugin::club::scenes::validate(sceneRoot, plan, error),
+            "expanded scene must preserve all declared voices");
+        voices->add((*voices)[0]);
+        check(!pulso::plugin::club::scenes::validate(sceneRoot, plan, error),
+            "expanded scenes must still reject duplicate owners");
+    }
     static_assert(pulso::compositionStateBars(pulso::CompositionBehavior::Club) == 64);
     try {
         using namespace pulso;

@@ -172,7 +172,7 @@ std::vector<std::vector<std::size_t>> AiMelodicDiscourse::writingGroups(
         }
     }
     // Preserve historical Club plans without manufacturing a new core.
-    if (plan.compositionBehavior == CompositionBehavior::Club && owners.size() <= 12)
+    if (plan.compositionBehavior == CompositionBehavior::Club && owners.size() <= 24)
         return {owners};
     if (!enabled()) return {owners};
     std::set<std::string> speakers;

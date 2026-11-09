@@ -8166,11 +8166,11 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         targetSeconds <= 90 && requestedCastCount == 0 &&
         juce::SystemStats::getEnvironmentVariable(
             "PULSO_AI_JOINT_COMPACT_CAST", {}) == "1";
-    const auto jointCastCeiling = compactJointCastExperiment ? 6 : 12;
-    if (jointWindowExperiment && requestedCastCount > 12) {
-        error = "The isolated ensemble-window experiment supports at most 12 MIDI "
+    const auto jointCastCeiling = compactJointCastExperiment ? 6 : 24;
+    if (jointWindowExperiment && requestedCastCount > 24) {
+        error = "The isolated ensemble-window experiment supports at most 24 MIDI "
             "tracks for this local first-pass trial. No standard-engine fallback was "
-            "started; request up to 12 tracks or use the ordinary studio.";
+            "started; request up to 24 tracks or use the ordinary studio.";
         OperationalJournal::write("ERROR", "GENERATION", error);
         return result;
     }
@@ -8737,13 +8737,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         jointWindowExperiment && requestedCastCount == 0
         ? juce::String("ISOLATED ENSEMBLE-WINDOW TRIAL: choose only the number of "
                        "independent MIDI voices this particular duration and musical "
-                       "argument can develop meaningfully, never more than twelve. "
+                       "argument can develop meaningfully, never more than twenty-four. "
                        "A short piece may be genuinely rich with a small conversational "
                        "ensemble; extra tracks are not a substitute for thematic, "
                        "harmonic or rhythmic development. Do not make token tracks or "
                        "reduce musical substance merely to fit the ceiling. Count every "
                        "exported instrument, including timbral destinations, inside the "
-                       "twelve-owner limit; the trial fails closed rather than switching "
+                       "twenty-four-owner limit; the trial fails closed rather than switching "
                        "to another writing engine. ")
         : requestedCastCount == 0 && totalBars >= 96
             ? juce::String("DEFAULT LONG-FORM ENSEMBLE: return 18-24 independent authored MIDI owners "
@@ -9971,18 +9971,22 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     // instrument drafts. The established route and all publication gates
     // remain the default until full-song and listening comparisons pass.
     const auto jointShortCastExperiment = jointWindowExperiment;
-    if (jointWindowExperiment && jointOwners.size() > 12) {
+    if (jointWindowExperiment && jointOwners.size() > 24) {
         error = "The AI proposed " +
             juce::String(static_cast<int>(jointOwners.size())) +
-            " instruments, above the isolated ensemble-window limit of 12. "
+            " instruments, above the isolated ensemble-window limit of 24. "
             "The standard engine was not used; no performance MIDI was requested. "
-            "Specify up to 12 independent tracks to retry this experiment.";
+            "Specify up to 24 independent tracks to retry this experiment.";
         OperationalJournal::write("ERROR", "GENERATION", error);
         return {};
     }
     if (localEditorial && !jointOwners.empty() &&
-        jointOwners.size() <= (jointShortCastExperiment ? 12U : 8U)) {
-        const auto barsPerWindow = behavior == CompositionBehavior::Club ? 8 : 16;
+        jointOwners.size() <= (jointShortCastExperiment ? 24U : 8U)) {
+        // Bound response size by shortening technical windows, not by splitting
+        // the ensemble or changing the AI's section/phrase durations. Smaller
+        // casts retain their exact existing scheduling and musical instructions.
+        const auto baseWindowBars = behavior == CompositionBehavior::Club ? 8 : 16;
+        const auto barsPerWindow = jointOwners.size() > 12 ? baseWindowBars / 2 : baseWindowBars;
         std::vector<std::size_t> harmonicAnchors;
         std::vector<std::size_t> expressiveVoices;
         for (const auto index : jointOwners) {
@@ -10097,7 +10101,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         const auto discourseGroups = club::production::discourseFirst(result)
             ? club::production::discourseFirstGroups(result) : std::vector<std::vector<std::size_t>>{};
         const auto discoursePasses = discourseGroups.size() == 2 ? std::size_t{2} : std::size_t{1};
-        if (club::scenes::active(result) && jointOwners.size() <= 12) {
+        if (club::scenes::active(result) && jointOwners.size() <= 24) {
             writingGroups = {jointOwners};
             OperationalJournal::write("INFO", "DISCOURSE", "Joint scene writing: foreground, answers and harmony composed together");
         }

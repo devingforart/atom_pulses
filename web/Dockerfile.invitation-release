@@ -17,6 +17,7 @@ COPY web/shared/ /source/shared/
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/source/backend/target \
+    cargo clean --release -p pulso-web-api && \
     cargo build --release --locked && cp target/release/pulso-web-api /tmp/pulso-web-api
 
 FROM pulso-web:eef37d59f37dd9dd08d04582ef7a6a2ce5d2354a

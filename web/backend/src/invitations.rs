@@ -33,9 +33,9 @@ pub struct Create {
 pub struct Invitation {
     id: Uuid, code_hint: String, label: String, target_email: Option<String>, credits: i64,
     daily_limit: i64, weekly_limit: i64, monthly_limit: i64, max_redemptions: i64,
-    expires_at: Option<i64>, revoked_at: Option<i64>, created_at: i64, redemptions: i64,
+    expires_at: Option<i64>, revoked_at: Option<i64>, created_at: i64, redemptions: i64, email_status: Option<String>,
 }
-const LIST: &str = "SELECT i.id,i.code_hint,i.label,i.target_email,i.credits,i.daily_limit,i.weekly_limit,i.monthly_limit,i.max_redemptions,i.expires_at,i.revoked_at,i.created_at,(SELECT count(*) FROM cloud_invitation_redemptions r WHERE r.invitation_id=i.id) AS redemptions FROM cloud_invitations i ORDER BY i.created_at DESC LIMIT 500";
+const LIST: &str = "SELECT i.id,i.code_hint,i.label,i.target_email,i.credits,i.daily_limit,i.weekly_limit,i.monthly_limit,i.max_redemptions,i.expires_at,i.revoked_at,i.created_at,(SELECT e.status FROM cloud_invitation_emails e WHERE e.invitation_id=i.id) AS email_status,(SELECT count(*) FROM cloud_invitation_redemptions r WHERE r.invitation_id=i.id) AS redemptions FROM cloud_invitations i ORDER BY i.created_at DESC LIMIT 500";
 pub async fn list(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     admin(&headers)?;
     Ok(Json(json!({"items": sqlx::query_as::<_,Invitation>(LIST).fetch_all(&state.db).await?})))

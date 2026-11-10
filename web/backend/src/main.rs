@@ -9,6 +9,7 @@ mod error;
 mod exhibitions;
 mod invitations;
 mod invitation_activity;
+mod invitation_email;
 mod licenses;
 mod mail;
 mod models;
@@ -72,6 +73,7 @@ fn router(state: AppState) -> Router {
         .route("/growth/invitations", get(invitations::list).post(invitations::create))
         .route("/growth/invitations/{id}/revoke", post(invitations::revoke))
         .route("/growth/invitations/{id}/activity", get(invitation_activity::activity))
+        .route("/growth/invitations/{id}/send", post(invitation_email::send))
         .route("/cloud/jobs/{id}", get(cloud::get).delete(cloud::cancel))
         .route("/cloud/jobs/{id}/tracks/{filename}", get(cloud::track))
         .route(

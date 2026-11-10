@@ -1,2 +1,8 @@
 web/backend/migrations/*.sql -text
 scripts/*.sh text eol=lf
+web/shared/*.sha256 text eol=lf
+# Keep immutable engine-source hashes portable when archiving on Windows.
+CMakeLists.txt text eol=lf
+cmake/** text eol=lf
+src/** text eol=lf
+tools/*.cpp text eol=lf

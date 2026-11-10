@@ -11,7 +11,7 @@ pub fn normalize(code: &str) -> Option<String> {
     let code = code.trim().to_ascii_uppercase();
     ((8..=64).contains(&code.len()) && code.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-')).then_some(code)
 }
-fn admin(headers: &HeaderMap) -> ApiResult<()> {
+pub(crate) fn admin(headers: &HeaderMap) -> ApiResult<()> {
     let expected = std::env::var("PULSO_GROWTH_ADMIN_TOKEN").unwrap_or_default();
     if expected.len() < 32 { return Err(ApiError::configuration("Growth invitation management is not configured")); }
     let supplied = headers.get("authorization").and_then(|h| h.to_str().ok()).and_then(|s| s.strip_prefix("Bearer ")).unwrap_or("");

@@ -9,6 +9,47 @@ inline bool active(const SongPlan& plan) {
     return plan.compositionBehavior == CompositionBehavior::Club &&
         juce::JSON::parse(juce::String(plan.phraseArchitectureJson)).hasProperty("ensemble_scenes");
 }
+inline juce::String arrangementDevelopment() {
+    return "\nELECTRONIC ARRANGEMENT / INDEPENDENT CONSEQUENCES: Preserve the dependable "
+        "groove, harmonic continuity and recognizable protagonist. An expanded cast is "
+        "not a stack of equivalent pads or decorative copies of the same hook. Before "
+        "assigning a voice, decide what musical information would be lost without it: "
+        "a connected answering idea, inner harmonic motion, a recognizable transition, "
+        "an anticipation, a tonal fill, or a sustained tension with a destination. "
+        "A timbral name alone is not that distinction. With an explicit track count, "
+        "give each owner a complementary responsibility rather than reducing the count "
+        "or spreading one melody across nominal tracks. Otherwise choose a useful cast, "
+        "not the maximum allowed. These are available functions, not a checklist.\n"
+        "SECONDARY SPEECH: Give the chosen respondent its own recognizable rhythmic "
+        "and interval gesture, a connected continuation and a destination related to "
+        "the protagonist. Let it speak for a complete phrase at a meaningful moment, "
+        "and recall or transform it later when the form benefits. Do not substitute "
+        "isolated cue notes, a transposed duplicate, constant counterpoint, or fast "
+        "runs for a developed answer. In existing scene statement/continuation/arrival "
+        "fields name the actual gesture, its metric grouping and the idea it answers. "
+        "Tie developed material to musical_arcs and concrete references, including "
+        "a middle-work response when needed, rather than only an opening and ending.\n"
+        "TEXTURE AND TRANSITION: A held texture may have few attacks and still be a "
+        "complete role: choose its voice leading, register, tension and release. "
+        "Distinguish parallel textures by those responsibilities; exact doubling is "
+        "allowed when intentionally audible, not as a substitute for new content. "
+        "Grow transitions from the current material toward an identifiable next event. "
+        "A fill completes a phrase; an anticipation hints at a later idea without "
+        "playing the whole future section early. Tonal effects may use a connected "
+        "pitch contour, articulation or velocity trajectory, but a filter sweep or "
+        "reverb tail is a sound-design operation: do not claim it exists merely "
+        "because a MIDI track has that name. Preserve percussion exclusions.\n"
+        "HIERARCHY AND FORM: Write supporting parts against the actual foreground "
+        "and simultaneous harmony. Let their register, voicing or chosen articulation "
+        "leave a perceptible space for the answer without muting the whole backing. "
+        "Choose where these functions matter over the whole work, not one new detail "
+        "per technical window. A plateau can remain stable; a return should carry "
+        "a consequence, and the release should follow the connected final sentence. "
+        "Do not make every section equally long by habit or manufacture changes to "
+        "escape repetition. Keep Club's physical pulse and intentional hypnotic memory. "
+        "No activity quota, compulsory tutti, automatic filler or prescribed notes. "
+        "All notes and rests remain your composition.\n";
+}
 inline void extend(juce::var& root, const SongPlan* plan) {
     if (!requested() || !plan || plan->instruments.empty() || plan->sections.empty()) return;
     auto entry = juce::JSON::parse(R"json({"type":"object","additionalProperties":false,
@@ -31,6 +72,13 @@ inline void extend(juce::var& root, const SongPlan* plan) {
     auto props=entry.getProperty("properties", {});
     props.getProperty("section_index", {}).getDynamicObject()->setProperty("enum", indices);
     props.getProperty("foreground_id", {}).getDynamicObject()->setProperty("enum", ids);
+    props.getProperty("transition", {}).getDynamicObject()->setProperty("description",
+        "Actual owner and gesture connecting this scene to the next, or an intentional uninterrupted continuation. Not an effect name alone.");
+    auto voiceProperties = props.getProperty("voices", {}).getProperty("items", {}).getProperty("properties", {});
+    voiceProperties.getProperty("material", {}).getDynamicObject()->setProperty("description",
+        "Concrete pitch/rhythm or sustained voice-leading identity; what this owner contributes that another layer does not.");
+    voiceProperties.getProperty("continuation", {}).getDynamicObject()->setProperty("description",
+        "Connected development of this voice's statement, related response, or intentional sustained plateau; describe the journey, not only its final note.");
     props.getProperty("voices", {}).getProperty("items", {}).getProperty("properties", {})
         .getProperty("owner_id", {}).getDynamicObject()->setProperty("enum", ids);
     auto list=juce::JSON::parse(R"({"type":"array"})");
@@ -190,7 +238,7 @@ inline juce::String brief() {
         "The transition must grow from this scene and prepare the next; consequence says "
         "what is actually changed or fulfilled. Respect layer activity and shared Club "
         "meter. Keep hypnotic passages, but do not substitute a perpetual backing loop "
-        "for a scene's material. Never add a voice merely to reach a track count.\n" + foregroundContinuity() + completeTrackArgument() + connectedArrival() + musicalStandard();
+        "for a scene's material. Never add a voice merely to reach a track count.\n" + foregroundContinuity() + completeTrackArgument() + connectedArrival() + musicalStandard() + arrangementDevelopment();
 }
 inline bool validate(const juce::var& root, const SongPlan& plan, juce::String& error) {
     if (!root.hasProperty("ensemble_scenes")) return true;
@@ -235,6 +283,12 @@ inline bool validate(const juce::var& root, const SongPlan& plan, juce::String& 
     return true;
 }
 inline juce::String context(const SongPlan& plan, std::size_t sectionIndex) {
+    if(juce::JSON::parse(juce::String(plan.phraseArchitectureJson)).getProperty("execution_writer_view",false))
+        return "\nUNIFIED EXECUTION: Reconciled musical_arcs and phrase_route define the speaking "
+               "sequence and concrete note references; layer states bound participation and "
+               "the mapped harmony defines its actual support. Earlier narrative drafts "
+               "are archived, not additional competing writing instructions. Continue the "
+               "actual accepted phrase toward its scheduled consequence.\n";
     const auto root=juce::JSON::parse(juce::String(plan.phraseArchitectureJson));
     const auto* entries=root.getProperty("ensemble_scenes", {}).getArray();
     if (!entries) return {};
@@ -250,6 +304,6 @@ inline juce::String context(const SongPlan& plan, std::size_t sectionIndex) {
         "every silence. Realize statement, continuation and arrival in notes: retain the "
         "identity of the statement while carrying its argument toward its destination. "
         "A long note may be a meaningful arrival; neither speed nor density proves "
-        "development. Do not restart all arguments or invent another theme each window.\n" + foregroundContinuity() + completeTrackArgument() + connectedArrival() + musicalStandard();
+        "development. Do not restart all arguments or invent another theme each window.\n" + foregroundContinuity() + completeTrackArgument() + connectedArrival() + musicalStandard() + arrangementDevelopment();
 }
 }

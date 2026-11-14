@@ -54,6 +54,8 @@ struct SongSection {
     std::vector<HarmonicEvent> harmonicEvents;
     std::vector<VoiceId> activeVoices;
     SectionRhythmPlan rhythm;
+    int harmonicCycleBars{};
+    int harmonicCycleUntilBar{};
 };
 
 // The form is not the story. Sections describe where events happen; this contract

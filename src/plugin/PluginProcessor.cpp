@@ -420,6 +420,9 @@ juce::String songPlanToJson(const SongPlan& plan) {
         item->setProperty("name", juce::String::fromUTF8(section.name.c_str()));
         item->setProperty("function", juce::String::fromUTF8(section.function.c_str()));
         item->setProperty("harmonic_direction", juce::String::fromUTF8(section.harmonicDirection.c_str()));
+        item->setProperty("harmonic_cycle_bars", section.harmonicCycleBars);
+        item->setProperty("harmonic_cycle_until_bar", section.harmonicCycleUntilBar);
+        item->setProperty("harmonic_cycle_repetitions", section.harmonicCycleBars > 0 ? section.harmonicCycleUntilBar / section.harmonicCycleBars : 0);
         item->setProperty("motif_treatment", juce::String::fromUTF8(section.motifTreatment.c_str()));
         item->setProperty("bars", section.bars);
         item->setProperty("energy", section.energy);

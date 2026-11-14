@@ -1459,7 +1459,9 @@ void SongComposer::normalizePlan(SongPlan& plan) {
     for (auto& value : plan.motifIntervals) value = std::clamp(value, -24, 24);
     canonicalizeMotif(plan.motifIntervals, plan.scale);
     plan.key = canonicalKeyName(plan.rootPitchClass, plan.scale);
-    if (plan.chordPalette.size() < 2) {
+    const auto preserveAuthoredClubHarmony = plan.compositionBehavior == CompositionBehavior::Club &&
+        plan.preserveAuthoredCast && !plan.chordPalette.empty();
+    if (plan.chordPalette.size() < 2 && !preserveAuthoredClubHarmony) {
         plan.chordPalette = {{"home", "Home", plan.rootPitchClass, plan.rootPitchClass,
                               {plan.rootPitchClass, positiveModulo(plan.rootPitchClass + 3, 12),
                                positiveModulo(plan.rootPitchClass + 7, 12)},
@@ -1992,7 +1994,11 @@ void SongComposer::normalizePlan(SongPlan& plan) {
             section.harmonicEvents.push_back({0, 0.0, plan.chordPalette.front().id, 0.5,
                                               "Establish harmonic ground"});
         }
-        if (section.harmonicEvents.size() > 64) section.harmonicEvents.resize(64);
+        // Expanded repeat signs are a harmonic time map, not new generated notes.
+        // Keep their later arrivals; truncating at 64 would strand long sections
+        // on the last retained chord and undo the AI's explicit cycle contract.
+        const auto harmonicEventLimit = section.harmonicCycleBars > 0 ? std::size_t{32768} : std::size_t{64};
+        if (section.harmonicEvents.size() > harmonicEventLimit) section.harmonicEvents.resize(harmonicEventLimit);
         for (auto& event : section.harmonicEvents) {
             event.barOffset = std::clamp(event.barOffset, 0, section.bars - 1);
             event.beatOffset = std::clamp(std::isfinite(event.beatOffset) ? event.beatOffset : 0.0,

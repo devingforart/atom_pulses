@@ -135,7 +135,8 @@ inline juce::String planningBrief() {
         "MIDI sketch before asking a later writer to develop it. Choose a reference_chord_id "
         "from the supplied palette and one common cycle_beats of 4, 8 or 16. This is a neutral "
         "full-body reference, NOT the first bars of the song. Include the groove core, the "
-        "continuous sequence and the sustained chord bed; optionally include the hook. "
+        "requested static tonal rhythm layers and the sustained chord bed; include a continuous "
+        "sequence only if chosen for this work, not as a mandatory arpeggio; optionally include the hook. "
         "Write exact beat/duration/pitch/velocity for these lanes. All beats are local to "
         "this reference cycle, all releases <= cycle_beats, all pitches in the declared "
         "scale and owner register. Author all repetitions in this sketch explicitly. "
@@ -339,13 +340,19 @@ inline juce::String writerBrief(const juce::var& root) {
         juce::JSON::toString(root.getProperty("tonal_nucleus", {}), true) +
         "\nTreat this AI-composed groove as the identity to realize, not an optional adjective. "
         "At full-body states retain the meter carrier's subdivision and the core's permitted "
-        "attack grammar, but do not freeze every lane's accents, gates and voicing for the song. "
+        "attack grammar. Static tonal rhythm owners retain their authored repeating attack/rest/accent "
+        "identity through full-body states; they are not melodic speeches. Other owners may develop "
+        "accents, gates and voicing as their role requires. "
         "Develop the harmonic pulse's top voice, spacing and phrase-end articulation where "
         "the planned melodic argument changes its meaning; retain recognizable identity "
         "between those events. A non-carrier core may omit a permitted attack to articulate "
-        "an answer; it may not invent an off-grid or unplanned core attack. Phrase-flexible "
+        "an answer. Only cycle_bound lanes forbid extra offsets. A phrase_flexible core "
+        "can develop related attacks around the unchanged meter carrier: keep a recognizable "
+        "accent/gesture and earn its variant through the phrase, not random displacement. Phrase-flexible "
         "owners may form connected sentences rather than obey the short reference cycle. "
-        "YOU adapt actual pitches/voicings to the current harmonic map. During intro/withdrawal "
+        "Adapt harmonic support and developing voices to the current harmonic map. A static "
+        "rhythm with static_identity retains its chosen anchors or uses its explicitly explained "
+        "harmonic_variant policy; do not transpose every layer automatically. During intro/withdrawal "
         "reveal or remove the planned lanes without replacing their surviving rhythm. "
         "Maintain the continuous sequence through complete cycles; do not randomly omit "
         "half its notes to make space. Separate the hook using register and melodic rests. "
@@ -360,7 +367,8 @@ inline juce::String writerBrief(const juce::var& root) {
         "At local beat zero, if a sustained harmonic role continues, continue its harmonic "
         "support immediately; do not invent a 0.25-beat collective delay. Musical offbeats "
         "remain welcome when part of the declared groove, not as a workaround for boundaries. "
-        "No code copies, transposes or expands this sketch. Write every score event explicitly.\n" + localClubPreferences() + dramaturgy::brief();
+        "The sketch is context, not automatically copied MIDI. Author explicit events or the "
+        "supported exact repeat sign for an intentionally invariant foundation.\n" + localClubPreferences() + dramaturgy::brief();
 }
 
 } // namespace pulso::plugin::club::nucleus

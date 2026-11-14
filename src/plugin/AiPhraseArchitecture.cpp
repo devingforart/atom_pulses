@@ -2,6 +2,7 @@
 #include "AiMelodicDiscourse.h"
 #include "AiClubPolicy.h"
 #include "AiClubProductionPlan.h"
+#include "AiEnsembleCohesion.h"
 
 #include <algorithm>
 #include <cmath>
@@ -64,15 +65,15 @@ juce::String AiPhraseArchitecture::schema(CompositionBehavior behavior, const ju
 
 juce::String AiPhraseArchitecture::schema(const SongPlan& plan, const juce::String& direction) {
     if (plan.compositionBehavior == CompositionBehavior::Club)
-        return club::production::schema(direction, &plan);
-    return schema(plan.compositionBehavior, direction);
+        return cohesion::extend(club::production::schema(direction, &plan), plan);
+    return cohesion::extend(schema(plan.compositionBehavior, direction), plan);
 }
 
 juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
                                           const juce::String& direction,
                                           bool longFormArc) {
     if (plan.compositionBehavior == CompositionBehavior::Club)
-        return club::production::prompt(plan, direction);
+        return club::production::prompt(plan, direction) + cohesion::brief();
     juce::String out;
     if (plan.compositionBehavior == CompositionBehavior::Club) out << club::phraseBrief();
     else out << "You are the phrase architect for a complete symbolic MIDI work. "
@@ -203,12 +204,13 @@ juce::String AiPhraseArchitecture::prompt(const SongPlan& plan,
         "speaker within one octave of its preferred MIDI range. Keep fields "
         "concrete enough that a later listener can compare the intended "
         "gesture with actual MIDI, but do not prescribe note-by-note results.";
-    return out;
+    return out + cohesion::brief();
 }
 
 bool AiPhraseArchitecture::validate(const juce::String& json,
                                     const SongPlan& plan, juce::String& error,
                                     bool enforceActiveSections) {
+    if (!cohesion::validate(juce::JSON::parse(json), plan, error)) return false;
     if (club::production::isPlan(json)) {
         if (plan.compositionBehavior != CompositionBehavior::Club) {
             error = "A Club production plan cannot replace an Adaptive phrase plan"; return false;
@@ -346,13 +348,15 @@ juce::String AiPhraseArchitecture::windowBrief(const juce::String& json,
                                                 const SongPlan& plan,
                                                 std::size_t sectionIndex,
                                                 int firstBar, int bars) {
-    if (club::production::isPlan(json)) return club::production::windowBrief(json, sectionIndex);
+    if (club::production::isPlan(json)) return club::production::windowBrief(json, sectionIndex) +
+        cohesion::context(json, sectionIndex, firstBar, bars,
+            sectionIndex<plan.sections.size()?plan.sections[sectionIndex].bars:0);
     if (json.isEmpty() || sectionIndex >= plan.sections.size()) return {};
     const auto value = juce::JSON::parse(json);
     const auto* root = value.getDynamicObject();
     const auto* phrases = root == nullptr ? nullptr : root->getProperty("phrases").getArray();
     if (phrases == nullptr) return {};
-    juce::String out;
+    juce::String out=cohesion::context(json, sectionIndex, firstBar, bars, plan.sections[sectionIndex].bars);
     out << "\nAI-AUTHORED PHRASE ARCHITECTURE (intent, not invented notes): "
         << "motif clue=" << root->getProperty("motif_clue").toString()
         << "; question=" << root->getProperty("dramatic_question").toString()

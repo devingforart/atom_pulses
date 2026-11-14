@@ -44,6 +44,38 @@ void samePattern(const pulso::Pattern& left, const pulso::Pattern& right) {
 } // namespace
 
 int main() {
+    {
+        pulso::SongPlan plan;
+        plan.beatsPerBar = 4;
+        plan.sections.resize(1);
+        plan.sections[0].bars = 16;
+        plan.instruments.resize(1);
+        plan.instruments[0].id = "answer";
+        auto architecture = juce::JSON::parse(R"({"layers":[{
+            "instrument_id":"answer","timing_mode":"phrase_flexible",
+            "cycle_beats":8,"polyphonic":false,"states":[{
+            "section_index":0,"mode":"reduced","minimum_sounding_fraction":0.12,
+            "entry_beat":0,"release_beat":64}]}]})");
+        const auto checkMissing = [&](const pulso::Pattern& midi, double begin, double end) {
+            plan.phraseArchitectureJson = juce::JSON::toString(architecture).toStdString();
+            juce::String evidence;
+            return pulso::plugin::club::production::missingLayers(
+                juce::String(plan.phraseArchitectureJson), plan, midi, 0, begin, end, {0}, evidence);
+        };
+        pulso::Pattern midi;
+        check(checkMissing(midi, 16, 32).empty(), "flexible response may arrive later in its speaking span");
+        check(!checkMissing(midi, 48, 64).empty(), "entirely omitted response must still be reviewed at its deadline");
+        midi.notes.push_back({4, 2, 60, 80, 1, pulso::VoiceId::Lead, 1, true, pulso::NoteOrigin::AiAuthored});
+        check(checkMissing(midi, 48, 64).empty(), "earlier accepted response must survive a later intentional rest");
+        const auto layer = architecture.getProperty("layers", {})[0];
+        layer.getDynamicObject()->setProperty("timing_mode", "cycle_bound");
+        check(!checkMissing(midi, 48, 64).empty(), "cyclic groove obligation must remain window-local");
+        layer.getDynamicObject()->setProperty("timing_mode", "phrase_flexible");
+        layer.getProperty("states", {})[0].getDynamicObject()->setProperty("mode", "absent");
+        check(!checkMissing(midi, 0, 16).empty(), "notes during a declared absence must still be detected");
+        check(midi.notes.size() == 1 && midi.notes[0].startBeat == 4 && midi.notes[0].durationBeats == 2,
+            "layer review must never fill, move or lengthen notes");
+    }
     for (const auto count : {16, 24}) {
         pulso::SongPlan plan;
         std::vector<std::size_t> owners;
@@ -140,6 +172,9 @@ int main() {
             check(club::scenes::brief().contains(club::scenes::musicalStandard()) &&
                 club::scenes::context(plan, 0).contains(club::scenes::musicalStandard()),
                 "planning and writing must share the full contextual musical standard");
+            check(club::scenes::brief().contains(club::scenes::arrangementDevelopment()) &&
+                club::scenes::context(plan, 0).contains(club::scenes::arrangementDevelopment()),
+                "arrangement responsibilities must survive from planning into note writing");
             auto decisionScene = root.getProperty("ensemble_scenes", {})[0];
             decisionScene.getDynamicObject()->setProperty("musical_decision", juce::JSON::parse(R"({
                 "retained_identity":"offbeat tonic gesture", "development":"bass answers the held upper third",

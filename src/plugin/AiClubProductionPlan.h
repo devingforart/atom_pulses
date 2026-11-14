@@ -3,6 +3,9 @@
 #include "AiClubPolicy.h"
 #include "AiClubPhraseDelivery.h"
 #include "AiClubEnsembleScenes.h"
+#include "AiFoundation.h"
+#include "AiGrooveHierarchy.h"
+#include "AiSectionTrajectory.h"
 #include <algorithm>
 #include <set>
 
@@ -37,13 +40,53 @@ inline bool coreLayer(const juce::String& json, const std::string& id) {
 }
 
 inline bool cycleBoundLayer(const juce::String& json, const std::string& id) {
-    if (coreLayer(json, id)) return true;
     const auto root = juce::JSON::parse(json);
+    if(root.getProperty("tonal_nucleus",{}).getProperty("meter_carrier_id",{}).toString()==juce::String(id)) return true;
     if (const auto* layers = root.getProperty("layers", {}).getArray())
         for (const auto& layer : *layers)
-            if (layer.getProperty("instrument_id", {}).toString().toStdString() == id)
+            if (layer.getProperty("instrument_id", {}).toString().toStdString() == id && layer.hasProperty("timing_mode"))
                 return layer.getProperty("timing_mode", {}).toString() == "cycle_bound";
-    return false; // Legacy non-core layers remain free, not silently retimed.
+    return coreLayer(json,id); // Legacy core commitments remain binding.
+}
+
+inline bool coreAttackAllowed(const juce::String&,const std::string&,double);
+inline bool interlockLandingError(const juce::String& error) {
+    return error.startsWith("Club groove interlock names a landing not shared");
+}
+inline bool interlockOwnersValid(const juce::var& root,const std::set<std::string>& ids) {
+    const auto link=root.getProperty("groove_interlock",{});
+    const auto bass=link.getProperty("bass_owner_id",{}).toString().toStdString();
+    const auto chord=link.getProperty("chord_owner_id",{}).toString().toStdString();
+    const auto focus=link.getProperty("foreground_owner_id",{}).toString().toStdString();
+    return ids.contains(bass)&&ids.contains(chord)&&ids.contains(focus)&&bass!=chord&&bass!=focus&&chord!=focus&&
+        root.getProperty("focus_owner_id",{}).toString().toStdString()==focus;
+}
+inline juce::String interlockLandingSchema(const juce::String& json) {
+    const auto root=juce::JSON::parse(json),link=root.getProperty("groove_interlock",{});
+    juce::Array<juce::var> allowed;
+    for(int tick=0;tick<256;++tick) {
+        const double beat=tick/4.0;
+        if(coreAttackAllowed(json,link.getProperty("bass_owner_id",{}).toString().toStdString(),beat)&&
+           coreAttackAllowed(json,link.getProperty("chord_owner_id",{}).toString().toStdString(),beat)) allowed.add(beat);
+    }
+    auto schema=juce::JSON::parse(R"({"type":"object","additionalProperties":false,"required":["shared_landings"],"properties":{"shared_landings":{"type":"array","maxItems":8,"items":{"type":"number"}}}})");
+    auto list=schema.getProperty("properties",{}).getProperty("shared_landings",{});
+    if(allowed.isEmpty()) list.getDynamicObject()->setProperty("maxItems",0);
+    else list.getProperty("items",{}).getDynamicObject()->setProperty("enum",allowed);
+    if(!root.hasProperty("tonal_nucleus")) list.getDynamicObject()->setProperty("minItems",1);
+    return juce::JSON::toString(schema);
+}
+inline bool replaceInterlockLandings(const juce::String& original,const juce::String& response,juce::String& merged) {
+    auto root=juce::JSON::parse(original);const auto list=juce::JSON::parse(response).getProperty("shared_landings",{});
+    if(!list.isArray()||list.size()>8||!root.getProperty("groove_interlock",{}).isObject()) return false;
+    const auto link=root.getProperty("groove_interlock",{});std::set<double> seen;
+    for(const auto& n:*list.getArray()) {
+        const double beat=n;
+        if(!std::isfinite(beat)||beat<0||!seen.insert(beat).second||
+           !coreAttackAllowed(original,link.getProperty("bass_owner_id",{}).toString().toStdString(),beat)||
+           !coreAttackAllowed(original,link.getProperty("chord_owner_id",{}).toString().toStdString(),beat)) return false;
+    }
+    link.getDynamicObject()->setProperty("shared_landings",list);merged=juce::JSON::toString(root);return true;
 }
 
 // Ordered ownership only; this never authors or rearranges MIDI notes.
@@ -69,6 +112,7 @@ inline bool discourseFirst(const SongPlan& plan) {
 
 // Membership in an AI-authored cycle, not quantisation or an onset generator.
 inline bool coreAttackAllowed(const juce::String& json, const std::string& id, double absoluteBeat) {
+    if(!groove_hierarchy::attackAllowed(juce::JSON::parse(json),juce::String(id),absoluteBeat)) return false;
     if (!cycleBoundLayer(json, id)) return true;
     const auto root = juce::JSON::parse(json);
     if (const auto* layers = root.getProperty("layers", {}).getArray()) for (const auto& layer : *layers) {
@@ -88,7 +132,7 @@ inline bool coreAttackAllowed(const juce::String& json, const std::string& id, d
 
 // Constrain the output BEFORE generation: a technical window cannot receive
 // an event which releases outside it. This does not trim or quantise a note.
-inline juce::var boundedNoteSchema(double beats) {
+inline juce::var boundedNoteSchema(double beats,double releaseBeats=0) {
     juce::Array<juce::var> choices;
     for (int tick = 0; tick < static_cast<int>(std::round(beats * 4)); ++tick) {
         auto choice = juce::JSON::parse(R"json({"type":"object","additionalProperties":false,
@@ -99,7 +143,7 @@ inline juce::var boundedNoteSchema(double beats) {
             "velocity":{"type":"integer","minimum":1,"maximum":127}}})json");
         auto props = choice.getProperty("properties", {});
         props.getProperty("beat", {}).getDynamicObject()->setProperty("enum", juce::Array<juce::var>{tick / 4.0});
-        props.getProperty("duration", {}).getDynamicObject()->setProperty("maximum", beats - tick / 4.0);
+        props.getProperty("duration", {}).getDynamicObject()->setProperty("maximum", std::max(beats,releaseBeats) - tick / 4.0);
         choices.add(choice);
     }
     juce::var result(new juce::DynamicObject());
@@ -147,9 +191,10 @@ inline juce::String schema(const juce::String& direction = {}, const SongPlan* p
           "type":"object","additionalProperties":false,
           "required":["instrument_id","production_role","cycle_beats","cycle_origin_beat",
             "rhythm_cell","timing_mode","timing_intent","register_low","register_high","harmonic_job","articulation",
-            "interaction","polyphonic","states"],
+            "interaction","polyphonic","states","material_behavior"],
           "properties":{
             "instrument_id":{"type":"string"},"production_role":{"type":"string"},
+            "material_behavior":{"type":"string","enum":["static_tonal_rhythm","stable_foundation","developing_voice"]},
             "cycle_beats":{"type":"number"},"cycle_origin_beat":{"type":"number"},
             "timing_mode":{"type":"string","enum":["cycle_bound","phrase_flexible"]},
             "timing_intent":{"type":"string","description":"Why these attacks support the shared meter and foreground. Distinguish intentional syncopation from envelope softness; describe phrase landing and support alignment."},
@@ -244,18 +289,8 @@ inline juce::String schema(const juce::String& direction = {}, const SongPlan* p
         properties.getProperty("layers", {}).getDynamicObject()->setProperty("items", layerItems);
 
         const auto trajectoryTemplate = properties.getProperty("energy_trajectory", {}).getProperty("items", {});
-        juce::Array<juce::var> trajectoryChoices;
-        for (std::size_t sectionIndex = 0; sectionIndex < plan->sections.size(); ++sectionIndex) {
-            auto moment = juce::JSON::parse(juce::JSON::toString(trajectoryTemplate));
-            moment.getProperty("properties", {}).getProperty("section_index", {})
-                .getDynamicObject()->setProperty("enum",
-                    juce::Array<juce::var>{static_cast<int>(sectionIndex)});
-            trajectoryChoices.add(moment);
-        }
-        juce::var trajectoryItems(new juce::DynamicObject());
-        trajectoryItems.getDynamicObject()->setProperty("anyOf", trajectoryChoices);
-        properties.getProperty("energy_trajectory", {}).getDynamicObject()->setProperty(
-            "items", trajectoryItems);
+        properties.getDynamicObject()->setProperty("energy_trajectory",
+            section_trajectory::schema(trajectoryTemplate,static_cast<int>(plan->sections.size())));
     }
     if (nucleus::enabled()) {
         // Melodic arguments receive concrete AI-authored material, just like the
@@ -298,6 +333,7 @@ inline juce::String schema(const juce::String& direction = {}, const SongPlan* p
                         .getProperty("items", {}).getProperty("properties", {}).getProperty("pitch", {});
                     pitch.getDynamicObject()->setProperty("minimum", owner.minimumPitch);
                     pitch.getDynamicObject()->setProperty("maximum", owner.maximumPitch);
+                    AiChromaticPolicy::constrain(*pitch.getDynamicObject(),*plan,VoiceId::Lead,owner.minimumPitch,owner.maximumPitch);
                 }
                 choices.add(choice);
             }
@@ -308,6 +344,7 @@ inline juce::String schema(const juce::String& direction = {}, const SongPlan* p
         }
     }
     nucleus::extendSchema(result, plan);
+    if(nucleus::enabled()) groove_hierarchy::extend(result,plan);
     scenes::extend(result, plan);
     return juce::JSON::toString(result, true);
 }
@@ -320,7 +357,14 @@ inline juce::String macroSchema(const juce::String& json, CompositionBehavior be
     const auto sections = properties.getProperty("sections", {});
     const auto duration = sections.getProperty("items", {}).getProperty("properties", {}).getProperty("bars", {});
     duration.getDynamicObject()->setProperty("minimum", 1);
+    // Club can develop through orchestration and articulation over one harmony.
+    // Permit that choice; do not manufacture sections/chords to satisfy a schema.
+    sections.getDynamicObject()->setProperty("minItems",1);
+    sections.getProperty("items",{}).getProperty("properties",{}).getProperty("harmonic_events",{})
+        .getDynamicObject()->setProperty("minItems",1);
+    properties.getProperty("chord_palette",{}).getDynamicObject()->setProperty("minItems",1);
     const auto acts = properties.getProperty("narrative_spine", {}).getProperty("properties", {}).getProperty("acts", {});
+    acts.getDynamicObject()->setProperty("minItems",1);
     if (explicitSection(direction)) {
         sections.getDynamicObject()->setProperty("minItems", 1);
         sections.getDynamicObject()->setProperty("maxItems", 1);
@@ -346,7 +390,7 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
         "different rhythmic chord layer and cannot replace it. Several complementary "
         "recurrence layers can coexist without each becoming a solo. Textures need their "
         "own pitched material, not an empty effects label.\n"
-        "For a full_arrangement, energy_trajectory must contain exactly one entry for every "
+        "energy_trajectory is keyed by section_0, section_1 etc., exactly one summary for every "
         "section. Design one patient producer-scale journey rather than exposing the finished "
         "body immediately. dramatic_function is freely named musical intent: opening, "
         "establishment, accumulation, arrival, withdrawal, return and release are examples, "
@@ -367,13 +411,39 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
         "musical thought without a miniature intro/break/outro. Preserve and transform enough "
         "material for the development to be heard; a tiny cue repeated unchanged is not enough. "
         "Choose groove_core_ids: the few owners that jointly make the dependable bass/chord/sequence "
-        "backbone. Usually bass and chord pulse are sufficient metric anchors. Do NOT make "
+        "backbone. Metric anchors alone do not replace the requested interlocking tonal rhythm layers. Do NOT make "
         "a foreground arpeggio/melody a sparse rigid clock merely to qualify as a core owner; "
         "let it develop as a supporting/foreground phrase unless its exact repeating attacks "
         "are genuinely essential. The core is written FIRST, together; the rest hears its actual MIDI. "
-        "Each layer chooses timing_mode: cycle_bound for any exact cyclic attack commitment "
-        "(including sustained support), phrase_flexible for a genuinely developing phrase. "
-        "Core owners are always cycle_bound. rhythm_cell and cycle_origin_beat are binding "
+        "Each layer chooses timing_mode: cycle_bound for any exact cyclic attack commitment, "
+        "phrase_flexible for a developing phrase or sustained harmonic support; "
+        "and material_behavior independently: static_tonal_rhythm for a short pitched "
+        "rhythmic layer centered on a nearly fixed note/interval, stable_foundation for "
+        "harmonic support that may follow chord changes, developing_voice "
+        "for a speaking line. Several complementary foundation layers may interlock: a "
+        "short repeated tone, chord pulse, answering pulse or held body. Choose only useful "
+        "roles, not a mandatory checklist. When the request asks for multiple static tonal "
+        "rhythmic layers, plan MULTIPLE independent static_tonal_rhythm owners with "
+        "complementary accent patterns/registers and meaningful overlapping activity. "
+        "A sustained pad, changing chord stab, bass anchor or melodic reply does not "
+        "substitute for that requested layering. A counterpulse can be a deliberately "
+        "monotonous rhythm, not a secondary tune. Choose near-fixed pitches compatible "
+        "with the harmonic map and retain the identity across it rather than turning "
+        "each chord change into another melodic run. Their static pitch is legitimate substance, "
+        "not an unfinished melody. State evolution can retain the cell while entries, "
+        "withdrawals, accents or a rare authored variant change the ensemble. Do not "
+        "demand narrative variation from every foundation. Include each static tonal rhythm's "
+        "actual cell in tonal_nucleus so the writer receives notes, rests, gates and accents, "
+        "not only a role name. Syncopated repeating patterns need not be uniform subdivisions; "
+        "only the chosen meter carrier promises equal attack spacing. No drums/percussion required. "
+        "Core membership means musical importance, not automatically invariant attacks. "
+        "The tonal_nucleus meter_carrier_id remains cycle_bound. Other core owners may "
+        "choose phrase_flexible when their identity needs related rhythmic variants; "
+        "describe the retained accent/gesture and when an answering or closing variant "
+        "serves the phrase in timing_intent and state evolution. Do not choose the same "
+        "quarter bass plus half-note chord recipe by default for every request. Invent "
+        "this work's shared rhythmic identity; do not vary every bar or introduce presets. "
+        "rhythm_cell and cycle_origin_beat are binding "
         "possible onsets for cycle_bound owners; omitted attacks are allowed, extra offsets are not. "
         "Choose the actual positions yourself. For phrase_flexible owners the cell describes "
         "identity rather than a compulsory repeated onset list. timing_intent must explain how "
@@ -382,7 +452,7 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
         "sustained support may share the harmonic arrival; separation can come from register, "
         "voicing, dynamics and phrasing. Preserve intentional syncopation, but ensure a foreground "
         "phrase can settle on perceptible metric arrivals rather than endlessly evade them. "
-        "For these core owners, rhythm_cell is a binding set of possible attacks, not a vague suggestion: "
+        "For cycle_bound owners, rhythm_cell is a binding set of possible attacks, not a vague suggestion: "
         "retain that exact absolute phase across ALL sections. You may omit attacks to breathe, "
         "change pitches/voicings/gates and withdraw a layer, but never shift its remaining attacks "
         "by a sixteenth or eighth when a new section/window begins. Choose a simple persuasive "
@@ -452,13 +522,14 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
     if (nucleus::enabled()) {
         // Use a dedicated contract rather than stacking another instruction on
         // the legacy dialogue/omission brief. Shared schema semantics stay exact.
-        out = brief() + nucleus::planningBrief() + delivery::planning();
+        out = brief() + groove_hierarchy::planningBrief() + nucleus::planningBrief() + delivery::planning();
         out << "\nOUTPUT CONTRACT: one layer per cast owner, one state per section for each layer, "
-            "one energy_trajectory entry per section. Use full_arrangement for a song and "
+            "one keyed energy_trajectory summary per macro section, not one per internal phase. Use full_arrangement for a song and "
             "continuous_section for a requested loop. Keep sustained pads and a recurrent "
             "sequencer distinct from short chord stabs and a spacious melodic hook. "
-            "groove_core_ids names the repeating metric anchors. Core owners must be "
-            "cycle_bound: choose cycle_beats, cycle_origin_beat and unique rhythm_cell "
+            "groove_core_ids names the important groove owners, not a blanket timing restriction. "
+            "The meter carrier and explicitly repeating static tonal rhythm owners are cycle_bound; "
+            "other core owners may be phrase_flexible. For cycle_bound choose cycle_beats, cycle_origin_beat and unique rhythm_cell "
             "offsets >=0 and <cycle_beats yourself, matching their nucleus. Other genuinely "
             "fixed sequences may also be cycle_bound. Use phrase_flexible for harmonic beds "
             "and free melodic phrases; their rhythm_cell is descriptive, not an onset ban. "
@@ -492,9 +563,9 @@ inline juce::String prompt(const SongPlan& plan, const juce::String& direction) 
             "In state evolution, specify how chord voicing/top-line, articulation or phrase "
             "ending responds to these thoughts while the meter carrier retains the pulse. "
             "If groove_interlock is requested: bass_owner_id and chord_owner_id must be "
-            "distinct core owners; foreground_owner_id must be a third actual owner equal "
+            "distinct existing layer owners (harmonic support need not be groove_core); foreground_owner_id must be a third actual owner equal "
             "to focus_owner_id. shared_landings are absolute beat positions permitted "
-            "by BOTH core cycles, or [] if their complementary attacks never coincide. "
+            "by BOTH owners' declared timing cells, or [] if no common attack is declared. "
             "Explain their actual rhythmic relationship; interlock does not require a unison attack. "
             "All IDs must exist. All timings refer to quarter-note beats, NOT seconds. "
             "\nUSER: " << direction << "\nWORK: " << plan.totalBars << " bars; "
@@ -576,13 +647,24 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
             if (layer.getProperty(key, {}).toString().trim().isEmpty()) {
                 error = "Club layer omits " + juce::String(key) + ": " + juce::String(id); return false;
             }
+        if(!foundation::validIdentity(layer,std::max(0,owner->minimumPitch),std::min(127,owner->maximumPitch))) {
+            error="Static tonal identity has invalid policy, anchors or musical intention: "+juce::String(id);return false;
+        }
+        if(const auto* anchors=layer.getProperty("static_identity",{}).getProperty("anchor_pitches",{}).getArray())
+            for(const auto& pitch:*anchors) if(!AiChromaticPolicy::allows(plan,int(pitch))) {
+                error="Static tonal identity anchor violates the tonal policy: "+juce::String(id);return false;
+            }
         const auto* rhythm = layer.getProperty("rhythm_cell", {}).getArray();
         const auto timing = layer.getProperty("timing_mode", {}).toString();
         if (layer.hasProperty("timing_mode") &&
             ((timing != "cycle_bound" && timing != "phrase_flexible") ||
              layer.getProperty("timing_intent", {}).toString().trim().isEmpty() ||
-             (coreLayer(json, id) && timing != "cycle_bound"))) {
-            error = "Club layer has an invalid timing commitment: " + juce::String(id); return false;
+             (root.getProperty("tonal_nucleus",{}).getProperty("meter_carrier_id",{}).toString()==juce::String(id) && timing != "cycle_bound"))) {
+            error = "Club layer has an invalid timing commitment: " + juce::String(id) +
+                " | timing_mode=" + timing + " | meter_carrier=" +
+                root.getProperty("tonal_nucleus",{}).getProperty("meter_carrier_id",{}).toString() +
+                " | timing_intent_empty=" + juce::String(layer.getProperty("timing_intent",{}).toString().trim().isEmpty() ? 1 : 0) +
+                ". Only the actual meter carrier must be cycle_bound; choose an existing cyclic rhythmic lane as carrier, not a phrase-flexible bed."; return false;
         }
         std::set<double> onsets;
         if (!rhythm || rhythm->size() > 128) { error = "Club rhythm_cell missing"; return false; }
@@ -654,13 +736,9 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
         const auto link = root.getProperty("groove_interlock", {});
         const auto bass = link.getProperty("bass_owner_id", {}).toString().toStdString();
         const auto chord = link.getProperty("chord_owner_id", {}).toString().toStdString();
-        const auto foreground = link.getProperty("foreground_owner_id", {}).toString().toStdString();
         const auto* landings = link.getProperty("shared_landings", {}).getArray();
-        if (!ids.contains(bass) || !ids.contains(chord) || !ids.contains(foreground) ||
-            bass == chord || bass == foreground || chord == foreground ||
-            !coreLayer(json, bass) || !coreLayer(json, chord) ||
-            focus != foreground || !landings || (landings->isEmpty() && !root.hasProperty("tonal_nucleus"))) {
-            error = "Club groove interlock must name two distinct core owners and the actual foreground focus";
+        if (!interlockOwnersValid(root,ids) || !landings || (landings->isEmpty() && !root.hasProperty("tonal_nucleus"))) {
+            error = "Club groove interlock must name distinct existing bass/chord owners and the actual foreground focus";
             return false;
         }
         for (const auto* field : {"bass_chord_relationship", "foreground_sentence", "breathing_space"})
@@ -682,7 +760,8 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
     if (root.hasProperty("energy_trajectory")) {
         const auto* trajectory = root.getProperty("energy_trajectory", {}).getArray();
         if (!trajectory || trajectory->size() != static_cast<int>(plan.sections.size())) {
-            error = "Club energy trajectory must describe every section exactly once"; return false;
+            error = "Club energy trajectory must describe every section exactly once: expected="+
+                juce::String(static_cast<int>(plan.sections.size()))+" received="+juce::String(trajectory?trajectory->size():0); return false;
         }
         std::set<int> covered;
         std::set<std::string> functions;
@@ -755,6 +834,7 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
                         !grid(note.getProperty("duration", {}), duration) || duration <= 0 || beat + duration > length + .001 ||
                         !grid(note.getProperty("pitch", {}), pitch) || pitch != std::floor(pitch) ||
                         pitch < owner->minimumPitch || pitch > owner->maximumPitch ||
+                        !AiChromaticPolicy::allows(plan,static_cast<int>(pitch)) ||
                         !grid(note.getProperty("velocity", {}), velocity) || velocity != std::floor(velocity) || velocity < 1 || velocity > 127) {
                         error = "Club phrase reference note invalid | arc=" + juce::String(arcIndex) +
                             " | reference=" + juce::String(referenceKey) + " | owner=" + juce::String(ownerId) +
@@ -762,7 +842,8 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
                             " | length=" + juce::String(length) + " register=" + juce::String(owner->minimumPitch) +
                             ".." + juce::String(owner->maximumPitch) +
                             " | invalid=" + juce::String(beat < 0 || duration <= 0 || beat + duration > length + .001 ?
-                                "timing" : pitch < owner->minimumPitch || pitch > owner->maximumPitch ? "register" : "grid_or_value");
+                                "timing" : pitch < owner->minimumPitch || pitch > owner->maximumPitch ? "register" :
+                                !AiChromaticPolicy::allows(plan,static_cast<int>(pitch)) ? "scale" : "grid_or_value");
                         return false;
                     }
                 }
@@ -786,7 +867,7 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
             }
         }
     }
-    return scenes::validate(root, plan, error) && nucleus::validate(root, plan, error);
+    return scenes::validate(root, plan, error) && nucleus::validate(root, plan, error) && groove_hierarchy::validate(root,plan,error);
 }
 
 // A semantic state error can be repaired without asking the model to rewrite
@@ -817,6 +898,7 @@ inline juce::String referenceNotesRepairSchema(const juce::String& draft, const 
         auto pitch = juce::JSON::parse(R"({"type":"integer"})");
         pitch.getDynamicObject()->setProperty("minimum", owner->minimumPitch);
         pitch.getDynamicObject()->setProperty("maximum", owner->maximumPitch);
+        AiChromaticPolicy::constrain(*pitch.getDynamicObject(),plan,VoiceId::Lead,owner->minimumPitch,owner->maximumPitch);
         choice.getProperty("properties", {}).getDynamicObject()->setProperty("pitch", pitch);
     }
     auto schema = juce::JSON::parse(R"({"type":"object","additionalProperties":false,"required":["notes"],
@@ -938,7 +1020,7 @@ inline juce::String windowBrief(const juce::String& json, std::size_t sectionInd
     if (root.hasProperty("groove_core_ids"))
         out << "GROOVE CORE OWNERS: " << juce::JSON::toString(root.getProperty("groove_core_ids", {}))
             << (root.hasProperty("tonal_nucleus")
-                ? ". Preserve their declared attack grammar and absolute phase. A continuous meter carrier keeps its subdivision in continuing active states; omissions belong to explicit musical withdrawals, not arbitrary writing-window changes. Other lanes may breathe according to their own state.\n"
+                ? ". Preserve the meter carrier's subdivision and phase. Other owners follow their explicit timing_mode: cycle_bound fixes possible attacks; phrase_flexible permits related rhythmic development. Core membership alone does not freeze every attack.\n"
                 : ". Their attack grammar/absolute phase is fixed by YOUR plan. Omit attacks when needed, but do not add unplanned offsets. Supporting layers must leave space for this real core.\n");
     if (const auto* trajectory = root.getProperty("energy_trajectory", {}).getArray()) {
         for (int offset = -1; offset <= 1; ++offset) {
@@ -957,6 +1039,7 @@ inline juce::String windowBrief(const juce::String& json, std::size_t sectionInd
         "the accepted ensemble. Do not stagger every layer by a sixteenth or make each one "
         "a competing syncopated solo. Sharing an arrival is allowed. Do not blanket-straighten "
         "the music: retain syncopation when it contributes to the shared phrase.\n";
+    out << groove_hierarchy::context(root);
     if (root.hasProperty("groove_interlock"))
         out << "AI-AUTHORED JOINT GROOVE NUCLEUS: "
             << juce::JSON::toString(root.getProperty("groove_interlock", {}), true)
@@ -1167,6 +1250,7 @@ inline std::vector<std::string> missingLayers(const juce::String& json, const So
     const Pattern& midi, std::size_t sectionIndex, double begin, double end,
     const std::vector<std::size_t>& requested, juce::String& evidence) {
     std::vector<std::string> missing;
+    if (end <= begin || sectionIndex >= plan.sections.size()) return missing;
     const auto root = juce::JSON::parse(json);
     if (const auto* layers = root.getProperty("layers", {}).getArray()) for (const auto& layer : *layers) {
         const auto id = layer.getProperty("instrument_id", {}).toString().toStdString();
@@ -1177,11 +1261,22 @@ inline std::vector<std::string> missingLayers(const juce::String& json, const So
         if (const auto* states = layer.getProperty("states", {}).getArray()) for (const auto& state : *states) {
             if (static_cast<int>(state.getProperty("section_index", -1)) != static_cast<int>(sectionIndex)) continue;
             const auto mode = state.getProperty("mode", {}).toString();
+            const auto [entry, release] = activitySpan(plan, id, sectionIndex);
+            // A flexible response is a sectional commitment, not a repeating
+            // attack obligation in every technical window. Check its accepted
+            // history when its planned speaking span closes, while repair is
+            // still possible in the current window. Cyclic layers stay local.
+            const auto phraseFlexible = mode != "absent" &&
+                layer.getProperty("timing_mode", {}).toString() == "phrase_flexible";
+            if (phraseFlexible && (end < release - .001 || begin >= release - .001)) continue;
+            const auto measureBegin = phraseFlexible ? entry : begin;
+            const auto measureEnd = phraseFlexible ? std::min(end, release) : end;
+            if (measureEnd <= measureBegin) continue;
             std::vector<std::pair<double, double>> spans;
-            for (const auto& note : midi.notes) if (note.partId == index + 1 && note.startBeat < end && note.endBeat() > begin)
-                spans.emplace_back(std::max(begin, note.startBeat), std::min(end, note.endBeat()));
+            for (const auto& note : midi.notes) if (note.partId == index + 1 && note.startBeat < measureEnd && note.endBeat() > measureBegin)
+                spans.emplace_back(std::max(measureBegin, note.startBeat), std::min(measureEnd, note.endBeat()));
             std::sort(spans.begin(), spans.end());
-            double covered = 0, lastEnd = begin;
+            double covered = 0, lastEnd = measureBegin;
             bool polyphonic = false;
             for (const auto& [a, b] : spans) {
                 if (a < lastEnd - .001) polyphonic = true;
@@ -1189,13 +1284,12 @@ inline std::vector<std::string> missingLayers(const juce::String& json, const So
             }
             const auto cycle = static_cast<double>(layer.getProperty("cycle_beats", 0));
             const auto required = static_cast<double>(state.getProperty("minimum_sounding_fraction", 0));
-            const auto [entry, release] = activitySpan(plan, id, sectionIndex);
             const auto available = std::max(0.0, std::min(end, release) - std::max(begin, entry));
-            const auto completeCycle = available >= cycle - .001;
+            const auto completeCycle = phraseFlexible ? release > entry : available >= cycle - .001;
             // A density estimate is not a musical correctness threshold. Only
             // a completely omitted promised layer is due for automatic recovery;
             // partial coverage goes to read-only evidence and musical listening.
-            const auto plannedBreath = explicitBreath(plan, id, std::max(begin,entry), std::min(end,release));
+            const auto plannedBreath = explicitBreath(plan, id, std::max(measureBegin,entry), std::min(measureEnd,release));
             const auto needsCoverage = mode != "absent" && completeCycle &&
                 required > 0 && spans.empty() && !plannedBreath;
             const auto needsPolyphony = mode != "absent" && completeCycle && !spans.empty() &&
@@ -1203,7 +1297,8 @@ inline std::vector<std::string> missingLayers(const juce::String& json, const So
             if (needsCoverage || needsPolyphony || (mode == "absent" && !spans.empty())) {
                 missing.push_back(id);
                 evidence << juce::String(id) << " mode=" << mode << " actual sounding fraction="
-                    << juce::String(covered / (end - begin), 3) << " AI-declared minimum=" << required
+                    << juce::String(covered / (measureEnd - measureBegin), 3) << " AI-declared minimum=" << required
+                    << (phraseFlexible ? " scope=planned_speaking_span" : " scope=current_window")
                     << " polyphonic=" << (polyphonic ? "yes" : "no") << "; ";
             }
         }

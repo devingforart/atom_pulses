@@ -4,6 +4,7 @@
 #include "plugin/AiChromaticPolicy.h"
 #include "plugin/AiClubProductionPlan.h"
 #include "plugin/MidiExporter.h"
+#include "plugin/MidiIntegrity.h"
 #include "plugin/SongGenerationPipeline.h"
 #include "core/CoherentProofGate.h"
 #include "core/CoherentProofRevision.h"
@@ -127,6 +128,9 @@ juce::var planAuditFor(const pulso::SongPlan& plan) {
         item->setProperty("motif_treatment",
             juce::String::fromUTF8(section.motifTreatment.c_str()));
         item->setProperty("start_bar", section.startBar);
+        item->setProperty("harmonic_cycle_bars", section.harmonicCycleBars);
+        item->setProperty("harmonic_cycle_until_bar", section.harmonicCycleUntilBar);
+        item->setProperty("harmonic_cycle_repetitions", section.harmonicCycleBars > 0 ? section.harmonicCycleUntilBar / section.harmonicCycleBars : 0);
         item->setProperty("bars", section.bars);
         item->setProperty("energy", section.energy);
         item->setProperty("tension", section.tension);
@@ -542,6 +546,11 @@ int main(int argc, char** argv) {
                                         std::size_t completedUnits, bool, bool diagnostic) {
             writeProvisionalMidi(output, partial, ++checkpointNumber,
                 completedUnits, diagnostic, proofMode);
+            if(juce::JSON::parse(juce::String(partial.phraseArchitectureJson)).getProperty("audition_stage",{}).toString()=="before_voicing_review") {
+                const auto stem="partial-"+juce::String(static_cast<int>(checkpointNumber)).paddedLeft('0',2);
+                output.getChildFile(stem+".mid").copyFileTo(output.getChildFile("before-voicing-review.mid"));
+                output.getChildFile(stem+"-plan.json").copyFileTo(output.getChildFile("before-voicing-review-plan.json"));
+            }
         }, [&output](const juce::String& exactBlueprint) {
             if (exactBlueprint.isNotEmpty() &&
                 exactBlueprint.getNumBytesAsUTF8() <= 2 * 1024 * 1024)
@@ -683,6 +692,9 @@ int main(int argc, char** argv) {
     fullOptions.scale = plan.scale;
     if (!pulso::plugin::writePatternToMidiFile(song, output.getChildFile("full-song.mid"), fullOptions))
         return fail(output, "Could not write complete MIDI song");
+    juce::String midiIntegrityError;
+    if(!pulso::plugin::verifyMidiRoundTrip(output.getChildFile("full-song.mid"),song,midiIntegrityError))
+        return fail(output,"Full MIDI integrity: "+midiIntegrityError);
 
     juce::String comparisonFile;
     int comparisonNotes = 0;
@@ -730,12 +742,33 @@ int main(int argc, char** argv) {
                 output.getChildFile(filename), options))
             return fail(output, "Could not write MIDI track " + juce::String(static_cast<int>(index + 1)));
         auto* track = new juce::DynamicObject();
+        if(!pulso::plugin::verifyMidiRoundTrip(output.getChildFile(filename),partPattern,midiIntegrityError))
+            return fail(output,"Track "+juce::String(static_cast<int>(index+1))+" MIDI integrity: "+midiIntegrityError);
         track->setProperty("filename", filename);
         track->setProperty("name", options.clipName);
         track->setProperty("notes", static_cast<int>(partPattern.notes.size()));
         tracks.add(juce::var(track));
     }
     if (tracks.isEmpty()) return fail(output, "No nonempty MIDI tracks were produced");
+    {
+        auto audit=new juce::DynamicObject();
+        audit->setProperty("schema_version",1);
+        audit->setProperty("export_round_trip_verified",true);
+        audit->setProperty("verified_track_files",tracks.size());
+        juce::Array<juce::var> events;
+        for(const auto& note:song.notes) {
+            auto event=new juce::DynamicObject();
+            event->setProperty("part_id",static_cast<int>(note.partId));
+            event->setProperty("start_beat",note.startBeat);
+            event->setProperty("duration_beats",note.durationBeats);
+            event->setProperty("pitch",note.pitch);
+            event->setProperty("velocity",note.velocity);
+            events.add(juce::var(event));
+        }
+        audit->setProperty("rendered_events",events);
+        if(!output.getChildFile("midi-integrity.json").replaceWithText(juce::JSON::toString(juce::var(audit),false),false,false,"\n"))
+            return fail(output,"Could not persist MIDI integrity audit");
+    }
     auto* manifest = new juce::DynamicObject();
     manifest->setProperty("schema_version", 1);
     manifest->setProperty("render_mode", request.aiSovereign ? "ai_sovereign" : "standard");

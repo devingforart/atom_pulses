@@ -10,7 +10,7 @@ const mock = vi.hoisted(() => ({
   shareCloudJob: vi.fn(), revokeCloudShare: vi.fn(), sharedCloudJob: vi.fn(),
   user: { id: 'user-1', email: 'test@example.com' } as { id: string; email: string } | null,
 }))
-vi.mock('../api', () => ({ api: mock }))
+vi.mock('../api', async importOriginal => ({ ...await importOriginal<typeof import('../api')>(), api: mock }))
 vi.mock('../auth', () => ({ useAuth: () => ({ user: mock.user, loading: false }) }))
 
 const u16 = (value: number) => [(value >> 8) & 255, value & 255]
@@ -33,7 +33,7 @@ const job = {
 
 beforeEach(() => {
   mock.user = { id: 'user-1', email: 'test@example.com' }
-  mock.shareCloudJob.mockReset().mockResolvedValue({ url: 'https://pulso.cargo-core.com/share/private-token' })
+  mock.shareCloudJob.mockReset().mockResolvedValue({ url: 'https://pulso-audio.com/share/private-token' })
   mock.revokeCloudShare.mockReset().mockResolvedValue(undefined)
   mock.sharedCloudJob.mockReset().mockResolvedValue({ ...job, prompt: '' })
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function (this: HTMLDialogElement) { this.setAttribute('open', '') } })
@@ -51,7 +51,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Cloud Suite', () => {
   it('reuses the saved request and seed without submitting until confirmation', async () => {
-    mock.cloudJobs.mockResolvedValue([{ ...job, behavior: 'club', clubLayerPace: '32-64', clubVariety: true, allowChromatic: true }])
+    mock.cloudJobs.mockResolvedValue([{ ...job, engineVersion: 'v1.1', behavior: 'club', clubLayerPace: '32-64', clubVariety: true, allowChromatic: true }])
     render(<Cloud />)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Seguimiento de la obra' })).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'Seguimiento de la obra' }))
@@ -59,14 +59,15 @@ describe('Cloud Suite', () => {
     expect(screen.getByLabelText(/Idea musical/)).toHaveValue(job.prompt)
     expect(screen.getByLabelText('Duración')).toHaveValue('60')
     expect(screen.getByLabelText('Tempo')).toHaveValue(120)
-    expect(screen.getByLabelText('Club: evolución de capas')).toHaveValue('32-64')
+    expect(screen.queryByLabelText('Club: evolución de capas')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Motor')).toHaveValue('v1.1')
     expect(screen.getByRole('checkbox', { name: 'Club: recurso principal libre' })).toBeChecked()
     expect(screen.getByRole('checkbox', { name: 'Permitir cromatismos' })).toBeChecked()
     expect(mock.createCloudJob).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Componer obra/ }))
     await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalledWith(expect.objectContaining({
       seed: job.seed, prompt: job.prompt, durationSeconds: 60, bpm: 120,
-      club: true, clubLayerPace: '32-64', clubVariety: true, allowChromatic: true,
+      engineVersion: 'v1.1', club: true, clubLayerPace: 'auto', clubVariety: true, allowChromatic: true,
     })))
   })
   it('invites users with an empty library to create their first composition', async () => {
@@ -97,11 +98,12 @@ describe('Cloud Suite', () => {
     await waitFor(() => expect(screen.getByText(/hasta 2 obras completadas cada 24 horas/i)).toBeInTheDocument())
     fireEvent.change(screen.getByRole('textbox', { name: /Idea musical/i }), { target: { value: 'Progressive house oscuro' } })
     fireEvent.click(screen.getByRole('checkbox', { name: /Club/i }))
-    fireEvent.change(screen.getByLabelText('Club: evolución de capas'), { target: { value: '32-64' } })
+    expect(screen.queryByLabelText('Club: evolución de capas')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Motor')).toHaveValue('0.1.3')
     expect(screen.getByRole('checkbox', { name: 'Club: recurso principal libre' })).toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: /Componer obra/i }))
     await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalledWith(expect.objectContaining({
-      club: true, clubLayerPace: '32-64', clubVariety: true, allowChromatic: false, prompt: 'Progressive house oscuro',
+      engineVersion: '0.1.3', club: true, clubLayerPace: 'auto', clubVariety: true, allowChromatic: false, prompt: 'Progressive house oscuro',
     })))
   })
   it('opens a public exhibition without authentication, library access or composition requests', async () => {
@@ -125,7 +127,7 @@ describe('Cloud Suite', () => {
     fireEvent.click(button)
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(mock.shareCloudJob).toHaveBeenCalledWith(job.id)
-    expect(screen.getByLabelText('Enlace de exhibición')).toHaveValue('https://pulso.cargo-core.com/share/private-token')
+    expect(screen.getByLabelText('Enlace de exhibición')).toHaveValue('https://pulso-audio.com/share/private-token')
     fireEvent.click(screen.getByRole('button', { name: 'Desactivar todos los enlaces de esta obra' }))
     await waitFor(() => expect(mock.revokeCloudShare).toHaveBeenCalledWith(job.id))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())

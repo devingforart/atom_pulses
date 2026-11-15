@@ -1,4 +1,8 @@
 import { t, useLocale, locale } from './i18n'
+export type CloudEngineVersion = 'v1' | 'v1.1' | '0.1.3'
+export function cloudEngineVersion(value: unknown, fallback: CloudEngineVersion = '0.1.3'): CloudEngineVersion {
+  return value === 'v1' || value === 'v1.1' || value === '0.1.3' ? value : fallback
+}
 export type User = {
   id: string
   email: string
@@ -18,9 +22,11 @@ export type Release = {
 }
 
 export type BillingPlans = {
+  testMode?: boolean
   studio: { amount: number; currency: string; interval: string }
   monthly: { amount: number; currency: string; interval: string } | null
   annual: { amount: number; currency: string; interval: string } | null
+  creditPlan?: { amount: number; currency: string; monthlyCredits: number; perWork: number; enabled: boolean }
 }
 
 export type Device = { id: string; name: string; createdAt: number; lastSeenAt: number }
@@ -33,6 +39,7 @@ export type CloudTrack = {
   }
 }
 export type CloudJob = {
+  engineVersion?: CloudEngineVersion
   clubLayerPace?: string
   clubVariety?: boolean
   allowChromatic?: boolean
@@ -46,6 +53,10 @@ export type CloudJob = {
 }
 
 type ApiErrorBody = { error?: string }
+export type DemoAccess = { windows: {days: number; limit: number; completed: number; remaining: number; resetsAt: number | null}[]; canCompose: boolean; nextAvailableAt: number | null; surveyDue: boolean; completedWorks: number; credits?:number|null; creditsRemaining?:number|null }
+export type CloudStatus = { available: boolean; dailyJobLimit: number; unlimited: boolean; creditsEnabled?: boolean; demo?: DemoAccess | null; demoLab?: boolean }
+export type DemoFeedbackInput = { requestKey: string; overall: number; musicality: number; easeOfUse: number; strengths: string; improvements: string; locale: string }
+export type DemoFeedback = Omit<DemoFeedbackInput, 'requestKey'> & {id:string;email:string;displayName:string;version:number;completedWorks:number;lastJobId:string|null;createdAt:number}
 
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -97,9 +108,12 @@ export const api = {
     }),
   portal: () => request<{ url: string }>('/api/billing/portal', { method: 'POST' }),
   cloudJobs: () => request<CloudJob[]>('/api/cloud/jobs'),
-  cloudStatus: () => request<{ available: boolean; dailyJobLimit: number; unlimited: boolean }>('/api/cloud/status'),
+  cloudStatus: () => request<CloudStatus>('/api/cloud/status'),
+  demoFeedback: (input: DemoFeedbackInput) => request<{saved:boolean}>('/api/demo/feedback', {method:'POST',body:JSON.stringify(input)}),
+  snoozeDemoFeedback: () => request<void>('/api/demo/feedback/snooze', {method:'POST'}),
+  reviewDemoFeedback: (offset=0) => request<{items:DemoFeedback[];total:number}>(`/api/admin/demo-feedback?offset=${offset}`),
   cloudJob: (id: string) => request<CloudJob>(`/api/cloud/jobs/${id}`),
-  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; idempotencyKey: string; allowChromatic: boolean; club?: boolean; clubLayerPace?: string; clubVariety?: boolean; seed?: string }) =>
+  createCloudJob: (input: { prompt: string; durationSeconds: number; bpm: number; idempotencyKey: string; allowChromatic: boolean; engineVersion?: CloudEngineVersion; club?: boolean; clubLayerPace?: string; clubVariety?: boolean; seed?: string }) =>
     request<CloudJob>('/api/cloud/jobs', { method: 'POST', body: JSON.stringify(input) }),
   cancelCloudJob: (id: string) => request<void>(`/api/cloud/jobs/${id}`, { method: 'DELETE' }),
   shareCloudJob: (id: string) => request<{ url: string }>(`/api/cloud/jobs/${id}/share`, { method: 'POST' }),

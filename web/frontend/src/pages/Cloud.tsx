@@ -1,7 +1,8 @@
 import { t, useLocale, locale, useTheme, Preferences } from '../i18n'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type MouseEvent } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
-import { api, type CloudJob, type CloudTrack } from '../api'
+import { api, cloudEngineVersion, type CloudEngineVersion, type CloudJob, type CloudTrack, type CloudStatus } from '../api'
+import { DemoAccess } from '../components/DemoAccess'
 import { useAuth } from '../auth'
 import { PulsoWordmark } from '../components/PulsoWordmark'
 import { PulsoSpinner } from '../components/PulsoSpinner'
@@ -127,7 +128,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   const [prompt, setPrompt] = useState('')
   const [allowChromatic, setAllowChromatic] = useState(false)
   const [club, setClub] = useState(false)
-  const [clubLayerPace, setClubLayerPace] = useState('auto')
+  const [engineVersion, setEngineVersion] = useState<CloudEngineVersion>('0.1.3')
   const [clubVariety, setClubVariety] = useState(true)
   const [repeatSeed, setRepeatSeed] = useState<string | null>(null)
   const [sharing, setSharing] = useState(false)
@@ -136,7 +137,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   const [bpm, setBpm] = useState(120)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [cloudStatus, setCloudStatus] = useState<{ available: boolean; dailyJobLimit: number; unlimited: boolean } | null>(null)
+  const [cloudStatus, setCloudStatus] = useState<CloudStatus | null>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
   const playheadRef = useRef<HTMLDivElement>(null)
   const timeRef = useRef<HTMLSpanElement>(null)
@@ -169,7 +170,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
       if (typeof draft.prompt === 'string') setPrompt(draft.prompt.slice(0, 600))
       if ([60,120,180,300,390,600,900].includes(draft.durationSeconds)) setDurationSeconds(draft.durationSeconds)
       if (Number.isFinite(draft.bpm) && draft.bpm >= 60 && draft.bpm <= 180) setBpm(draft.bpm)
-      setClubLayerPace(['auto', '8-16', '16-32', '32-64'].includes(draft.clubLayerPace) ? draft.clubLayerPace : 'auto')
+      setEngineVersion(cloudEngineVersion(draft.engineVersion))
       setClubVariety(draft.clubVariety !== false)
       setRepeatSeed(typeof draft.repeatSeed === 'string' && /^[1-9][0-9]*$/.test(draft.repeatSeed) ? draft.repeatSeed : null)
       setClub(draft.club === true); setAllowChromatic(draft.allowChromatic === true)
@@ -178,8 +179,8 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   }, [user?.id, shared])
   useEffect(() => {
     if (!user || shared || !draftLoaded) return
-    try { localStorage.setItem(`pulso-cloud-draft:${user.id}`, JSON.stringify({ prompt, durationSeconds, bpm, club, clubLayerPace, clubVariety, allowChromatic, repeatSeed })) } catch {}
-  }, [user?.id, shared, draftLoaded, prompt, durationSeconds, bpm, club, clubLayerPace, clubVariety, allowChromatic, repeatSeed])
+    try { localStorage.setItem(`pulso-cloud-draft:${user.id}`, JSON.stringify({ prompt, durationSeconds, bpm, club, engineVersion, clubVariety, allowChromatic, repeatSeed })) } catch {}
+  }, [user?.id, shared, draftLoaded, prompt, durationSeconds, bpm, club, engineVersion, clubVariety, allowChromatic, repeatSeed])
 
   useEffect(() => { if (user && !shared) void api.cloudStatus().then(setCloudStatus).catch(() => setCloudStatus(null)) }, [user, shared])
   useEffect(() => {
@@ -193,7 +194,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
     if (!user) return
     let active = true
     const refresh = async () => {
-      try { const result = await api.cloudJobs(); if (active) { setJobs(result); setError('') } }
+      try { const [result,status] = await Promise.all([api.cloudJobs(),api.cloudStatus()]); if (active) { setJobs(result); setCloudStatus(status) } }
       catch (problem) { if (active) setError(problem instanceof Error ? problem.message : t("No pudimos leer tus obras.")) }
       finally { if (active) setLibraryLoading(false) }
     }
@@ -227,7 +228,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
     event.preventDefault(); setError(''); setBusy(true)
     try {
       const job = await api.createCloudJob({ prompt: prompt.trim(), durationSeconds,
-        bpm, allowChromatic, club, clubLayerPace: club ? clubLayerPace : 'auto', clubVariety: club && clubVariety, ...(repeatSeed ? { seed: repeatSeed } : {}), idempotencyKey: crypto.randomUUID() })
+        bpm, allowChromatic, club, engineVersion, clubLayerPace: 'auto', clubVariety: club && clubVariety, ...(repeatSeed ? { seed: repeatSeed } : {}), idempotencyKey: crypto.randomUUID() })
       setJobs(previous => [job, ...previous.filter(item => item.id !== job.id)])
       setSelectedId(job.id); setComposeOpen(false)
     } catch (problem) { setError(problem instanceof Error ? problem.message : t("No pudimos comenzar la composición.")) }
@@ -296,13 +297,16 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
 
   return <section data-theme={theme} className={`cloud-suite cloud-editorial${shared ? ' cloud-exhibition' : ''}`}>
     <header className="cloud-suite-bar">
-      <div className="cloud-suite-brand"><a className="cloud-brand-home" href="https://pulso.cargo-core.com/" target="_blank" rel="noopener noreferrer" aria-label={t("Página principal de PULSO")}><PulsoWordmark /></a><span className="cloud-suite-brand-divider" /><strong>{t("COMPOSITION STUDIO")}</strong></div>
+      <div className="cloud-suite-brand"><a className="cloud-brand-home" href="https://pulso-audio.com/" target="_blank" rel="noopener noreferrer" aria-label={t("Página principal de PULSO")}><PulsoWordmark /></a><span className="cloud-suite-brand-divider" /><strong>{t("COMPOSITION STUDIO")}</strong></div>
       <div className="cloud-suite-global"><Preferences />{shared ? <span className="cloud-exhibition-badge">{t("EXHIBICIÓN COMPARTIDA · SOLO LECTURA")}</span> : <><span className="cloud-suite-online">{t("● EN TU CUENTA")}</span><Link to="/account">{t("Mi cuenta")}</Link><button type="button" disabled={selected?.status !== 'completed' || sharing} onClick={async () => { if (!selected) return; setSharing(true); try { const result = await api.shareCloudJob(selected.id); setShare({ ...result, jobId: selected.id }) } catch (problem) { setError(problem instanceof Error ? problem.message : t("No se pudo compartir.")) } finally { setSharing(false) } }}>{sharing ? t("Preparando…") : t("Share")}</button><button type="button" onClick={() => setHistoryOpen(value => !value)}>{t("Historial")}</button></>}</div>
     </header>
     <div className="cloud-statusbar"><div className="cloud-beta">{t("0.1.0 version Beta")}</div>
     {!shared && <button type="button" className="cloud-session-indicator" onClick={() => setSessionOpen(true)}>{status} · {selected?.resultManifest?.title || t("Seguimiento de la obra")} ↗</button>}
     </div>
     {error && !composeOpen && <p role="alert" className="cloud-suite-error cloud-global-error">{error}</p>}
+    {cloudStatus?.demoLab && <p className="demo-access">Laboratorio local · cuentas y cupos reales en una base aislada; generación IA y pagos externos desactivados.</p>}
+    {!shared && user?.email.toLowerCase()==='devingforart@gmail.com' && <Link className="demo-access" to="/admin/demo-feedback">Revisar opiniones de la demo</Link>}
+    {!shared && cloudStatus?.demo && <DemoAccess key={user?.id} access={cloudStatus.demo} canPrompt={!playing && !busy && !composeOpen && !sessionOpen && !jobs.some(j=>j.status==='running'||j.status==='queued')} onRefresh={()=>void api.cloudStatus().then(setCloudStatus).catch(()=>{})} />}
     <div className="cloud-suite-layout">{!shared && <aside className="cloud-focus-rail" aria-label={t("Herramientas del estudio")}><button type="button" className="cloud-new-idea" title={t("Nueva composición")} aria-label={t("Nueva composición")} onClick={() => { setHistoryOpen(false); setComposeOpen(true) }}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m5 19 1-5L16 4l4 4-10 10-5 1Zm9-13 4 4"/></svg></button><button type="button" title={t("Explorar biblioteca")} aria-label={t("Explorar biblioteca")} onClick={() => setHistoryOpen(value => !value)}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 5v14m5-14v14m5-14 4 14"/></svg></button><button type="button" title={t("Seguimiento de la obra")} aria-label={t("Seguimiento de la obra")} onClick={() => setSessionOpen(true)}><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 18V9m5 9V5m5 13v-7m5 7V7"/></svg></button></aside>}
     {!shared && composeOpen && <SuiteDialog title={t("Nueva composición")} onClose={() => setComposeOpen(false)}>
       <div className="cloud-suite-compose">
@@ -312,22 +316,21 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
         <textarea id="cloud-prompt" value={prompt} maxLength={600} required rows={5} onChange={event => setPrompt(event.target.value)} placeholder={t("Una historia electrónica profunda, con armonías que evolucionan y un motivo que regresa transformado…")} />
         {repeatSeed && <p className="cloud-suite-cost" role="status">{t("Ajustes cargados. Todavía no se envió ninguna solicitud.")}{' '}{t("Semilla")}: {repeatSeed}.{' '}<button type="button" className="text-button" onClick={() => setRepeatSeed(null)}>{t("Usar semilla nueva")}</button></p>}
         <label className="cloud-chromatic-option"><input type="checkbox" checked={allowChromatic} onChange={event => setAllowChromatic(event.target.checked)} />{' '}{t("Permitir cromatismos")}</label>
+        <label htmlFor="cloud-engine">{t("Motor")}</label>
+        <select id="cloud-engine" value={engineVersion} onChange={event => setEngineVersion(cloudEngineVersion(event.target.value))}>
+          <option value="0.1.3">0.1.3</option><option value="v1">v1</option><option value="v1.1">v1.1</option>
+        </select>
         <label className="cloud-chromatic-option" title={t("Células reconocibles y evolución de capas a largo plazo, sin cortes obligatorios cada 64 compases.")}><input type="checkbox" checked={club} onChange={event => setClub(event.target.checked)} />{' '}{t("Club · repetición y evolución")}</label>
         {club && <div className="cloud-club-preferences">
-          <label htmlFor="cloud-club-pace">{t("Club: evolución de capas")}</label>
-          <select id="cloud-club-pace" value={clubLayerPace} onChange={event => setClubLayerPace(event.target.value)}>
-            <option value="auto">{t("Automática")}</option>
-            {['8-16', '16-32', '32-64'].map(value => <option key={value} value={value}>{value.replace('-', '–')} {t("compases")}</option>)}
-          </select>
-          <p className="cloud-suite-cost">{t("Una preferencia de desarrollo para la IA, no un calendario obligatorio ni un cambio de tempo.")}</p>
           <label className="cloud-chromatic-option"><input type="checkbox" checked={clubVariety} onChange={event => setClubVariety(event.target.checked)} />{' '}{t("Club: recurso principal libre")}</label>
           <p className="cloud-suite-cost">{t("La IA elige el recurso que conduce la obra; el arpegio continuo no es obligatorio.")}</p>
         </div>}
         <p className="cloud-suite-cost">{t("Sin baterías ni percusiones. Arpegios, stabs y ritmos tonales siguen disponibles. Con cromatismos desactivados, las notas deben pertenecer a la escala declarada.")}</p>
         <div className="cloud-suite-field-pair"><div><label htmlFor="cloud-duration">{t("Duración")}</label><select id="cloud-duration" value={durationSeconds} onChange={event => setDurationSeconds(Number(event.target.value))}>{[[60, t("1 minuto")], [120, t("2 minutos")], [180, t("3 minutos")], [300, t("5 minutos")], [390, t("6 min 30 s")], [600, t("10 minutos")], [900, t("15 minutos")]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
           <div><label htmlFor="cloud-bpm">{t("Tempo")}</label><div className="cloud-suite-unit"><input id="cloud-bpm" type="number" min="60" max="180" value={bpm} onChange={event => setBpm(Number(event.target.value))} /><span>{t("BPM")}</span></div></div></div>
-        <button className="cloud-suite-compose-button" disabled={busy || !prompt.trim() || cloudStatus?.available !== true}>{busy ? t("Enviando…") : t("✦  Componer obra ↗")}</button>
-        <p className="cloud-suite-cost">{cloudStatus?.available ? cloudStatus.unlimited ? t("Acceso ilimitado para esta cuenta. Solo puede haber una composición en curso.") : t("Hasta {p0} obras completadas cada 24 horas. Los intentos fallidos no cuentan.", {p0: cloudStatus.dailyJobLimit}) : t("Cloud no está habilitado para esta cuenta.")}{' '}{t("Escuchar obras guardadas no consume créditos. La composición continúa aunque cierres la página.")}</p>
+        {!cloudStatus?.demo && !cloudStatus?.unlimited && <CreditWallet duration={durationSeconds} />}
+        <button className="cloud-suite-compose-button" disabled={busy || !prompt.trim() || cloudStatus?.available !== true || cloudStatus.demo?.canCompose===false}>{busy ? t("Enviando…") : t("✦  Componer obra ↗")}</button>
+        <p className="cloud-suite-cost">{cloudStatus?.available ? cloudStatus.demo ? t("Demo: 3 obras cada 24 horas, 7 cada 7 días y 12 cada 30 días. Las fallidas no cuentan.") : cloudStatus.creditsEnabled ? t("Cada obra completada consume 3 créditos. Las fallidas liberan la reserva.") : cloudStatus.unlimited ? t("Acceso ilimitado para esta cuenta. Solo puede haber una composición en curso.") : t("Hasta {p0} obras completadas cada 24 horas. Los intentos fallidos no cuentan.", {p0: cloudStatus.dailyJobLimit}) : t("Cloud no está habilitado para esta cuenta.")}{' '}{t("Escuchar obras guardadas no consume créditos. La composición continúa aunque cierres la página.")}</p>
         {error && <p className="cloud-suite-error" role="alert">{error}</p>}
       </form></div></SuiteDialog>}
       {!shared && sessionOpen && <SuiteDialog title={t("Seguimiento de la obra")} onClose={() => setSessionOpen(false)}>
@@ -338,10 +341,10 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
           <div className="cloud-suite-session-actions"><button type="button" className="cloud-repeat-settings" onClick={() => {
             setPrompt(selected.prompt); setDurationSeconds(selected.durationSeconds); setBpm(selected.bpm)
             setClub(selected.behavior === 'club'); setAllowChromatic(selected.allowChromatic === true)
-            setClubLayerPace(selected.clubLayerPace || 'auto'); setClubVariety(selected.clubVariety === true)
+            setEngineVersion(cloudEngineVersion(selected.engineVersion, 'v1')); setClubVariety(selected.clubVariety === true)
             setRepeatSeed(selected.seed); setError(''); setSessionOpen(false); setHistoryOpen(false); setComposeOpen(true)
           }}>{t("Repetir ajustes")}</button></div>
-          {(selected.status === 'running' || selected.status === 'queued') && <div className="cloud-suite-progress"><progress value={selected.completedSteps} max={Math.max(selected.totalSteps, 1)} /><span>{t(stageText[selected.stage]) || t("Componiendo")} · {selected.completedSteps}/{selected.totalSteps}</span><button type="button" onClick={async () => { try { await api.cancelCloudJob(selected.id); setJobs(await api.cloudJobs()) } catch (problem) { setError(problem instanceof Error ? problem.message : t("No se pudo cancelar.")) } }}>{t("Cancelar")}</button></div>}
+          {(selected.status === 'running' || selected.status === 'queued') && <div className="cloud-suite-progress"><progress value={selected.completedSteps} max={Math.max(selected.totalSteps, 1)} /><span>{t(stageText[selected.stage]) || t("Componiendo")} · {selected.completedSteps}/{selected.totalSteps}</span></div>}
           {selected.status === 'completed' && selected.resultManifest && <div className="cloud-suite-session-actions"><a href={trackUrl(selected.id, selected.resultManifest.fullFile)}>{t("↓ Obra completa MIDI")}</a><span>{selected.resultManifest.tracks.length}{' '}{t("pistas ·")}{' '}{selected.resultManifest.key}</span></div>}
           {selected.status === 'failed' && <p className="cloud-suite-error">{t("La composición no se completó. No se publicó una obra incompleta.")}</p>}</> : <p className="cloud-suite-empty-copy">{t("Tus obras aparecerán aquí cuando empieces a componer.")}</p>}</div>
     </SuiteDialog>}
@@ -377,3 +380,4 @@ function CloudShareDialog({ url, close, revoke }: { url: string; close: () => vo
     <p role="status">{feedback}</p><button type="button" disabled={busy} onClick={async () => { setBusy(true); try { await revoke() } catch { setFeedback(t("No se pudieron desactivar los enlaces. Intenta nuevamente.")); setBusy(false) } }}>{t("Desactivar todos los enlaces de esta obra")}</button>
   </dialog>
 }
+import { CreditWallet } from '../components/CreditWallet'

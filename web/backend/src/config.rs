@@ -28,6 +28,7 @@ pub struct Config {
     pub cloud_beta_emails: Vec<String>,
     pub cloud_daily_jobs: i64,
     pub cloud_unlimited_emails: Vec<String>,
+    pub demo_lab: bool,
 }
 
 impl Config {
@@ -35,7 +36,7 @@ impl Config {
         let required = |name: &str| {
             env::var(name).map_err(|_| ApiError::configuration(format!("missing {name}")))
         };
-        Ok(Self {
+        let config = Self {
             bind: env::var("PULSO_WEB_BIND")
                 .unwrap_or_else(|_| "0.0.0.0:8080".into())
                 .parse()
@@ -104,6 +105,13 @@ impl Config {
                 .map(|email| email.trim().to_ascii_lowercase())
                 .filter(|email| !email.is_empty())
                 .collect(),
-        })
+            demo_lab: env::var("PULSO_DEMO_LAB").as_deref() == Ok("true"),
+        };
+        if config.demo_lab && (!config.bind.ip().is_loopback()
+            || !(config.public_url.starts_with("http://localhost:") || config.public_url.starts_with("http://127.0.0.1:"))
+            || !config.database_url.contains("@127.0.0.1:") || !config.database_url.ends_with("/pulso_demo_lab")) {
+            return Err(ApiError::configuration("Demo lab requires loopback URLs and isolated pulso_demo_lab database"));
+        }
+        Ok(config)
     }
 }

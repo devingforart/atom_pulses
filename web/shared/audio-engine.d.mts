@@ -1,5 +1,8 @@
 import type { MidiNote, MidiScore } from './midi.mjs'
 
+export function requestPlaybackSession(navigator?: { audioSession?: { type: string } }): boolean
+export function resumeAudioContext(context: AudioContext, timeoutMs?: number): Promise<void>
+
 export type SuiteTrack = {
   name: string
   filename: string

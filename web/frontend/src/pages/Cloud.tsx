@@ -236,8 +236,8 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   }
   async function togglePlay() {
     if (!activeScore) return
-    try { if (audio.playing) audio.pause(); else await audio.play(); setPlaying(audio.playing) }
-    catch (problem) { setScoreError(problem instanceof Error ? problem.message : t("No se pudo iniciar el audio.")) }
+    try { if (audio.playing) audio.pause(); else await audio.play(); setPlaying(audio.playing); setScoreError('') }
+    catch (problem) { setPlaying(false); setScoreError(problem instanceof Error ? t(problem.message) : t("No se pudo iniciar el audio.")) }
   }
   function seekAt(event: MouseEvent<HTMLElement>) {
     if (!activeScore) return

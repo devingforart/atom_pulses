@@ -1,0 +1,14 @@
+# Frontend-only player correction. No API, composer, credentials or migrations.
+FROM node:24-bookworm-slim AS frontend
+WORKDIR /source/frontend
+COPY web/frontend/package*.json ./
+RUN npm ci
+COPY web/frontend/ ./
+COPY web/shared/ /source/shared/
+COPY web/local-studio/app.js /source/local-studio/app.js
+RUN node --test /source/shared/audio-engine.test.mjs \
+    /source/shared/mobile-audio.test.mjs /source/shared/audio-live-update.test.mjs \
+    /source/shared/production-audio.test.mjs /source/shared/piano-unison.test.mjs && \
+    npm run build
+ARG PULSO_SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.revision=$PULSO_SOURCE_REVISION

@@ -8,7 +8,25 @@ const PIANO_ANCHORS = [21, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 1
 // octave changes from sounding like a different instrument.
 const PIANO_PEAK_DB = [-8.3, -4.9, -5.4, -7.5, -6.1, -4.9, -5.9, -11.7, -7.8, -5.2, -8.6, -15.6, -9.1, -6.2, -12.2, -10.7];
 const pianoName = pitch => pitch === 21 ? 'A0' : `${pitch % 12 === 0 ? 'C' : 'Fs'}${Math.floor(pitch / 12) - 1}`;
-const pianoUrl = pitch => `/piano/INSPiano_Vel03_${pianoName(pitch)}_01.ogg`;
+const pianoUrl = (pitch, format) => `/piano/INSPiano_Vel03_${pianoName(pitch)}_01.${format}`;
+export function pianoFormats(document = globalThis.document) {
+  try {
+    const audio = document?.createElement('audio');
+    if (audio && !audio.canPlayType('audio/ogg; codecs="vorbis"')) return ['mp3', 'ogg'];
+  } catch { /* Codec decoding below remains the definitive check. */ }
+  return ['ogg', 'mp3'];
+}
+export async function loadPianoSample(context, pitch, formats = pianoFormats()) {
+  let lastError;
+  for (const format of formats) {
+    try {
+      const response = await fetch(pianoUrl(pitch, format));
+      if (!response.ok) throw new Error(`No se pudo cargar el piano (${response.status}).`);
+      return await context.decodeAudioData(await response.arrayBuffer());
+    } catch (error) { lastError = error; }
+  }
+  throw lastError || new Error('No se pudo cargar el piano.');
+}
 
 // Local audition engine. Its only input is the published MIDI and track metadata.
 // Sound changes never alter the score, exported notes or the composer.
@@ -77,6 +95,9 @@ export class ProductionAudio extends SuiteAudio {
   async ensureAudio() {
     await super.ensureAudio();
     if (this.mode === 'piano') await this.ensurePiano();
+    // A sample download can outlast an OS interruption; do not start a false
+    // playing transport if Safari suspended the context while decoding.
+    if (this.context.state !== 'running') await super.ensureAudio();
     if (this.productionReady) return;
     this.prepareProduction();
   }
@@ -85,9 +106,7 @@ export class ProductionAudio extends SuiteAudio {
     if (this.pianoBuffers) return;
     if (!this.pianoLoading) {
       this.pianoLoading = Promise.all(PIANO_ANCHORS.map(async pitch => {
-        const response = await fetch(pianoUrl(pitch));
-        if (!response.ok) throw new Error(`No se pudo cargar el piano (${response.status}).`);
-        return [pitch, await this.context.decodeAudioData(await response.arrayBuffer())];
+        return [pitch, await loadPianoSample(this.context, pitch)];
       })).then(entries => { this.pianoBuffers = new Map(entries); }).finally(() => { this.pianoLoading = null; });
     }
     await this.pianoLoading;

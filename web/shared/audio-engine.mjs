@@ -27,6 +27,32 @@ export function startAudioClock(context, tick) {
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const frequency = pitch => 440 * 2 ** ((pitch - 69) / 12);
 
+// Web Audio defaults to an ambient session on iOS. Explicit music playback
+// requests the media category on the user's Play gesture, before any await.
+// Do not claim the session while merely loading a score or exporting WAV.
+export function requestPlaybackSession(navigator = globalThis.navigator) {
+  try {
+    if (!navigator?.audioSession) return false;
+    navigator.audioSession.type = 'playback';
+    return navigator.audioSession.type === 'playback';
+  } catch { return false; } // Optional API; desktop/older browsers still play.
+}
+const activationError = () => new Error('El navegador no habilitó el audio. Volvé a tocar Reproducir.');
+export async function resumeAudioContext(context, timeoutMs = 4000) {
+  if (context.state === 'running') return;
+  let timeout;
+  try {
+    // Invoke resume synchronously in the Play call stack, never after a timer
+    // or sample fetch. Bound Safari's occasionally unresolved resume promise.
+    const resumed = context.resume();
+    await Promise.race([resumed, new Promise((_, reject) => {
+      timeout = setTimeout(() => reject(activationError()), timeoutMs);
+    })]);
+    if (context.state !== 'running') throw activationError();
+  } catch { throw activationError(); }
+  finally { clearTimeout(timeout); }
+}
+
 export function instrumentFor(part = {}, name = '') {
   const text = `${part.catalog_id || ''} ${part.source_voice || ''} ${part.role || ''} ${name}`.toLowerCase();
   if (part.department === 'rhythm' || /kick|snare|clap|hat|cymbal|drum|percussion|tom|shaker/.test(text)) return 'drums';
@@ -77,7 +103,9 @@ export class SuiteAudio {
   }
   async ensureAudio() {
     if (!this.context) {
-      this.context = new AudioContext({ latencyHint: 'interactive' });
+      const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
+      if (!Context) throw new Error('Este navegador no admite reproducir audio.');
+      this.context = new Context({ latencyHint: 'interactive' });
       this.master = this.context.createGain();
       this.master.gain.value = this.masterVolume;
       this.limiter = this.context.createDynamicsCompressor();
@@ -87,8 +115,16 @@ export class SuiteAudio {
       this.limiter.attack.value = 0.003;
       this.limiter.release.value = 0.18;
       this.master.connect(this.limiter).connect(this.context.destination);
+      this.context.addEventListener?.('statechange', () => {
+        if (this.playing && this.context.state !== 'running') {
+          // The OS interrupted playback, not a visibility event. Retain the
+          // position and make the next Play tap resume instead of only pause.
+          this.pause();
+          this.onStop?.();
+        }
+      });
     }
-    if (this.context.state !== 'running') await this.context.resume();
+    await resumeAudioContext(this.context);
   }
   setVolume(value) { this.masterVolume = clamp(Number(value) || 0, 0, 1); if (this.master) this.master.gain.setTargetAtTime(this.masterVolume, this.context.currentTime, 0.015); }
   audible(index) { return !this.muted.has(index) && (!this.soloed.size || this.soloed.has(index)); }
@@ -104,7 +140,9 @@ export class SuiteAudio {
   get duration() { return this.midi ? this.midi.beatToSeconds(this.midi.lengthBeats) : 0; }
   async play() {
     if (!this.midi || !this.tracks.length) return;
+    requestPlaybackSession();
     await this.ensureAudio();
+    if (this.context.state !== 'running') throw activationError();
     if (this.playing) return;
     if (this.position >= this.duration - 0.01) this.position = 0;
     this.origin = this.context.currentTime - this.position;

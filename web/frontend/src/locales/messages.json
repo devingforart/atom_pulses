@@ -1,4 +1,6 @@
 {
+  "Este navegador no admite reproducir audio.": {"en":"This browser does not support audio playback.","pt-BR":"Este navegador não suporta reprodução de áudio."},
+  "El navegador no habilitó el audio. Volvé a tocar Reproducir.": {"en":"The browser did not enable audio. Tap Play again.","pt-BR":"O navegador não ativou o áudio. Toque em Reproduzir novamente."},
   "Probar suscripción": {"en":"Try subscription","pt-BR":"Testar assinatura"},
   "Suscribirme": {"en":"Subscribe","pt-BR":"Assinar"},
   "Modo prueba: no se realizan cargos reales.": {"en":"Test mode: no real charges are made.","pt-BR":"Modo de teste: nenhuma cobrança real é feita."},

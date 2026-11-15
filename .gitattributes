@@ -1,2 +1,3 @@
 web/backend/migrations/*.sql -text
 scripts/*.sh text eol=lf
+web/shared/*.sha256 text eol=lf

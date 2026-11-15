@@ -26,6 +26,13 @@ migration checks precede public static activation. API/static rollback is
 automatic on activation failure; expanded database enum values are compatible
 with the previous API. Private production configuration is reused, not replaced.
 
+On Windows, create the transfer archive with
+`git -c core.autocrlf=false archive --format=tar --output=<archive> <revision>`.
+The archive must contain the exact Git blob bytes, not CRLF working-tree
+conversions. After extraction, run `sha256sum -c
+web/shared/engine-0.1.3-sources.sha256` synchronously before starting the long
+background deployment. Checksum manifests also have an explicit LF attribute.
+
 The Cloud dependency files brought into this development branch are exact
 copies of the already deployed `fef9d1d8d227d239814dcc2290e0b8126715a7e8`
 baseline. They preserve existing billing, invitations and email functionality;

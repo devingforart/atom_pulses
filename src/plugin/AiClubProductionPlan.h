@@ -244,6 +244,11 @@ inline juce::String schema(const juce::String& direction = {}, const SongPlan* p
             const auto layerProperties = layer.getProperty("properties", {});
             layerProperties.getProperty("instrument_id", {}).getDynamicObject()->setProperty(
                 "enum", juce::Array<juce::var>{juce::String::fromUTF8(instrument.id.c_str())});
+            for(const auto* field:{"register_low","register_high"}) {
+                auto* bounds=layerProperties.getProperty(field,{}).getDynamicObject();
+                bounds->setProperty("minimum",std::max(0,instrument.minimumPitch-12));
+                bounds->setProperty("maximum",std::min(127,instrument.maximumPitch+12));
+            }
             const auto stateTemplate = layerProperties.getProperty("states", {}).getProperty("items", {});
             juce::Array<juce::var> stateChoices;
             for (std::size_t sectionIndex = 0; sectionIndex < plan->sections.size(); ++sectionIndex) {
@@ -375,6 +380,55 @@ inline juce::String macroSchema(const juce::String& json, CompositionBehavior be
     return juce::JSON::toString(root, true);
 }
 
+// Provider-boundary representation only. The canonical engine still consumes
+// the same cast-ordered layer array and the AI still authors every field.
+inline juce::String keyedLayerSchema(const juce::String& source,const SongPlan& plan) {
+    auto root=juce::JSON::parse(source);
+    auto props=root.getProperty("properties",{});
+    const auto* choices=props.getProperty("layers",{}).getProperty("items",{}).getProperty("anyOf",{}).getArray();
+    if(!choices||plan.instruments.empty()) return {};
+    auto keyed=juce::JSON::parse(R"({"type":"object","additionalProperties":false,"properties":{},"required":[]})");
+    std::set<juce::String> seen;
+    for(const auto& choice:*choices) {
+        const auto ids=choice.getProperty("properties",{}).getProperty("instrument_id",{}).getProperty("enum",{});
+        if(!ids.isArray()||ids.size()!=1||!seen.insert(ids[0].toString()).second) return {};
+        const auto id=ids[0].toString();
+        if(std::none_of(plan.instruments.begin(),plan.instruments.end(),[&](const auto& owner){return juce::String(owner.id)==id;})) return {};
+        auto entry=choice.clone();
+        entry.getProperty("properties",{}).getDynamicObject()->removeProperty("instrument_id");
+        entry.getProperty("required",{}).getArray()->removeAllInstancesOf(juce::var("instrument_id"));
+        keyed.getProperty("properties",{}).getDynamicObject()->setProperty(id,entry);
+        keyed.getProperty("required",{}).getArray()->add(id);
+    }
+    if(seen.size()!=plan.instruments.size()) return {};
+    props.getDynamicObject()->removeProperty("layers");
+    props.getDynamicObject()->setProperty("layers_by_owner",keyed);
+    root.getProperty("required",{}).getArray()->removeAllInstancesOf(juce::var("layers"));
+    root.getProperty("required",{}).getArray()->add("layers_by_owner");
+    return juce::JSON::toString(root);
+}
+inline bool decodeLayers(const juce::String& source,const SongPlan& plan,
+                         juce::String& decoded,juce::String& error) {
+    auto root=juce::JSON::parse(source);
+    if(!root.hasProperty("layers_by_owner")) {decoded=source;return true;} // Historical arrays.
+    const auto keyed=root.getProperty("layers_by_owner",{});
+    if(root.hasProperty("layers")||!keyed.isObject()||keyed.getDynamicObject()->getProperties().size()!=int(plan.instruments.size())) {
+        error="Club layer map must cover the exact cast without mixed encodings";return false;
+    }
+    juce::Array<juce::var> layers;
+    for(const auto& owner:plan.instruments) {
+        const auto id=juce::String(owner.id);
+        auto entry=keyed.getProperty(id,{}).clone();
+        if(!entry.isObject()||entry.hasProperty("instrument_id")) {
+            error="Club layer map is missing owner or has a conflicting identity: "+id;return false;
+        }
+        entry.getDynamicObject()->setProperty("instrument_id",id);
+        layers.add(entry);
+    }
+    root.getDynamicObject()->setProperty("layers",layers);
+    root.getDynamicObject()->removeProperty("layers_by_owner");
+    decoded=juce::JSON::toString(root);return true;
+}
 inline juce::String prompt(const SongPlan& plan, const juce::String& direction) {
     // This phase cannot force fictional sections into an explicitly single loop.
     juce::String out = brief();
@@ -634,14 +688,19 @@ inline bool validate(const juce::String& json, const SongPlan& plan, juce::Strin
         const auto owner = std::find_if(plan.instruments.begin(), plan.instruments.end(),
             [&](const auto& p) { return p.id == id; });
         double cycle{}, origin{}, low{}, high{};
-        if (owner == plan.instruments.end() || !ids.insert(id).second ||
-            !grid(layer.getProperty("cycle_beats", {}), cycle) || cycle <= 0 || cycle > 512 ||
-            !grid(layer.getProperty("cycle_origin_beat", {}), origin) || origin < 0 ||
-            !grid(layer.getProperty("register_low", {}), low) ||
-            !grid(layer.getProperty("register_high", {}), high) || low != std::floor(low) ||
-            high != std::floor(high) || low > high || low < std::max(0, owner->minimumPitch - 12) ||
-            high > std::min(127, owner->maximumPitch + 12)) {
-            error = "Club layer has an unknown/duplicate owner or invalid cycle/register: " + juce::String(id); return false;
+        if(owner==plan.instruments.end()) {error="Club layer has an unknown owner: "+juce::String(id);return false;}
+        if(!ids.insert(id).second) {error="Club layer has a duplicate owner: "+juce::String(id);return false;}
+        if(!grid(layer.getProperty("cycle_beats",{}),cycle)||cycle<=0||cycle>512) {
+            error="Club layer has an invalid cycle_beats: "+juce::String(id);return false;
+        }
+        if(!grid(layer.getProperty("cycle_origin_beat",{}),origin)||origin<0) {
+            error="Club layer has an invalid cycle_origin_beat: "+juce::String(id);return false;
+        }
+        if(!grid(layer.getProperty("register_low",{}),low)||!grid(layer.getProperty("register_high",{}),high)||
+           low!=std::floor(low)||high!=std::floor(high)||low>high||
+           low<std::max(0,owner->minimumPitch-12)||high>std::min(127,owner->maximumPitch+12)) {
+            error="Club layer has an invalid register: "+juce::String(id)+"; expected ordered integer bounds within "+
+                juce::String(std::max(0,owner->minimumPitch-12))+".."+juce::String(std::min(127,owner->maximumPitch+12));return false;
         }
         for (const auto* key : {"production_role", "harmonic_job", "articulation", "interaction"})
             if (layer.getProperty(key, {}).toString().trim().isEmpty()) {

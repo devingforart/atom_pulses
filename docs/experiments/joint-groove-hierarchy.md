@@ -45,3 +45,39 @@ only its returned fields atomically and runs full architecture validation again;
 no note, accent or silence is manufactured to make the check pass. The existing
 per-target/global recovery budget still bounds this work. Tests cover dispatch,
 source-note scope, immutable fields, exact AI lists and declaration-only repairs.
+# Primary-gesture coordination experiment (after approved anchor)
+
+New Club hierarchies also declare `gesture_coordination`: one leader selected
+from `identity_owners` and one relationship for every other identity owner.
+The AI chooses reinforcement, sustain or answer plus a concrete musical
+intention. Leadership is not hardcoded to bass or chords. This dependency
+travels in the existing authoritative hierarchy to subsequent writing windows;
+it does not require another model call or a second post-processing pass.
+
+The AI must design the actual nucleus notes jointly, preserving intensity while
+avoiding two concurrent foreground sentences. The host checks only structural
+consistency (known identity owners, distinct leader/partners, complete coverage
+and meaningful declarations), not a prescribed rhythmic template, onset quota
+or density score. It never deletes, shifts, shortens or invents notes to satisfy
+this relationship. Musical compliance still requires listening to a new work;
+a valid declaration is not proof of a convincing groove.
+
+Previously accepted hierarchies without this field remain readable unchanged.
+The existing focused reference repair preserves this dependency alongside
+identity owners and subordinate roles. Anchor
+`motor-club-cuerpo-hipnotico-2026-11-13` remains the comparison baseline.
+
+## Single-source role encoding
+
+New known-cast responses use `owner_roles`, a required object keyed by each
+existing owner ID. Each owner chooses exactly one role and musical intention:
+lead, reinforce, sustain, answer, clock, counterweight or ornament. Exactly one
+lead is required; reinforce/sustain/answer identify its partners. This removes
+three redundant AI-written membership lists that previously contradicted one
+another. The decoder derives the historical identity/support/coordination lists
+without musical choices. It preserves the leader's intention, all partner and
+support intentions, accents, spaces and every reference note. Mixed encodings,
+missing owners or multiple leaders fail atomically instead of being guessed.
+Canonical historical plans remain unchanged and all normal musical validators
+still run after decoding. Keyed encoding is only a serialization change, not
+evidence that the new groove will sound better.

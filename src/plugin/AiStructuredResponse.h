@@ -2,6 +2,12 @@
 #include <juce_core/juce_core.h>
 
 namespace pulso::plugin::structured {
+inline juce::String directBody(const juce::String& body) {
+    auto request=juce::JSON::parse(body);
+    if(!request.isObject()) return {};
+    request.getDynamicObject()->setProperty("background",false);
+    return juce::JSON::toString(request);
+}
 // HTTP 200 also represents a queued/in-progress background response.
 // Never send partial content into musical validation or repair.
 inline bool ready(const juce::var& envelope,bool connected,int httpStatus,

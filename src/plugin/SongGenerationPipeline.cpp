@@ -43,7 +43,7 @@ SongPlan SongGenerationPipeline::plan(const SongGenerationRequest& request,
         targetBars(request), request.bpm, request.beatsPerBar, request.seed,
         request.behavior, token, error, progress, checkpoint, request.aiSovereign,
         request.resume.notes.empty() && !request.resume.blueprintOnly ? nullptr :
-            &request.resume, blueprint);
+            &request.resume, blueprint, request.direction);
 }
 
 void SongGenerationPipeline::finalizePlan(SongPlan& plan,

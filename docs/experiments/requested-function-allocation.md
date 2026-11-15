@@ -51,3 +51,26 @@ remains available, and is the only option if no non-static owner exists. No new
 model call, automatic orchestration, source-note deletion or pitch adjustment is
 introduced. Tests check legacy behavior, eligible recipients, static-only cases,
 null handoff and preservation of supplied musical notes.
+# User-source binding for cast generation
+
+Cast requests and their existing bounded recovery now bind `source_quote` in
+the structured response schema to the complete original user direction. This
+is provenance, not a host interpretation of which musical functions to compose.
+AI-chosen instrumentation remains in `instruments`; `requested_functions` is
+empty when USER did not explicitly allocate independent functions. Macro or
+Club guidance must not be represented as a user-imposed quota.
+
+Validation keeps historical verbatim-substring quotations readable, but reports
+source mismatch, invalid count, empty owner lists and actual count mismatch
+separately. It neither drops ungrounded declarations silently nor changes MIDI.
+Regression coverage includes generic `etude F#min`, multiple explicit functions
+bound to one original request and the actual cast schema's source binding.
+
+The pipeline now passes original user direction separately from augmented
+composer context. Only the former grounds requested allocations. Source enum
+values normalize whitespace because the strict structured-output service rejects
+line breaks inside enum string literals; provenance validation uses the same
+whitespace normalization and preserves historical substring citations. No
+musical text or note events are synthesized by this codec. HTTP request failures
+take precedence over missing-content diagnostics, and HTTP 400 does not trigger
+an identical cast retry. API traces retain the provider error message/code.

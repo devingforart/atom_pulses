@@ -546,10 +546,13 @@ int main(int argc, char** argv) {
                                         std::size_t completedUnits, bool, bool diagnostic) {
             writeProvisionalMidi(output, partial, ++checkpointNumber,
                 completedUnits, diagnostic, proofMode);
-            if(juce::JSON::parse(juce::String(partial.phraseArchitectureJson)).getProperty("audition_stage",{}).toString()=="before_voicing_review") {
+            const auto auditionStage=juce::JSON::parse(juce::String(partial.phraseArchitectureJson)).getProperty("audition_stage",{}).toString();
+            if(auditionStage=="before_voicing_review"||auditionStage=="before_groove_review"||auditionStage=="after_groove_review") {
                 const auto stem="partial-"+juce::String(static_cast<int>(checkpointNumber)).paddedLeft('0',2);
-                output.getChildFile(stem+".mid").copyFileTo(output.getChildFile("before-voicing-review.mid"));
-                output.getChildFile(stem+"-plan.json").copyFileTo(output.getChildFile("before-voicing-review-plan.json"));
+                const auto label=auditionStage=="before_voicing_review" ? juce::String("before-voicing-review") :
+                    auditionStage=="before_groove_review" ? juce::String("before-groove-review") : juce::String("after-groove-review");
+                output.getChildFile(stem+".mid").copyFileTo(output.getChildFile(label+".mid"));
+                output.getChildFile(stem+"-plan.json").copyFileTo(output.getChildFile(label+"-plan.json"));
             }
         }, [&output](const juce::String& exactBlueprint) {
             if (exactBlueprint.isNotEmpty() &&

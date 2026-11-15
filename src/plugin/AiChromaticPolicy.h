@@ -43,6 +43,7 @@ struct AiChromaticPolicy {
         auto request = juce::JSON::parse(body);
         auto* object = request.getDynamicObject();
         if (object == nullptr) return body;
+        if(object->getProperty("instructions").toString().endsWith(contract)) return body;
         object->setProperty("instructions", object->getProperty("instructions").toString() + contract);
         return juce::JSON::toString(request, true);
     }

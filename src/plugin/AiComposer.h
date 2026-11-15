@@ -75,7 +75,8 @@ public:
         const SongPlan&, const std::vector<std::size_t>& assignedInstruments);
     [[nodiscard]] static juce::String directWindowSchemaFor(
         const SongPlan&, const std::vector<std::size_t>& assignedInstruments,
-        std::optional<std::size_t> sectionIndex = {}, int bars = 0, int firstBar = 0);
+        std::optional<std::size_t> sectionIndex = {}, int bars = 0, int firstBar = 0,
+        bool sharedDefinitions = true);
     [[nodiscard]] static juce::String directWindowPromptFor(
         const juce::String& direction, const SongPlan&, const Pattern& accepted,
         const std::vector<std::size_t>& assignedInstruments,
@@ -106,6 +107,8 @@ public:
     [[nodiscard]] static std::vector<std::vector<std::size_t>> performanceWritingBlocks(
         const SongPlan&, bool localEditorial, bool singleOwner = false);
     [[nodiscard]] static bool castManifestUsesExactCount(std::size_t instruments) noexcept;
+    [[nodiscard]] static juce::String castManifestRequestSchema(const juce::String& userDirection,
+                                                               const juce::String& macroBlueprint);
     [[nodiscard]] static bool castManifestHasRange(std::size_t maximumInstruments,
                                                    std::size_t expectedMinimum) noexcept;
     [[nodiscard]] static std::size_t requestedInstrumentCount(const juce::String& direction) noexcept;
@@ -155,7 +158,8 @@ public:
                                            const AiSongCheckpoint& checkpoint = {},
                                            bool aiSovereign = false,
                                            const AiSongResume* resume = nullptr,
-                                           const AiSongBlueprint& blueprint = {});
+                                           const AiSongBlueprint& blueprint = {},
+                                           const juce::String& originalUserDirection = {});
     [[nodiscard]] static bool parseSongPlanJson(const juce::String&, int targetSeconds,
                                                 int requestedBars, double bpm,
                                                 double beatsPerBar, std::uint64_t seed,

@@ -28,10 +28,374 @@ void setting(const char* key, const juce::String& value) {
 #include "plugin/AiGrooveHierarchy.h"
 #include "plugin/AiGrooveRepair.h"
 #include "plugin/AiSectionTrajectory.h"
+#include "plugin/AiBackgroundBudget.h"
+#include "plugin/AiClubHarmonicSupport.h"
+#include "plugin/AiPerformedGroove.h"
+#include "plugin/AiSchemaSharing.h"
+namespace {
+juce::var expandedSchema(const juce::var& input) {
+    const auto defs=input.getProperty("$defs",{});
+    std::function<juce::var(const juce::var&,int)> expand=[&](const juce::var& node,int depth)->juce::var {
+        check(depth<64,"unexpected recursive schema in finite note-schema test");
+        if(node.isArray()) {juce::Array<juce::var> out;for(const auto& item:*node.getArray()) out.add(expand(item,depth+1));return out;}
+        if(!node.isObject()) return node;
+        const auto ref=node.getProperty("$ref",{}).toString();
+        if(ref.startsWith("#/$defs/")) {
+            const auto key=ref.substring(8);check(defs.hasProperty(juce::Identifier(key)),"compaction left a dangling schema reference");
+            check(node.getDynamicObject()->getProperties().size()==1,"test expander needs explicit handling of ref siblings");
+            return expand(defs.getProperty(juce::Identifier(key),{}),depth+1);
+        }
+        auto* object=new juce::DynamicObject();for(const auto& field:node.getDynamicObject()->getProperties())
+            if(field.name.toString()!="$defs") object->setProperty(field.name,expand(field.value,depth+1));
+        return juce::var(object);
+    };return expand(input,0);
+}
+}
 int main(int argc,char** argv) {
     using namespace pulso;
     using namespace pulso::plugin;
     try {
+      {
+        auto legacy=juce::JSON::parse(R"({"instruments":[{"id":"rhythm","source_voice":"harmonic_pulse","role":"retained_tonal_pulse; polyphonic repeated chord rhythm"},{"id":"tick","source_voice":"harmonic_pulse","role":"retained_tonal_pulse; monophonic fixed pitch"},{"id":"lead","source_voice":"lead","role":"speaking protagonist"}],"requested_functions":[],"protagonist_instrument_id":"lead"})");
+        const auto original=juce::JSON::toString(legacy);juce::var typed;
+        const auto choices=juce::JSON::parse(R"({"rhythm":"chord_stabs","tick":"single_tone_pulse"})");
+        check(tonal_pulses::applyKinds(legacy,choices,typed),"AI metadata classification cannot migrate a legacy mixed rhythm cast");
+        check(tonal_pulses::owners(typed)==std::set<juce::String>{"tick"}&&tonal_pulses::chordOwners(typed)==std::set<juce::String>{"rhythm"},"polyphonic chord rhythm is still forced into one retained pitch");
+        check(original==juce::JSON::toString(legacy),"kind migration edited the archived source blueprint");
+        auto stripped=typed.clone();for(auto& owner:*stripped.getProperty("instruments",{}).getArray()) owner.getDynamicObject()->removeProperty("tonal_rhythm_kind");
+        check(juce::JSON::toString(stripped)==original,"kind migration changed cast, roles or other accepted musical data");
+        auto detail=juce::JSON::parse(R"({"id":"rhythm","role":"same accepted role"})");tonal_pulses::inheritKind(typed,detail);
+        check(detail.getProperty("tonal_rhythm_kind",{}).toString()=="chord_stabs"&&detail.getProperty("role",{}).toString()=="same accepted role","detail merge dropped kind or rewrote prose");
+        auto architecture=juce::JSON::parse(R"({"layers":[{"instrument_id":"rhythm","material_behavior":"static_tonal_rhythm","timing_mode":"cycle_bound","polyphonic":true,"static_identity":{"attack_structure":"chord","pitch_policy":"harmonic_variant","anchor_pitches":[66,69,73]}},{"instrument_id":"tick","material_behavior":"static_tonal_rhythm","timing_mode":"cycle_bound","polyphonic":false,"static_identity":{"attack_structure":"single_tone","pitch_policy":"retain_anchor","anchor_pitches":[66]}}],"tonal_nucleus":{"lanes":[{"instrument_id":"rhythm","notes":[{"pitch":66},{"pitch":69},{"pitch":73}]},{"instrument_id":"tick","notes":[{"pitch":66}]}]}})");
+        juce::String error;check(allocation::validateArchitecture(juce::JSON::toString(architecture),typed,error),"typed chord reference incorrectly compared with a single anchor");
+        const auto locked=tonal_pulses::legacyKindSchema(legacy,architecture);
+        check(locked.getProperty("properties",{}).getProperty("rhythm",{}).getProperty("enum",{}).size()==1,"accepted chord structure is not protected during migration");
+        auto wrong=choices.clone();wrong.getDynamicObject()->setProperty("rhythm","single_tone_pulse");
+        juce::var unchanged="untouched";
+        check(!tonal_pulses::applyKinds(legacy,wrong,unchanged,architecture)&&unchanged.toString()=="untouched","classification overrode already accepted polyphony");
+        SongPlan plan;plan.sections.resize(1);plan.sections[0].bars=4;plan.instruments.clear();
+        for(const auto* id:{"rhythm","tick","lead"}) {InstrumentAssignment owner;owner.id=id;owner.sourceVoice=VoiceId::HarmonicPulse;owner.minimumPitch=48;owner.maximumPitch=84;plan.instruments.push_back(owner);}
+        const auto saved=juce::SystemStats::getEnvironmentVariable("PULSO_AI_CLUB_NUCLEUS_V2",{});setting("PULSO_AI_CLUB_NUCLEUS_V2","1");
+        const auto schema=juce::JSON::parse(allocation::constrainSchema(club::production::schema({},&plan),typed,&plan));
+        for(const auto& choice:*schema.getProperty("properties",{}).getProperty("layers",{}).getProperty("items",{}).getProperty("anyOf",{}).getArray()) {
+            const auto props=choice.getProperty("properties",{});const auto id=props.getProperty("instrument_id",{}).getProperty("enum",{})[0].toString();
+            if(id=="rhythm") check(props.getProperty("polyphonic",{}).getProperty("enum",{})[0]==juce::var(true)&&int(props.getProperty("static_identity",{}).getProperty("properties",{}).getProperty("anchor_pitches",{}).getProperty("minItems",0))==2,"chord schema flattened the chord into a monophonic pulse");
+            if(id=="tick") check(props.getProperty("polyphonic",{}).getProperty("enum",{})[0]==juce::var(false)&&int(props.getProperty("static_identity",{}).getProperty("properties",{}).getProperty("anchor_pitches",{}).getProperty("maxItems",0))==1,"single-tone rhythmic body lost its retained anchor contract");
+        }
+        setting("PULSO_AI_CLUB_NUCLEUS_V2",saved);
+      }
+      {
+        auto raw=juce::JSON::parse(R"({"type":"object","additionalProperties":false,"properties":{},"required":[],"$defs":{"scalePitch":{"type":"integer","minimum":0,"maximum":127},"unused":{"type":"object","properties":{"unused_parameter":{"type":"string"}}}}})");
+        const auto note=club::production::boundedNoteSchema(32);
+        for(int i=0;i<24;++i) {
+            auto part=juce::JSON::parse(R"({"type":"array","maxItems":256,"items":{}})");part.getDynamicObject()->setProperty("items",note.clone());
+            const auto id="owner_"+juce::String(i);raw.getProperty("properties",{}).getDynamicObject()->setProperty(juce::Identifier(id),part);
+            raw.getProperty("required",{}).getArray()->add(id);
+        }
+        const auto original=juce::JSON::toString(raw);const auto compact=schema_sharing::compact(raw);
+        check(schema_sharing::propertyCount(raw)>5000&&schema_sharing::propertyCount(compact)<1000,"schema factoring does not support a joint 24-owner window");
+        check(juce::JSON::toString(expandedSchema(raw))==juce::JSON::toString(expandedSchema(compact)),"schema compaction changed allowed beats, gates, pitches, owners or note capacity");
+        check(original==juce::JSON::toString(raw),"schema sharing mutated the source contract");
+        check(!compact.getProperty("$defs",{}).hasProperty("unused"),"unreachable definitions still consume provider budget");
+      }
+      {
+        auto cast=juce::JSON::parse(R"({"instruments":[{"id":"a","source_voice":"harmonic_pulse","role":"retained_tonal_pulse; grouped short synth"},{"id":"b","source_voice":"atmosphere","role":"retained_tonal_pulse; complementary upper clock"},{"id":"bass","source_voice":"movement_bass","role":"bass"},{"id":"lead","source_voice":"lead","role":"protagonist"}],"protagonist_instrument_id":"lead","requested_functions":[]})");
+        const auto original=juce::JSON::toString(cast);juce::String error;
+        check(tonal_pulses::owners(cast).size()==2&&allocation::staticOwners(cast).size()==2,"production pulse owners lost before short-score planning");
+        check(tonal_pulses::validateManifest(original,error),"independent tonal pulse cast rejected");
+        const auto groups=allocation::effectiveGroups(cast);
+        check(groups.size()==1&&groups[0].getProperty("owner_ids",{}).size()==2&&original==juce::JSON::toString(cast),"production roles fabricated user requests or mutated accepted cast");
+        auto explicitCast=cast.clone();explicitCast.getDynamicObject()->setProperty("requested_functions",juce::JSON::parse(R"([{"source_quote":"dos pulsos","function":"static_tonal_rhythm","exact_count":2,"owner_ids":["a","b"]}])"));
+        check(allocation::effectiveGroups(explicitCast).size()==1,"explicit pulse owners were allocated twice");
+        auto bad=cast.clone();bad.getDynamicObject()->setProperty("protagonist_instrument_id","a");
+        check(!tonal_pulses::validateManifest(juce::JSON::toString(bad),error),"retained pulse stole the melodic protagonist's identity");
+        SongPlan p;p.sections.resize(1);p.sections[0].bars=4;p.totalBars=4;p.instruments.clear();p.rootPitchClass=6;p.scale=ScaleKind::Minor;
+        for(const auto* id:{"a","b","bass","lead"}) {InstrumentAssignment o;o.id=id;o.sourceVoice=std::string(id)=="bass"?VoiceId::MovementBass:VoiceId::Lead;o.minimumPitch=48;o.maximumPitch=84;p.instruments.push_back(o);}
+        const auto saved=juce::SystemStats::getEnvironmentVariable("PULSO_AI_CLUB_NUCLEUS_V2",{});setting("PULSO_AI_CLUB_NUCLEUS_V2","1");
+        auto schema=juce::JSON::parse(allocation::constrainSchema(club::production::schema({},&p),cast,&p));
+        const auto choices=schema.getProperty("properties",{}).getProperty("layers",{}).getProperty("items",{}).getProperty("anyOf",{});
+        int constrained=0;
+        for(const auto& choice:*choices.getArray()) {
+            const auto props=choice.getProperty("properties",{});const auto id=props.getProperty("instrument_id",{}).getProperty("enum",{})[0].toString();
+            if(id!="a"&&id!="b") continue;++constrained;
+            const auto identity=props.getProperty("static_identity",{}).getProperty("properties",{});
+            check(props.getProperty("polyphonic",{}).getProperty("enum",{})[0]==juce::var(false)&&
+                  int(identity.getProperty("anchor_pitches",{}).getProperty("maxItems",0))==1&&
+                  identity.getProperty("pitch_policy",{}).getProperty("enum",{})[0].toString()=="retain_anchor"&&
+                  props.getProperty("timing_mode",{}).getProperty("enum",{})[0].toString()=="cycle_bound","tonal pulse remains a free melodic/chordal improviser in the writing contract");
+        }
+        check(constrained==2,"schema omitted one of the complementary pulse owners");
+        const auto layerResponse=juce::JSON::parse(club::production::keyedLayerSchema(juce::JSON::toString(schema),p));
+        const auto layerMap=layerResponse.getProperty("properties",{}).getProperty("layers_by_owner",{});
+        check(!layerResponse.getProperty("properties",{}).hasProperty("layers")&&
+              layerMap.getProperty("required",{}).size()==int(p.instruments.size())&&
+              !layerMap.getProperty("properties",{}).getProperty("a",{}).getProperty("properties",{}).hasProperty("instrument_id"),
+              "provider layer schema still permits duplicate or omitted cast owners");
+        check(layerMap.getProperty("properties",{}).getProperty("a",{}).getProperty("properties",{})
+              .getProperty("static_identity",{}).getProperty("properties",{}).getProperty("anchor_pitches",{}).getProperty("maxItems",0)==juce::var(1),
+              "keying layers dropped the single-tone pulse contract");
+        auto keyedLayers=juce::JSON::parse(R"({"layers_by_owner":{},"retained_notes":{"notes":[{"pitch":66,"beat":0.5,"duration":0.25}]}})");
+        for(auto owner=p.instruments.rbegin();owner!=p.instruments.rend();++owner)
+            keyedLayers.getProperty("layers_by_owner",{}).getDynamicObject()->setProperty(juce::String(owner->id),
+                juce::JSON::parse(R"({"rhythm_cell":[0.5,1.5],"cycle_beats":4,"register_low":48,"register_high":84})"));
+        const auto wireLayers=juce::JSON::toString(keyedLayers);
+        juce::String canonicalLayers;
+        check(club::production::decodeLayers(wireLayers,p,canonicalLayers,error),"complete owner-keyed layers rejected");
+        const auto layerDecoded=juce::JSON::parse(canonicalLayers);
+        for(int i=0;i<int(p.instruments.size());++i)
+            check(layerDecoded.getProperty("layers",{})[i].getProperty("instrument_id",{}).toString()==juce::String(p.instruments[i].id),
+                  "owner-key decoding changed cast order or guessed an identity");
+        check(juce::JSON::toString(layerDecoded.getProperty("retained_notes",{}))==juce::JSON::toString(keyedLayers.getProperty("retained_notes",{}))&&
+              juce::JSON::toString(layerDecoded.getProperty("layers",{})[0].getProperty("rhythm_cell",{}))==
+              juce::JSON::toString(keyedLayers.getProperty("layers_by_owner",{}).getProperty("a",{}).getProperty("rhythm_cell",{})),
+              "owner-key decoding changed AI notes or rhythm offsets");
+        auto missingLayer=keyedLayers.clone();missingLayer.getProperty("layers_by_owner",{}).getDynamicObject()->removeProperty("b");
+        canonicalLayers="untouched";
+        check(!club::production::decodeLayers(juce::JSON::toString(missingLayer),p,canonicalLayers,error)&&canonicalLayers=="untouched",
+              "missing keyed layer was fabricated or partially committed");
+        auto spoofed=keyedLayers.clone();spoofed.getProperty("layers_by_owner",{}).getProperty("a",{}).getDynamicObject()->setProperty("instrument_id","b");
+        check(!club::production::decodeLayers(juce::JSON::toString(spoofed),p,canonicalLayers,error),"conflicting embedded layer identity accepted");
+        auto mixedLayers=keyedLayers.clone();mixedLayers.getDynamicObject()->setProperty("layers",juce::Array<juce::var>{});
+        check(!club::production::decodeLayers(juce::JSON::toString(mixedLayers),p,canonicalLayers,error),"mixed layer encodings silently selected one identity");
+        const auto keyed=schema.getProperty("properties",{}).getProperty("retained_pulse_references",{});
+        check(keyed.getProperty("required",{}).size()==2&&keyed.getProperty("properties",{}).hasProperty("a")&&keyed.getProperty("properties",{}).hasProperty("b"),
+              "pulse reference presence is still left to an optional lane array");
+        const auto untypedChoices=schema.getProperty("properties",{}).getProperty("tonal_nucleus",{}).getProperty("properties",{})
+            .getProperty("lanes",{}).getProperty("items",{}).getProperty("properties",{}).getProperty("instrument_id",{}).getProperty("enum",{});
+        check(!untypedChoices.getArray()->contains("a")&&!untypedChoices.getArray()->contains("b")&&untypedChoices.getArray()->contains("bass"),
+              "typed references can be duplicated in generic nucleus lanes");
+        const auto encoded=juce::String(R"({"layers":[{"instrument_id":"a","unchanged":"identity"}],"tonal_nucleus":{"lanes":[{"instrument_id":"bass","notes":[{"beat":0,"duration":1,"pitch":42,"velocity":80}]}]},"retained_pulse_references":{"a":{"repeat_intent":"retain grouped rhythm","notes":[{"beat":0.5,"duration":0.25,"pitch":66,"velocity":74}]},"b":{"repeat_intent":"complementary accents","notes":[{"beat":0.75,"duration":0.25,"pitch":73,"velocity":77}]}}})");
+        juce::String decoded;
+        check(tonal_pulses::decodeReferences(encoded,cast,decoded,error),"complete typed pulse references rejected");
+        const auto decodedPlan=juce::JSON::parse(decoded);
+        check(decodedPlan.getProperty("tonal_nucleus",{}).getProperty("lanes",{}).size()==3&&!decodedPlan.hasProperty("retained_pulse_references")&&
+              juce::JSON::toString(decodedPlan.getProperty("layers",{}))==juce::JSON::toString(juce::JSON::parse(encoded).getProperty("layers",{})),
+              "typed decoding lost a reference or changed the musical layers");
+        const auto aLane=decodedPlan.getProperty("tonal_nucleus",{}).getProperty("lanes",{})[1];
+        check(aLane.getProperty("instrument_id",{}).toString()=="a"&&
+              juce::JSON::toString(aLane.getProperty("notes",{}))==juce::JSON::toString(juce::JSON::parse(encoded).getProperty("retained_pulse_references",{}).getProperty("a",{}).getProperty("notes",{})),
+              "typed decoding composed, retimed or altered the AI-authored pulse notes");
+        auto missing=juce::JSON::parse(encoded);missing.getProperty("retained_pulse_references",{}).getDynamicObject()->removeProperty("b");
+        decoded="untouched";
+        check(!tonal_pulses::decodeReferences(juce::JSON::toString(missing),cast,decoded,error)&&decoded=="untouched",
+              "missing typed pulse reference was filled by host or partially decoded");
+        auto duplicate=juce::JSON::parse(encoded);
+        duplicate.getProperty("tonal_nucleus",{}).getProperty("lanes",{}).getArray()->add(aLane.clone());
+        check(!tonal_pulses::decodeReferences(juce::JSON::toString(duplicate),cast,decoded,error),"duplicate typed pulse was silently merged");
+        const auto carriers=schema.getProperty("properties",{}).getProperty("tonal_nucleus",{}).getProperty("properties",{}).getProperty("meter_carrier_id",{}).getProperty("enum",{});
+        check(carriers.getArray()&&carriers.getArray()->contains(juce::var("bass")),"grouped pulses were forced to be a perfectly regular meter clock");
+        check(carriers.getArray()->contains("a")&&carriers.getArray()->contains("b"),"typed reference partition accidentally removed pulse owners from the AI's meter-carrier choices");
+        setting("PULSO_AI_CLUB_NUCLEUS_V2",saved);
+        auto architecture=juce::JSON::parse(R"({"layers":[{"instrument_id":"a","material_behavior":"static_tonal_rhythm","timing_mode":"cycle_bound","polyphonic":false,"static_identity":{"attack_structure":"single_tone","pitch_policy":"retain_anchor","anchor_pitches":[66]}},{"instrument_id":"b","material_behavior":"static_tonal_rhythm","timing_mode":"cycle_bound","polyphonic":false,"static_identity":{"attack_structure":"single_tone","pitch_policy":"retain_anchor","anchor_pitches":[73]}}],"tonal_nucleus":{"lanes":[{"instrument_id":"a","notes":[{"pitch":66}]},{"instrument_id":"b","notes":[{"pitch":73}]}]}})");
+        const auto originalArchitecture=juce::JSON::toString(architecture);
+        check(allocation::validateArchitecture(originalArchitecture,cast,error)&&originalArchitecture==juce::JSON::toString(architecture),"pulse contract altered or rejected AI-owned references");
+        architecture.getProperty("tonal_nucleus",{}).getProperty("lanes",{})[0].getProperty("notes",{})[0].getDynamicObject()->setProperty("pitch",69);
+        check(!allocation::validateArchitecture(juce::JSON::toString(architecture),cast,error)&&club::nucleus::repairableLaneId(error,p)=="a","conflicting pulse pitch neither rejected nor routed to focused AI reference repair");
+        auto missingReference=juce::JSON::parse(originalArchitecture);
+        missingReference.getProperty("tonal_nucleus",{}).getProperty("lanes",{}).getArray()->remove(1);
+        check(!allocation::validateArchitecture(juce::JSON::toString(missingReference),cast,error)&&
+              error=="Tonal nucleus omitted a declared retained pulse owner: b"&&club::nucleus::repairableLaneId(error,p)=="b",
+              "missing non-core pulse reference is not routed to scoped AI recovery");
+        juce::String restored;
+        const auto aiReference=juce::String(R"({"repeat_intent":"AI retained rhythm","notes":[{"beat":0.5,"duration":0.25,"pitch":73,"velocity":77}]})");
+        check(!club::nucleus::replaceLaneNotes(juce::JSON::toString(missingReference),"b",aiReference,restored),"unallocated owner was allowed to invent a nucleus lane");
+        check(club::nucleus::replaceLaneNotes(juce::JSON::toString(missingReference),"b",aiReference,restored,tonal_pulses::owners(cast),int(p.instruments.size()))&&
+              allocation::validateArchitecture(restored,cast,error),"declared non-core pulse cannot receive its AI-authored missing reference");
+        check(allocation::validateArchitecture("{}",juce::JSON::parse("{}"),error),"historical plans without declared pulses gained a new requirement");
+      }
+      {
+        SongPlan p;p.sections.resize(1);p.sections[0].startBar=0;p.sections[0].bars=4;p.totalBars=4;p.beatsPerBar=4;
+        p.instruments.clear();
+        for(const auto& pair:std::vector<std::pair<std::string,VoiceId>>{{"a_low",VoiceId::MovementBass},{"b_chord",VoiceId::HarmonicUpper},{"speaker",VoiceId::Lead}}) {
+            InstrumentAssignment o;o.id=pair.first;o.sourceVoice=pair.second;p.instruments.push_back(o);
+        }
+        p.phraseArchitectureJson=R"({"layers":[{"instrument_id":"b_chord","static_identity":{"attack_structure":"chord"}}],"groove_hierarchy":{"gesture_coordination":{"leader_id":"b_chord","partners":[{"owner_id":"a_low"}]}}})";
+        PerformanceScore original;PerformanceCell c;c.id="actual";c.lengthBeats=16;
+        const auto add=[&](const char* id,double beat,int pitch,double gate,int velocity) {
+            AuthoredNote n;n.instrumentId=id;n.beat=beat;n.pitch=pitch;n.durationBeats=gate;n.velocity=velocity;c.notes.push_back(n);
+        };
+        add("a_low",0,42,.75,100);add("b_chord",1.25,66,.5,90);add("b_chord",1.25,69,.5,92);add("b_chord",1.25,73,.5,94);add("speaker",2,81,1,80);
+        original.cells.push_back(c);PerformancePlacement placement;placement.cellId=c.id;original.placements.push_back(placement);
+        const auto attacks=performed_groove::targets(original,p);
+        auto generic=p;generic.instruments[1].sourceVoice=VoiceId::HarmonicPulse;
+        auto genericRoot=juce::JSON::parse(juce::String(generic.phraseArchitectureJson));
+        auto genericLayer=genericRoot.getProperty("layers",{})[0];genericLayer.getDynamicObject()->removeProperty("static_identity");
+        genericLayer.getDynamicObject()->setProperty("material_behavior","static_tonal_rhythm");
+        genericLayer.getDynamicObject()->setProperty("polyphonic",true);
+        generic.phraseArchitectureJson=juce::JSON::toString(genericRoot).toStdString();
+        check(performed_groove::owners(generic).size()==2&&performed_groove::targets(original,generic).size()==2,"valid generic Club plan silently bypasses performed review without optional static_identity");
+        generic.instruments[1].sourceVoice=VoiceId::HarmonicFoundation;
+        check(performed_groove::owners(generic).empty(),"functional compatibility includes a sustained pad as a chord-stab identity");
+        check(attacks.size()==2&&attacks[1].notes.size()==3,"performed groove does not address one whole chord attack or includes another voice");
+        auto responseObject=juce::JSON::parse(R"({"decision":"revise","reason":"Let the bass ground the stab grouping","intensity_plan":"Retain both chord attacks and their accent balance","edits":[{"attack_id":"placeholder","beat":1.5,"gate_delta":0.25,"velocity_delta":2}]})");
+        responseObject.getProperty("edits",{})[0].getDynamicObject()->setProperty("attack_id",juce::String(attacks[1].id));
+        const auto response=juce::JSON::toString(responseObject);
+        PerformanceScore after;juce::String error;
+        check(performed_groove::apply(original,p,attacks,response,after,error),"explicit performed-groove edit rejected");
+        check(after.cells[0].notes.size()==5&&after.cells[0].notes[0].beat==0&&after.cells[0].notes[4].beat==2,"paired review changed unrelated attacks or note count");
+        for(int i=1;i<=3;++i) check(after.cells[0].notes[i].beat==1.5&&after.cells[0].notes[i].durationBeats==.75&&
+            after.cells[0].notes[i].pitch==original.cells[0].notes[i].pitch&&after.cells[0].notes[i].velocity==original.cells[0].notes[i].velocity+2,"chord simultaneity, pitches or internal accent balance lost");
+        const auto acceptedBeat=after.cells[0].notes[1].beat;
+        check(!performed_groove::apply(original,p,attacks,response.replace("1.5","1.3"),after,error)&&after.cells[0].notes[1].beat==acceptedBeat,"invalid grid silently snapped or partially applied");
+        check(!performed_groove::apply(original,p,attacks,response.replace("0.25","30"),after,error),"unsafe gate silently clipped");
+        auto tooLoud=responseObject.clone();tooLoud.getProperty("edits",{})[0].getDynamicObject()->setProperty("velocity_delta",60);
+        check(!performed_groove::apply(original,p,attacks,juce::JSON::toString(tooLoud),after,error),"velocity silently clamped");
+        auto invalid=juce::JSON::parse(response);invalid.getProperty("edits",{})[0].getDynamicObject()->setProperty("pitch",60);
+        check(!performed_groove::apply(original,p,attacks,juce::JSON::toString(invalid),after,error),"rhythmic review accepted an unauthorized pitch edit");
+        invalid=juce::JSON::parse(response);invalid.getProperty("edits",{}).getArray()->add(invalid.getProperty("edits",{})[0]);
+        check(!performed_groove::apply(original,p,attacks,juce::JSON::toString(invalid),after,error),"duplicate attack edit applied twice");
+        auto shared=original;shared.placements.push_back(placement);
+        check(performed_groove::targets(shared,p).empty(),"shared/repeated source cell became ambiguously editable");
+        check(performed_groove::apply(original,p,attacks,R"({"decision":"keep","reason":"The displacement is intentional","intensity_plan":"Preserve its identity","edits":[]})",after,error)&&after.cells[0].notes[1].beat==1.25,"AI keep decision changed source notes");
+        Pattern before,changed;before.lengthBeats=16;
+        for(std::size_t i=0;i<c.notes.size();++i) {const auto& n=c.notes[i];NoteEvent e;e.partId=i==0?1:i==4?3:2;e.startBeat=n.beat;e.durationBeats=n.durationBeats;e.pitch=n.pitch;e.velocity=n.velocity;before.notes.push_back(e);}
+        changed=before;changed.notes[1].startBeat=1.5;
+        check(performed_groove::preserves(before,changed,p),"authorized pair timing rejected as unrelated music");
+        changed.notes[4].startBeat+=.25;
+        check(!performed_groove::preserves(before,changed,p),"rendered review changed another voice undetected");
+        changed=before;changed.notes[1].pitch++;
+        check(!performed_groove::preserves(before,changed,p),"rendered review changed pitch identity undetected");
+        changed=before;changed.notes.pop_back();
+        check(!performed_groove::preserves(before,changed,p),"rendered review silently deleted a note");
+      }
+      {
+        SongPlan small;small.sections.resize(1);small.instruments.resize(6);
+        check(cohesion::shortScoreOutputBudget(small)==8000,"small approved anchor changed its output allowance");
+        SongPlan longPlan;longPlan.sections.resize(6);longPlan.instruments.resize(12);
+        const auto normal=cohesion::shortScoreOutputBudget(longPlan);
+        check(normal>8000&&cohesion::shortScoreOutputBudget(longPlan,true)>normal,"large argument has no structural output headroom or bounded recovery");
+        SongPlan huge;huge.sections.resize(70);huge.instruments.resize(70);
+        check(cohesion::shortScoreOutputBudget(huge)<=28000&&cohesion::shortScoreOutputBudget(huge,true)<=40000,"short-score allowance has no finite ceiling");
+        check(cohesion::shortScoreOutputBudget(SongPlan{})>=8000,"empty planning metadata creates invalid token allowance");
+        const auto previousPolicy=juce::SystemStats::getEnvironmentVariable("PULSO_AI_ALLOW_CHROMATIC",{});
+        setting("PULSO_AI_ALLOW_CHROMATIC","0");
+        const auto once=AiChromaticPolicy::prepareRequest(R"({"model":"gpt-5.6-terra","background":true,"input":"same musical request"})");
+        check(AiChromaticPolicy::prepareRequest(once)==once,"transport recovery duplicated musical policy instructions");
+        const auto direct=structured::directBody(once);
+        check(AiChromaticPolicy::prepareRequest(direct)==direct,"direct transport retry changed the existing musical policy");
+        setting("PULSO_AI_ALLOW_CHROMATIC",previousPolicy);
+      }
+      {
+        auto macro=juce::JSON::parse(R"({"sections":[{"name":"intro","bars":16},{"name":"body","bars":48},{"name":"outro","bars":16}]})");
+        auto cast=juce::JSON::parse(R"({"instruments":[{"id":"bed","source_voice":"harmonic_foundation","orchestral_function":"foundation","role":"primary_chord_bed","active_sections":["body"]},{"id":"color","source_voice":"atmosphere","orchestral_function":"color","active_sections":["intro"]}]})");
+        juce::String error;
+        const auto before=juce::JSON::toString(cast);
+        check(club_support::validate(macro,cast,error),"Club arrangement forced two sustained pads or full-song coverage");
+        check(before==juce::JSON::toString(cast),"Club harmonic support check changed cast activity");
+        auto invalid=cast.clone();
+        invalid.getProperty("instruments",{})[0].getDynamicObject()->setProperty("orchestral_function","color");
+        check(!club_support::validate(macro,invalid,error),"color-only layer counted as a primary sustained foundation");
+        invalid=cast.clone();
+        invalid.getProperty("instruments",{})[0].getDynamicObject()->setProperty("active_sections",juce::Array<juce::var>{"nonexistent"});
+        check(!club_support::validate(macro,invalid,error),"missing section counted as available harmonic support");
+        invalid=cast.clone();
+        invalid.getProperty("instruments",{})[0].getDynamicObject()->setProperty("active_sections",juce::Array<juce::var>{});
+        check(!club_support::validate(macro,invalid,error),"empty support declaration passed capability check");
+      }
+      {
+        using namespace std::chrono;
+        const auto start=background::Budget::Clock::time_point{};
+        background::Budget budget(start,seconds(120),seconds(180),start+seconds(300),true);
+        budget.observe(start+seconds(100),true);
+        check(budget.deadline()==start+seconds(220)&&!budget.queueExpired(),"queue wait consumed the composition work allowance");
+        budget.observe(start+seconds(110),false);
+        budget.observe(start+seconds(160),false);
+        check(budget.queued==seconds(110)&&budget.deadline()==start+seconds(230),"active reasoning received unlimited queue credit");
+        budget.observe(start+seconds(230),false);
+        check(budget.deadline()==start+seconds(230),"work deadline drifted while in progress");
+        background::Budget stuck(start,seconds(120),seconds(180),start+seconds(300),true);
+        stuck.observe(start+seconds(180),true);
+        check(stuck.queueExpired(),"remote queue has no finite limit");
+        background::Budget capped(start,seconds(120),seconds(180),start+seconds(150),true);
+        capped.observe(start+seconds(140),true);
+        check(capped.deadline()==start+seconds(150),"queue grace exceeded overall recovery cap");
+        background::Budget active(start,seconds(120),seconds(180),start+seconds(300),false);
+        active.observe(start+seconds(60),false);
+        check(active.queued==milliseconds(0)&&active.deadline()==start+seconds(120),"normal active requests changed their work budget");
+        check(background::mayRetryDirect(true,true,seconds(30),false),"cancelled queue cannot use bounded direct transport");
+        check(!background::mayRetryDirect(false,true,seconds(30),false)&&
+              !background::mayRetryDirect(true,false,seconds(30),false)&&
+              !background::mayRetryDirect(true,true,seconds(5),false)&&
+              !background::mayRetryDirect(true,true,seconds(30),true),"direct fallback bypasses cancellation, state, remaining budget or stop guards");
+        auto original=juce::JSON::parse(R"({"model":"gpt-5.6-terra","background":true,"reasoning":{"effort":"medium"},"input":"same musical prompt","max_output_tokens":14000,"text":{"format":{"type":"json_schema","schema":{"type":"object"}}}})");
+        auto direct=juce::JSON::parse(structured::directBody(juce::JSON::toString(original)));
+        check(direct.getProperty("background",true)==juce::var(false),"direct fallback did not change transport");
+        direct.getDynamicObject()->removeProperty("background");
+        original.getDynamicObject()->removeProperty("background");
+        check(juce::JSON::toString(direct)==juce::JSON::toString(original),"transport fallback changed model, music prompt, reasoning, token allowance or schema");
+      }
+      if(argc>5 && juce::String(argv[1])=="--inspect-window-schema") {
+          const auto directory=juce::File(juce::String::fromUTF8(argv[2]));
+          const auto blueprint=juce::JSON::parse(directory.getChildFile("accepted-blueprint.json").loadFileAsString());
+          const auto resume=juce::JSON::parse(directory.getChildFile("resume-score.json").loadFileAsString());
+          const auto request=juce::JSON::parse(directory.getChildFile("job.json").loadFileAsString());
+          SongPlan plan;plan.compositionBehavior=CompositionBehavior::Club;plan.aiSovereign=true;
+          plan.rootPitchClass=int(blueprint.getProperty("root_pitch_class",0));
+          const auto mode=blueprint.getProperty("mode",{}).toString();
+          plan.scale=mode=="minor"?ScaleKind::Minor:mode=="dorian"?ScaleKind::Dorian:mode=="mixolydian"?ScaleKind::Mixolydian:ScaleKind::Major;
+          plan.sections.clear();plan.instruments.clear();plan.totalBars=0;plan.beatsPerBar=4;
+          const auto* sections=blueprint.getProperty("sections",{}).getArray();const auto* cast=blueprint.getProperty("instruments",{}).getArray();
+          check(sections&&cast,"schema fixture has no accepted macro/cast");
+          for(const auto& s:*sections) {SongSection section;section.name=s.getProperty("name",{}).toString().toStdString();section.startBar=plan.totalBars;section.bars=int(s.getProperty("bars",0));plan.totalBars+=section.bars;plan.sections.push_back(section);}
+          std::vector<std::size_t> indices;
+          for(const auto& row:*cast) {
+              InstrumentAssignment owner;owner.id=row.getProperty("id",{}).toString().toStdString();
+              owner.sourceVoice=voiceIdFromKey(row.getProperty("source_voice",{}).toString().toStdString()).value_or(VoiceId::Unspecified);
+              owner.minimumPitch=int(row.getProperty("minimum_pitch",0));owner.maximumPitch=int(row.getProperty("maximum_pitch",127));
+              if(const auto* active=row.getProperty("active_sections",{}).getArray()) for(const auto& name:*active) owner.activeSections.push_back(name.toString().toStdString());
+              indices.push_back(plan.instruments.size());plan.instruments.push_back(owner);
+          }
+          plan.phraseArchitectureJson=resume.getProperty("phrase_architecture_json",{}).toString().toStdString();
+          check(!plan.phraseArchitectureJson.empty(),"schema fixture has no accepted phrase architecture");
+          setting("PULSO_AI_ALLOW_CHROMATIC",bool(request.getProperty("allow_chromatic",false))?"1":"0");
+          const auto sectionNumber=std::atoi(argv[3]);const auto first=std::atoi(argv[4]),bars=std::atoi(argv[5]);
+          if(sectionNumber<0) {
+              check(bars>0,"invalid diagnostic window span");int windows=0,largest=0;
+              for(std::size_t si=0;si<plan.sections.size();++si) for(int begin=0;begin<plan.sections[si].bars;begin+=bars) {
+                  const auto span=std::min(bars,plan.sections[si].bars-begin);
+                  const auto raw=juce::JSON::parse(AiComposer::directWindowSchemaFor(plan,indices,si,span,begin,false));
+                  const auto compact=juce::JSON::parse(AiComposer::directWindowSchemaFor(plan,indices,si,span,begin,true));
+                  check(juce::JSON::toString(expandedSchema(raw))==juce::JSON::toString(expandedSchema(compact)),"remaining window changed its musical contract");
+                  const auto cost=schema_sharing::propertyCount(compact);largest=std::max(largest,cost);++windows;
+                  check(cost<=5000,"a remaining window still exceeds provider schema capacity");
+              }
+              std::cout<<"All windows equivalent; windows="<<windows<<" owners="<<indices.size()<<" largest_compact_properties="<<largest<<"\n";return 0;
+          }
+          const auto section=static_cast<std::size_t>(sectionNumber);
+          check(section<plan.sections.size(),"invalid fixture section");
+          const auto raw=juce::JSON::parse(AiComposer::directWindowSchemaFor(plan,indices,section,bars,first,false));
+          const auto compact=juce::JSON::parse(AiComposer::directWindowSchemaFor(plan,indices,section,bars,first,true));
+          check(juce::JSON::toString(expandedSchema(raw))==juce::JSON::toString(expandedSchema(compact)),"real window contract changed while sharing schema definitions");
+          check(schema_sharing::propertyCount(compact)<=5000,"actual compacted window still exceeds the provider limit");
+          if(argc>6&&juce::String(argv[6])=="--dump") std::cout<<juce::JSON::toString(compact).toStdString();
+          else std::cout<<"Equivalent schema; owners="<<indices.size()<<" properties before="<<schema_sharing::propertyCount(raw)<<" after="<<schema_sharing::propertyCount(compact)<<"\n";
+          return 0;
+      }
+      if(argc>2 && juce::String(argv[1])=="--inspect-groove-scope") {
+          const auto directory=juce::File(juce::String::fromUTF8(argv[2]));
+          const auto blueprint=juce::JSON::parse(directory.getChildFile("accepted-blueprint.json").loadFileAsString());
+          SongPlan plan;plan.instruments.clear();
+          const auto* cast=blueprint.getProperty("instruments",{}).getArray();
+          check(cast!=nullptr,"integration fixture has no accepted cast");
+          for(const auto& row:*cast) {
+              InstrumentAssignment owner;owner.id=row.getProperty("id",{}).toString().toStdString();
+              const auto voice=voiceIdFromKey(row.getProperty("source_voice",{}).toString().toStdString());
+              check(voice.has_value(),"integration fixture has an unknown functional voice");
+              owner.sourceVoice=*voice;plan.instruments.push_back(owner);
+          }
+          plan.phraseArchitectureJson=directory.getChildFile("phrase-architecture.json").loadFileAsString().toStdString();
+          juce::Array<juce::var> ids;for(const auto& id:performed_groove::owners(plan)) ids.add(juce::String(id));
+          std::cout<<juce::JSON::toString(ids).toStdString();
+          return ids.size()>=2?0:2;
+      }
+      if(argc>1 && juce::String(argv[1])=="--dump-cast-schema") {
+          std::string macro=R"({"sections":[{"name":"Actual full section","bars":32}]})";
+          if(argc>2 && juce::String(argv[2])=="--stdin")
+              macro=std::string(std::istreambuf_iterator<char>(std::cin),{});
+          std::cout << AiComposer::castManifestRequestSchema("etude F#min",
+              juce::String::fromUTF8(macro.c_str())).toStdString();
+          return 0;
+      }
       {
         const auto templateRoot=juce::JSON::parse(club::production::schema());
         const auto row=templateRoot.getProperty("properties",{}).getProperty("energy_trajectory",{}).getProperty("items",{});
@@ -64,10 +428,10 @@ int main(int argc,char** argv) {
         const auto schema=juce::JSON::parse(cohesion::shortScoreSchema());
         const auto note=schema.getProperty("properties",{}).getProperty("journey",{}).getProperty("items",{})
             .getProperty("properties",{}).getProperty("notes",{}).getProperty("items",{});
-        check(!note.getProperty("properties",{}).hasProperty("duration")&&
-              int(note.getProperty("properties",{}).getProperty("end_beat",{}).getProperty("maximum",0))==128,
-              "reference schema still permits independent duration to overflow the reference clock");
-        check(note.getProperty("required",{}).getArray()->contains("end_beat"),"explicit AI release is not required");
+        check(!note.getProperty("properties",{}).hasProperty("end_beat")&&
+              double(note.getProperty("properties",{}).getProperty("duration",{}).getProperty("minimum",0))==.0625,
+              "new reference schema still asks the AI for absolute endpoints or allows nonpositive gates");
+        check(note.getProperty("required",{}).getArray()->contains("duration"),"explicit AI-held length is not required");
         auto reference=juce::JSON::parse(R"({"reference_timing":"excerpt_endpoints_v1","journey":[{"notes":[{"beat":0,"end_beat":2,"pitch":60}],"continuation_notes":[{"beat":0.5,"end_beat":1.25,"pitch":62}],"ensemble_excerpt":[{"beat":113,"end_beat":128,"owner_id":"pad_foundation","pitch":50}],"handoff":{"notes":[{"beat":1,"end_beat":2.5,"pitch":64}]}}]})");
         juce::String error;const auto raw=juce::JSON::toString(reference);
         check(cohesion::decodeReferenceTiming(reference,error),"valid explicit endpoint references rejected");
@@ -89,9 +453,53 @@ int main(int argc,char** argv) {
         check(!cohesion::decodeReferenceTiming(bad,error),"zero-length endpoint interval accepted");
         bad=juce::JSON::parse(decoded);bad.getProperty("journey",{})[0].getProperty("notes",{})[0].getDynamicObject()->setProperty("duration",3);
         check(!cohesion::decodeReferenceTiming(bad,error),"conflicting endpoint and duration silently reconciled");
+        auto repairable=juce::JSON::parse(raw);
+        auto broken=repairable.getProperty("journey",{})[0].getProperty("ensemble_excerpt",{})[0];
+        broken.getDynamicObject()->setProperty("beat",0.5);
+        broken.getDynamicObject()->setProperty("end_beat",0.42);
+        check(cohesion::invalidReferenceTimings(repairable).size()==1,"endpoint recovery selected already valid notes");
+        const auto recoverySchema=juce::JSON::parse(cohesion::referenceTimingRepairSchema(repairable));
+        check(recoverySchema.getProperty("properties",{}).hasProperty("j0_ensemble_excerpt_0")&&
+              recoverySchema.getProperty("properties",{}).getDynamicObject()->getProperties().size()==1,
+              "endpoint recovery schema did not isolate the invalid note");
+        const auto unchanged=juce::JSON::toString(repairable);
+        check(!cohesion::repairReferenceTiming(repairable,juce::JSON::parse(R"({"j0_ensemble_excerpt_0":{"beat":0.5,"duration_beats":-0.1}})"),error)&&
+              unchanged==juce::JSON::toString(repairable),"invalid AI endpoint patch partially changed the score");
+        check(!cohesion::repairReferenceTiming(repairable,juce::JSON::parse(R"({"j0_notes_0":{"beat":0,"duration_beats":1}})"),error)&&
+              unchanged==juce::JSON::toString(repairable),"AI endpoint repair edited an unselected reference");
+        check(!cohesion::repairReferenceTiming(repairable,juce::JSON::parse(R"({"j0_ensemble_excerpt_0":{"beat":0.5,"duration_beats":0.25,"pitch":51}})"),error),
+              "AI endpoint repair changed a pitch");
+        check(!cohesion::repairReferenceTiming(repairable,juce::JSON::parse(R"({"j0_ensemble_excerpt_0":{"beat":0.75,"duration_beats":0.25}})"),error),"recovery moved an already valid onset");
+        check(cohesion::repairReferenceTiming(repairable,juce::JSON::parse(R"({"j0_ensemble_excerpt_0":{"beat":0.5,"duration_beats":0.25}})"),error),
+              "valid AI-authored endpoint correction rejected");
+        const auto repairedPassage=repairable.getProperty("journey",{})[0];
+        check(double(repairedPassage.getProperty("ensemble_excerpt",{})[0].getProperty("duration",0))==.25&&
+              int(repairedPassage.getProperty("ensemble_excerpt",{})[0].getProperty("pitch",0))==50&&
+              juce::JSON::toString(repairedPassage.getProperty("notes",{}))==juce::JSON::toString(passage.getProperty("notes",{})),
+              "endpoint correction failed to preserve valid references and pitch");
         auto legacy=juce::JSON::parse(R"({"journey":[{"notes":[{"beat":0,"duration":1,"pitch":60}]}]})");
         const auto old=juce::JSON::toString(legacy);
         check(cohesion::decodeReferenceTiming(legacy,error)&&old==juce::JSON::toString(legacy),"historical duration reference changed");
+        auto native=juce::JSON::parse(R"({"reference_timing":"excerpt_durations_v2","journey":[{"notes":[{"beat":0.5,"duration":0.34,"pitch":53}],"continuation_notes":[{"beat":1,"duration":2,"pitch":60}],"ensemble_excerpt":[{"owner_id":"pad","beat":113,"duration":15,"pitch":50}],"handoff":{"notes":[{"beat":0.5,"duration":0.36,"pitch":62}]}}]})");
+        const auto nativeBefore=juce::JSON::toString(native);
+        check(cohesion::decodeReferenceTiming(native,error)&&nativeBefore==juce::JSON::toString(native),
+              "native positive gates were interpreted as endpoints or changed during decoding");
+        native.getProperty("journey",{})[0].getProperty("ensemble_excerpt",{})[0].getDynamicObject()->setProperty("duration",16);
+        const auto overflowBefore=juce::JSON::toString(native);
+        check(!cohesion::decodeReferenceTiming(native,error)&&overflowBefore==juce::JSON::toString(native),
+              "native reference overflow was accepted or clipped");
+        const auto durationSchema=juce::JSON::parse(cohesion::referenceTimingRepairSchema(native))
+            .getProperty("properties",{}).getProperty("j0_ensemble_excerpt_0",{}).getProperty("properties",{});
+        check(double(durationSchema.getProperty("duration_beats",{}).getProperty("maximum",0))==15&&
+              durationSchema.getProperty("beat",{}).getProperty("enum",{}).getArray()->contains(113),
+              "duration repair does not lock valid onset and bound positive gate to remaining reference space");
+        check(!cohesion::repairReferenceTiming(native,juce::JSON::parse(R"({"j0_ensemble_excerpt_0":{"beat":113,"duration_beats":16}})"),error)&&
+              overflowBefore==juce::JSON::toString(native),"overflowing AI gate correction was clipped or committed");
+        check(cohesion::repairReferenceTiming(native,juce::JSON::parse(R"({"j0_ensemble_excerpt_0":{"beat":113,"duration_beats":14}})"),error),
+              "native AI duration repair rejected");
+        check(double(native.getProperty("journey",{})[0].getProperty("ensemble_excerpt",{})[0].getProperty("duration",0))==14&&
+              double(native.getProperty("journey",{})[0].getProperty("notes",{})[0].getProperty("duration",0))==.34,
+              "native gate repair changed valid notes or failed to preserve AI chosen duration");
       }
       {
         SongPlan plan;plan.compositionBehavior=CompositionBehavior::Club;plan.totalBars=4;plan.sections.resize(1);plan.sections[0].bars=4;
@@ -120,6 +528,57 @@ int main(int argc,char** argv) {
         auto schema=juce::JSON::parse(R"({"properties":{},"required":[]})");groove_hierarchy::extend(schema,&plan);
         const auto spaces=schema.getProperty("properties",{}).getProperty("groove_hierarchy",{}).getProperty("properties",{}).getProperty("shared_spaces",{});
         check(int(spaces.getProperty("minItems",0))==0,"rhythmic hierarchy imposes a compulsory rest quota");
+        const auto hierarchySchema=schema.getProperty("properties",{}).getProperty("groove_hierarchy",{});
+        check(hierarchySchema.getProperty("required",{}).getArray()->contains(juce::var("owner_roles"))&&
+              !hierarchySchema.getProperty("properties",{}).hasProperty("support_roles"),"new groove plans still request redundant role lists");
+        check(hierarchySchema.getProperty("properties",{}).getProperty("owner_roles",{}).getProperty("required",{}).size()==4,"owner-keyed groove omits cast members");
+        auto wire=root.clone();auto wireHierarchy=wire.getProperty("groove_hierarchy",{});
+        wireHierarchy.getDynamicObject()->removeProperty("identity_owners");
+        wireHierarchy.getDynamicObject()->removeProperty("support_roles");
+        wireHierarchy.getDynamicObject()->setProperty("owner_roles",juce::JSON::parse(R"({"bass":{"role":"reinforce","musical_intention":"Ground the stabs"},"stab":{"role":"lead","musical_intention":"ONE recognizable stab sentence"},"pulse":{"role":"counterweight","musical_intention":"Quiet complementary groups"},"clock":{"role":"clock","musical_intention":"Quiet steady reference"}})"));
+        juce::String decodedRoles;
+        check(groove_hierarchy::decode(juce::JSON::toString(wire),plan,decodedRoles,error)&&
+              groove_hierarchy::validate(juce::JSON::parse(decodedRoles),plan,error),"single-source role declarations cannot form a valid hierarchy");
+        const auto decodedRoot=juce::JSON::parse(decodedRoles);
+        check(juce::JSON::toString(decodedRoot.getProperty("tonal_nucleus",{}))==juce::JSON::toString(root.getProperty("tonal_nucleus",{})),"role codec changed source notes");
+        check(decodedRoot.getProperty("groove_hierarchy",{}).getProperty("gesture_coordination",{}).getProperty("leader_intention",{}).toString()=="ONE recognizable stab sentence","role codec lost leader's musical intention");
+        const auto onceDecoded=decodedRoles;
+        check(groove_hierarchy::decode(onceDecoded,plan,decodedRoles,error)&&decodedRoles==onceDecoded,"role decoding is not idempotent");
+        auto badRoles=wire.clone();
+        badRoles.getProperty("groove_hierarchy",{}).getProperty("owner_roles",{}).getProperty("bass",{}).getDynamicObject()->setProperty("role","lead");
+        decodedRoles="unchanged";
+        check(!groove_hierarchy::decode(juce::JSON::toString(badRoles),plan,decodedRoles,error)&&decodedRoles=="unchanged","two gesture leaders were silently resolved by host");
+        badRoles=wire.clone();
+        badRoles.getProperty("groove_hierarchy",{}).getProperty("owner_roles",{}).getDynamicObject()->removeProperty("clock");
+        check(!groove_hierarchy::decode(juce::JSON::toString(badRoles),plan,decodedRoles,error),"missing owner role silently invented");
+        badRoles=wire.clone();
+        badRoles.getProperty("groove_hierarchy",{}).getDynamicObject()->setProperty("identity_owners",root.getProperty("groove_hierarchy",{}).getProperty("identity_owners",{}));
+        check(!groove_hierarchy::decode(juce::JSON::toString(badRoles),plan,decodedRoles,error),"conflicting legacy and keyed role lists accepted");
+        auto coordinated=root.clone();
+        coordinated.getProperty("groove_hierarchy",{}).getDynamicObject()->setProperty("gesture_coordination",
+            juce::JSON::parse(R"({"leader_id":"stab","partners":[{"owner_id":"bass","relationship":"reinforce","musical_intention":"Ground the stab accents while preserving the propulsive bass gate"}]})"));
+        const auto coordinatedBefore=juce::JSON::toString(coordinated);
+        check(groove_hierarchy::validate(coordinated,plan,error),"valid bass/stab dependency rejected");
+        check(coordinatedBefore==juce::JSON::toString(coordinated),"coordination validation mutated notes");
+        check(groove_hierarchy::context(coordinated).contains("gesture_coordination"),"writer lost primary coordination");
+        auto badCoordination=coordinated.clone();
+        badCoordination.getProperty("groove_hierarchy",{}).getProperty("gesture_coordination",{}).getDynamicObject()->setProperty("leader_id","clock");
+        check(!groove_hierarchy::validate(badCoordination,plan,error),"non-identity coordination leader accepted");
+        badCoordination=coordinated.clone();
+        badCoordination.getProperty("groove_hierarchy",{}).getProperty("gesture_coordination",{}).getProperty("partners",{}).getArray()->clear();
+        check(!groove_hierarchy::validate(badCoordination,plan,error),"uncoordinated primary owner accepted");
+        badCoordination=coordinated.clone();
+        badCoordination.getProperty("groove_hierarchy",{}).getProperty("gesture_coordination",{}).getProperty("partners",{})[0].getDynamicObject()->setProperty("owner_id","stab");
+        check(!groove_hierarchy::validate(badCoordination,plan,error),"coordination leader also accepted as partner");
+        for(const auto* relationship:{"sustain","answer"}) {
+            auto alternate=coordinated.clone();
+            alternate.getProperty("groove_hierarchy",{}).getProperty("gesture_coordination",{}).getProperty("partners",{})[0].getDynamicObject()->setProperty("relationship",relationship);
+            check(groove_hierarchy::validate(alternate,plan,error),"authored sustain/answer relationship rejected");
+        }
+        auto bassLed=coordinated.clone();
+        bassLed.getProperty("groove_hierarchy",{}).getProperty("gesture_coordination",{}).getDynamicObject()->setProperty("leader_id","bass");
+        bassLed.getProperty("groove_hierarchy",{}).getProperty("gesture_coordination",{}).getProperty("partners",{})[0].getDynamicObject()->setProperty("owner_id","stab");
+        check(groove_hierarchy::validate(bassLed,plan,error),"coordination hardcoded leadership to chord stabs");
         check(groove_repair::handles("Club groove hierarchy: declared main accent has no actual identity attack at beat 3.5")&&
               !groove_repair::handles("Club groove hierarchy: missing joint rhythmic intention"),"hierarchy repair dispatched unrelated failures");
         const auto repairSchema=juce::JSON::parse(groove_repair::schema(plan,original));
@@ -128,6 +587,11 @@ int main(int argc,char** argv) {
         const juce::String repair=R"({"lane_updates":[{"instrument_id":"bass","notes":[{"beat":0,"duration":0.5,"pitch":60,"velocity":90},{"beat":1,"duration":0.25,"pitch":60,"velocity":75},{"beat":2,"duration":0.5,"pitch":60,"velocity":85}],"repeat_intent":"retain the shared rhythmic identity"}],"accent_offsets":[0,1,2],"shared_spaces":[{"from_beat":1.25,"duration_beats":0.25,"owner_ids":["bass","stab","pulse"],"meaning":"shared breath after the authored answer"}],"reason":"Complete the intended bass answer and align its breathing declaration"})";
         juce::String merged;
         check(groove_repair::apply(original,repair,merged)&&groove_hierarchy::validate(juce::JSON::parse(merged),plan,error),"AI-authored hierarchy/reference reconciliation rejected");
+        juce::String coordinatedRepair;
+        check(groove_repair::apply(coordinatedBefore,repair,coordinatedRepair)&&
+              juce::JSON::toString(juce::JSON::parse(coordinatedRepair).getProperty("groove_hierarchy",{}).getProperty("gesture_coordination",{}))==
+              juce::JSON::toString(coordinated.getProperty("groove_hierarchy",{}).getProperty("gesture_coordination",{})),
+              "focused reference repair discarded primary-gesture coordination");
         const auto after=juce::JSON::parse(merged);
         check(juce::JSON::toString(after.getProperty("layers",{}))==juce::JSON::toString(root.getProperty("layers",{})),"hierarchy repair changed rhythmic grammar");
         check(after.getProperty("groove_hierarchy",{}).getProperty("signature",{})==root.getProperty("groove_hierarchy",{}).getProperty("signature",{}),"hierarchy repair changed musical signature");
@@ -288,10 +752,28 @@ int main(int argc,char** argv) {
         check(allocation::context(source).contains("Three static layers"),"authoritative allocation does not reach early musical planning");
         auto bad=source.clone();bad.getProperty("requested_functions",{})[0].getDynamicObject()->setProperty("exact_count",4);
         check(!allocation::validate(juce::JSON::toString(bad),request,error),"underallocated requested function accepted");
+        check(error.contains("count mismatch")&&error.contains("allocated=3"),"allocation count diagnostic hides the actual mismatch");
         bad=source.clone();bad.getProperty("requested_functions",{})[0].getProperty("owner_ids",{}).getArray()->set(2,"a");
         check(!allocation::validate(juce::JSON::toString(bad),request,error),"one owner counted twice toward requested layering");
         bad=source.clone();bad.getProperty("requested_functions",{})[0].getDynamicObject()->setProperty("source_quote","Four layers");
         check(!allocation::validate(juce::JSON::toString(bad),request,error),"invented user request accepted");
+        check(error.contains("original user direction")&&!error.contains("count mismatch"),"invented quotation incorrectly diagnosed as count failure");
+        const auto boundAllocation=allocation::schema("etude F#min");
+        const auto quoteChoices=boundAllocation.getProperty("items",{}).getProperty("properties",{}).getProperty("source_quote",{}).getProperty("enum",{});
+        check(quoteChoices.size()==1&&quoteChoices[0].toString()=="etude F#min","cast schema permits quoting macro instructions as user direction");
+        const auto multilineSchema=allocation::schema("  etude\r\nF#min\t con  acordes  ");
+        const auto multilineQuote=multilineSchema.getProperty("items",{}).getProperty("properties",{}).getProperty("source_quote",{}).getProperty("enum",{})[0].toString();
+        check(multilineQuote=="etude F#min con acordes"&&!multilineQuote.containsChar('\n')&&!multilineQuote.containsChar('\r'),"strict source enum contains forbidden control characters");
+        auto multilineContract=source.clone();
+        for(auto& group:*multilineContract.getProperty("requested_functions",{}).getArray())
+            group.getDynamicObject()->setProperty("source_quote","Three static layers and one sustained bed");
+        check(allocation::validate(juce::JSON::toString(multilineContract),"Three static layers\nand one sustained bed",error),"whitespace-only source normalization changed provenance");
+        check(allocation::schema().getProperty("items",{}).getProperty("properties",{}).getProperty("source_quote",{}).getProperty("enum",{}).isVoid(),"unbound historical allocation schema changed");
+        check(allocation::validate(R"({"instruments":[{"id":"creative_bass"}],"requested_functions":[]})","etude F#min",error),"free creative cast requires invented user functions");
+        auto wholeSource=source.clone();
+        for(auto& group:*wholeSource.getProperty("requested_functions",{}).getArray())
+            group.getDynamicObject()->setProperty("source_quote",request);
+        check(allocation::validate(juce::JSON::toString(wholeSource),request,error),"full user source binding loses multiple explicit functions");
         check(allocation::validate(R"({"instruments":[]})",request,error),"historical cast compatibility lost");
         auto architecture=juce::JSON::parse(R"({"layers":[{"instrument_id":"a","material_behavior":"static_tonal_rhythm","timing_mode":"cycle_bound"},{"instrument_id":"b","material_behavior":"static_tonal_rhythm","timing_mode":"cycle_bound"},{"instrument_id":"c","material_behavior":"static_tonal_rhythm","timing_mode":"cycle_bound"},{"instrument_id":"pad","material_behavior":"stable_foundation","timing_mode":"phrase_flexible"}]})");
         check(allocation::validateArchitecture(juce::JSON::toString(architecture),source,error),"consistent function mapping rejected");
@@ -576,6 +1058,41 @@ int main(int argc,char** argv) {
         check(!reconciliation::apply(original,juce::JSON::toString(bad),candidate,error),"fractional route bar accepted");
         check(reconciliation::apply(original,R"({"assessment":"consistent","edits":[]})",candidate,error),"no-op reconciliation rejected");
         check(juce::JSON::parse(reconciliation::schema()).isObject(),"invalid reconciliation schema");
+        SongPlan mapPlan;mapPlan.phraseArchitectureJson=original.toStdString();
+        const auto mappedSchema=juce::JSON::parse(reconciliation::schema(mapPlan));
+        const auto targetSchema=mappedSchema.getProperty("properties",{}).getProperty("edits_by_target",{});
+        check(targetSchema.getProperty("properties",{}).hasProperty("arc_0_0_bars")&&
+              !targetSchema.getProperty("properties",{}).hasProperty("route_0_0_from_bar")&&
+              !targetSchema.getProperty("properties",{}).hasProperty("arc_99_0_bars"),
+              "reconciliation schema permits invented targets or direct route reordering");
+        auto targetMap=juce::var(new juce::DynamicObject());
+        for(const auto& field:targetSchema.getProperty("properties",{}).getDynamicObject()->getProperties())
+            targetMap.getDynamicObject()->setProperty(field.name,juce::var());
+        auto mapped=juce::var(new juce::DynamicObject());
+        mapped.getDynamicObject()->setProperty("assessment","one final value per existing declaration");
+        mapped.getDynamicObject()->setProperty("edits_by_target",targetMap);
+        check(reconciliation::apply(original,juce::JSON::toString(mapped),candidate,error)&&
+              juce::JSON::parse(candidate).getProperty("plan_reconciliation",{}).getProperty("edits",{}).size()==0,
+              "null target values did not preserve declarations");
+        targetMap.getDynamicObject()->setProperty("arc_0_0_bars",8);
+        targetMap.getDynamicObject()->setProperty("layer_state_0_0_release_beat",64);
+        check(reconciliation::apply(original,juce::JSON::toString(mapped),candidate,error),"unique target map could not apply final AI declarations");
+        const auto mappedResult=juce::JSON::parse(candidate);
+        check(int(mappedResult.getProperty("musical_arcs",{})[0].getProperty("bars",0))==8&&
+              juce::JSON::toString(mappedResult.getProperty("musical_arcs",{})[0].getProperty("phrase_reference",{}))==
+              juce::JSON::toString(before.getProperty("musical_arcs",{})[0].getProperty("phrase_reference",{})),
+              "target-map translation changed notes or ignored the AI duration");
+        const auto mappedAccepted=candidate;
+        auto unknown=mapped.clone();unknown.getProperty("edits_by_target",{}).getDynamicObject()->setProperty("arc_99_0_bars",8);
+        check(!reconciliation::apply(original,juce::JSON::toString(unknown),candidate,error)&&candidate==mappedAccepted,"unknown map target partially applied");
+        auto missing=mapped.clone();missing.getProperty("edits_by_target",{}).getDynamicObject()->removeProperty("arc_0_0_bars");
+        check(!reconciliation::apply(original,juce::JSON::toString(missing),candidate,error),"incomplete target map accepted");
+        auto mixed=mapped.clone();mixed.getDynamicObject()->setProperty("edits",juce::Array<juce::var>{});
+        check(!reconciliation::apply(original,juce::JSON::toString(mixed),candidate,error),"ambiguous mixed reconciliation encodings accepted");
+        auto duplicateReview=juce::JSON::parse(review);
+        duplicateReview.getProperty("edits",{}).getArray()->add(duplicateReview.getProperty("edits",{})[1].clone());
+        check(!reconciliation::apply(original,juce::JSON::toString(duplicateReview),candidate,error)&&error.contains("duplicate target field"),
+              "legacy conflicting edits silently picked a winner");
         const juce::String scene=R"({"ensemble_scenes":[{"voices":[{"owner_id":"harmony","material":"G6_9","speaking_span":"56-64","arrival":"held A"}]}]})";
         check(reconciliation::apply(scene,R"({"assessment":"actual chords are Cmaj7 and Em7","edits":[{"scope":"scene_voice","index":0,"child_index":0,"field":"material","number":null,"text":"Voz alta B71-A69-G67-A69 sobre Cmaj7 y Em7."}]})",candidate,error),"real scene-material reconciliation regression");
         check(juce::JSON::parse(candidate).getProperty("ensemble_scenes",{})[0].getProperty("voices",{})[0].getProperty("owner_id",{}).toString()=="harmony","scene material edit changed owner");
@@ -854,9 +1371,29 @@ int main(int argc,char** argv) {
         auto invalid=juce::JSON::parse(json);
         invalid.getProperty("ensemble_arguments",{})[1].getDynamicObject()->setProperty("section_index",0);
         check(!cohesion::validate(invalid,ensemble,error),"duplicate section accepted");
+        check(error.contains("duplicate section_index"),"ensemble diagnostic hides duplicate section location");
         invalid=juce::JSON::parse(json);
         invalid.getProperty("ensemble_arguments",{})[1].getProperty("contributions",{})[0].getDynamicObject()->setProperty("owner_id","ghost");
         check(!cohesion::validate(invalid,ensemble,error),"unknown contribution accepted");
+        check(error.contains("ghost")&&error.contains("entry 1"),"ensemble diagnostic hides invalid owner and entry");
+        invalid.getDynamicObject()->setProperty("layers",juce::JSON::parse(R"([{"instrument_id":"solo","notes":[{"beat":0,"duration":2,"pitch":60}]}])"));
+        auto correction=juce::JSON::parse(json);
+        correction.getProperty("ensemble_arguments",{})[0].getDynamicObject()->setProperty("shared_thought","unwanted rewrite of valid argument");
+        juce::String merged="untouched";
+        check(cohesion::replaceArguments(juce::JSON::toString(invalid),juce::JSON::toString(correction),ensemble,merged,error),
+              "valid focused ensemble metadata correction rejected");
+        const auto repaired=juce::JSON::parse(merged);
+        check(juce::JSON::toString(repaired.getProperty("layers",{}))==juce::JSON::toString(invalid.getProperty("layers",{}))&&
+              juce::JSON::toString(repaired.getProperty("ensemble_arguments",{})[0])==juce::JSON::toString(root.getProperty("ensemble_arguments",{})[0]),
+              "ensemble metadata recovery rewrote notes/layers or valid argument");
+        correction.getDynamicObject()->setProperty("layers",juce::var());
+        merged="untouched";
+        check(!cohesion::replaceArguments(juce::JSON::toString(invalid),juce::JSON::toString(correction),ensemble,merged,error)&&merged=="untouched",
+              "ensemble recovery accepted unauthorized fields or partially committed");
+        correction=juce::JSON::parse(json);
+        correction.getProperty("ensemble_arguments",{})[1].getProperty("contributions",{})[0].getDynamicObject()->setProperty("owner_id","ghost");
+        check(!cohesion::replaceArguments(juce::JSON::toString(invalid),juce::JSON::toString(correction),ensemble,merged,error),
+              "ensemble metadata recovery bypassed owner validation");
       }
       {
         auto cyclic = juce::JSON::parse(R"({"sections":[{"name":"repeat","bars":24,"harmonic_cycle_bars":4,"harmonic_cycle_until_bar":24,"harmonic_events":[{"bar_offset":0,"beat_offset":0,"chord_id":"Dm"},{"bar_offset":1,"beat_offset":0,"chord_id":"G"},{"bar_offset":2,"beat_offset":0,"chord_id":"C"},{"bar_offset":3,"beat_offset":0,"chord_id":"Am"}]}]})");

@@ -33,6 +33,10 @@
 #include "ApiCredentialStore.h"
 #include "JointWindowRecovery.h"
 #include "OperationalJournal.h"
+#include "AiBackgroundBudget.h"
+#include "AiClubHarmonicSupport.h"
+#include "AiPerformedGroove.h"
+#include "AiSchemaSharing.h"
 
 #include <algorithm>
 #include <array>
@@ -1534,12 +1538,13 @@ bool validateOrchestrationMatrixManifest(const juce::String& macroText,
 
 bool validateSustainedFloorManifest(const juce::String& macroText,
                                     const juce::String& manifestText,
-                                    juce::String& error) {
+                                    juce::String& error, bool clubArrangement = false) {
     const auto macro = juce::JSON::parse(macroText);
     const auto manifest = juce::JSON::parse(manifestText);
     // A quoted functional allocation outranks the historical two-pad default.
     // Its explicit identities/counts are validated separately, not auto-filled.
     if(allocation::explicitFunctions(manifest)) return true;
+    if(clubArrangement) return club_support::validate(macro,manifest,error);
     const auto* macroObject = macro.getDynamicObject();
     const auto* manifestObject = manifest.getDynamicObject();
     const auto* production = macroObject == nullptr ? nullptr :
@@ -2058,7 +2063,8 @@ juce::String mergeCastManifestAndDetails(const juce::String& manifestText,
                 error = "Detailed cast contains a duplicate instrument";
                 return {};
             }
-            instruments.add(item);
+            auto resolved=item.clone();tonal_pulses::inheritKind(manifest,resolved);
+            instruments.add(resolved);
         }
         for (const auto& layer : *shardLayers) layers.add(layer);
     }
@@ -2306,6 +2312,7 @@ struct HttpResponse {
     bool timedOut{};
     bool reusedLocally{};
     bool recoveryBudgetExceeded{};
+    bool queueTimedOut{};
     unsigned long nativeError{};
 };
 
@@ -2398,7 +2405,13 @@ void traceOpenAiRequest(const juce::String& requestBody, const HttpResponse& res
     event->setProperty("remote_status", remoteObject == nullptr ? juce::String{} :
         remoteObject->getProperty("status").toString());
     event->setProperty("http_status", response.status);
+    if(response.status>=400 && remoteObject!=nullptr) {
+        const auto apiError=remoteObject->getProperty("error");
+        event->setProperty("api_error_message",apiError.getProperty("message",{}));
+        event->setProperty("api_error_code",apiError.getProperty("code",{}));
+    }
     event->setProperty("timed_out", response.timedOut);
+    event->setProperty("queue_timed_out", response.queueTimedOut);
     event->setProperty("cancelled", response.cancelled);
     event->setProperty("connected", response.connected);
     event->setProperty("incomplete_reason", incomplete == nullptr ? juce::String{} :
@@ -2439,7 +2452,8 @@ HttpResponse performSingleRequest(const wchar_t* method, const juce::String& pat
         return result;
     }
 
-    const auto timeoutMs = std::clamp(static_cast<int>(budget.count()), 1000, 120000);
+    const auto timeoutMs = static_cast<int>(std::clamp<std::int64_t>(budget.count(),1000,
+        std::numeric_limits<int>::max())); // Honor the caller's bounded direct-work budget too.
     const auto session = WinHttpOpen(L"PULSO/0.57.0", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) {
@@ -2603,10 +2617,10 @@ HttpResponse singleRequest(const bool post, const juce::String& path, const juce
 #endif
 }
 
-void cancelBackgroundResponse(const juce::String& responseId, const juce::String& apiKey) {
-    if (responseId.isEmpty()) return;
+HttpResponse cancelBackgroundResponse(const juce::String& responseId, const juce::String& apiKey) {
+    if (responseId.isEmpty()) return {};
     std::stop_source cancellationRequest;
-    (void) singleRequest(true, "/v1/responses/" + responseId + "/cancel", "{}", apiKey,
+    return singleRequest(true, "/v1/responses/" + responseId + "/cancel", "{}", apiKey,
                          cancellationRequest.get_token(), std::chrono::milliseconds(1500));
 }
 
@@ -2614,6 +2628,10 @@ HttpResponse performRequest(juce::String body, const juce::String& apiKey,
                             std::stop_token token, std::chrono::milliseconds budget) {
     body = AiInstrumentationPolicy::prepareRequest(body);
     body = AiChromaticPolicy::prepareRequest(body);
+    // Once this worker has recovered a stalled background queue through a
+    // completed direct response, do not pay the same queue penalty at each stage.
+    static std::atomic<bool> preferDirectTransport{false};
+    if(preferDirectTransport.load()) body=structured::directBody(body);
     if (juce::SystemStats::getEnvironmentVariable("PULSO_AI_FAST_MODE", {}) == "1") {
         auto request = juce::JSON::parse(body);
         if (auto* object = request.getDynamicObject()) {
@@ -2705,14 +2723,13 @@ HttpResponse performRequest(juce::String body, const juce::String& apiKey,
                 return finish(std::move(cached));
             }
         }
-    const auto deadline = started + budget;
-    const auto initialBudget = std::min(budget, std::chrono::duration_cast<std::chrono::milliseconds>(
-                                                   std::chrono::seconds(30)));
-    auto response = singleRequest(true, "/v1/responses", body, apiKey, token, initialBudget);
     const auto parsedRequest = juce::JSON::parse(body);
     const auto* requestObject = parsedRequest.getDynamicObject();
     const auto background = requestObject != nullptr &&
         static_cast<bool>(requestObject->getProperty("background"));
+    const auto initialBudget = background ? std::min(budget, std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                   std::chrono::seconds(30))) : budget;
+    auto response = singleRequest(true, "/v1/responses", body, apiKey, token, initialBudget);
     if (!background || !response.connected || response.status < 200 || response.status >= 300 ||
         response.cancelled || response.timedOut)
         return finish(std::move(response));
@@ -2721,6 +2738,11 @@ HttpResponse performRequest(juce::String body, const juce::String& apiKey,
     juce::String state;
     if (!responseIdentity(response.body, responseId, state)) return finish(std::move(response));
     knownResponseId = responseId;
+    const auto queueAllowance=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::minutes(3));
+    const auto globalDeadline=secondsCap>0 ? recoveryStarted+std::chrono::seconds(secondsCap) :
+        started+budget+queueAllowance;
+    background::Budget pollingBudget(started,budget,queueAllowance,globalDeadline,state=="queued");
+    pollingBudget.observe(std::chrono::steady_clock::now(),state=="queued");
 
     int transientFailures{};
     while (state == "queued" || state == "in_progress") {
@@ -2730,16 +2752,40 @@ HttpResponse performRequest(juce::String body, const juce::String& apiKey,
                 response.cancelled = true;
                 return finish(std::move(response));
             }
-            if (std::chrono::steady_clock::now() >= deadline) {
-                cancelBackgroundResponse(responseId, apiKey);
+            const auto now=std::chrono::steady_clock::now();
+            pollingBudget.observe(now,state=="queued");
+            if (pollingBudget.queueExpired() || now >= pollingBudget.deadline()) {
+                const auto cancelled=cancelBackgroundResponse(responseId, apiKey);
                 response.timedOut = true;
+                response.queueTimedOut = pollingBudget.queueExpired();
+                const auto cancellationConfirmed=cancelled.connected && cancelled.status>=200 &&
+                    cancelled.status<300 && juce::JSON::parse(cancelled.body).getProperty("status",{}).toString()=="cancelled";
+                const auto directBudget=std::min(budget,std::chrono::duration_cast<std::chrono::milliseconds>(
+                    globalDeadline-std::chrono::steady_clock::now()));
+                if(background::mayRetryDirect(state=="queued" && response.queueTimedOut,
+                    cancellationConfirmed,directBudget,token.stop_requested())) {
+                    // Preserve request content; only change transport. Never abandon a
+                    // still-running remote job and never recursively retry direct mode.
+                    (void)finish(response);
+                    OperationalJournal::write("WARN","TRANSPORT",
+                        "remote queue expired; cancellation confirmed; retrying identical request once in direct mode");
+                    auto directResponse=performRequest(structured::directBody(body),apiKey,token,directBudget);
+                    const auto directEnvelope=juce::JSON::parse(directResponse.body);
+                    if(structured::ready(directEnvelope,directResponse.connected,
+                        directResponse.status,directResponse.timedOut,directResponse.cancelled) ||
+                       (directResponse.connected && directResponse.status>=200 && directResponse.status<300 &&
+                        !directResponse.timedOut && !directResponse.cancelled &&
+                        directEnvelope.getProperty("status",{}).toString()=="incomplete"))
+                        preferDirectTransport.store(true);
+                    return directResponse;
+                }
                 return finish(std::move(response));
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(25));
         }
 
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-            deadline - std::chrono::steady_clock::now());
+            pollingBudget.deadline() - std::chrono::steady_clock::now());
         if (remaining <= std::chrono::milliseconds::zero()) {
             cancelBackgroundResponse(responseId, apiKey);
             response.timedOut = true;
@@ -2761,6 +2807,7 @@ HttpResponse performRequest(juce::String body, const juce::String& apiKey,
         if (response.status < 200 || response.status >= 300 ||
             !responseIdentity(response.body, responseId, state))
             return finish(std::move(response));
+        pollingBudget.observe(std::chrono::steady_clock::now(),state=="queued");
     }
     return finish(std::move(response));
 }
@@ -2768,6 +2815,7 @@ HttpResponse performRequest(juce::String body, const juce::String& apiKey,
 juce::String apiErrorMessage(const HttpResponse& response) {
     auto error = response.recoveryBudgetExceeded ?
                    juce::String("Automatic recovery reached its spending or time budget")
+               : response.queueTimedOut ? juce::String("OpenAI queue wait reached its bounded time budget before composition could proceed")
                : response.timedOut ? juce::String("OpenAI request reached its time budget")
                : response.cancelled ? juce::String("Generation cancelled")
                : !response.connected ? juce::String("Could not connect to OpenAI") +
@@ -4110,7 +4158,8 @@ juce::String thematicReviewPrompt(const SongPlan& plan, const Pattern& accepted,
 
 juce::String directWindowSchema(const SongPlan& plan,
                                 const std::vector<std::size_t>& owners,
-                                std::optional<std::size_t> sectionIndex = {}, int windowBars = 0, int firstBar = 0) {
+                                std::optional<std::size_t> sectionIndex = {}, int windowBars = 0, int firstBar = 0,
+                                bool sharedDefinitions = true) {
     auto schema = juce::JSON::parse(R"json({
       "type":"object","properties":{},"required":[],
       "additionalProperties":false})json");
@@ -4205,7 +4254,7 @@ juce::String directWindowSchema(const SongPlan& plan,
         required.add(id);
     }
     root->setProperty("required", required);
-    return juce::JSON::toString(schema, true);
+    return juce::JSON::toString(sharedDefinitions?schema_sharing::compact(schema):schema, true);
 }
 
 bool parseDirectWindow(const juce::String& text, const SongPlan& plan,
@@ -5588,6 +5637,129 @@ void mergePerformanceBlock(PerformanceScore& destination, PerformanceScore sourc
                                   std::make_move_iterator(source.placements.end()));
 }
 
+// AI evaluates the performed pair, not a density metric or the plan's promises.
+// Optional edits are explicit per-attack decisions with immutable pitches/counts.
+void reviewPerformedClubGroove(PerformanceScore& score,SongPlan& plan,
+    const juce::String& apiKey,const juce::String& effort,std::stop_token token,
+    std::size_t completedUnits,std::chrono::steady_clock::time_point deadline,const AiSongProgress& progress,const AiSongCheckpoint& checkpoint) {
+    if(plan.compositionBehavior!=CompositionBehavior::Club||token.stop_requested()) return;
+    auto record=juce::JSON::parse(R"({"status":"unavailable","reason":"No completed applicable AI review"})");
+    const auto saveRecord=[&] {
+        auto root=juce::JSON::parse(juce::String(plan.phraseArchitectureJson));
+        root.getDynamicObject()->setProperty("performed_groove_review",record);
+        plan.phraseArchitectureJson=juce::JSON::toString(root).toStdString();
+    };
+    const auto scope=performed_groove::owners(plan);
+    record.getDynamicObject()->setProperty("scope_owner_count",static_cast<int>(scope.size()));
+    auto targets=performed_groove::targets(score,plan);
+    if(targets.empty()) {
+        record.getDynamicObject()->setProperty("status","not_applicable");
+        record.getDynamicObject()->setProperty("reason",scope.empty()?"No declared bass/chord-stab pair with its gesture leader":"No uniquely addressable direct attacks in the declared pair");
+        saveRecord();return;
+    }
+    GenerationContext context;context.role=Role::Ensemble;context.rootPitchClass=plan.rootPitchClass;
+    context.scale=plan.scale;context.beatsPerBar=plan.beatsPerBar;context.seed=plan.seed;
+    const auto render=[&](const PerformanceScore& source,CompositionRenderReport& report) {
+        auto snapshot=plan;snapshot.performanceScore=source;return SongComposer{}.render(snapshot,context,{},&report);
+    };
+    CompositionRenderReport beforeReport;const auto before=render(score,beforeReport);
+    // Address only source attacks that really reached the MIDI unchanged.
+    std::erase_if(targets,[&](const auto& a) {
+        return !std::all_of(a.notes.begin(),a.notes.end(),[&](const auto ni) {
+            const auto& n=score.cells[a.cell].notes[ni];return std::any_of(before.notes.begin(),before.notes.end(),[&](const auto& actual) {
+                return actual.partId==a.owner+1&&actual.pitch==n.pitch&&actual.velocity==n.velocity&&
+                    std::abs(actual.startBeat-a.origin-n.beat)<.000001&&std::abs(actual.durationBeats-n.durationBeats)<.000001;
+            });
+        });
+    });
+    record.getDynamicObject()->setProperty("addressable_attacks",static_cast<int>(targets.size()));
+    if(targets.empty()) {
+        record.getDynamicObject()->setProperty("status","not_applicable");
+        record.getDynamicObject()->setProperty("reason","Source attack addresses did not exactly match rendered events");saveRecord();return;
+    }
+    const auto audition=[&](const char* stage) {
+        if(!checkpoint) return;auto snapshot=plan;snapshot.performanceScore=score;
+        auto root=juce::JSON::parse(juce::String(snapshot.phraseArchitectureJson));root.getDynamicObject()->setProperty("audition_stage",stage);
+        snapshot.phraseArchitectureJson=juce::JSON::toString(root).toStdString();checkpoint(snapshot,completedUnits,true,false);
+    };
+    auto musicalContext=groove_hierarchy::context(juce::JSON::parse(juce::String(plan.phraseArchitectureJson)));
+    musicalContext<<"\nKEY "<<juce::String(plan.key)<<" BPM "<<plan.bpm<<" BEATS_PER_BAR "<<plan.beatsPerBar;
+    for(std::size_t i=0;i<plan.instruments.size();++i) musicalContext<<"\nPART "<<static_cast<int>(i+1)<<" "<<juce::String(plan.instruments[i].id);
+    for(const auto& s:plan.sections) {
+        musicalContext<<"\nSECTION "<<juce::String(s.name)<<" absolute span "<<s.startBar*plan.beatsPerBar<<".."<<(s.startBar+s.bars)*plan.beatsPerBar;
+        for(const auto& h:s.harmonicEvents) musicalContext<<"\nHARMONY "<<(s.startBar+h.barOffset)*plan.beatsPerBar+h.beatOffset<<" "<<juce::String(h.chordId);
+    }
+    for(const auto& chord:plan.chordPalette) {
+        musicalContext<<"\nCHORD "<<juce::String(chord.id)<<" ";for(const auto pc:chord.pitchClasses) musicalContext<<pc<<",";
+    }
+    const auto actualEvidence=[](const Pattern& midi) {
+        juce::String out="\nACTUAL FULL ENSEMBLE (part/absolute beat/pitch/gate/velocity):";
+        for(const auto& n:midi.notes) out<<"\n"<<n.partId<<"/"<<n.startBeat<<"/"<<n.pitch<<"/"<<n.durationBeats<<"/"<<n.velocity;
+        return out;
+    };
+    juce::String prompt="Judge the ACTUAL rendered Club bass/chord-stab relationship against the declared joint gesture. "
+        "A short stagger is not intrinsically wrong; intentional syncopation, repeated stabs and intensity are desirable. "
+        "Do not optimize simultaneous attacks or remove every sixteenth. Decide whether one recognizable gesture leads "
+        "and the partner reinforces/sustains/answers it, or both repeatedly demand foreground attention. "
+        "If the real pair already works, keep it. If not, author a minimal coherent revision ACROSS its recurring occurrences "
+        "and sectional development, keeping the signature, harmonic timing, expressive intensity and all other owners. "
+        "Choose exactly which attacks change; unlisted attacks are immutable. Never delete/add notes, change pitches, "
+        "write a new melody or thin the whole production. beat is the chosen ABSOLUTE song beat on the existing quarter-beat grid. "
+        "gate_delta adds your chosen duration change to every note in that attack; velocity_delta adds your chosen accent change "
+        "to their original velocities, preserving the chord's internal balance. These are AI decisions, not a host groove preset. "
+        "Keep each note inside its stated source cell and section. Do not move a chord across its harmonic event. "
+        "No need to edit for the sake of editing. Explain the audible grouping and how propulsion is retained. "
+        "The final release must remain composed, not become a new loop.\n";
+    prompt<<musicalContext<<actualEvidence(before)<<"\nADDRESSABLE ORIGINAL ATTACKS:"<<performed_groove::evidence(score,plan,targets);
+    const auto remaining=[&]{return std::chrono::duration_cast<std::chrono::seconds>(deadline-std::chrono::steady_clock::now());};
+    if(remaining()<std::chrono::seconds(35)) {saveRecord();return;}
+    if(progress) progress({AiSongStage::Recovery,0,2,1,"AI judging the actual bass/stab groove; other voices protected"});
+    audition("before_groove_review");
+    const auto body=juce::String("{\"model\":\"")+model+"\",\"background\":true,\"reasoning\":{\"effort\":\""+effort+
+        "\"},\"max_output_tokens\":16000,\"input\":"+juce::JSON::toString(juce::var(prompt))+
+        ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_performed_groove_review\",\"strict\":true,\"schema\":"+
+        performed_groove::schema(targets,before.lengthBeats)+"}}}";
+    const auto response=performRequest(body,apiKey,token,std::min(remaining(),std::chrono::seconds(240)));
+    const auto envelope=juce::JSON::parse(response.body);
+    if(!structured::ready(envelope,response.connected,response.status,response.timedOut,response.cancelled)) {saveRecord();return;}
+    const auto proposal=extractOutputText(envelope);record.getDynamicObject()->setProperty("proposal",juce::JSON::parse(proposal));
+    PerformanceScore candidate;juce::String error;
+    if(!performed_groove::apply(score,plan,targets,proposal,candidate,error)) {
+        record.getDynamicObject()->setProperty("status","invalid_proposal_original_kept");record.getDynamicObject()->setProperty("reason",error);saveRecord();return;
+    }
+    if(juce::JSON::parse(proposal).getProperty("decision",{}).toString()=="keep") {
+        record.getDynamicObject()->setProperty("status","ai_kept_original");record.getDynamicObject()->setProperty("reason",juce::JSON::parse(proposal).getProperty("reason",{}));saveRecord();return;
+    }
+    CompositionRenderReport afterReport;const auto after=render(candidate,afterReport);
+    if(!performed_groove::preserves(before,after,plan)||!EditorialSafety::technicallySafeAiScore(after,afterReport)||
+       afterReport.finalTonalPass.after.invalidSustains>beforeReport.finalTonalPass.after.invalidSustains) {
+        record.getDynamicObject()->setProperty("status","unsafe_proposal_original_kept");
+        record.getDynamicObject()->setProperty("reason","Rendered candidate violated protected events or MIDI/sustain safety; no edits accepted");saveRecord();return;
+    }
+    if(remaining()<std::chrono::seconds(35)||token.stop_requested()) {saveRecord();return;}
+    if(progress) progress({AiSongStage::Recovery,1,2,1,"AI comparing rendered groove candidate with the original"});
+    const auto verificationPrompt=juce::String("Compare the actual BEFORE/AFTER MIDI below, not the editor's intentions. ")+
+        "Accept only if the revision makes the declared bass/stab sentence clearer without flattening its Club pulse, "
+        "intensity, syncopated identity, section development or final release. No numerical alignment quota applies. "
+        "All other notes and pitches/counts are protected. Reject if it merely becomes quieter or more uniform, "
+        "or if moved attacks contradict the harmonic events. Give a concrete audible rationale.\n"+
+        musicalContext+"\nEDITOR DECISION:\n"+proposal+"\nBEFORE:"+actualEvidence(before)+"\nAFTER:"+actualEvidence(after);
+    const auto verificationBody=juce::String("{\"model\":\"")+model+"\",\"background\":true,\"reasoning\":{\"effort\":\""+effort+
+        "\"},\"max_output_tokens\":2000,\"input\":"+juce::JSON::toString(juce::var(verificationPrompt))+
+        R"(,"text":{"format":{"type":"json_schema","name":"pulso_performed_groove_verdict","strict":true,"schema":{"type":"object","additionalProperties":false,"required":["accept","reason"],"properties":{"accept":{"type":"boolean"},"reason":{"type":"string"}}}}}})";
+    const auto verified=performRequest(verificationBody,apiKey,token,std::min(remaining(),std::chrono::seconds(120)));
+    const auto verifiedEnvelope=juce::JSON::parse(verified.body);
+    if(!structured::ready(verifiedEnvelope,verified.connected,verified.status,verified.timedOut,verified.cancelled)) {saveRecord();return;}
+    const auto verdict=juce::JSON::parse(extractOutputText(verifiedEnvelope));record.getDynamicObject()->setProperty("verification",verdict);
+    const bool accepted=verdict.getProperty("accept",{}).isBool()&&bool(verdict.getProperty("accept",false))&&
+        verdict.getProperty("reason",{}).toString().trim().isNotEmpty();
+    record.getDynamicObject()->setProperty("status",accepted?"ai_revision_accepted":"ai_rejected_revision_original_kept");
+    record.getDynamicObject()->setProperty("reason",verdict.getProperty("reason",{}));
+    if(accepted) score=std::move(candidate);
+    saveRecord();audition("after_groove_review");
+    OperationalJournal::write(accepted?"OK":"INFO","PERFORMED_GROOVE",record.getProperty("status",{}).toString());
+}
+
 // Complete an actually underwritten supporting layer against the immutable core.
 // This requests new AI MIDI, never fills notes or turns a note quota into a pattern.
 void reviewClubMissingLayers(PerformanceScore& score, const SongPlan& plan,
@@ -6018,7 +6190,8 @@ juce::String independenceReferenceBrief(const SongPlan& plan,
 // not allowed to redesign these anchors; they only complete them.
 juce::String castManifestSchema(std::size_t exactInstrumentCount = 0,
                                 std::size_t maximumInstrumentCount = maximumInstruments,
-                                const juce::String& macroText = {}) {
+                                const juce::String& macroText = {},
+                                const juce::String& userDirection = {}) {
     const auto full = juce::JSON::parse(songPlanSchema);
     const auto* root = full.getDynamicObject();
     const auto* fullProperties = root == nullptr
@@ -6062,6 +6235,10 @@ juce::String castManifestSchema(std::size_t exactInstrumentCount = 0,
         instrumentRequired.add(name);
     }
     if (macroText.isNotEmpty()) {
+        if(club::nucleus::enabled()) {
+            instrumentProperties->setProperty("tonal_rhythm_kind",tonal_pulses::kindSchema());
+            instrumentRequired.add("tonal_rhythm_kind");
+        }
         juce::Array<juce::var> sectionNames;
         const auto macro = juce::JSON::parse(macroText);
         if (const auto* sections = macro.getProperty("sections", {}).getArray())
@@ -6104,7 +6281,7 @@ juce::String castManifestSchema(std::size_t exactInstrumentCount = 0,
                              "instruments", "rhythm_motifs", "voices"})
         required.add(name);
     if(macroText.isNotEmpty()) {
-        properties->setProperty("requested_functions",allocation::schema());
+        properties->setProperty("requested_functions",allocation::schema(userDirection));
         required.add("requested_functions");
     }
     manifestRoot->setProperty("type", "object");
@@ -7339,8 +7516,8 @@ juce::String AiComposer::performanceSchemaFor(
 
 juce::String AiComposer::directWindowSchemaFor(
     const SongPlan& plan, const std::vector<std::size_t>& indices,
-    std::optional<std::size_t> sectionIndex, int bars, int firstBar) {
-    return directWindowSchema(plan, indices, sectionIndex, bars, firstBar);
+    std::optional<std::size_t> sectionIndex, int bars, int firstBar,bool sharedDefinitions) {
+    return directWindowSchema(plan, indices, sectionIndex, bars, firstBar,sharedDefinitions);
 }
 
 juce::String AiComposer::directWindowPromptFor(
@@ -7390,11 +7567,14 @@ bool AiComposer::incrementalSchemasAreValid() {
     const auto castDetail = juce::JSON::parse(castDetailShardSchema());
     const auto performance = juce::JSON::parse(performanceBlockSchema);
     const auto boundManifest = juce::JSON::parse(castManifestSchema(8, maximumInstruments,
-        R"({"sections":[{"name":"Actual full section","bars":32}]})"));
+        R"({"sections":[{"name":"Actual full section","bars":32}]})", "etude F#min"));
+    const auto allowedUserSources=boundManifest.getProperty("properties",{}).getProperty("requested_functions",{})
+        .getProperty("items",{}).getProperty("properties",{}).getProperty("source_quote",{}).getProperty("enum",{});
     const auto allowedSections = boundManifest.getProperty("properties", {}).getProperty("instruments", {})
         .getProperty("items", {}).getProperty("properties", {}).getProperty("active_sections", {})
         .getProperty("items", {}).getProperty("enum", {});
     return !macro.isVoid() && !cast.isVoid() && !manifest.isVoid() && !exactManifest.isVoid() &&
+        allowedUserSources.size()==1 && allowedUserSources[0].toString()=="etude F#min" &&
         allowedSections.size() == 1 && allowedSections[0].toString() == "Actual full section" &&
         AiComposer::castManifestUsesExactCount(50) &&
         !castDetail.isVoid() && !performance.isVoid() &&
@@ -7603,6 +7783,11 @@ std::vector<std::vector<std::size_t>> AiComposer::performanceWritingBlocks(
         return focused;
     }
     return blocks;
+}
+
+juce::String AiComposer::castManifestRequestSchema(const juce::String& userDirection,
+                                                 const juce::String& macroBlueprint) {
+    return castManifestSchema(0, maximumInstruments, macroBlueprint, userDirection);
 }
 
 bool AiComposer::castManifestUsesExactCount(std::size_t instruments) noexcept {
@@ -8220,7 +8405,8 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                               juce::String& error, const AiSongProgress& progress,
                               const AiSongCheckpoint& checkpoint, bool aiSovereign,
                               const AiSongResume* resume,
-                              const AiSongBlueprint& blueprint) {
+                              const AiSongBlueprint& blueprint,
+                              const juce::String& originalUserDirection) {
     SongPlan result;
     result.sections.clear();
     result.compositionBehavior = behavior;
@@ -8251,6 +8437,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     const auto direction = creativeDirection.trim().isEmpty()
         ? "Create a memorable instrumental song with a clear emotional narrative."
         : creativeDirection.trim();
+    const auto userDirection=originalUserDirection.isNotEmpty() ? originalUserDirection.trim() : direction;
     const auto requestedCastCount = requestedInstrumentCountFromDirection(direction);
     const auto singleHarmonicTrack = singleHarmonicTrackRequested(direction);
     result.requestedCastCount = requestedCastCount;
@@ -8828,7 +9015,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         return !http.connected || http.timedOut || http.status == 408 || http.status == 409 ||
             http.status == 429 || http.status >= 500 || incomplete;
     };
-    if (!token.stop_requested() && transientBlueprintFailure() &&
+    if (!token.stop_requested() && transientBlueprintFailure() && !http.queueTimedOut &&
         !(model == "gpt-6-astra" && http.timedOut)) {
         if (progress) progress({AiSongStage::Recovery, 0, 1, 2,
                                 "blueprint transport recovery"});
@@ -9018,6 +9205,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         direction + "\nMACRO:\n" + macroText :
         behavior == CompositionBehavior::Club ?
         club::brief() + castCountContract + independentCastContract + allocation::brief() +
+        (club::nucleus::enabled()?tonal_pulses::brief():juce::String{}) +
         "Choose a complete ELECTRONIC PRODUCTION CAST, not a chamber ensemble. "
         "Give every requested functional layer its own stable owner: voiced sustained "
         "chord bed, complementary pad/body, bass propulsion, independent recurring "
@@ -9042,7 +9230,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         "or a melodic ending. The production plan may focus another layer. "
         "Use movement_bass for propulsion and sub_bass only for a distinct sub role. "
         "No drums or percussion. Return only the cast manifest schema; no MIDI, "
-        "registers or presets yet. USER: " + direction + "\nMACRO:\n" + macroText : legacyManifestPrompt;
+        "registers or presets yet. USER (original request only): " + userDirection +
+        "\nCOMPOSER CONTEXT (not user-imposed function requests):\n" + direction +
+        "\nMACRO (AI creative decisions, not USER quotations):\n" + macroText : legacyManifestPrompt;
     const auto manifestBody = juce::String("{\"model\":\"") + model +
         "\",\"background\":true,\"reasoning\":{\"effort\":\"" + realizationReasoningEffort +
         "\"},\"max_output_tokens\":14000,\"prompt_cache_key\":\"pulso-cast-manifest-v1\",\"input\":" +
@@ -9050,9 +9240,13 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_cast_manifest\","
         "\"strict\":true,\"schema\":" + castManifestSchema(requestedCastCount,
             jointWindowExperiment ? jointCastCeiling : maximumInstruments,
-            behavior == CompositionBehavior::Club ? macroText : juce::String{}) + "}}}";
+            behavior == CompositionBehavior::Club ? macroText : juce::String{}, userDirection) + "}}}";
     juce::String manifestRecoveryBody;
     auto manifestHttp = performRequest(manifestBody, apiKey, token, std::chrono::minutes(2));
+    if (manifestHttp.connected && manifestHttp.status == 400) {
+        error = "OpenAI global cast manifest failed: " + apiErrorMessage(manifestHttp);
+        return result; // Invalid requests cannot be repaired by repeating the same schema.
+    }
     auto manifestText = extractOutputText(juce::JSON::parse(manifestHttp.body));
     juce::String manifestError;
     std::size_t excludedCastMembers{};
@@ -9071,7 +9265,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     bool protagonistResolutionLinked{};
     bool matrixReconciled{};
     auto manifestContractsReady = !castIds.empty() &&
-        allocation::validate(manifestText,direction,manifestError) &&
+        allocation::validate(manifestText,userDirection,manifestError) &&
         validateIndependentCastManifest(manifestText, independentCastRequested, manifestError) &&
         validateExplicitRhythmCast(manifestText, direction, manifestError) &&
         reconcileProtagonistResolutionManifest(macroText, manifestText,
@@ -9082,7 +9276,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         reconcileOrchestrationMatrixManifest(macroText, manifestText,
             matrixReconciled, matrixReport, manifestError) &&
         validateOrchestrationMatrixManifest(macroText, manifestText, manifestError) &&
-        validateSustainedFloorManifest(macroText, manifestText, manifestError);
+        validateSustainedFloorManifest(macroText, manifestText, manifestError, behavior==CompositionBehavior::Club);
     if (manifestContractsReady && motionReport.isNotEmpty())
         OperationalJournal::write("OK", "CAST", "local motion leadership elected | " + motionReport);
     if (manifestContractsReady && protagonistResolutionLinked)
@@ -9121,7 +9315,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_cast_manifest\","
             "\"strict\":true,\"schema\":" + castManifestSchema(requestedCastCount,
                 jointWindowExperiment ? jointCastCeiling : maximumInstruments,
-                behavior == CompositionBehavior::Club ? macroText : juce::String{}) + "}}}";
+                behavior == CompositionBehavior::Club ? macroText : juce::String{}, userDirection) + "}}}";
         manifestHttp = performRequest(manifestRecoveryBody, apiKey, token,
                                       std::chrono::seconds(90));
         manifestText = extractOutputText(juce::JSON::parse(manifestHttp.body));
@@ -9137,7 +9331,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
         protagonistResolutionLinked = false;
         matrixReconciled = false;
         manifestContractsReady = !castIds.empty() &&
-            allocation::validate(manifestText,direction,manifestError) &&
+            allocation::validate(manifestText,userDirection,manifestError) &&
             validateIndependentCastManifest(manifestText, independentCastRequested,
                 manifestError) &&
             validateExplicitRhythmCast(manifestText, direction, manifestError) &&
@@ -9149,7 +9343,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             reconcileOrchestrationMatrixManifest(macroText, manifestText,
                 matrixReconciled, matrixReport, manifestError) &&
             validateOrchestrationMatrixManifest(macroText, manifestText, manifestError) &&
-            validateSustainedFloorManifest(macroText, manifestText, manifestError);
+            validateSustainedFloorManifest(macroText, manifestText, manifestError, behavior==CompositionBehavior::Club);
         if (manifestContractsReady && motionReport.isNotEmpty())
             OperationalJournal::write("OK", "CAST", "local motion leadership elected | " + motionReport);
         if (manifestContractsReady && protagonistResolutionLinked)
@@ -9163,7 +9357,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     if (!manifestHttp.connected || manifestHttp.status < 200 || manifestHttp.status >= 300 ||
         manifestHttp.cancelled || manifestHttp.timedOut || !manifestContractsReady) {
         error = "OpenAI global cast manifest failed: " +
-            (manifestError.isNotEmpty() ? manifestError : apiErrorMessage(manifestHttp));
+            (manifestHttp.status < 200 || manifestHttp.status >= 300 || !manifestHttp.connected ||
+             manifestHttp.timedOut || manifestHttp.cancelled ? apiErrorMessage(manifestHttp) :
+             structuredResponseError(manifestHttp.body, manifestError));
         return result;
     }
     cacheValidatedResponse(manifestRecoveryBody.isEmpty() ? manifestBody :
@@ -9286,14 +9482,14 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     protagonistResolutionLinked = false;
     matrixReconciled = false;
     matrixReport.clear();
-    if (!allocation::validate(manifestText,direction,manifestError) ||
+    if (!allocation::validate(manifestText,userDirection,manifestError) ||
         !reconcileProtagonistResolutionManifest(macroText, manifestText,
             protagonistResolutionLinked, manifestError) ||
         !validateProtagonistManifest(macroText, manifestText, manifestError) ||
         !reconcileOrchestrationMatrixManifest(macroText, manifestText,
             matrixReconciled, matrixReport, manifestError) ||
         !validateOrchestrationMatrixManifest(macroText, manifestText, manifestError) ||
-        !validateSustainedFloorManifest(macroText, manifestText, manifestError)) {
+        !validateSustainedFloorManifest(macroText, manifestText, manifestError, behavior==CompositionBehavior::Club)) {
         error = "OpenAI global cast manifest failed: " + manifestError;
         return result;
     }
@@ -9418,6 +9614,50 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
     result.preserveAuthoredCast = jointWindowExperiment || singleHarmonicTrack;
     if (behavior == CompositionBehavior::Club) {
         auto authoritative = juce::JSON::parse(outputText);
+        if(club::nucleus::enabled()) {
+            const auto acceptedArchitecture=resume?juce::JSON::parse(resume->phraseArchitectureJson):juce::var{};
+            const auto kindContract=tonal_pulses::legacyKindSchema(authoritative,acceptedArchitecture);
+            if(kindContract.getProperty("required",{}).size()>0) {
+                auto choices=juce::var(new juce::DynamicObject());bool needsAi=false;
+                for(const auto& id:*kindContract.getProperty("required",{}).getArray()) {
+                    const auto allowed=kindContract.getProperty("properties",{}).getProperty(juce::Identifier(id.toString()),{}).getProperty("enum",{});
+                    if(allowed.size()==1) choices.getDynamicObject()->setProperty(juce::Identifier(id.toString()),allowed[0]);else needsAi=true;
+                }
+                if(needsAi) {
+                    if(progress) progress({AiSongStage::Recovery,1,2,1,"AI clarifying single-tone versus chord rhythm identities; cast and harmony protected"});
+                    juce::String kindPrompt="Classify ONLY the missing typed attack identities of this accepted cast. "
+                        "The old retained_tonal_pulse prose tag ambiguously named both one-note rhythms and "
+                        "polyphonic chord rhythms. Choose single_tone_pulse for one-note pitched rhythmic layers, "
+                        "chord_stabs for actual repeating simultaneous chords, or none for another function. "
+                        "A repeating chord pattern is not one fixed pitch. Read the full roles, not the IDs or "
+                        "instrument names. Preserve every existing instrument, ID, role text, activity, harmony "
+                        "and section; return only the keyed kind choices, no notes. Any singleton enum records "
+                        "an already accepted structured AI decision and must stay unchanged.\nUSER: "+userDirection;
+                    for(const auto& owner:*authoritative.getProperty("instruments",{}).getArray())
+                        kindPrompt<<"\nOWNER "<<owner.getProperty("id",{}).toString()<<" voice="<<owner.getProperty("source_voice",{}).toString()<<" role="<<owner.getProperty("role",{}).toString();
+                    if(const auto* layers=acceptedArchitecture.getProperty("layers",{}).getArray()) for(const auto& layer:*layers)
+                        kindPrompt<<"\nACCEPTED TYPE "<<layer.getProperty("instrument_id",{}).toString()<<" polyphonic="<<juce::JSON::toString(layer.getProperty("polyphonic",{}),true)
+                            <<" static_identity="<<juce::JSON::toString(layer.getProperty("static_identity",{}),true);
+                    const auto kindBody=juce::String("{\"model\":\"")+model+"\",\"background\":false,\"reasoning\":{\"effort\":\""+realizationReasoningEffort+
+                        "\"},\"max_output_tokens\":"+juce::String(std::clamp(2000+64*kindContract.getProperty("required",{}).size(),2500,8000))+
+                        ",\"input\":"+juce::JSON::toString(juce::var(kindPrompt))+
+                        ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_tonal_rhythm_kind\",\"strict\":true,\"schema\":"+juce::JSON::toString(kindContract)+"}}}";
+                    const auto response=performRequest(kindBody,apiKey,token,std::chrono::seconds(120));
+                    if(!structured::ready(juce::JSON::parse(response.body),response.connected,response.status,response.timedOut,response.cancelled)) {
+                        error="AI tonal rhythm identity clarification failed: "+
+                            (!response.connected||response.status<200||response.status>=300||response.timedOut||response.cancelled?
+                                apiErrorMessage(response):structuredResponseError(response.body,"classification response did not complete"));return {};
+                    }
+                    choices=juce::JSON::parse(extractOutputText(juce::JSON::parse(response.body)));
+                }
+                juce::var clarified;
+                if(!tonal_pulses::applyKinds(authoritative,choices,clarified,acceptedArchitecture)||
+                   !tonal_pulses::validateManifest(juce::JSON::toString(clarified),error)) {
+                    if(error.isEmpty()) error="AI tonal rhythm clarification changed scope or returned invalid kind choices";return {};
+                }
+                authoritative=clarified;
+            }
+        }
         authoritative.getDynamicObject()->setProperty("composition_behavior", "club");
         outputText = juce::JSON::toString(authoritative);
     }
@@ -9866,12 +10106,27 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 "\nStrict tonal policy: use only pitch classes in the declared scale; no chromatic passing notes.");
             const auto sketchBody=juce::String("{\"model\":\"")+model+
                 "\",\"background\":true,\"reasoning\":{\"effort\":\""+realizationReasoningEffort+
-                "\"},\"max_output_tokens\":8000,\"input\":"+juce::JSON::toString(juce::var(sketchPrompt))+
+                "\"},\"max_output_tokens\":"+juce::String(cohesion::shortScoreOutputBudget(result))+",\"input\":"+juce::JSON::toString(juce::var(sketchPrompt))+
                 ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_compositional_argument\",\"strict\":true,\"schema\":"+
                 allocation::constrainShortScoreSchema(cohesion::shortScoreSchema(&result),requestedFunctions)+"}}}";
-            const auto sketchResponse=performRequest(sketchBody,apiKey,token,
+            auto sketchResponse=performRequest(sketchBody,apiKey,token,
                 std::min(sketchRemaining,std::chrono::seconds(480)));
-            const auto sketchEnvelope=juce::JSON::parse(sketchResponse.body);
+            auto sketchEnvelope=juce::JSON::parse(sketchResponse.body);
+            if(sketchResponse.connected && sketchResponse.status>=200 && sketchResponse.status<300 &&
+               !sketchResponse.timedOut && !sketchResponse.cancelled &&
+               sketchEnvelope.getProperty("status",{}).toString()=="incomplete" &&
+               sketchEnvelope.getProperty("incomplete_details",{}).getProperty("reason",{}).toString()=="max_output_tokens") {
+                const auto remaining=std::chrono::duration_cast<std::chrono::seconds>(
+                    aiStarted+totalAiBudget-std::chrono::steady_clock::now());
+                if(remaining>=std::chrono::seconds(35)) {
+                    auto recovery=juce::JSON::parse(sketchBody);
+                    recovery.getDynamicObject()->setProperty("max_output_tokens",cohesion::shortScoreOutputBudget(result,true));
+                    if(progress) progress({AiSongStage::Recovery,0,3,1,"AI completing the musical argument within an expanded serialization budget"});
+                    sketchResponse=performRequest(juce::JSON::toString(recovery),apiKey,token,
+                        std::min(remaining,std::chrono::seconds(480)));
+                    sketchEnvelope=juce::JSON::parse(sketchResponse.body);
+                }
+            }
             if(!structured::ready(sketchEnvelope,sketchResponse.connected,sketchResponse.status,
                                   sketchResponse.timedOut,sketchResponse.cancelled)) {
                 error="AI compositional argument did not finish: "+
@@ -9883,7 +10138,36 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
             auto sketch=juce::JSON::parse(extractOutputText(sketchEnvelope));
             juce::String referenceTimingError;
             if(!cohesion::decodeReferenceTiming(sketch,referenceTimingError)) {
-                error="AI compositional argument unavailable: "+referenceTimingError;return {};
+                const auto correctionSchema=cohesion::referenceTimingRepairSchema(sketch);
+                const auto remaining=std::chrono::duration_cast<std::chrono::seconds>(
+                    aiStarted+totalAiBudget-std::chrono::steady_clock::now());
+                bool repaired=false;
+                if(correctionSchema.isNotEmpty()&&remaining>=std::chrono::seconds(35)&&!token.stop_requested()) {
+                    if(progress) progress({AiSongStage::Recovery,0,3,1,"AI correcting invalid reference note endpoints; other musical decisions preserved"});
+                    const auto correctionPrompt=juce::String("Correct ONLY the invalid reference timing identified by the response schema keys. ")+
+                        "Keys jN_FIELD_M identify zero-based journey index N, reference field FIELD, note index M. "
+                        "Return beat (onset) and duration_beats (positive HELD LENGTH, never an absolute release). "
+                        "An old end_beat value may have confused release with length; choose the intended gate from "
+                        "musical context, do not blindly preserve that malformed value. "
+                        "Choose beat >= 0, duration_beats >= 0.0625, beat + duration_beats <= 128, onset <= 127, preserving the intended rhythmic gesture, "
+                        "chord coordination and articulation in context. Do not move a valid note, change pitch or "
+                        "owner, delete or add notes, or rewrite the composition. Use neighboring valid attacks and "
+                        "the musical argument to choose the intended interval, not an automatic minimum gate. "
+                        "A valid existing onset is locked by the schema. The host only translates your positive "
+                        "held length into the historical endpoint encoding when necessary.\nDIAGNOSTIC: "+referenceTimingError+
+                        "\nSHORT SCORE: "+juce::JSON::toString(sketch,true);
+                    const auto correctionBody=juce::String("{\"model\":\"")+model+
+                        "\",\"background\":true,\"reasoning\":{\"effort\":\""+realizationReasoningEffort+
+                        "\"},\"max_output_tokens\":"+juce::String(std::clamp(1000+int(cohesion::invalidReferenceTimings(sketch).size())*80,2000,12000))+
+                        ",\"input\":"+juce::JSON::toString(juce::var(correctionPrompt))+
+                        ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_reference_timing_repair\",\"strict\":true,\"schema\":"+correctionSchema+"}}}";
+                    const auto corrected=performRequest(correctionBody,apiKey,token,std::min(remaining,std::chrono::seconds(180)));
+                    const auto envelope=juce::JSON::parse(corrected.body);
+                    repaired=structured::ready(envelope,corrected.connected,corrected.status,corrected.timedOut,corrected.cancelled)&&
+                        cohesion::repairReferenceTiming(sketch,juce::JSON::parse(extractOutputText(envelope)),referenceTimingError);
+                    if(repaired) OperationalJournal::write("OK","SHORT_SCORE","AI corrected invalid reference endpoints; all other reference notes and musical fields preserved");
+                }
+                if(!repaired) {error="AI compositional argument unavailable after focused reference-timing recovery: "+referenceTimingError;return {};}
             }
             if(sketchResponse.connected && sketchResponse.status>=200 && sketchResponse.status<300 &&
                 !cohesion::ambiguousHandoffSources(sketch).isEmpty()) {
@@ -9971,6 +10255,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 const auto phraseOutputTokens = behavior == CompositionBehavior::Club && club::nucleus::enabled()
                     ? 20000 : AiMelodicDiscourse::planningOutputTokenBudget(
                         static_cast<int>(result.sections.size()));
+                auto phraseSchema=allocation::constrainSchema(AiPhraseArchitecture::schema(result,direction),requestedFunctions,&result);
+                if(behavior==CompositionBehavior::Club) phraseSchema=club::production::keyedLayerSchema(phraseSchema,result);
+                if(phraseSchema.isEmpty()) {lastError="Could not bind phrase-layer schema to the accepted cast";break;}
                 const auto body = juce::String("{\"model\":\"") + model +
                     "\",\"background\":true,\"reasoning\":{\"effort\":\"" +
                     realizationReasoningEffort +
@@ -9979,7 +10266,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     juce::JSON::toString(juce::var(phrasePrompt)) +
                     ",\"text\":{\"format\":{\"type\":\"json_schema\","
                     "\"name\":\"pulso_phrase_architecture\",\"strict\":true,\"schema\":" +
-                    allocation::constrainSchema(AiPhraseArchitecture::schema(result, direction),requestedFunctions,&result) + "}}}";
+                    phraseSchema + "}}}";
                 const auto phraseBudget = model == "gpt-6-astra"
                     ? std::chrono::seconds(8 * 60)
                     : std::chrono::seconds(AiMelodicDiscourse::enabled() ? 180 : 100);
@@ -9988,8 +10275,55 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 auto draft = extractOutputText(juce::JSON::parse(response.body));
                 if(behavior==CompositionBehavior::Club&&draft.isNotEmpty()) {
                     juce::String decoded;
-                    if(section_trajectory::decode(draft,static_cast<int>(result.sections.size()),decoded,lastError)) draft=decoded;
+                    if(club::production::decodeLayers(draft,result,decoded,lastError)) draft=decoded;
                     else draft.clear();
+                    if(draft.isNotEmpty()) {
+                        if(section_trajectory::decode(draft,static_cast<int>(result.sections.size()),decoded,lastError)) draft=decoded;
+                        else draft.clear();
+                    }
+                    if(draft.isNotEmpty()) {
+                        if(groove_hierarchy::decode(draft,result,decoded,lastError)) draft=decoded;
+                        else draft.clear();
+                    }
+                    if(draft.isNotEmpty()) {
+                        if(tonal_pulses::decodeReferences(draft,requestedFunctions,decoded,lastError)) draft=decoded;
+                        else draft.clear();
+                    }
+                }
+                juce::String ensembleError;
+                if(draft.isNotEmpty()&&structured::ready(juce::JSON::parse(response.body),response.connected,
+                    response.status,response.timedOut,response.cancelled)&&
+                    !cohesion::validate(juce::JSON::parse(draft),result,ensembleError)) {
+                    const auto repairSchema=cohesion::argumentRepairSchema(result);
+                    const auto repairRemaining=std::chrono::duration_cast<std::chrono::seconds>(
+                        aiStarted+totalAiBudget-std::chrono::steady_clock::now());
+                    OperationalJournal::write("WARN","PHRASE_PLAN",ensembleError);
+                    if(repairSchema.isNotEmpty()&&repairRemaining>=std::chrono::seconds(35)&&!token.stop_requested()) {
+                        if(progress) progress({AiSongStage::Recovery,1,2,attempt,"AI correcting section and voice references without rewriting musical layers"});
+                        const auto repairPrompt=juce::String("Correct ONLY ensemble_arguments in the supplied plan. ")+
+                            "Return exactly one argument per existing section_index, no duplicates. Use only existing "
+                            "cast owner IDs. Each contribution owner must occur once per argument; the foreground_owner "
+                            "must have its own contribution. Provide nonempty shared_thought, inherited_question, "
+                            "shared_arrival, relationship and phrase_path. An opening has no previous section: describe "
+                            "its initial premise instead of leaving inherited_question blank. Preserve already valid "
+                            "section arguments and the actual musical intent. Reconcile with existing layer states, "
+                            "speakers, arcs and short-score references; do not invent a new speaker, activation or musical "
+                            "design. No other field or reference note can change.\nERROR: "+ensembleError+
+                            "\nMACRO AND CAST: "+outputText+"\nPLAN: "+draft;
+                        const auto repairBody=juce::String("{\"model\":\"")+model+
+                            "\",\"background\":true,\"reasoning\":{\"effort\":\""+realizationReasoningEffort+
+                            "\"},\"max_output_tokens\":"+juce::String(std::clamp(2000+int(result.sections.size()*result.instruments.size())*100,4000,16000))+
+                            ",\"input\":"+juce::JSON::toString(juce::var(repairPrompt))+
+                            ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_ensemble_arguments_repair\",\"strict\":true,\"schema\":"+repairSchema+"}}}";
+                        const auto repaired=performRequest(repairBody,apiKey,token,std::min(repairRemaining,std::chrono::seconds(180)));
+                        const auto envelope=juce::JSON::parse(repaired.body);
+                        juce::String merged;
+                        if(structured::ready(envelope,repaired.connected,repaired.status,repaired.timedOut,repaired.cancelled)&&
+                           cohesion::replaceArguments(draft,extractOutputText(envelope),result,merged,ensembleError)) {
+                            draft=merged;
+                            OperationalJournal::write("OK","PHRASE_PLAN","AI repaired ensemble references; valid arguments, musical layers and reference notes preserved");
+                        }
+                    }
                 }
                 if (response.connected && response.status >= 200 && response.status < 300 &&
                     draft.isNotEmpty() &&
@@ -10032,11 +10366,20 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                         if(!fragmentBudget.take(repairTarget)) break;
                         const auto sketch = currentPlan.getProperty("tonal_nucleus", {});
                         const auto cycle = static_cast<double>(sketch.getProperty("cycle_beats", 0));
-                        const auto repairSchema = hierarchyRepair ? groove_repair::schema(result,candidate) : interlockRepair ? club::production::interlockLandingSchema(candidate) : referenceRepair
+                        auto repairSchema = hierarchyRepair ? groove_repair::schema(result,candidate) : interlockRepair ? club::production::interlockLandingSchema(candidate) : referenceRepair
                             ? club::production::referenceNotesRepairSchema(candidate, result, referenceIndex, referenceKey)
                             : rhythmRepair ? club::production::rhythmRepairSchema() : stateRepair
                             ? club::production::layerStatesRepairSchema(result, ownerId)
                             : club::nucleus::laneNotesRepairSchema(result, ownerId, cycle);
+                        if(laneId.isNotEmpty()) {
+                            const auto anchors=foundation::retainedPitches(currentPlan,laneId);
+                            if(anchors.isArray()&&!anchors.getArray()->isEmpty()) {
+                                auto bounded=juce::JSON::parse(repairSchema);
+                                bounded.getProperty("properties",{}).getProperty("notes",{}).getProperty("items",{}).getProperty("properties",{})
+                                    .getProperty("pitch",{}).getDynamicObject()->setProperty("enum",anchors);
+                                repairSchema=juce::JSON::toString(bounded);
+                            }
+                        }
                         const auto repairRemaining = std::chrono::duration_cast<std::chrono::seconds>(
                             aiStarted + totalAiBudget - std::chrono::steady_clock::now());
                         if (repairSchema.isEmpty() || repairRemaining < std::chrono::seconds(35)) break;
@@ -10149,14 +10492,15 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                             ? club::production::replaceLayerStates(candidate, ownerId,
                                 revisedFragment, merged)
                             : club::nucleus::replaceLaneNotes(candidate, ownerId,
-                                revisedFragment, merged);
+                                revisedFragment, merged,tonal_pulses::owners(requestedFunctions),int(result.instruments.size()));
                         if (revisedFragment.isEmpty() || !applied) {
                             lastError = "AI returned no usable focused Club-plan correction";
                             break;
                         }
                         candidate = merged;
                         lastError.clear();
-                        if (AiPhraseArchitecture::validate(candidate, result, lastError)) {
+                        if (AiPhraseArchitecture::validate(candidate, result, lastError)&&
+                            allocation::validateArchitecture(candidate,requestedFunctions,lastError)) {
                             result.phraseArchitectureJson = candidate.toStdString();
                             OperationalJournal::write("OK", "PHRASE_PLAN",
                                 "accepted focused AI repair for Club plan fragment " + ownerId +
@@ -10180,6 +10524,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 // its entire planning window. Do not issue an identical second
                 // create call merely because the first was still in_progress.
                 if (model == "gpt-6-astra" && response.timedOut) break;
+                if(lastError.startsWith("Ensemble arguments:")) break; // Scoped recovery exhausted; never regenerate all musical layers for metadata.
                 phrasePrompt << "\nPrevious phrase plan was invalid: " << lastError
                              << ". Return a complete corrected plan for every section.";
             }
@@ -10192,6 +10537,16 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 return {};
             if(requestedFunctions.hasProperty("requested_functions"))
                 connectedPlan.getDynamicObject()->setProperty("requested_functions",requestedFunctions.getProperty("requested_functions",{}));
+            const auto pulseOwners=tonal_pulses::owners(requestedFunctions);
+            if(!pulseOwners.empty()) {
+                juce::Array<juce::var> ids;for(const auto& id:pulseOwners) ids.add(id);
+                connectedPlan.getDynamicObject()->setProperty("tonal_pulse_owners",ids);
+            }
+            const auto chordOwners=tonal_pulses::chordOwners(requestedFunctions);
+            if(!chordOwners.empty()) {
+                juce::Array<juce::var> ids;for(const auto& id:chordOwners) ids.add(id);
+                connectedPlan.getDynamicObject()->setProperty("rhythmic_chord_owners",ids);
+            }
             connectedPlan.getDynamicObject()->setProperty("compositional_short_score",sketch);
             result.phraseArchitectureJson=juce::JSON::toString(connectedPlan).toStdString();
             if(behavior==CompositionBehavior::Club) {
@@ -10206,9 +10561,9 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     if(progress) progress({AiSongStage::Blueprint,2,3,attempt,"AI reconciling phrase timing, harmony and ensemble releases before writing MIDI"});
                     const auto body=juce::String("{\"model\":\"")+model+
                         "\",\"background\":true,\"reasoning\":{\"effort\":\""+realizationReasoningEffort+
-                        "\"},\"max_output_tokens\":8000,\"input\":"+juce::JSON::toString(juce::var(reviewPrompt))+
+                        "\"},\"max_output_tokens\":"+juce::String(reconciliation::outputBudget(result))+",\"input\":"+juce::JSON::toString(juce::var(reviewPrompt))+
                         ",\"text\":{\"format\":{\"type\":\"json_schema\",\"name\":\"pulso_plan_reconciliation\",\"strict\":true,\"schema\":"+
-                        reconciliation::schema()+"}}}";
+                        reconciliation::schema(result)+"}}}";
                     const auto reviewResponse=performRequest(body,apiKey,token,std::min(remaining,std::chrono::seconds(180)));
                     const auto remote=juce::JSON::parse(reviewResponse.body);
                     juce::String candidate;
@@ -10216,6 +10571,7 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     if(structured::ready(remote,reviewResponse.connected,reviewResponse.status,reviewResponse.timedOut,reviewResponse.cancelled) &&
                         reconciliation::apply(juce::String(result.phraseArchitectureJson),extractOutputText(remote),candidate,reviewError) &&
                         AiPhraseArchitecture::validate(candidate,result,reviewError) &&
+                        allocation::validateArchitecture(candidate,requestedFunctions,reviewError) &&
                         cohesion::validShortScore(juce::JSON::parse(candidate).getProperty("compositional_short_score",{}),result)) {
                         result.phraseArchitectureJson=candidate.toStdString();
                         auto executionPlan=juce::JSON::parse(candidate);
@@ -11551,6 +11907,10 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                 return result;
             }
         }
+        const auto reviewPerformedGroove=[&] {
+            reviewPerformedClubGroove(score,result,apiKey,executionReasoningEffort,token,completedWindows,
+                std::min(aiStarted+totalAiBudget,std::chrono::steady_clock::now()+std::chrono::minutes(6)),progress,checkpoint);
+        };
         if (execution::reviewUnifiedVoicings(result) ||
             (!firstPassAudition && behavior == CompositionBehavior::Club && club::nucleus::voicingOnly())) {
             if(checkpoint) {
@@ -11567,19 +11927,24 @@ SongPlan AiComposer::planSong(const juce::String& creativeDirection, int targetS
                     std::chrono::minutes(execution::reviewUnifiedVoicings(result)?4:8)),
                 barsPerWindow, progress, checkpoint);
             if (token.stop_requested()) { error = "Generation cancelled"; return {}; }
+            reviewPerformedGroove();
+            if (token.stop_requested()) { error = "Generation cancelled"; return {}; }
             result.performanceScore = std::move(score);
             error.clear();
             return result;
         }
         if (firstPassAudition) {
+            reviewPerformedGroove();
+            if (token.stop_requested()) { error = "Generation cancelled"; return {}; }
             OperationalJournal::write("INFO", "EDITORIAL",
-                "First-pass audition: musical revisions bypassed; technical MIDI checks retained");
+                "First-pass audition: broad musical revisions bypassed; targeted performed-groove review and technical checks retained");
             result.performanceScore = std::move(score);
             error.clear();
             return result;
         }
         auto clubFinaleOnly = false;
         if (behavior == CompositionBehavior::Club) {
+            reviewPerformedGroove();
             auto measured = result;
             measured.performanceScore = score;
             GenerationContext clubContext;

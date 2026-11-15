@@ -114,6 +114,7 @@ inline void extendSchema(juce::var& root, const SongPlan* plan) {
         const auto props = sketch.getProperty("properties", {});
         if (!chordIds.isEmpty()) props.getProperty("reference_chord_id", {}).getDynamicObject()->setProperty("enum", chordIds);
         if (!ownerIds.isEmpty()) {
+            props.getProperty("lanes", {}).getDynamicObject()->setProperty("maxItems",ownerIds.size());
             props.getProperty("meter_carrier_id", {}).getDynamicObject()->setProperty("enum", ownerIds);
             props.getProperty("lanes", {}).getProperty("items", {}).getProperty("properties", {})
                 .getProperty("instrument_id", {}).getDynamicObject()->setProperty("enum", ownerIds);
@@ -169,7 +170,7 @@ inline bool validate(const juce::var& root, const SongPlan& plan, juce::String& 
     const auto chordId = sketch.getProperty("reference_chord_id", {}).toString().toStdString();
     const auto cycle = static_cast<double>(sketch.getProperty("cycle_beats", 0));
     const auto* lanes = sketch.getProperty("lanes", {}).getArray();
-    if ((cycle != 4 && cycle != 8 && cycle != 16) || !lanes || lanes->isEmpty() || lanes->size() > 12 ||
+    if ((cycle != 4 && cycle != 8 && cycle != 16) || !lanes || lanes->isEmpty() || lanes->size() > int(plan.instruments.size()) ||
         std::none_of(plan.chordPalette.begin(), plan.chordPalette.end(), [&](const auto& c) { return c.id == chordId; })) {
         error = "Tonal nucleus needs an existing reference chord, bounded cycle and actual lanes"; return false;
     }
@@ -249,6 +250,10 @@ inline juce::String repairableLaneId(const juce::String& error, const SongPlan& 
                   .upToFirstOccurrenceOf(" declares", false, false).trim();
     else if (error.startsWith("Tonal nucleus omitted a declared groove core owner: "))
         id = error.fromFirstOccurrenceOf(": ", false, false).trim();
+    else if(error.startsWith("Retained tonal pulse reference disagrees with its AI-chosen anchor: "))
+        id=error.fromFirstOccurrenceOf(": ",false,false).trim();
+    else if(error.startsWith("Tonal nucleus omitted a declared retained pulse owner: "))
+        id=error.fromFirstOccurrenceOf(": ",false,false).trim();
     if (id.isEmpty()) return {};
     const auto known = std::any_of(plan.instruments.begin(), plan.instruments.end(),
         [&](const auto& owner) { return id == juce::String::fromUTF8(owner.id.c_str()); });
@@ -283,7 +288,8 @@ inline juce::String laneNotesRepairSchema(const SongPlan& plan, const juce::Stri
 }
 
 inline bool replaceLaneNotes(const juce::String& draft, const juce::String& id,
-                             const juce::String& replacement, juce::String& merged) {
+                             const juce::String& replacement, juce::String& merged,
+                             const std::set<juce::String>& declaredPulseOwners={},int maximumOwners=12) {
     auto original = juce::JSON::parse(draft);
     const auto repair = juce::JSON::parse(replacement);
     auto* lanes = original.getProperty("tonal_nucleus", {}).getProperty("lanes", {}).getArray();
@@ -295,12 +301,12 @@ inline bool replaceLaneNotes(const juce::String& draft, const juce::String& id,
             merged = juce::JSON::toString(original);
             return true;
         }
-    // Only a declared core owner can be added. The AI authors every note and
-    // its repeat intent; existing voices and all plan decisions stay intact.
+    // Only a declared core or cast-declared pulse owner can be added. The AI
+    // authors all notes and intent; existing voices and decisions stay intact.
     const auto* core = original.getProperty("groove_core_ids", {}).getArray();
     const auto intent = repair.getProperty("repeat_intent", {}).toString().trim();
-    if (!core || intent.isEmpty() || lanes->size() >= 12 ||
-        std::none_of(core->begin(), core->end(), [&](const auto& owner) { return owner.toString() == id; })) return false;
+    const bool declaredCore=core&&std::any_of(core->begin(),core->end(),[&](const auto& owner){return owner.toString()==id;});
+    if(intent.isEmpty()||lanes->size()>=maximumOwners||(!declaredCore&&!declaredPulseOwners.contains(id))) return false;
     auto lane = juce::var(new juce::DynamicObject());
     lane.getDynamicObject()->setProperty("instrument_id", id);
     lane.getDynamicObject()->setProperty("repeat_intent", intent);

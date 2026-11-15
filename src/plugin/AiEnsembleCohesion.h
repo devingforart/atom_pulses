@@ -4,8 +4,17 @@
 #include <juce_core/juce_core.h>
 #include <set>
 #include <cmath>
+#include <algorithm>
 
 namespace pulso::plugin::cohesion {
+// A ceiling, not a target note count: longer ensembles need space for the same
+// reference fields that already exist in the schema. Small anchors keep 8k.
+inline int shortScoreOutputBudget(const SongPlan& plan,bool recovery=false) {
+    const auto scenes=std::clamp(static_cast<int>(plan.sections.size()),1,8);
+    const auto owners=std::clamp(static_cast<int>(plan.instruments.size()),1,64);
+    const auto base=std::clamp(4000+scenes*2200+owners*100,8000,28000);
+    return recovery ? std::min(40000,base+std::max(4000,base/2)) : base;
+}
 // AI short score precedes layer planning; never rendered or tiled by host code.
 inline juce::String shortScoreSchema(const SongPlan* plan=nullptr) {
     auto root=juce::JSON::parse(R"json({"type":"object","additionalProperties":false,
@@ -24,17 +33,14 @@ inline juce::String shortScoreSchema(const SongPlan* plan=nullptr) {
               "pitch":{"type":"integer","minimum":0,"maximum":127}}}}}}}}})json");
     auto item=root.getProperty("properties",{}).getProperty("journey",{}).getProperty("items",{});
     auto props=item.getProperty("properties",{});
-    // Explicit releases are bounded directly by the schema. Independent beat
-    // and duration maxima admitted releases beyond the reference's own clock.
+    // Use native MIDI onset + positive gate. Asking for absolute releases made
+    // the model repeatedly put short gate values before their own onset.
     auto noteSchema=props.getProperty("notes",{}).getProperty("items",{});
-    noteSchema.getProperty("properties",{}).getDynamicObject()->removeProperty("duration");
-    noteSchema.getProperty("properties",{}).getDynamicObject()->setProperty("end_beat",
-        juce::JSON::parse(R"({"type":"number","minimum":0.0625,"maximum":128,"description":"AI-chosen release in the SAME excerpt-local beat clock, strictly after beat. This is an endpoint, not duration."})"));
-    noteSchema.getProperty("required",{}).getArray()->removeAllInstancesOf(juce::var("duration"));
-    noteSchema.getProperty("required",{}).getArray()->add("end_beat");
+    noteSchema.getProperty("properties",{}).getProperty("duration",{}).getDynamicObject()->setProperty("description",
+        "AI-chosen positive held length in quarter-note beats, NOT an absolute release. beat + duration must be <= 128 in this local reference.");
     root.getProperty("required",{}).getArray()->add("reference_timing");
     root.getProperty("properties",{}).getDynamicObject()->setProperty("reference_timing",
-        juce::JSON::parse(R"({"type":"string","enum":["excerpt_endpoints_v1"],"description":"beat/end_beat are start/release in a local reference excerpt, NOT absolute song time. Each notes/continuation/handoff reference has its own zero; ensemble_excerpt shares one zero across its owners."})"));
+        juce::JSON::parse(R"({"type":"string","enum":["excerpt_durations_v2"],"description":"beat is onset and duration is a positive held length, in a local reference excerpt, NOT absolute song time. Each notes/continuation/handoff reference has its own zero; ensemble_excerpt shares one zero across its owners."})"));
     if(plan&&!plan->sections.empty()) {
         juce::Array<juce::var> sectionIds;
         for(std::size_t index=0;index<plan->sections.size();++index) sectionIds.add(static_cast<int>(index));
@@ -94,7 +100,9 @@ inline juce::String shortScoreSchema(const SongPlan* plan=nullptr) {
 inline bool decodeReferenceTiming(juce::var& source,juce::String& error) {
     error.clear();
     if(!source.hasProperty("reference_timing")) return true; // Historical duration references.
-    if(source.getProperty("reference_timing",{}).toString()!="excerpt_endpoints_v1") {
+    const auto encoding=source.getProperty("reference_timing",{}).toString();
+    const bool durations=encoding=="excerpt_durations_v2";
+    if(!durations&&encoding!="excerpt_endpoints_v1") {
         error="Unknown short-score reference timing encoding";return false;
     }
     auto candidate=source.clone();
@@ -109,21 +117,88 @@ inline bool decodeReferenceTiming(juce::var& source,juce::String& error) {
             auto* notes=values.getArray();
             if(!notes) continue; // Structural validator diagnoses missing fields.
             for(int n=0;n<notes->size();++n) {
-                auto note=(*notes)[n];const auto start=note.getProperty("beat",{}),end=note.getProperty("end_beat",{});
+                auto note=(*notes)[n];const auto start=note.getProperty("beat",{}),end=note.getProperty(durations?"duration":"end_beat",{});
                 const auto numeric=[](const juce::var& value){return value.isInt()||value.isInt64()||value.isDouble();};
-                const double onset=start,release=end;
+                const double onset=start,release=durations?double(start)+double(end):double(end);
                 if(!numeric(start)||!numeric(end)||!std::isfinite(onset)||!std::isfinite(release)||
                    onset<0||onset>127||release<=onset||release>128||
-                   (note.hasProperty("duration")&&std::abs(double(note.getProperty("duration",0))-(release-onset))>.0001)) {
+                   (durations&&double(end)<0.0625)||
+                   (!durations&&note.hasProperty("duration")&&std::abs(double(note.getProperty("duration",0))-(release-onset))>.0001)||
+                   (durations&&note.hasProperty("end_beat"))) {
                     error="short_score.journey["+juce::String(i)+"]."+field+"["+juce::String(n)+
-                        "] has invalid/conflicting excerpt endpoints: "+juce::JSON::toString(note,true)+
-                        ". Choose beat < end_beat within the local reference; no note was clipped.";
+                        (durations?"] has invalid excerpt onset/duration: ":"] has invalid/conflicting excerpt endpoints: ")+juce::JSON::toString(note,true)+
+                        ". Choose a positive held length within the local reference; no note was clipped.";
                     return false;
                 }
-                note.getDynamicObject()->setProperty("duration",release-onset);
+                if(!durations) note.getDynamicObject()->setProperty("duration",release-onset);
             }
         }
     }
+    source=candidate;return true;
+}
+struct ReferenceTimingTarget { juce::String key; juce::var note; };
+inline std::vector<ReferenceTimingTarget> invalidReferenceTimings(const juce::var& source) {
+    std::vector<ReferenceTimingTarget> targets;
+    const auto encoding=source.getProperty("reference_timing",{}).toString();
+    if(encoding!="excerpt_endpoints_v1"&&encoding!="excerpt_durations_v2") return targets;
+    if(const auto* journey=source.getProperty("journey",{}).getArray())
+        for(int i=0;i<journey->size();++i) for(const auto* field:{"notes","continuation_notes","ensemble_excerpt","handoff"}) {
+            const auto holder=juce::String(field)=="handoff"?(*journey)[i].getProperty("handoff",{}):(*journey)[i];
+            if(const auto* notes=holder.getProperty(juce::String(field)=="handoff"?"notes":field,{}).getArray())
+                for(int n=0;n<notes->size();++n) {
+                    auto probe=juce::JSON::parse(R"({"reference_timing":"excerpt_endpoints_v1","journey":[{"notes":[]}]})");
+                    probe.getDynamicObject()->setProperty("reference_timing",encoding);
+                    probe.getProperty("journey",{}).getArray()->getReference(0).getProperty("notes",{}).getArray()->add((*notes)[n].clone());
+                    juce::String error;
+                    if(!decodeReferenceTiming(probe,error))
+                        targets.push_back({"j"+juce::String(i)+"_"+field+"_"+juce::String(n),(*notes)[n]});
+                }
+        }
+    return targets;
+}
+inline juce::String referenceTimingRepairSchema(const juce::var& source) {
+    const auto targets=invalidReferenceTimings(source);
+    if(targets.empty()) return {};
+    auto root=juce::JSON::parse(R"({"type":"object","additionalProperties":false,"required":[],"properties":{}})");
+    for(const auto& target:targets) {
+        auto field=juce::JSON::parse(R"({"type":"object","additionalProperties":false,"required":["beat","duration_beats"],"properties":{"beat":{"type":"number","minimum":0,"maximum":127},"duration_beats":{"type":"number","minimum":0.0625,"maximum":128}}})");
+        const auto start=target.note.getProperty("beat",{});
+        if((start.isInt()||start.isInt64()||start.isDouble())&&std::isfinite(double(start))&&double(start)>=0&&double(start)<=127) {
+            field.getProperty("properties",{}).getProperty("beat",{}).getDynamicObject()->setProperty("enum",juce::Array<juce::var>{start});
+            field.getProperty("properties",{}).getProperty("duration_beats",{}).getDynamicObject()->setProperty("maximum",128-double(start));
+        }
+        root.getProperty("properties",{}).getDynamicObject()->setProperty(target.key,field);
+        root.getProperty("required",{}).getArray()->add(target.key);
+    }
+    return juce::JSON::toString(root);
+}
+// Only the AI replaces invalid endpoints. No host-selected gate, onset, pitch,
+// added note, or mutation of already valid references; commit atomically.
+inline bool repairReferenceTiming(juce::var& source,const juce::var& correction,juce::String& error) {
+    const auto targets=invalidReferenceTimings(source);
+    if(targets.empty()||!correction.isObject()||correction.getDynamicObject()->getProperties().size()!=int(targets.size())) return false;
+    auto candidate=source.clone();
+    for(const auto& target:targets) {
+        const auto patch=correction.getProperty(target.key,{});
+        if(!patch.isObject()||patch.getDynamicObject()->getProperties().size()!=2||!patch.hasProperty("beat")||!patch.hasProperty("duration_beats")) return false;
+        const auto start=patch.getProperty("beat",{}),gate=patch.getProperty("duration_beats",{});
+        const auto numeric=[](const juce::var& v){return v.isInt()||v.isInt64()||v.isDouble();};
+        if(!numeric(start)||!numeric(gate)||!std::isfinite(double(start))||!std::isfinite(double(gate))||double(gate)<.0625) return false;
+        const auto oldStart=target.note.getProperty("beat",{});
+        if(numeric(oldStart)&&std::isfinite(double(oldStart))&&double(oldStart)>=0&&double(oldStart)<=127&&double(oldStart)!=double(start)) return false;
+        const auto parts=juce::StringArray::fromTokens(target.key,"_","");
+        const int index=parts[0].substring(1).getIntValue(),noteIndex=parts[parts.size()-1].getIntValue();
+        const auto field=target.key.substring(target.key.indexOfChar('_')+1,target.key.lastIndexOfChar('_'));
+        auto passage=candidate.getProperty("journey",{}).getArray()->getReference(index);
+        auto holder=field=="handoff"?passage.getProperty("handoff",{}):passage;
+        auto note=holder.getProperty(field=="handoff"?"notes":field,{}).getArray()->getReference(noteIndex);
+        note.getDynamicObject()->setProperty("beat",start);
+        if(source.getProperty("reference_timing",{}).toString()=="excerpt_endpoints_v1") {
+            note.getDynamicObject()->setProperty("end_beat",double(start)+double(gate));
+            if(note.hasProperty("duration")) note.getDynamicObject()->setProperty("duration",gate);
+        } else note.getDynamicObject()->setProperty("duration",gate);
+    }
+    if(!decodeReferenceTiming(candidate,error)) return false;
     source=candidate;return true;
 }
 inline juce::String shortScorePrompt(const SongPlan& plan, const juce::String& direction) {
@@ -229,13 +304,14 @@ inline juce::String shortScorePrompt(const SongPlan& plan, const juce::String& d
             "for a production section or loop, ensemble_ending describes its intentional wrap, "
             "not a compulsory tonic cadence. Do not clip phrases or leave accidental gaps. "
             "Reference notes, voicings, repeats and every later performance are authored by AI.\n";
-    out << "\nREFERENCE CLOCK: Write beat and end_beat, never duration. Each notes, continuation_notes "
+    out << "\nREFERENCE CLOCK: Write beat and duration, never end_beat. Duration is the positive held "
+        "length, not an absolute release position. Each notes, continuation_notes "
         "and handoff.notes phrase uses its own excerpt-local zero. ensemble_excerpt uses ONE local "
         "zero shared by all its owners. These are short playable references, not absolute positions "
         "in the complete song or a full-section transcription. Describe their later placement in "
         "development_route; do not offset reference notes to minute/section/song positions. "
-        "Choose the actual release end_beat strictly after beat and at most 128 within this reference "
-        "clock. The host only computes duration=end_beat-beat; it never clips a release. This "
+        "Choose duration so beat + duration <= 128 within this reference "
+        "clock. The host preserves your onset and held length; it never clips a release. This "
         "reference bound does not limit the duration of the composed song.\n";
     out << "REQUEST: " << direction << "\nKEY: " << juce::String(plan.key)
         << "\nDURATION_BARS: " << plan.totalBars << "\nBEATS_PER_BAR: " << plan.beatsPerBar;
@@ -463,27 +539,63 @@ inline bool validate(const juce::var& root, const SongPlan& plan, juce::String& 
     std::set<int> sections;
     std::set<juce::String> owners;
     for (const auto& owner:plan.instruments) owners.insert(juce::String(owner.id));
-    const auto fail=[&]() { error="Ensemble arguments contain invalid section/owner references or missing intent"; return false; };
-    if (!items || items->size()!=static_cast<int>(plan.sections.size())) return fail();
+    const auto fail=[&](const juce::String& detail) { error="Ensemble arguments: "+detail; return false; };
+    if (!items || items->size()!=static_cast<int>(plan.sections.size())) return fail("expected exactly "+juce::String(int(plan.sections.size()))+" section arguments");
+    int argumentIndex=-1;
     for (const auto& item:*items) {
+        ++argumentIndex;
+        const auto location="entry "+juce::String(argumentIndex)+": ";
         const auto index=item.getProperty("section_index", {});
         const int s=static_cast<int>(index);
-        if (!index.isInt() || s<0 || s>=items->size() || !sections.insert(s).second ||
-            !owners.contains(item.getProperty("foreground_owner", {}).toString())) return fail();
+        if (!index.isInt() || s<0 || s>=items->size()) return fail(location+"invalid section_index "+index.toString());
+        if (!sections.insert(s).second) return fail(location+"duplicate section_index "+index.toString());
+        const auto foreground=item.getProperty("foreground_owner", {}).toString();
+        if(!owners.contains(foreground)) return fail(location+"unknown foreground_owner "+foreground);
         for (const auto* key:{"shared_thought","inherited_question","shared_arrival"})
-            if (!item.getProperty(key, {}).isString() || item.getProperty(key, {}).toString().trim().isEmpty()) return fail();
+            if (!item.getProperty(key, {}).isString() || item.getProperty(key, {}).toString().trim().isEmpty()) return fail(location+"missing musical intent in "+key);
         const auto* parts=item.getProperty("contributions", {}).getArray();
         std::set<juce::String> used;
-        if (!parts || parts->isEmpty() || parts->size()>static_cast<int>(owners.size())) return fail();
+        if (!parts || parts->isEmpty() || parts->size()>static_cast<int>(owners.size())) return fail(location+"invalid contributions count");
         for (const auto& part:*parts) {
             auto id=part.getProperty("owner_id", {}).toString();
-            if (!owners.contains(id) || !used.insert(id).second) return fail();
+            if (!owners.contains(id)) return fail(location+"unknown contribution owner "+id);
+            if (!used.insert(id).second) return fail(location+"duplicate contribution owner "+id);
             for (const auto* key:{"relationship","phrase_path"})
-                if (!part.getProperty(key, {}).isString() || part.getProperty(key, {}).toString().trim().isEmpty()) return fail();
+                if (!part.getProperty(key, {}).isString() || part.getProperty(key, {}).toString().trim().isEmpty()) return fail(location+"missing "+key+" for "+id);
         }
-        if (!used.contains(item.getProperty("foreground_owner", {}).toString())) return fail();
+        if (!used.contains(foreground)) return fail(location+"foreground owner has no contribution: "+foreground);
     }
     return true;
+}
+
+inline juce::String argumentRepairSchema(const SongPlan& plan) {
+    if(plan.sections.empty()||plan.instruments.empty()) return {};
+    return extend(R"({"type":"object","additionalProperties":false,"required":[],"properties":{}})",plan);
+}
+inline bool replaceArguments(const juce::String& original,const juce::String& patch,
+                            const SongPlan& plan,juce::String& merged,juce::String& error) {
+    auto candidate=juce::JSON::parse(original);
+    const auto correction=juce::JSON::parse(patch);
+    if(!candidate.isObject()||!correction.isObject()||
+       correction.getDynamicObject()->getProperties().size()!=1||!correction.hasProperty("ensemble_arguments")) return false;
+    if(!validate(correction,plan,error)) return false;
+    auto accepted=correction.clone();
+    // Preserve each individually valid, uniquely identified original argument.
+    // Only inconsistent/missing entries need AI-authored replacement.
+    if(const auto* originals=candidate.getProperty("ensemble_arguments",{}).getArray())
+        for(const auto& originalItem:*originals) {
+            const auto section=originalItem.getProperty("section_index",{});
+            int occurrences=0;
+            for(const auto& item:*originals) if(item.getProperty("section_index",{})==section) ++occurrences;
+            if(occurrences!=1) continue;
+            auto probe=accepted.clone();
+            auto* entries=probe.getProperty("ensemble_arguments",{}).getArray();
+            for(auto& entry:*entries) if(entry.getProperty("section_index",{})==section) {entry=originalItem.clone();break;}
+            juce::String ignored;
+            if(validate(probe,plan,ignored)) accepted=probe;
+        }
+    candidate.getDynamicObject()->setProperty("ensemble_arguments",accepted.getProperty("ensemble_arguments",{}).clone());
+    merged=juce::JSON::toString(candidate);return true;
 }
 
 inline juce::String context(const juce::String& json, std::size_t sectionIndex,

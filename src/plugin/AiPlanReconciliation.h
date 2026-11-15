@@ -47,6 +47,84 @@ inline juce::String schema() {
     root.getProperty("properties",{}).getProperty("edits",{}).getProperty("items",{}).getDynamicObject()->setProperty("anyOf",choices);
     return juce::JSON::toString(root);
 }
+struct EditTarget {
+    juce::String key,scope,field;
+    int index{},child{};
+    bool numeric{};
+};
+inline std::vector<EditTarget> targets(const juce::var& plan) {
+    std::vector<EditTarget> out;
+    const auto add=[&](const juce::var& object,const juce::String& scope,int i,int j,const char* fields) {
+        if(!object.isObject()) return;
+        for(const auto& field:juce::StringArray::fromTokens(fields,"|","")) if(object.hasProperty(field)) {
+            const bool numeric=field=="start_bar"||field=="bars"||field=="entry_beat"||field=="release_beat";
+            out.push_back({scope+"_"+juce::String(i)+"_"+juce::String(j)+"_"+field,scope,field,i,j,numeric});
+        }
+    };
+    if(const auto* arcs=plan.getProperty("musical_arcs",{}).getArray()) for(int i=0;i<arcs->size();++i) {
+        add((*arcs)[i],"arc",i,0,"start_bar|bars|arrival");
+        if(const auto* route=(*arcs)[i].getProperty("phrase_route",{}).getArray()) for(int j=0;j<route->size();++j)
+            add((*route)[j],"route",i,j,"bars|action|material|consequence");
+    }
+    if(const auto* layers=plan.getProperty("layers",{}).getArray()) for(int i=0;i<layers->size();++i)
+        if(const auto* states=(*layers)[i].getProperty("states",{}).getArray()) for(int j=0;j<states->size();++j)
+            add((*states)[j],"layer_state",i,j,"entry_beat|release_beat|mode");
+    if(const auto* scenes=plan.getProperty("ensemble_scenes",{}).getArray()) for(int i=0;i<scenes->size();++i)
+        if(const auto* voices=(*scenes)[i].getProperty("voices",{}).getArray()) for(int j=0;j<voices->size();++j)
+            add((*voices)[j],"scene_voice",i,j,"speaking_span|arrival|material");
+    add(plan.getProperty("compositional_short_score",{}).getProperty("ensemble_ending",{}),"ending",0,0,
+        "prepared_phrase|shared_arrival|speaker_release|after_arrival");
+    return out;
+}
+// One schema key per real, whitelisted declaration. null means unchanged;
+// no sequential patches, invented indices or repeated field decisions.
+inline juce::String schema(const SongPlan& plan) {
+    auto root=juce::JSON::parse(R"({"type":"object","additionalProperties":false,"required":["assessment","edits_by_target"],"properties":{"assessment":{"type":"string"},"edits_by_target":{"type":"object","additionalProperties":false,"required":[],"properties":{}}}})");
+    auto edits=root.getProperty("properties",{}).getProperty("edits_by_target",{});
+    for(const auto& target:targets(juce::JSON::parse(juce::String(plan.phraseArchitectureJson)))) {
+        auto value=juce::JSON::parse(target.numeric?
+            (target.scope=="layer_state"?R"({"type":"number","minimum":0})":R"({"type":"integer","minimum":0})"):
+            R"({"type":"string","minLength":1})");
+        if(target.field=="bars") value.getDynamicObject()->setProperty("minimum",1);
+        if(target.scope=="route"&&target.field=="action") value.getDynamicObject()->setProperty("enum",juce::Array<juce::var>{"statement","continuation","arrival","breath"});
+        if(target.scope=="layer_state"&&target.field=="mode") value.getDynamicObject()->setProperty("enum",juce::Array<juce::var>{"active","reduced","absent"});
+        auto choice=juce::JSON::parse(R"({"anyOf":[]})");
+        choice.getProperty("anyOf",{}).getArray()->add(value);
+        choice.getProperty("anyOf",{}).getArray()->add(juce::JSON::parse(R"({"type":"null"})"));
+        edits.getProperty("properties",{}).getDynamicObject()->setProperty(target.key,choice);
+        edits.getProperty("required",{}).getArray()->add(target.key);
+    }
+    return juce::JSON::toString(root);
+}
+inline int outputBudget(const SongPlan& plan) {
+    return std::clamp(6000+int(targets(juce::JSON::parse(juce::String(plan.phraseArchitectureJson))).size())*16,8000,32000);
+}
+inline bool decodeEdits(const juce::var& plan,const juce::var& source,juce::var& decoded,juce::String& error) {
+    if(!source.hasProperty("edits_by_target")) {decoded=source;return true;} // Historical edit lists.
+    const auto available=targets(plan);
+    const auto edits=source.getProperty("edits_by_target",{});
+    if(!source.isObject()||source.getDynamicObject()->getProperties().size()!=2||source.hasProperty("edits")||!edits.isObject()||edits.getDynamicObject()->getProperties().size()!=int(available.size())) {
+        error="AI plan reconciliation returned an incomplete or mixed target map";return false;
+    }
+    juce::Array<juce::var> list;
+    for(const auto& target:available) {
+        if(!edits.hasProperty(target.key)) {error="AI plan reconciliation omitted target "+target.key;return false;}
+        const auto value=edits.getProperty(target.key,{});
+        if(value.isVoid()) continue;
+        auto entry=juce::var(new juce::DynamicObject());
+        entry.getDynamicObject()->setProperty("scope",target.scope);
+        entry.getDynamicObject()->setProperty("index",target.index);
+        entry.getDynamicObject()->setProperty("child_index",target.child);
+        entry.getDynamicObject()->setProperty("field",target.field);
+        entry.getDynamicObject()->setProperty("number",target.numeric?value:juce::var());
+        entry.getDynamicObject()->setProperty("text",target.numeric?juce::var():value);
+        list.add(entry);
+    }
+    auto result=juce::var(new juce::DynamicObject());
+    result.getDynamicObject()->setProperty("assessment",source.getProperty("assessment",{}));
+    result.getDynamicObject()->setProperty("edits",list);
+    decoded=result;return true;
+}
 inline juce::String prompt(const SongPlan& plan) {
     juce::String cast="\nORIGINAL CAST RESPONSIBILITIES (existing voices, not requests to add notes):\n";
     for(const auto& owner:plan.instruments) {
@@ -85,15 +163,19 @@ inline juce::String prompt(const SongPlan& plan) {
         "route=index in musical_arcs and child_index in phrase_route; layer_state=index in "
         "layers and child_index in states; scene_voice=index in ensemble_scenes and child_index "
         "in voices; ending=index=0,child_index=0 in compositional_short_score.ensemble_ending. "
-        "For arc use child_index=0. Supply number only for numeric fields, text only for "
-        "text fields, the other value null. Explain specific reconciliations in assessment.\n"+
+        "For arc the child index is always 0. The response schema uses edits_by_target: "
+        "each key already identifies one existing field; "
+        "return null to preserve it or exactly one final numeric/text value to change it. "
+        "Do not return a sequence of alternative values or intermediate editing steps. "
+        "Choose a coherent final set before responding. Explain specific reconciliations in assessment.\n"+
         execution::planningBrief(plan)+cast+"\nPLAN TO RECONCILE: "+juce::String(plan.phraseArchitectureJson);
 }
 // Apply AI-authored declaration changes only, atomically. Never touch note arrays.
 inline bool apply(const juce::String& original,const juce::String& response,
                   juce::String& candidate,juce::String& error) {
     auto root=juce::JSON::parse(original);
-    const auto review=juce::JSON::parse(response);
+    juce::var review;
+    if(!decodeEdits(root,juce::JSON::parse(response),review,error)) return false;
     const auto* edits=review.getProperty("edits",{}).getArray();
     const auto fail=[&](){error="AI plan reconciliation returned an invalid or unauthorized declaration edit";return false;};
     if(!root.isObject() || !edits || edits->size()>96 || review.getProperty("assessment",{}).toString().trim().isEmpty()) return fail();

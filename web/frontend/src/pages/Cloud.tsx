@@ -128,7 +128,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
   const [prompt, setPrompt] = useState('')
   const [allowChromatic, setAllowChromatic] = useState(false)
   const [club, setClub] = useState(false)
-  const [engineVersion, setEngineVersion] = useState<CloudEngineVersion>('0.1.3')
+  const [engineVersion, setEngineVersion] = useState<CloudEngineVersion>('1.2')
   const [clubVariety, setClubVariety] = useState(true)
   const [repeatSeed, setRepeatSeed] = useState<string | null>(null)
   const [sharing, setSharing] = useState(false)
@@ -318,7 +318,7 @@ export function Cloud({ shareToken }: { shareToken?: string } = {}) {
         <label className="cloud-chromatic-option"><input type="checkbox" checked={allowChromatic} onChange={event => setAllowChromatic(event.target.checked)} />{' '}{t("Permitir cromatismos")}</label>
         <label htmlFor="cloud-engine">{t("Motor")}</label>
         <select id="cloud-engine" value={engineVersion} onChange={event => setEngineVersion(cloudEngineVersion(event.target.value))}>
-          <option value="0.1.3">0.1.3</option><option value="v1">v1</option><option value="v1.1">v1.1</option>
+          <option value="1.2">1.2</option><option value="v1">v1</option><option value="v1.1">v1.1</option>
         </select>
         <label className="cloud-chromatic-option" title={t("Células reconocibles y evolución de capas a largo plazo, sin cortes obligatorios cada 64 compases.")}><input type="checkbox" checked={club} onChange={event => setClub(event.target.checked)} />{' '}{t("Club · repetición y evolución")}</label>
         {club && <div className="cloud-club-preferences">

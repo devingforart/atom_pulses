@@ -1,0 +1,31 @@
+# Public engine-name correction. Reuse the exact deployed musical executable.
+FROM node:24-bookworm-slim AS frontend
+WORKDIR /source/frontend
+COPY web/frontend/package*.json ./
+RUN npm ci
+COPY web/frontend/ ./
+COPY web/shared/ /source/shared/
+RUN npm run build
+
+FROM rust:1-bookworm AS backend
+ENV CARGO_BUILD_JOBS=1
+WORKDIR /source/backend
+COPY web/backend/Cargo.toml web/backend/Cargo.lock ./
+COPY web/backend/build.rs ./
+COPY web/backend/migrations ./migrations
+COPY web/backend/src ./src
+COPY web/shared/ /source/shared/
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/source/backend/target \
+    cargo clean --release -p pulso-web-api && \
+    cargo test --release --locked cloud::tests && \
+    cargo build --release --locked && cp target/release/pulso-web-api /tmp/pulso-web-api
+
+FROM pulso-web:b49de5e5a6207c0a2c991027571c026dd11466f6
+ARG PULSO_SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.revision=$PULSO_SOURCE_REVISION
+LABEL com.pulso.engine.version=1.2
+LABEL com.pulso.engine.source=83a3faaee73c8044d05680adaa7aef81abaab10b
+COPY --from=backend /tmp/pulso-web-api /app/pulso-web-api
+COPY --from=frontend /source/frontend/dist /app/frontend

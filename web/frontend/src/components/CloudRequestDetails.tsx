@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import type { CloudJob } from '../api'
+import { cloudEngineVersion, type CloudJob } from '../api'
 import { t, useLocale } from '../i18n'
 import './CloudRequestDetails.css'
 
@@ -14,7 +14,7 @@ export function CloudRequestDetails({ job }: { job: CloudJob }) {
     [t('Tempo'), job.bpm + ' ' + t('BPM')],
     [t('Semilla'), job.seed],
     [t('Enfoque solicitado'), t(approaches[job.behavior] || job.behavior)],
-    [t('Motor'), job.engineVersion || 'v1'],
+    [t('Motor'), cloudEngineVersion(job.engineVersion, 'v1')],
     [t('Club: recurso principal libre'), club ? flag(job.clubVariety) : t('No aplica · Club desactivado')],
     [t('Permitir cromatismos'), flag(job.allowChromatic)],
     [t('Autoría solicitada'), t(job.aiSovereign ? 'IA soberana' : 'Motor anterior · referencia A/B')],

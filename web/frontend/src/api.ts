@@ -1,7 +1,8 @@
 import { t, useLocale, locale } from './i18n'
-export type CloudEngineVersion = 'v1' | 'v1.1' | '0.1.3'
-export function cloudEngineVersion(value: unknown, fallback: CloudEngineVersion = '0.1.3'): CloudEngineVersion {
-  return value === 'v1' || value === 'v1.1' || value === '0.1.3' ? value : fallback
+export type CloudEngineVersion = 'v1' | 'v1.1' | '0.1.3' | '1.2'
+export function cloudEngineVersion(value: unknown, fallback: CloudEngineVersion = '1.2'): CloudEngineVersion {
+  if (value === '0.1.3') return '1.2'
+  return value === 'v1' || value === 'v1.1' || value === '1.2' ? value : fallback
 }
 export type User = {
   id: string

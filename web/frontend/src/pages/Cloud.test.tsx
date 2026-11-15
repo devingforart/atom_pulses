@@ -4,6 +4,7 @@ import type { ReactElement } from 'react'
 const render = (element: ReactElement) => renderComponent(<MemoryRouter>{element}</MemoryRouter>)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Cloud } from './Cloud'
+import { cloudEngineVersion } from '../api'
 
 const mock = vi.hoisted(() => ({
   cloudJobs: vi.fn(), cloudJob: vi.fn(), cloudStatus: vi.fn(), createCloudJob: vi.fn(), cancelCloudJob: vi.fn(),
@@ -50,6 +51,12 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('Cloud Suite', () => {
+  it('renames the latest engine without remapping older musical engines', () => {
+    expect(cloudEngineVersion('0.1.3')).toBe('1.2')
+    expect(cloudEngineVersion('1.2')).toBe('1.2')
+    expect(cloudEngineVersion('v1')).toBe('v1')
+    expect(cloudEngineVersion('v1.1')).toBe('v1.1')
+  })
   it('reuses the saved request and seed without submitting until confirmation', async () => {
     mock.cloudJobs.mockResolvedValue([{ ...job, engineVersion: 'v1.1', behavior: 'club', clubLayerPace: '32-64', clubVariety: true, allowChromatic: true }])
     render(<Cloud />)
@@ -99,11 +106,11 @@ describe('Cloud Suite', () => {
     fireEvent.change(screen.getByRole('textbox', { name: /Idea musical/i }), { target: { value: 'Progressive house oscuro' } })
     fireEvent.click(screen.getByRole('checkbox', { name: /Club/i }))
     expect(screen.queryByLabelText('Club: evolución de capas')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Motor')).toHaveValue('0.1.3')
+    expect(screen.getByLabelText('Motor')).toHaveValue('1.2')
     expect(screen.getByRole('checkbox', { name: 'Club: recurso principal libre' })).toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: /Componer obra/i }))
     await waitFor(() => expect(mock.createCloudJob).toHaveBeenCalledWith(expect.objectContaining({
-      engineVersion: '0.1.3', club: true, clubLayerPace: 'auto', clubVariety: true, allowChromatic: false, prompt: 'Progressive house oscuro',
+      engineVersion: '1.2', club: true, clubLayerPace: 'auto', clubVariety: true, allowChromatic: false, prompt: 'Progressive house oscuro',
     })))
   })
   it('opens a public exhibition without authentication, library access or composition requests', async () => {

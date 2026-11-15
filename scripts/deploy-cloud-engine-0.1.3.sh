@@ -12,7 +12,13 @@ flock -n 9 || { echo 'Another engine deployment is active'; exit 3; }
 cd "$release"
 sha256sum -c web/shared/engine-0.1.3-sources.sha256
 image="pulso-web:$revision"
-docker build --build-arg "PULSO_SOURCE_REVISION=$revision" -f web/Dockerfile.engine-release -t "$image" .
+dockerfile=${PULSO_ENGINE_RELEASE_DOCKERFILE:-web/Dockerfile.engine-release}
+migration_version=${PULSO_ENGINE_RELEASE_MIGRATION:-18}
+public_label=${PULSO_ENGINE_PUBLIC_LABEL:-0.1.3}
+[[ "$dockerfile" == web/Dockerfile.engine-release || "$dockerfile" == web/Dockerfile.engine-label-release ]] || exit 2
+[[ "$migration_version" == 18 || "$migration_version" == 19 ]] || exit 2
+[[ "$public_label" == 0.1.3 || "$public_label" == 1.2 ]] || exit 2
+docker build --build-arg "PULSO_SOURCE_REVISION=$revision" -f "$dockerfile" -t "$image" .
 
 # Store the Linux worker under a NEW version. Previously published workers are
 # immutable, live in persistent storage and are not rebuilt/replaced here.
@@ -86,8 +92,8 @@ done
 if [[ "$healthy" != 1 ]]; then
   echo 'HEALTH_FAILED'; false
 fi
-migration=$(docker exec pulso-postgres-1 psql -U pulso -d pulso -Atc 'select success from _sqlx_migrations where version=18;')
-[[ "$migration" == t ]] || { echo 'Migration 18 is not applied; static activation stopped'; false; }
+migration=$(docker exec pulso-postgres-1 psql -U pulso -d pulso -Atc "select success from _sqlx_migrations where version=$migration_version;")
+[[ "$migration" == t ]] || { echo "Migration $migration_version is not applied; static activation stopped"; false; }
 docker exec -i pulso-app-1 sh -eu -c 'sha256sum -c -' < "$release/previous-engine-hashes.sha256"
 docker exec -e EXPECTED_ENGINE_HASH="$engine_hash" pulso-app-1 sh -eu -c '
   test "$(sha256sum "$PULSO_CLOUD_OUTPUT_DIR/engines/0.1.3/pulso_cloud_worker" | cut -d " " -f 1)" = "$EXPECTED_ENGINE_HASH"
@@ -99,5 +105,5 @@ systemctl reload nginx
 curl --fail --silent https://pulso.cargo-core.com/api/health >/dev/null
 activated=0
 trap - ERR
-printf 'DEPLOYED engine=0.1.3 source=%s release=%s linux_sha256=%s\n' 83a3faaee73c8044d05680adaa7aef81abaab10b "$revision" "$engine_hash"
+printf 'DEPLOYED engine=%s source=%s release=%s linux_sha256=%s\n' "$public_label" 83a3faaee73c8044d05680adaa7aef81abaab10b "$revision" "$engine_hash"
 docker inspect pulso-app-1 --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'

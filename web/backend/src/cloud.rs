@@ -52,14 +52,16 @@ pub struct CreateJob {
 }
 
 fn default_club_layer_pace() -> String { "auto".into() }
-fn default_engine_version() -> String { "0.1.3".into() }
-fn supported_engine(version: &str) -> bool { matches!(version, "v1" | "v1.1" | "0.1.3") }
+fn default_engine_version() -> String { "1.2".into() }
+fn supported_engine(version: &str) -> bool { matches!(version, "v1" | "v1.1" | "0.1.3" | "1.2") }
 fn engine_path(root: &Path, version: &str) -> ApiResult<std::path::PathBuf> {
     if !supported_engine(version) { return Err(ApiError::configuration("unknown Cloud engine")); }
-    Ok(root.join("engines").join(version).join("pulso_cloud_worker"))
+    // Public rename only: both identifiers use the exact approved binary.
+    let stored_version = if version == "1.2" { "0.1.3" } else { version };
+    Ok(root.join("engines").join(stored_version).join("pulso_cloud_worker"))
 }
 fn engine_profile(version: &str) -> Value {
-    if version == "0.1.3" {
+    if version == "0.1.3" || version == "1.2" {
         return serde_json::from_str(include_str!("../../shared/engine-0.1.3-profile.json"))
             .expect("the approved 0.1.3 engine profile must be valid JSON");
     }
@@ -956,7 +958,8 @@ mod tests {
             seed: None,
         };
         assert!(valid_request(&valid));
-        assert_eq!(valid.engine_version, "0.1.3");
+        assert_eq!(valid.engine_version, "1.2");
+        assert!(valid_request(&CreateJob { engine_version: "0.1.3".into(), ..valid.clone() }));
         assert!(valid_request(&CreateJob { engine_version: "v1".into(), ..valid.clone() }));
         assert!(valid_request(&CreateJob { engine_version: "v1.1".into(), ..valid.clone() }));
         assert!(!valid_request(&CreateJob { engine_version: "../../worker".into(), ..valid.clone() }));
@@ -999,6 +1002,8 @@ mod tests {
         assert!(engine_path(Path::new("jobs"), "future").is_err());
         assert_ne!(engine_path(Path::new("jobs"), "v1").unwrap(), engine_path(Path::new("jobs"), "v1.1").unwrap());
         assert_ne!(engine_path(Path::new("jobs"), "0.1.3").unwrap(), engine_path(Path::new("jobs"), "v1.1").unwrap());
+        assert_eq!(engine_path(Path::new("jobs"), "1.2").unwrap(), engine_path(Path::new("jobs"), "0.1.3").unwrap());
+        assert_eq!(engine_profile("1.2"),engine_profile("0.1.3"));
         assert_eq!(engine_profile("v1")["defaultFirstPass"], true);
         assert!(engine_profile("v1")["workerEnvironment"]["PULSO_AI_CLUB_ENSEMBLE_SCENES"].is_null());
         for recovery in [false, true] {
